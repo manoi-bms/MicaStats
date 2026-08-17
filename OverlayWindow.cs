@@ -27,6 +27,12 @@ namespace Kil0bitSystemMonitor
 
         private bool _isHovered = false;
         private bool _trackingMouse = false;
+
+        // Tap-versus-drag state. The native move loop entered by WM_NCLBUTTONDOWN consumes the
+        // terminating WM_LBUTTONUP, so a tap cannot be detected once that loop has started. The
+        // press is therefore captured first and the loop is entered only after real movement.
+        private bool _pressPending;
+        private Win32Helper.POINT _pressAnchor;
         private bool _shellFullscreen = false;
         private bool _appbarRegistered = false;
         private readonly Action? _onHistoryUpdated;
@@ -80,6 +86,12 @@ namespace Kil0bitSystemMonitor
         private const int WM_LBUTTONDBLCLK = 0x0203;
         private const int WM_NCLBUTTONDOWN = 0x00A1;
         private const int WM_MOUSEMOVE = 0x0200;
+        private const int WM_LBUTTONUP = 0x0202;
+        private const int WM_CAPTURECHANGED = 0x0215;
+        private const int WM_CANCELMODE = 0x001F;
+        private const int MK_LBUTTON = 0x0001;
+        private const int SM_CXDRAG = 68;
+        private const int SM_CYDRAG = 69;
         private const int WM_MOUSELEAVE = 0x02A3;
         private const int WM_WINDOWPOSCHANGING = 0x0046;
         private const int WM_WINDOWPOSCHANGED = 0x0047;
@@ -331,7 +343,16 @@ namespace Kil0bitSystemMonitor
             {
                 _fadeTimer!.Stop();
                 // Only call ShowWindow(0) once we are fully transparent to avoid blink
-                if (_currentAlpha == 0 && _overlayVisible) { ShowWindow(_hWnd, 0); _overlayVisible = false; }
+                if (_currentAlpha == 0 && _overlayVisible)
+                {
+                    ShowWindow(_hWnd, 0);
+                    _overlayVisible = false;
+
+                    // Panel visibility is a strict subset of overlay visibility. Hiding an owner
+                    // does not hide its owned windows, so without this the panel would keep
+                    // rendering over a fullscreen game with its sampling still running.
+                    App.ClosePanelIfOpen();
+                }
             }
         }
 
@@ -355,7 +376,10 @@ namespace Kil0bitSystemMonitor
 
                 // Fallback: check foreground window — catches windowed-fullscreen games that never
                 // fire ABN_FULLSCREENAPP (most modern titles, browser F11, video players, etc.)
-                if (fg != IntPtr.Zero && fg != _hWnd)
+                // Exempt every window of our own process, not just the overlay: the detail panel
+                // and settings window are separate HWNDs and would otherwise be measured against
+                // the monitor rect as if they were a foreign fullscreen app.
+                if (fg != IntPtr.Zero && !IsOwnProcessWindow(fg))
                 {
                     // Maximized windows on no-taskbar displays cover the full monitor rect; require borderless to qualify as fullscreen.
                     const long WS_CAPTION = 0x00C00000L;
@@ -381,6 +405,46 @@ namespace Kil0bitSystemMonitor
             }
 
             return true;
+        }
+
+        /// <summary>The overlay's window handle, used to anchor and own the detail panel.</summary>
+        public IntPtr Handle => _hWnd;
+
+        /// <summary>The overlay's screen rectangle in physical pixels, or null if unavailable.</summary>
+        public Win32Helper.RECT? GetScreenRect()
+            => _hWnd != IntPtr.Zero && Win32Helper.GetWindowRect(_hWnd, out var r) ? r : null;
+
+        /// <summary>
+        /// True when the window belongs to this process. Used to exempt our own panel and settings
+        /// window from the fullscreen-detection heuristic, which would otherwise treat them as a
+        /// foreign app and hide the overlay.
+        /// </summary>
+        private static bool IsOwnProcessWindow(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero) return false;
+            GetWindowThreadProcessId(hWnd, out uint pid);
+            return pid != 0 && pid == (uint)Environment.ProcessId;
+        }
+
+        /// <summary>
+        /// Whether the cursor has moved far enough from the press point to count as a drag.
+        /// Uses the system drag threshold rather than a hard-coded value, scaled for this window's
+        /// DPI because the non-DPI-aware GetSystemMetrics must not be used from a PerMonitorV2
+        /// process.
+        /// </summary>
+        private bool ExceedsDragThreshold(Win32Helper.POINT now)
+        {
+            int cx = 4, cy = 4;
+            try
+            {
+                int mx = GetSystemMetricsForDpi(SM_CXDRAG, _currentDpi);
+                int my = GetSystemMetricsForDpi(SM_CYDRAG, _currentDpi);
+                if (mx > 0) cx = mx;
+                if (my > 0) cy = my;
+            }
+            catch { /* pre-1607 hosts lack the DPI-aware variant; the defaults stand in. */ }
+
+            return Math.Abs(now.X - _pressAnchor.X) > cx || Math.Abs(now.Y - _pressAnchor.Y) > cy;
         }
 
         private bool IsShellWindow(IntPtr hWnd)
@@ -822,16 +886,63 @@ namespace Kil0bitSystemMonitor
             if (msg == WM_SHOW_SETTINGS) { _dispatcher.BeginInvoke(() => App.OpenSettings(_viewModel, _config)); return IntPtr.Zero; }
             if (msg == WM_DPICHANGED) { _currentDpi = (uint)(wParam.ToInt32() & 0xFFFF); _dpiScale = _currentDpi / 96.0f; ClearCaches(); AlignToTaskbarCenter(); UpdateLayer(); return IntPtr.Zero; }
             if (msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE) { AlignToTaskbarCenter(); UpdateLayer(); return IntPtr.Zero; }
-            if (msg == WM_MOUSEMOVE) { if (!_trackingMouse) { TRACKMOUSEEVENT tme = new TRACKMOUSEEVENT { cbSize = (uint)Marshal.SizeOf(typeof(TRACKMOUSEEVENT)), dwFlags = TME_LEAVE, hwndTrack = hWnd }; TrackMouseEvent(ref tme); _trackingMouse = true; _isHovered = true; UpdateLayer(); } }
+            if (msg == WM_MOUSEMOVE)
+            {
+                if (!_trackingMouse) { TRACKMOUSEEVENT tme = new TRACKMOUSEEVENT { cbSize = (uint)Marshal.SizeOf(typeof(TRACKMOUSEEVENT)), dwFlags = TME_LEAVE, hwndTrack = hWnd }; TrackMouseEvent(ref tme); _trackingMouse = true; _isHovered = true; UpdateLayer(); }
+
+                if (_pressPending)
+                {
+                    // Require the button to still be down. Without this, a swallowed button-up
+                    // would leave the flag set and a later hover would start a phantom drag.
+                    if ((wParam.ToInt64() & MK_LBUTTON) == 0)
+                    {
+                        _pressPending = false;
+                        ReleaseCapture();
+                    }
+                    else if (Win32Helper.GetCursorPos(out Win32Helper.POINT now) && ExceedsDragThreshold(now))
+                    {
+                        // Clear before releasing capture: ReleaseCapture synthesises
+                        // WM_CAPTURECHANGED, which also clears the flag.
+                        _pressPending = false;
+                        ReleaseCapture();
+                        if (!_config.Config.LockPosition)
+                        {
+                            SendMessage(hWnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+                        }
+                    }
+                }
+            }
             if (msg == WM_MOUSELEAVE) { _trackingMouse = false; _isHovered = false; UpdateLayer(); }
-            if (msg == WM_LBUTTONDBLCLK) { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("taskmgr") { UseShellExecute = true }); return IntPtr.Zero; }
-            if (msg == WM_LBUTTONDOWN) { if (_config.Config.LockPosition) return IntPtr.Zero; ReleaseCapture(); SendMessage(hWnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero); return IntPtr.Zero; }
+            if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK)
+            {
+                // CS_DBLCLKS means the second press of a double-tap arrives as WM_LBUTTONDBLCLK
+                // rather than WM_LBUTTONDOWN, so both must arm the same gesture.
+                Win32Helper.GetCursorPos(out _pressAnchor);
+                SetCapture(hWnd);
+                _pressPending = true;
+                return IntPtr.Zero;
+            }
+            if (msg == WM_LBUTTONUP)
+            {
+                if (_pressPending)
+                {
+                    _pressPending = false;
+                    ReleaseCapture();
+                    if (_config.Config.ShowPanelOnClick)
+                        _dispatcher.BeginInvoke(() => App.TogglePanel(_viewModel, _config, this));
+                }
+                return IntPtr.Zero;
+            }
+            // Both must fall through to DefWindowProc: it is what actually releases the capture,
+            // so returning early here would leak it.
+            if (msg == WM_CAPTURECHANGED || msg == WM_CANCELMODE) { _pressPending = false; }
             if (msg == WM_RBUTTONUP)
             {
                 if (Win32Helper.GetCursorPos(out Win32Helper.POINT pt))
                 {
                     SetPreferredAppMode(2); AllowDarkModeForWindow(hWnd, true); FlushMenuThemes();
                     IntPtr hMenu = CreatePopupMenu();
+                    AppendMenu(hMenu, 0, 1010, "Show Stats Panel");
                     AppendMenu(hMenu, 0, 1001, "Settings");
                     AppendMenu(hMenu, 0, 1002, "Task Manager");
                     AppendMenu(hMenu, 0x0800, 0, null);
@@ -866,7 +977,8 @@ namespace Kil0bitSystemMonitor
 
                     int ch = TrackPopupMenuEx(hMenu, 0x0100 | 0x0002 | alignFlag, pt.X, my, hWnd, IntPtr.Zero);
                     DestroyMenu(hMenu);
-                    if (ch == 1001) _dispatcher.BeginInvoke(() => App.OpenSettings(_viewModel, _config));
+                    if (ch == 1010) _dispatcher.BeginInvoke(() => App.TogglePanel(_viewModel, _config, this));
+                    else if (ch == 1001) _dispatcher.BeginInvoke(() => App.OpenSettings(_viewModel, _config));
                     else if (ch == 1006) { _config.Config.LockPosition = !_config.Config.LockPosition; _config.SaveConfig(); }
                     else if (ch == 1007) { _config.Config.StickToTaskbar = !_config.Config.StickToTaskbar; _config.SaveConfig(); }
                     else if (ch == 1008) { _config.Config.AlwaysOnTop = !_config.Config.AlwaysOnTop; _config.SaveConfig(); }
@@ -900,6 +1012,8 @@ namespace Kil0bitSystemMonitor
         [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr h, IntPtr o);
         [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
         [DllImport("user32.dll")] static extern bool ReleaseCapture();
+        [DllImport("user32.dll")] static extern IntPtr SetCapture(IntPtr h);
+        [DllImport("user32.dll", SetLastError = true)] static extern int GetSystemMetricsForDpi(int nIndex, uint dpi);
         [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
         [StructLayout(LayoutKind.Sequential)] struct TRACKMOUSEEVENT { public uint cbSize; public uint dwFlags; public IntPtr hwndTrack; public uint dwHoverTime; }

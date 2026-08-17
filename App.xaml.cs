@@ -81,6 +81,10 @@ namespace Kil0bitSystemMonitor
             var viewModel = new Kil0bitSystemMonitor.ViewModels.MainViewModel();
             viewModel.Config = config.Config;
 
+            // WMI is slow enough that the settings window already backgrounds the equivalent query,
+            // so resolve the panel's header details now rather than on the panel-open path.
+            Kil0bitSystemMonitor.Services.SystemInfoProvider.BeginResolve();
+
             string iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "icon.ico");
             if (!System.IO.File.Exists(iconPath)) iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "icon.png");
             
@@ -95,6 +99,42 @@ namespace Kil0bitSystemMonitor
                 OpenSettings(viewModel, config);
             }
         }
+
+        /// <summary>The open detail panel, or null when it is closed.</summary>
+        public static StatsPanelWindow? StatsPanel { get; private set; }
+
+        /// <summary>
+        /// How long after a dismissal a re-open request is ignored. Clicking the overlay activates
+        /// it, which deactivates the panel and closes it; without this guard the same click would
+        /// immediately reopen the panel and tapping to close would appear to do nothing.
+        /// </summary>
+        private static readonly TimeSpan ReopenGuard = TimeSpan.FromMilliseconds(250);
+
+        /// <summary>Opens the detail panel, or closes it if already open.</summary>
+        public static void TogglePanel(Kil0bitSystemMonitor.ViewModels.MainViewModel viewModel,
+                                       Kil0bitSystemMonitor.Services.ConfigService config,
+                                       OverlayWindow overlay)
+        {
+            if (StatsPanel != null)
+            {
+                StatsPanel.DismissNow();
+                return;
+            }
+
+            if (DateTime.UtcNow - StatsPanelWindow.LastClosedUtc < ReopenGuard) return;
+
+            var history = (Current as App)?.m_history;
+            if (history == null) return;
+
+            var panel = new StatsPanelWindow(history, config.Config, overlay.Handle, overlay.GetScreenRect);
+            StatsPanel = panel;
+            panel.Closed += (s, e) => { if (ReferenceEquals(StatsPanel, panel)) StatsPanel = null; };
+            panel.Show();
+            panel.Activate();
+        }
+
+        /// <summary>Closes the detail panel if it is open. Safe to call from any overlay state change.</summary>
+        public static void ClosePanelIfOpen() => StatsPanel?.DismissNow();
 
         public static void OpenSettings(Kil0bitSystemMonitor.ViewModels.MainViewModel viewModel, Kil0bitSystemMonitor.Services.ConfigService config)
         {

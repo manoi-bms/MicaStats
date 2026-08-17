@@ -38,6 +38,22 @@ namespace Kil0bitSystemMonitor.Services
         private DateTime _lastNetworkRefresh = DateTime.MinValue;
         private DateTime _lastGpuCounterRefresh = DateTime.MinValue;
 
+        // Per-logical-processor sampling. One ReadCategory per tick covers every core at roughly
+        // the cost of a single PerformanceCounter read; creating one counter per core costs
+        // proportionally more because each NextValue re-reads the whole performance data blob.
+        private PerformanceCounterCategory? _processorInfoCategory;
+        private string[] _coreInstances = Array.Empty<string>();
+        private DateTime _lastCoreEnumeration = DateTime.MinValue;
+        private readonly System.Collections.Generic.Dictionary<string, CounterSample> _previousCoreSamples = new();
+
+        /// <summary>
+        /// Matches only real per-processor instances. The category also exposes a global "_Total"
+        /// and a per-node "0,_Total", so the looser "not _Total" test used for PhysicalDisk would
+        /// keep the node total and double-count.
+        /// </summary>
+        private static readonly System.Text.RegularExpressions.Regex CoreInstancePattern =
+            new(@"^\d+,\d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
         public event Action<SystemMetrics>? MetricsUpdated;
 
         public static System.Collections.Generic.List<string> GetAvailableDisks()
@@ -435,7 +451,14 @@ namespace Kil0bitSystemMonitor.Services
             {
                 ulong used = memStatus.ullTotalPhys - memStatus.ullAvailPhys;
                 metrics.RamPercent = (float)used / memStatus.ullTotalPhys * 100f;
+                metrics.RamTotalBytes = memStatus.ullTotalPhys;
+                metrics.RamUsedBytes = used;
             }
+
+            // Per-core. Kept on this timer thread deliberately: the performance-counter library
+            // retries a busy provider with an exponential backoff that has been measured to stall
+            // for seconds, which would freeze the UI if it ran there.
+            UpdateCoreUsage(metrics);
 
             // GPU
             float gpuUsage = 0;
@@ -532,6 +555,93 @@ namespace Kil0bitSystemMonitor.Services
         }
 
 
+
+        /// <summary>
+        /// Samples every logical processor from a single snapshot of the "Processor Information"
+        /// category.
+        /// </summary>
+        /// <remarks>
+        /// "Processor Information" rather than "Processor" because the older category is limited to
+        /// the first processor group and silently reports only 64 logical processors on larger
+        /// machines. "% Processor Time" rather than "% Processor Utility" because Utility is
+        /// relative to nominal clock and routinely exceeds 100 on a boosting CPU, which would peg a
+        /// 0-100 bar under light load.
+        /// </remarks>
+        private void UpdateCoreUsage(SystemMetrics metrics)
+        {
+            try
+            {
+                _processorInfoCategory ??= new PerformanceCounterCategory("Processor Information");
+
+                // Re-enumerate periodically: a virtual machine can hot-add processors.
+                if (_coreInstances.Length == 0 || (DateTime.Now - _lastCoreEnumeration).TotalSeconds >= 30)
+                {
+                    _coreInstances = _processorInfoCategory.GetInstanceNames()
+                        .Where(n => CoreInstancePattern.IsMatch(n))
+                        // Enumeration order is scrambled, and the fields are
+                        // (NUMA node, index-within-node), so sort on both numerically.
+                        .OrderBy(NodeOf).ThenBy(IndexOf)
+                        .ToArray();
+                    _lastCoreEnumeration = DateTime.Now;
+                }
+
+                if (_coreInstances.Length == 0) return;
+
+                var snapshot = _processorInfoCategory.ReadCategory();
+                var perCore = snapshot["% Processor Time"];
+                if (perCore == null) return;
+
+                var usage = new float[_coreInstances.Length];
+                bool sawMissingInstance = false;
+
+                for (int i = 0; i < _coreInstances.Length; i++)
+                {
+                    string name = _coreInstances[i];
+                    var instance = perCore[name];
+                    if (instance == null)
+                    {
+                        // The cached name list is stale (processor removed). Keep the remaining
+                        // cores and re-enumerate on the next tick.
+                        sawMissingInstance = true;
+                        continue;
+                    }
+
+                    CounterSample current = instance.Sample;
+                    if (_previousCoreSamples.TryGetValue(name, out CounterSample previous))
+                    {
+                        float value = CounterSampleCalculator.ComputeCounterValue(previous, current);
+                        usage[i] = Math.Clamp(value, 0f, 100f);
+                    }
+                    // Without a previous sample there is no rate to compute, so this core reads 0
+                    // for exactly one tick.
+                    _previousCoreSamples[name] = current;
+                }
+
+                if (sawMissingInstance)
+                {
+                    _coreInstances = Array.Empty<string>();
+                    _previousCoreSamples.Clear();
+                }
+
+                metrics.CoreUsage = usage;
+            }
+            catch
+            {
+                // Per-core detail is supplementary; losing it must not disturb the main metrics.
+            }
+        }
+
+        private static int NodeOf(string instance)
+        {
+            int comma = instance.IndexOf(',');
+            return comma > 0 && int.TryParse(instance.AsSpan(0, comma), out int n) ? n : 0;
+        }
+
+        private static int IndexOf(string instance)
+        {
+            int comma = instance.IndexOf(',');
+            return comma >= 0 && int.TryParse(instance.AsSpan(comma + 1), out int n) ? n : 0;
+        }
 
         private void Config_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {

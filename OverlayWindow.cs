@@ -61,6 +61,13 @@ namespace Kil0bitSystemMonitor
         private Bitmap? _offscreenBitmap;
         private Graphics? _offscreenGraphics;
 
+        // Text measurement must not depend on the render buffer. Column widths are computed
+        // before EnsureOffscreenBuffer runs, so measuring against _offscreenGraphics returned 0
+        // for every string on the first pass and clamped the window to a ~46px sliver until the
+        // first telemetry sample arrived — permanently, if telemetry init threw.
+        private Bitmap? _measureBitmap;
+        private Graphics? _measureGraphics;
+
         private const int WS_EX_LAYERED = 0x00080000;
         private const int WS_EX_TOOLWINDOW = 0x00000080;
         private const int WS_EX_TOPMOST = 0x00000008;
@@ -138,6 +145,11 @@ namespace Kil0bitSystemMonitor
                 _currentDpi = GetDpiForWindow(_hWnd);
                 if (_currentDpi == 0) _currentDpi = 96;
                 _dpiScale = _currentDpi / 96.0f;
+
+                // Created before the first UpdateLayer so text can be measured on frame one.
+                _measureBitmap = new Bitmap(1, 1, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                _measureGraphics = Graphics.FromImage(_measureBitmap);
+                _measureGraphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
                 // Disable DWM animations to prevent flickering during Task View zoom transitions
                 int disableTransitions = 1;
@@ -439,8 +451,22 @@ namespace Kil0bitSystemMonitor
             }
         }
 
+        /// <summary>
+        /// Which telemetry group a column belongs to, and therefore which per-section colour
+        /// override applies. This must travel with the column: columns are only emitted for
+        /// enabled sensors, so a column's position is not a reliable indicator of its section.
+        /// </summary>
+        private enum SectionKind { Net, CpuRam, Gpu, Disk }
+
         // Reserve: worst-case string to measure for stable column width. Null = use live Value width.
         private class MetricItem { public string Label { get; set; } = ""; public string Value { get; set; } = ""; public string? Reserve { get; set; } = null; }
+
+        private sealed class MetricColumn
+        {
+            public SectionKind Kind { get; init; }
+            public MetricItem? Top { get; init; }
+            public MetricItem? Bottom { get; init; }
+        }
 
         private void UpdateLayer()
         {
@@ -511,15 +537,23 @@ namespace Kil0bitSystemMonitor
                     { _offscreenGraphics.FillPath(pBrush, path); _offscreenGraphics.DrawPath(pPen, path); }
                 }
 
-                // Pick the correct label and accent brushes for this column index
-                Brush sectionLBrush = i == 0 ? netLBrush
-                                    : i == 1 ? cpuLBrush
-                                    : i == 2 ? gpuLBrush
-                                    : dskLBrush;
-                Brush sectionVBrush = i == 0 ? netVBrush
-                                    : i == 1 ? cpuVBrush
-                                    : i == 2 ? gpuVBrush
-                                    : dskVBrush;
+                // Pick brushes from the column's own section, not from its position. Columns are
+                // only emitted for enabled sensors, so indexing by position shifted every
+                // section's colour by one whenever an earlier section was switched off.
+                Brush sectionLBrush = col.Kind switch
+                {
+                    SectionKind.Net => netLBrush,
+                    SectionKind.CpuRam => cpuLBrush,
+                    SectionKind.Gpu => gpuLBrush,
+                    _ => dskLBrush,
+                };
+                Brush sectionVBrush = col.Kind switch
+                {
+                    SectionKind.Net => netVBrush,
+                    SectionKind.CpuRam => cpuVBrush,
+                    SectionKind.Gpu => gpuVBrush,
+                    _ => dskVBrush,
+                };
 
                 float contentX = cx + pad;
                 // Fix: calculate y positions so both text rows are fully contained within h
@@ -528,10 +562,13 @@ namespace Kil0bitSystemMonitor
                 float y1 = (h - totalTextH) / 2f;
                 float y2 = y1 + lineH + (2 * scale);
 
+                // Draw with the same StringFormat the widths were measured with. The default
+                // format is 4-5px wider per string than GenericTypographic, and that discrepancy
+                // was only absorbed by the pod padding.
                 Action<MetricItem, float> drawItem = (item, y) => {
                     float lw = GetCachedMeasure(item.Label, font);
-                    _offscreenGraphics.DrawString(item.Label, font, sectionLBrush, contentX, y);
-                    _offscreenGraphics.DrawString(item.Value, font, sectionVBrush, contentX + lw + gap, y);
+                    _offscreenGraphics.DrawString(item.Label, font, sectionLBrush, contentX, y, StringFormat.GenericTypographic);
+                    _offscreenGraphics.DrawString(item.Value, font, sectionVBrush, contentX + lw + gap, y, StringFormat.GenericTypographic);
                 };
 
                 if (col.Top != null && col.Bottom != null)
@@ -557,7 +594,7 @@ namespace Kil0bitSystemMonitor
             return $"{kbps:F0} KB/s";
         }
 
-        private System.Collections.Generic.List<(MetricItem? Top, MetricItem? Bottom)> PrepareMetricsData()
+        private System.Collections.Generic.List<MetricColumn> PrepareMetricsData()
         {
             bool compact = (_config.Config.DisplayStyle ?? "Text") == "Compact";
             var m = _viewModel.Metrics; var c = _config.Config;
@@ -567,17 +604,29 @@ namespace Kil0bitSystemMonitor
             // Reserve "1023 MB/s": widest net format before switching to GB/s (M glyph is wider than K)
             MetricItem Net(string f, string cp, string v)  => new MetricItem { Label = compact ? cp : f, Value = v, Reserve = "1023 MB/s" };
 
-            var list = new System.Collections.Generic.List<(MetricItem?, MetricItem?)>();
+            var list = new System.Collections.Generic.List<MetricColumn>();
 
             if (c.ShowNetUp || c.ShowNetDown)
-                list.Add((c.ShowNetUp ? Net("UP ", "U", m.NetUpText) : null, c.ShowNetDown ? Net("DN ", "D", m.NetDownText) : null));
+                list.Add(new MetricColumn {
+                    Kind = SectionKind.Net,
+                    Top = c.ShowNetUp ? Net("UP ", "U", m.NetUpText) : null,
+                    Bottom = c.ShowNetDown ? Net("DN ", "D", m.NetDownText) : null,
+                });
 
             if (c.ShowCpu || c.ShowRam)
-                list.Add((c.ShowCpu ? Pct("CPU", "C", $"{(int)m.CpuUsage}%") : null, c.ShowRam ? Pct("RAM", "R", $"{(int)m.RamPercent}%") : null));
+                list.Add(new MetricColumn {
+                    Kind = SectionKind.CpuRam,
+                    Top = c.ShowCpu ? Pct("CPU", "C", $"{(int)m.CpuUsage}%") : null,
+                    Bottom = c.ShowRam ? Pct("RAM", "R", $"{(int)m.RamPercent}%") : null,
+                });
 
             string tempStr = m.GpuTemperature > 0 ? $"{(int)m.GpuTemperature}°" : "N/A";
             if (c.ShowGpu || c.ShowTemp)
-                list.Add((c.ShowGpu ? Pct("GPU", "G", $"{(int)m.GpuUsage}%") : null, c.ShowTemp ? Temp("TMP", "T", tempStr) : null));
+                list.Add(new MetricColumn {
+                    Kind = SectionKind.Gpu,
+                    Top = c.ShowGpu ? Pct("GPU", "G", $"{(int)m.GpuUsage}%") : null,
+                    Bottom = c.ShowTemp ? Temp("TMP", "T", tempStr) : null,
+                });
 
             if (c.ShowDisk || c.ShowDiskSpeed)
             {
@@ -593,10 +642,11 @@ namespace Kil0bitSystemMonitor
 
                         string cdkLabel = letter.ToUpper() + "DK";
 
-                        list.Add((
-                            c.ShowDisk ? Pct(cdkLabel, letter, $"{(int)d.SpacePercent}%") : null,
-                            c.ShowDiskSpeed ? Pct("SPD", "S", $"{(int)d.ActivityPercent}%") : null
-                        ));
+                        list.Add(new MetricColumn {
+                            Kind = SectionKind.Disk,
+                            Top = c.ShowDisk ? Pct(cdkLabel, letter, $"{(int)d.SpacePercent}%") : null,
+                            Bottom = c.ShowDiskSpeed ? Pct("SPD", "S", $"{(int)d.ActivityPercent}%") : null,
+                        });
                     }
                 }
             }
@@ -643,7 +693,7 @@ namespace Kil0bitSystemMonitor
             _cachedDiskAccentBrush   = string.IsNullOrEmpty(_config.Config.DiskAccentColorHex)   ? null : new SolidBrush(HexToColor(_config.Config.DiskAccentColorHex));
         }
 
-        private float GetCachedMeasure(string t, Font f) { if (_offscreenGraphics == null) return 0; string k = $"{t}_{f.Name}_{f.Size}_{f.Style}"; if (!_measureCache.TryGetValue(k, out var w)) { w = _offscreenGraphics.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width; _measureCache[k] = w; } return w; }
+        private float GetCachedMeasure(string t, Font f) { if (_measureGraphics == null) return 0; string k = $"{t}_{f.Name}_{f.Size}_{f.Style}"; if (!_measureCache.TryGetValue(k, out var w)) { w = _measureGraphics.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width; _measureCache[k] = w; } return w; }
         private void ClearCaches() { foreach (var f in _fontCache.Values) f.Dispose(); _fontCache.Clear(); _measureCache.Clear(); }
         private void SetBitmap(Bitmap bitmap)
         {
@@ -667,7 +717,7 @@ namespace Kil0bitSystemMonitor
 
         public void Dispose()
         {
-            try { _telemetry.MetricsUpdated -= _onMetricsUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
+            try { _telemetry.MetricsUpdated -= _onMetricsUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
         }
 
         private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)

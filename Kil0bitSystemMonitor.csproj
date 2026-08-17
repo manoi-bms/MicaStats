@@ -32,6 +32,17 @@
         </None>
     </ItemGroup>
 
+    <!--
+      This project lives at the repository root, so the SDK's default **/*.cs glob would compile
+      the test project's sources into the application assembly. Exclude them explicitly.
+    -->
+    <ItemGroup>
+        <Compile Remove="tests/**" />
+        <None Remove="tests/**" />
+        <Page Remove="tests/**" />
+        <ApplicationDefinition Remove="tests/**" />
+    </ItemGroup>
+
     <ItemGroup>
         <PackageReference Include="ModernWpfUI" Version="0.9.6" />
         <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.0" />

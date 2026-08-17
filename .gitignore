@@ -496,3 +496,6 @@ kil0bit-system-monitor/config.json
 .vscode/
 bin/
 obj/
+
+# Test artifacts
+[Tt]est[Rr]esults/

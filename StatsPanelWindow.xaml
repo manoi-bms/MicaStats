@@ -9,155 +9,189 @@
     ResizeMode="NoResize"
     ShowInTaskbar="False"
     SizeToContent="Height"
-    Width="376"
-    MaxHeight="820"
+    Width="368"
+    MaxHeight="860"
     ShowActivated="True"
     Background="Transparent"
+    Foreground="#E9EDEDF2"
+    FontFamily="Segoe UI Variable Text, Segoe UI"
     ui:ThemeManager.RequestedTheme="Dark"
     UseLayoutRounding="True"
-    SnapsToDevicePixels="True">
+    SnapsToDevicePixels="True"
+    TextOptions.TextFormattingMode="Display">
 
     <!--
-      AllowsTransparency is deliberately NOT set. A per-pixel-alpha layered window can never be
-      rounded by DWM, so opting out of layering is what buys real rounded corners and a system
-      shadow (applied via DwmSetWindowAttribute in the code-behind).
+      Foreground is set ON THE WINDOW deliberately: TextElement.Foreground inherits down the tree,
+      and without it every plain TextBlock falls back to WPF's default black on this dark panel.
+      RequestedTheme only swaps ModernWpf resource brushes; it does not touch plain TextBlocks.
 
-      Topmost is deliberately NOT set either. This window is owned by the overlay's HWND, which
-      makes it inherit WS_EX_TOPMOST and sort above its owner; setting Topmost as well would fight
-      the overlay's 500ms z-order re-assert.
+      AllowsTransparency is deliberately NOT set (a per-pixel-alpha layered window can never be
+      rounded by DWM). Topmost is deliberately NOT set (the window is owned by the overlay's HWND
+      and inherits WS_EX_TOPMOST; setting it here would fight the overlay's z-order re-assert).
     -->
 
-    <Border x:Name="Root"
-            Background="#F21A1A1E"
-            BorderBrush="#26FFFFFF"
-            BorderThickness="1"
-            CornerRadius="8">
+    <Window.Resources>
+        <!-- Quarter-height gridlines behind every graph, the iStat signature. -->
+        <DrawingBrush x:Key="GraphGrid" TileMode="Tile" Viewport="0,0,320,14"
+                      ViewportUnits="Absolute" Stretch="None">
+            <DrawingBrush.Drawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <LineGeometry StartPoint="0,13.5" EndPoint="320,13.5" />
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#12FFFFFF" Thickness="1" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+
+        <Style x:Key="SectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#8AEDEDF2" />
+            <Setter Property="Typography.Capitals" Value="AllSmallCaps" />
+        </Style>
+
+        <Style x:Key="StatLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="9.5" />
+            <Setter Property="Foreground" Value="#66EDEDF2" />
+        </Style>
+
+        <Style x:Key="StatValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#DDEDEDF2" />
+        </Style>
+    </Window.Resources>
+
+    <Border x:Name="Root" Background="#F5131316" BorderBrush="#2AFFFFFF"
+            BorderThickness="1" CornerRadius="10">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="18,16,18,18">
+            <StackPanel Margin="16,14,16,14">
 
-                <!-- System identity -->
-                <TextBlock Text="{Binding CpuName}" FontWeight="SemiBold" FontSize="14"
-                           TextTrimming="CharacterEllipsis" Foreground="#F0FFFFFF" />
-                <TextBlock Text="{Binding GpuName}" FontSize="11.5" Opacity="0.62"
-                           TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
-                <StackPanel Orientation="Horizontal" Margin="0,4,0,0" Opacity="0.5">
-                    <TextBlock Text="{Binding TotalRamText}" FontSize="11" />
-                    <TextBlock Text="  ·  " FontSize="11" />
-                    <TextBlock Text="{Binding OsVersion}" FontSize="11" />
-                    <TextBlock Text="  ·  " FontSize="11" />
-                    <TextBlock Text="up " FontSize="11" />
-                    <TextBlock Text="{Binding Uptime}" FontSize="11" />
+                <!-- Identity header -->
+                <TextBlock Text="{Binding CpuName}" FontSize="12.5" FontWeight="SemiBold"
+                           Foreground="#F2EDEDF2" TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding TotalRamText}" />
+                    <TextBlock Style="{StaticResource StatLabel}" Text="   " />
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding OsVersion}" />
+                    <TextBlock Style="{StaticResource StatLabel}" Text="   up " />
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding Uptime}" />
                 </StackPanel>
-
-                <Separator Background="#1AFFFFFF" Margin="0,14,0,10" />
 
                 <!-- Metric sections -->
                 <ItemsControl ItemsSource="{Binding Sections}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:MetricSection}">
-                            <StackPanel Margin="0,0,0,16">
+                            <StackPanel>
+                                <Rectangle Height="1" Fill="#14FFFFFF" Margin="0,12,0,10" />
 
-                                <Grid>
+                                <!-- Title row: name left, live value right -->
+                                <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Title}" FontSize="12"
-                                               FontWeight="SemiBold" Opacity="0.85"
-                                               VerticalAlignment="Center" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Rectangle Width="3" Height="10" RadiusX="1.5" RadiusY="1.5"
+                                                   Fill="{Binding Accent}" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0" />
+                                        <TextBlock Style="{StaticResource SectionTitle}"
+                                                   Text="{Binding Title}" VerticalAlignment="Center" />
+                                    </StackPanel>
                                     <TextBlock Grid.Column="1" Text="{Binding Primary}"
-                                               FontSize="15" FontWeight="Bold"
-                                               Foreground="{Binding Accent}"
-                                               VerticalAlignment="Center" />
+                                               FontSize="13.5" FontWeight="Bold"
+                                               Foreground="{Binding Accent}" />
                                 </Grid>
 
-                                <TextBlock Text="{Binding Secondary}" FontSize="10.5"
-                                           Opacity="0.5" Margin="0,1,0,6"
-                                           TextTrimming="CharacterEllipsis" />
+                                <!-- Gridded history graph -->
+                                <Border Width="320" Height="56" HorizontalAlignment="Left"
+                                        Background="{StaticResource GraphGrid}"
+                                        BorderBrush="#1CFFFFFF" BorderThickness="0,0,0,1"
+                                        ClipToBounds="True">
+                                    <Grid>
+                                        <Canvas ClipToBounds="True">
+                                            <Polygon Points="{Binding Area}"
+                                                     Fill="{Binding AreaFill}"
+                                                     Stroke="{Binding Accent}"
+                                                     StrokeThickness="1.2"
+                                                     StrokeLineJoin="Round" />
+                                        </Canvas>
+                                        <TextBlock Text="{Binding StatusText}" FontSize="10"
+                                                   Foreground="#55EDEDF2"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsAvailable}" Value="False">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </Border>
 
-                                <ProgressBar Minimum="0" Maximum="100"
-                                             Value="{Binding Percent, Mode=OneWay}"
-                                             Height="3" Margin="0,0,0,6"
-                                             Foreground="{Binding Accent}"
-                                             Background="#1FFFFFFF"
-                                             BorderThickness="0" />
+                                <!-- Per-core strip, fused under the processor graph only -->
+                                <ItemsControl ItemsSource="{Binding DataContext.Cores,
+                                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                                              Margin="0,5,0,0" HorizontalAlignment="Left">
+                                    <ItemsControl.Style>
+                                        <Style TargetType="ItemsControl">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCpu}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ItemsControl.Style>
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:CoreLoad}">
+                                            <!-- One thin bottom-anchored bar per logical processor -->
+                                            <Border Width="9" Height="22" Margin="0,0,4,0"
+                                                    Background="#17FFFFFF">
+                                                <Rectangle Width="9" Fill="#4FC3F7"
+                                                           Height="{Binding BarHeight}"
+                                                           VerticalAlignment="Bottom" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
 
-                                <!-- History graph. Fixed size so the view model can project into
-                                     known coordinates without measuring the visual tree. -->
-                                <Grid Height="44" Width="320" HorizontalAlignment="Left"
-                                      ClipToBounds="True">
-                                    <Canvas ClipToBounds="True">
-                                        <Polygon Points="{Binding Area}"
-                                                 Fill="{Binding AreaFill}"
-                                                 Stroke="{Binding Accent}"
-                                                 StrokeThickness="1.4"
-                                                 StrokeLineJoin="Round" />
-                                    </Canvas>
-                                    <TextBlock Text="{Binding StatusText}"
-                                               FontSize="11" Opacity="0.42"
-                                               HorizontalAlignment="Left"
-                                               VerticalAlignment="Bottom">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsAvailable}" Value="False">
-                                                        <Setter Property="Visibility" Value="Visible" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
+                                <!-- Stat trio -->
+                                <UniformGrid Columns="3" Margin="0,7,0,0" Width="320"
+                                             HorizontalAlignment="Left">
+                                    <UniformGrid.Resources>
+                                        <DataTemplate DataType="{x:Type vm:StatPair}">
+                                            <StackPanel Margin="0,0,8,0">
+                                                <TextBlock Style="{StaticResource StatLabel}"
+                                                           Text="{Binding Label}" />
+                                                <TextBlock Style="{StaticResource StatValue}"
+                                                           Text="{Binding Value}" Margin="0,1,0,0" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </UniformGrid.Resources>
+                                    <ContentPresenter Content="{Binding Stats[0]}" />
+                                    <ContentPresenter Content="{Binding Stats[1]}" />
+                                    <ContentPresenter Content="{Binding Stats[2]}" />
+                                </UniformGrid>
                             </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <!-- Per-logical-processor load -->
-                <StackPanel>
-                    <StackPanel.Style>
-                        <Style TargetType="StackPanel">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasCores}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </StackPanel.Style>
-
-                    <Separator Background="#1AFFFFFF" Margin="0,0,0,10" />
-                    <TextBlock Text="Logical processors" FontSize="12" FontWeight="SemiBold"
-                               Opacity="0.85" Margin="0,0,0,8" />
-
-                    <ItemsControl ItemsSource="{Binding Cores}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="4" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type vm:CoreLoad}">
-                                <Grid Margin="0,0,10,7">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="18" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Label}" FontSize="9.5"
-                                               Opacity="0.45" VerticalAlignment="Center" />
-                                    <ProgressBar Grid.Column="1" Minimum="0" Maximum="100"
-                                                 Value="{Binding Percent, Mode=OneWay}"
-                                                 Height="3" Foreground="#4FC3F7"
-                                                 Background="#1FFFFFFF" BorderThickness="0"
-                                                 VerticalAlignment="Center" />
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-
-                <!-- Highest CPU consumers -->
+                <!-- Top processes -->
                 <StackPanel>
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
@@ -170,39 +204,37 @@
                         </Style>
                     </StackPanel.Style>
 
-                    <Separator Background="#1AFFFFFF" Margin="0,8,0,10" />
-                    <Grid Margin="0,0,0,8">
-                        <TextBlock Text="Top processes" FontSize="12" FontWeight="SemiBold" Opacity="0.85" />
-                        <TextBlock Text="share of total CPU" FontSize="9.5" Opacity="0.35"
+                    <Rectangle Height="1" Fill="#14FFFFFF" Margin="0,12,0,10" />
+                    <Grid Margin="0,0,0,7">
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="Top Processes" />
+                        <TextBlock Style="{StaticResource StatLabel}" Text="share of total CPU"
                                    HorizontalAlignment="Right" VerticalAlignment="Center" />
                     </Grid>
 
                     <ItemsControl ItemsSource="{Binding TopProcesses}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Grid Margin="0,0,0,5">
+                                <Grid Margin="0,0,0,4">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="64" />
+                                        <ColumnDefinition Width="46" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Name}" FontSize="11.5"
-                                               Opacity="0.8" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Name}" FontSize="11"
+                                               Foreground="#CFEDEDF2"
+                                               TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="1" Text="{Binding WorkingSetText}"
-                                               FontSize="10.5" Opacity="0.42" Margin="8,0,10,0"
+                                               FontSize="10" Foreground="#66EDEDF2"
+                                               TextAlignment="Right" Margin="0,0,10,0"
                                                VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="2" Text="{Binding CpuText}"
-                                               FontSize="11.5" FontWeight="SemiBold"
-                                               Foreground="#4FC3F7" MinWidth="42"
-                                               TextAlignment="Right" />
+                                               FontSize="11" FontWeight="SemiBold"
+                                               Foreground="#4FC3F7" TextAlignment="Right" />
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
-
-                <TextBlock Text="Esc or click away to close" FontSize="10" Opacity="0.3"
-                           HorizontalAlignment="Center" Margin="0,10,0,0" />
             </StackPanel>
         </ScrollViewer>
     </Border>

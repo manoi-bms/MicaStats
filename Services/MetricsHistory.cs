@@ -59,6 +59,30 @@ namespace Kil0bitSystemMonitor.Services
         /// <summary>The most recent sample, or 0 when empty.</summary>
         public float Latest => _count == 0 ? 0f : this[_count - 1];
 
+        /// <summary>Highest retained sample, or 0 when empty. Shown as the window peak.</summary>
+        public float Max
+        {
+            get
+            {
+                if (_count == 0) return 0f;
+                float m = float.NegativeInfinity;
+                for (int i = 0; i < _count; i++) { float v = this[i]; if (v > m) m = v; }
+                return float.IsNegativeInfinity(m) ? 0f : m;
+            }
+        }
+
+        /// <summary>Mean of the retained samples, or 0 when empty.</summary>
+        public float Average
+        {
+            get
+            {
+                if (_count == 0) return 0f;
+                double sum = 0;
+                for (int i = 0; i < _count; i++) sum += this[i];
+                return (float)(sum / _count);
+            }
+        }
+
         /// <summary>Oldest-to-newest access. Index 0 is the oldest retained sample.</summary>
         public float this[int i]
         {

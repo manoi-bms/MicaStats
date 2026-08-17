@@ -14,6 +14,29 @@ using Brush = System.Windows.Media.Brush;
 
 namespace Kil0bitSystemMonitor.ViewModels
 {
+    /// <summary>One label/value cell of a section's statistics grid (e.g. "Peak" / "87%").</summary>
+    public sealed class StatPair : INotifyPropertyChanged
+    {
+        private string _value = "—";
+
+        public StatPair(string label) => Label = label;
+
+        public string Label { get; }
+
+        public string Value
+        {
+            get => _value;
+            set
+            {
+                if (_value == value) return;
+                _value = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Value)));
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
+
     /// <summary>One row of the detail panel: a heading, readouts, a bar and a history graph.</summary>
     public sealed class MetricSection : INotifyPropertyChanged
     {
@@ -22,7 +45,7 @@ namespace Kil0bitSystemMonitor.ViewModels
         /// known size without the view having to report its layout back to the view model.
         /// </summary>
         public const double GraphWidth = 320;
-        public const double GraphHeight = 44;
+        public const double GraphHeight = 56;
 
         private string _primary = "";
         private string _secondary = "";
@@ -45,6 +68,12 @@ namespace Kil0bitSystemMonitor.ViewModels
         public string Title { get; }
         public Brush Accent { get; }
         public Brush AreaFill { get; }
+
+        /// <summary>Marks the processor section so the view can fuse the per-core strip under its graph.</summary>
+        public bool IsCpu { get; init; }
+
+        /// <summary>The section's statistics grid, fixed at construction; only values change.</summary>
+        public System.Collections.ObjectModel.ObservableCollection<StatPair> Stats { get; } = new();
 
         /// <summary>Headline reading, e.g. "45%".</summary>
         public string Primary { get => _primary; set => Set(ref _primary, value); }
@@ -95,8 +124,12 @@ namespace Kil0bitSystemMonitor.ViewModels
                 if (Math.Abs(_percent - value) < 0.01) return;
                 _percent = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Percent)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BarHeight)));
             }
         }
+
+        /// <summary>Bar height in the 22px-tall core strip.</summary>
+        public double BarHeight => Math.Max(1.0, _percent * 0.22);
 
         public event PropertyChangedEventHandler? PropertyChanged;
     }
@@ -129,11 +162,18 @@ namespace Kil0bitSystemMonitor.ViewModels
             _history = history ?? throw new ArgumentNullException(nameof(history));
             _config = config ?? throw new ArgumentNullException(nameof(config));
 
-            _cpu = new MetricSection("Processor", Color.FromRgb(0x4F, 0xC3, 0xF7));
+            _cpu = new MetricSection("Processor", Color.FromRgb(0x4F, 0xC3, 0xF7)) { IsCpu = true };
             _memory = new MetricSection("Memory", Color.FromRgb(0x81, 0xC7, 0x84));
             _gpu = new MetricSection("Graphics", Color.FromRgb(0xBA, 0x68, 0xC8));
             _network = new MetricSection("Network", Color.FromRgb(0xFF, 0xB7, 0x4D));
             _disk = new MetricSection("Storage", Color.FromRgb(0xE5, 0x73, 0x73));
+
+            // Fixed stat cells; Refresh only rewrites their values, so nothing rebinds per tick.
+            foreach (var l in new[] { "Average", "Peak", "Cores" }) _cpu.Stats.Add(new StatPair(l));
+            foreach (var l in new[] { "Used", "Free", "Peak" }) _memory.Stats.Add(new StatPair(l));
+            foreach (var l in new[] { "Temp", "Average", "Peak" }) _gpu.Stats.Add(new StatPair(l));
+            foreach (var l in new[] { "↓ Peak", "↑ Peak", "↓ Avg" }) _network.Stats.Add(new StatPair(l));
+            foreach (var l in new[] { "Average", "Peak", "Used" }) _disk.Stats.Add(new StatPair(l));
 
             Sections = new ObservableCollection<MetricSection> { _cpu, _memory, _gpu, _network, _disk };
             Cores = new ObservableCollection<CoreLoad>();
@@ -220,6 +260,7 @@ namespace Kil0bitSystemMonitor.ViewModels
             UpdateNetworkSection(m);
             UpdateDiskSection(m);
             UpdateCores(m);
+            UpdateStats(m);
 
             OnPropertyChanged(nameof(Uptime));
             OnPropertyChanged(nameof(CpuName));
@@ -311,6 +352,52 @@ namespace Kil0bitSystemMonitor.ViewModels
             for (int i = 0; i < usage.Length; i++) Cores[i].Percent = Math.Clamp(usage[i], 0, 100);
 
             if (had != Cores.Count) OnPropertyChanged(nameof(HasCores));
+        }
+
+        /// <summary>Rewrites every section's statistics grid from the retained window.</summary>
+        private void UpdateStats(SystemMetrics m)
+        {
+            _cpu.Stats[0].Value = $"{_history.Cpu.Average:F0}%";
+            _cpu.Stats[1].Value = $"{_history.Cpu.Max:F0}%";
+            _cpu.Stats[2].Value = _history.Cores.Count > 0 ? _history.Cores.Count.ToString() : "—";
+
+            if (m.RamTotalBytes > 0)
+            {
+                double usedGb = m.RamUsedBytes / 1024d / 1024d / 1024d;
+                double freeGb = (m.RamTotalBytes - m.RamUsedBytes) / 1024d / 1024d / 1024d;
+                _memory.Stats[0].Value = $"{usedGb:F1} GB";
+                _memory.Stats[1].Value = $"{freeGb:F1} GB";
+            }
+            _memory.Stats[2].Value = $"{_history.Ram.Max:F0}%";
+
+            _gpu.Stats[0].Value = m.GpuTemperature > 0 ? $"{(int)m.GpuTemperature}°C" : "—";
+            _gpu.Stats[1].Value = $"{_history.Gpu.Average:F0}%";
+            _gpu.Stats[2].Value = $"{_history.Gpu.Max:F0}%";
+
+            _network.Stats[0].Value = FormatKbps(_history.NetDown.Max);
+            _network.Stats[1].Value = FormatKbps(_history.NetUp.Max);
+            _network.Stats[2].Value = FormatKbps(_history.NetDown.Average);
+
+            Series? busiest = null;
+            float space = 0;
+            if (m.Disks != null && m.Disks.Count > 0)
+            {
+                DiskMetric top = m.Disks[0];
+                foreach (var d in m.Disks) if (d.ActivityPercent > top.ActivityPercent) top = d;
+                busiest = _history.Disk(top.Name);
+                space = top.SpacePercent;
+            }
+            _disk.Stats[0].Value = busiest != null ? $"{busiest.Average:F0}%" : "—";
+            _disk.Stats[1].Value = busiest != null ? $"{busiest.Max:F0}%" : "—";
+            _disk.Stats[2].Value = busiest != null ? $"{space:F0}%" : "—";
+        }
+
+        /// <summary>Renders a KB/s figure with the same unit thresholds the overlay uses.</summary>
+        private static string FormatKbps(float kbps)
+        {
+            if (kbps >= 1024f * 1024f) return $"{kbps / 1024f / 1024f:F1} GB/s";
+            if (kbps >= 1024f) return $"{kbps / 1024f:F1} MB/s";
+            return $"{kbps:F0} KB/s";
         }
 
         /// <summary>

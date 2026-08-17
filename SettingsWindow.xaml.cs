@@ -275,6 +275,7 @@ namespace Kil0bitSystemMonitor
             c.IsTextBold = true;
             c.ShowPods = true;
             c.ShowBackground = false;
+            c.ShowGraphs = false;
             c.NetLabelColorHex = null; c.CpuRamLabelColorHex = null; c.GpuLabelColorHex = null; c.DiskLabelColorHex = null;
             c.NetAccentColorHex = null; c.CpuRamAccentColorHex = null; c.GpuAccentColorHex = null; c.DiskAccentColorHex = null;
             _config.SaveConfig();
@@ -305,7 +306,8 @@ namespace Kil0bitSystemMonitor
             c.HideOnFullscreen = true;
             c.StickToTaskbar = true;
             c.AlwaysOnTop = true;
-            
+            c.ShowPanelOnClick = true;
+
             c.ShowCpu = true;
             c.ShowRam = true;
             c.ShowGpu = true;
@@ -330,6 +332,7 @@ namespace Kil0bitSystemMonitor
             c.IsTextBold = true;
             c.ShowPods = true;
             c.ShowBackground = false;
+            c.ShowGraphs = false;
             c.NetLabelColorHex = null; c.CpuRamLabelColorHex = null; c.GpuLabelColorHex = null; c.DiskLabelColorHex = null;
             c.NetAccentColorHex = null; c.CpuRamAccentColorHex = null; c.GpuAccentColorHex = null; c.DiskAccentColorHex = null;
             

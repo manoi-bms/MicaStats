@@ -594,6 +594,10 @@
                                          <TextBlock Text="Column Spacing" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,4"/>
                                         <Slider x:Name="ColumnSpacingSlider" Minimum="0" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding Config.ColumnSpacing, Mode=TwoWay}" Margin="0,0,0,12"/>
 
+                                        <ui:ToggleSwitch Header="Live Graphs" IsOn="{Binding Config.ShowGraphs, Mode=TwoWay}" Margin="0,0,0,8" />
+
+                                        <ui:ToggleSwitch Header="Panel on Click" IsOn="{Binding Config.ShowPanelOnClick, Mode=TwoWay}" Margin="0,0,0,8" />
+
                                         <ui:ToggleSwitch Header="Enable Capsules" IsOn="{Binding Config.ShowPods, Mode=TwoWay}" Margin="0,0,0,8" />
                                         
                                         <ui:ToggleSwitch Header="Background Plate" IsOn="{Binding Config.ShowBackground, Mode=TwoWay}" Margin="0,0,0,8" />

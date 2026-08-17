@@ -21,6 +21,7 @@ namespace Kil0bitSystemMonitor
         private readonly MainViewModel _viewModel = null!;
         private readonly ConfigService _config = null!;
         private readonly TelemetryService _telemetry = null!;
+        private readonly MetricsHistory _history = null!;
         private readonly System.Windows.Threading.Dispatcher _dispatcher = null!;
         private readonly System.Threading.Timer _zOrderTimer = null!;
 
@@ -28,7 +29,7 @@ namespace Kil0bitSystemMonitor
         private bool _trackingMouse = false;
         private bool _shellFullscreen = false;
         private bool _appbarRegistered = false;
-        private readonly Action<SystemMetrics>? _onMetricsUpdated;
+        private readonly Action? _onHistoryUpdated;
         private readonly System.ComponentModel.PropertyChangedEventHandler? _onConfigPropertyChanged;
         private uint _currentDpi = 96;
         private float _dpiScale = 1.0f;
@@ -101,13 +102,14 @@ namespace Kil0bitSystemMonitor
         [StructLayout(LayoutKind.Sequential)]
         private struct WINDOWPOS { public IntPtr hwnd; public IntPtr hwndInsertAfter; public int x; public int y; public int cx; public int cy; public uint flags; }
 
-        public OverlayWindow(MainViewModel viewModel, ConfigService config, TelemetryService telemetry)
+        public OverlayWindow(MainViewModel viewModel, ConfigService config, TelemetryService telemetry, MetricsHistory history)
         {
             try
             {
                 _viewModel = viewModel;
                 _config = config;
                 _telemetry = telemetry;
+                _history = history;
                 _dispatcher = System.Windows.Application.Current.Dispatcher;
                 _wndProc = WndProc;
 
@@ -168,14 +170,14 @@ namespace Kil0bitSystemMonitor
                 UpdateCachedColors();
                 UpdateLayer();
 
-                _onMetricsUpdated = (m) => {
-                    _dispatcher.BeginInvoke(() => {
-                        _viewModel.Metrics = m;
-                        // Only re-render if visible or transitioning
-                        if (_targetAlpha > 0 || _currentAlpha > 0) UpdateLayer();
-                    });
+                // MetricsHistory has already marshalled to the dispatcher and appended the sample,
+                // so this runs on the UI thread and the history is current.
+                _onHistoryUpdated = () => {
+                    _viewModel.Metrics = _history.Latest;
+                    // Only re-render if visible or transitioning
+                    if (_targetAlpha > 0 || _currentAlpha > 0) UpdateLayer();
                 };
-                _telemetry.MetricsUpdated += _onMetricsUpdated;
+                _history.Updated += _onHistoryUpdated;
                 _zOrderTimer = new System.Threading.Timer(EnforceZOrder, null, 0, 500);
 
                 _onConfigPropertyChanged = (s, e) => {
@@ -459,7 +461,18 @@ namespace Kil0bitSystemMonitor
         private enum SectionKind { Net, CpuRam, Gpu, Disk }
 
         // Reserve: worst-case string to measure for stable column width. Null = use live Value width.
-        private class MetricItem { public string Label { get; set; } = ""; public string Value { get; set; } = ""; public string? Reserve { get; set; } = null; }
+        private class MetricItem
+        {
+            public string Label { get; set; } = "";
+            public string Value { get; set; } = "";
+            public string? Reserve { get; set; } = null;
+
+            /// <summary>Samples to draw as a sparkline, or null for a metric with no useful history.</summary>
+            public Series? History { get; set; }
+
+            /// <summary>Full-scale value for the sparkline. 0 autoscales to the series peak.</summary>
+            public float GraphMax { get; set; } = 100f;
+        }
 
         private sealed class MetricColumn
         {
@@ -485,6 +498,12 @@ namespace Kil0bitSystemMonitor
             float podGap = Math.Max(0, _config.Config.ColumnSpacing) * scale;  // user-controlled column spacing
             float pad = (pods ? 4 : 0) * scale;             // pod inner horizontal padding
 
+            // Graph slot geometry derives from the font height, not from `scale`. `scale` includes
+            // _dpiScale while textScale does not, and the offscreen Graphics is always 96dpi, so a
+            // scale-derived slot would drift away from the glyphs at 150%.
+            bool graphs = _config.Config.ShowGraphs;
+            float graphSlot = graphs ? MathF.Round(font.Height * 2.5f) : 0f;
+
             float[] widths = new float[columns.Count];
             float total = 2 * scale;                         // left outer margin
             for (int i = 0; i < columns.Count; i++)
@@ -494,7 +513,10 @@ namespace Kil0bitSystemMonitor
                     if (item == null) return 0;
                     // Use the reserve string width when available so the column never resizes on value change
                     float valW = item.Reserve != null ? GetCachedMeasure(item.Reserve, font) : GetCachedMeasure(item.Value, font);
-                    return GetCachedMeasure(item.Label, font) + gap + valW;
+                    // A fixed-width graph slot keeps the total width constant, so enabling graphs
+                    // does not make the window resize as values change.
+                    float graphW = (graphs && item.History != null) ? graphSlot + gap : 0f;
+                    return GetCachedMeasure(item.Label, font) + gap + graphW + valW;
                 }
 
                 widths[i] = Math.Max(GetItemWidth(col.Top), GetItemWidth(col.Bottom)) + (pad * 2);
@@ -568,7 +590,13 @@ namespace Kil0bitSystemMonitor
                 Action<MetricItem, float> drawItem = (item, y) => {
                     float lw = GetCachedMeasure(item.Label, font);
                     _offscreenGraphics.DrawString(item.Label, font, sectionLBrush, contentX, y, StringFormat.GenericTypographic);
-                    _offscreenGraphics.DrawString(item.Value, font, sectionVBrush, contentX + lw + gap, y, StringFormat.GenericTypographic);
+                    float vx = contentX + lw + gap;
+                    if (graphs && item.History != null)
+                    {
+                        DrawSparkline(_offscreenGraphics, item, vx, y, graphSlot, lineH, sectionVBrush);
+                        vx += graphSlot + gap;
+                    }
+                    _offscreenGraphics.DrawString(item.Value, font, sectionVBrush, vx, y, StringFormat.GenericTypographic);
                 };
 
                 if (col.Top != null && col.Bottom != null)
@@ -599,33 +627,37 @@ namespace Kil0bitSystemMonitor
             bool compact = (_config.Config.DisplayStyle ?? "Text") == "Compact";
             var m = _viewModel.Metrics; var c = _config.Config;
 
-            MetricItem Pct(string f, string cp, string v)  => new MetricItem { Label = compact ? cp : f, Value = v, Reserve = "100%" };
-            MetricItem Temp(string f, string cp, string v) => new MetricItem { Label = compact ? cp : f, Value = v, Reserve = "100°" };
+            // Upload and download share one scale so a trickle of upload is not drawn as a
+            // saturated link. 0 would autoscale each direction independently.
+            float netMax = _history.SharedNetPeak;
+
+            MetricItem Pct(string f, string cp, string v, Series? hist = null)  => new MetricItem { Label = compact ? cp : f, Value = v, Reserve = "100%", History = hist, GraphMax = 100f };
+            MetricItem Temp(string f, string cp, string v, Series? hist = null) => new MetricItem { Label = compact ? cp : f, Value = v, Reserve = "100°", History = hist, GraphMax = 100f };
             // Reserve "1023 MB/s": widest net format before switching to GB/s (M glyph is wider than K)
-            MetricItem Net(string f, string cp, string v)  => new MetricItem { Label = compact ? cp : f, Value = v, Reserve = "1023 MB/s" };
+            MetricItem Net(string f, string cp, string v, Series? hist = null)  => new MetricItem { Label = compact ? cp : f, Value = v, Reserve = "1023 MB/s", History = hist, GraphMax = netMax };
 
             var list = new System.Collections.Generic.List<MetricColumn>();
 
             if (c.ShowNetUp || c.ShowNetDown)
                 list.Add(new MetricColumn {
                     Kind = SectionKind.Net,
-                    Top = c.ShowNetUp ? Net("UP ", "U", m.NetUpText) : null,
-                    Bottom = c.ShowNetDown ? Net("DN ", "D", m.NetDownText) : null,
+                    Top = c.ShowNetUp ? Net("UP ", "U", m.NetUpText, _history.NetUp) : null,
+                    Bottom = c.ShowNetDown ? Net("DN ", "D", m.NetDownText, _history.NetDown) : null,
                 });
 
             if (c.ShowCpu || c.ShowRam)
                 list.Add(new MetricColumn {
                     Kind = SectionKind.CpuRam,
-                    Top = c.ShowCpu ? Pct("CPU", "C", $"{(int)m.CpuUsage}%") : null,
-                    Bottom = c.ShowRam ? Pct("RAM", "R", $"{(int)m.RamPercent}%") : null,
+                    Top = c.ShowCpu ? Pct("CPU", "C", $"{(int)m.CpuUsage}%", _history.Cpu) : null,
+                    Bottom = c.ShowRam ? Pct("RAM", "R", $"{(int)m.RamPercent}%", _history.Ram) : null,
                 });
 
             string tempStr = m.GpuTemperature > 0 ? $"{(int)m.GpuTemperature}°" : "N/A";
             if (c.ShowGpu || c.ShowTemp)
                 list.Add(new MetricColumn {
                     Kind = SectionKind.Gpu,
-                    Top = c.ShowGpu ? Pct("GPU", "G", $"{(int)m.GpuUsage}%") : null,
-                    Bottom = c.ShowTemp ? Temp("TMP", "T", tempStr) : null,
+                    Top = c.ShowGpu ? Pct("GPU", "G", $"{(int)m.GpuUsage}%", _history.Gpu) : null,
+                    Bottom = c.ShowTemp ? Temp("TMP", "T", tempStr, _history.Temp) : null,
                 });
 
             if (c.ShowDisk || c.ShowDiskSpeed)
@@ -644,14 +676,68 @@ namespace Kil0bitSystemMonitor
 
                         list.Add(new MetricColumn {
                             Kind = SectionKind.Disk,
+                            // Used-space barely moves, so it gets no sparkline; activity does.
                             Top = c.ShowDisk ? Pct(cdkLabel, letter, $"{(int)d.SpacePercent}%") : null,
-                            Bottom = c.ShowDiskSpeed ? Pct("SPD", "S", $"{(int)d.ActivityPercent}%") : null,
+                            Bottom = c.ShowDiskSpeed ? Pct("SPD", "S", $"{(int)d.ActivityPercent}%", _history.Disk(d.Name)) : null,
                         });
                     }
                 }
             }
 
             return list;
+        }
+
+        // Reused across frames so drawing a sparkline allocates nothing in steady state.
+        private readonly RectangleF[] _barScratch = new RectangleF[128];
+        private RectangleF[]? _barsExact;
+
+        /// <summary>
+        /// Draws one metric's sparkline into the row's graph slot.
+        /// </summary>
+        /// <remarks>
+        /// Bars, not a polyline: a 1px antialiased line is only ~17% solid ink at this size and
+        /// reads as haze. Antialiasing is disabled for the bars and restored afterwards, because
+        /// the offscreen Graphics persists across frames.
+        /// </remarks>
+        private void DrawSparkline(Graphics g, MetricItem item, float x, float y, float w, float rowH, Brush brush)
+        {
+            var series = item.History;
+            if (series == null || w <= 0 || rowH <= 0) return;
+
+            float h = Math.Max(3f, rowH - 3f);
+            float top = y + (rowH - h) / 2f;
+
+            // An unreadable sensor gets a baseline rule, never bars. Zero-height bars would look
+            // identical to a genuinely idle sensor.
+            if (series.Availability != Availability.Value)
+            {
+                var prev = g.SmoothingMode;
+                g.SmoothingMode = SmoothingMode.None;
+                using (var pen = new Pen(Color.FromArgb(60, 255, 255, 255), 1f))
+                    g.DrawLine(pen, x, top + h - 1f, x + w, top + h - 1f);
+                g.SmoothingMode = prev;
+                return;
+            }
+
+            float barW = Math.Max(1f, MathF.Round(h / 6f));
+            float gap = Math.Max(1f, MathF.Round(barW / 2f));
+
+            int n = Helpers.SparklineGeometry.Bars(series, w, h, item.GraphMax, barW, gap, _barScratch);
+            if (n <= 0) return;
+
+            // FillRectangles has no span overload, so keep an exact-length array. The bar count is
+            // stable frame to frame, so this allocates once rather than per frame.
+            if (_barsExact == null || _barsExact.Length != n) _barsExact = new RectangleF[n];
+            for (int i = 0; i < n; i++)
+            {
+                var r = _barScratch[i];
+                _barsExact[i] = new RectangleF(x + r.X, top + r.Y, r.Width, r.Height);
+            }
+
+            var previous = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.None;
+            g.FillRectangles(brush, _barsExact);
+            g.SmoothingMode = previous;
         }
 
         private void EnsureOffscreenBuffer(int w, int h)
@@ -717,7 +803,7 @@ namespace Kil0bitSystemMonitor
 
         public void Dispose()
         {
-            try { _telemetry.MetricsUpdated -= _onMetricsUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
+            try { if (_onHistoryUpdated != null) _history.Updated -= _onHistoryUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
         }
 
         private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)

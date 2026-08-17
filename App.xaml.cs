@@ -21,6 +21,7 @@ namespace Kil0bitSystemMonitor
         private OverlayWindow? m_overlay;
         private Kil0bitSystemMonitor.Services.TelemetryService? m_telemetry;
         private Kil0bitSystemMonitor.Services.ConfigService? m_config;
+        private Kil0bitSystemMonitor.Services.MetricsHistory? m_history;
         private static System.Threading.Mutex? s_mutex;
         public static SettingsWindow? SettingsWindow { get; private set; }
 
@@ -72,6 +73,11 @@ namespace Kil0bitSystemMonitor
             IntPtr dummyHWnd = new System.Windows.Interop.WindowInteropHelper(m_dummyWindow).Handle;
 
             m_telemetry = new Kil0bitSystemMonitor.Services.TelemetryService(config);
+
+            // Sits between telemetry and every renderer: it owns the single hop from the telemetry
+            // timer thread to the UI thread, so nothing downstream needs synchronisation.
+            m_history = new Kil0bitSystemMonitor.Services.MetricsHistory(m_telemetry, Dispatcher);
+
             var viewModel = new Kil0bitSystemMonitor.ViewModels.MainViewModel();
             viewModel.Config = config.Config;
 
@@ -80,7 +86,7 @@ namespace Kil0bitSystemMonitor
             
             Kil0bitSystemMonitor.Helpers.Win32Helper.SetAppIcon(dummyHWnd, iconPath);
             
-            m_overlay = new OverlayWindow(viewModel, config, m_telemetry);
+            m_overlay = new OverlayWindow(viewModel, config, m_telemetry, m_history);
 
             string[] args = System.Environment.GetCommandLineArgs();
             bool isStartup = System.Linq.Enumerable.Contains(args, "--startup");
@@ -110,6 +116,7 @@ namespace Kil0bitSystemMonitor
             try
             {
                 m_overlay?.Dispose();
+                m_history?.Dispose();
                 m_telemetry?.Dispose();
                 // Flushes any config change still inside the save debounce window.
                 m_config?.Dispose();

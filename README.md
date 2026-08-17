@@ -21,6 +21,12 @@ Built with C#, WPF, and raw Win32 power
 
 Kil0bit System Monitor is a modern successor to legacy taskbar monitors. It’s designed specifically for **Windows 11 power users** who need accurate, real-time metrics without the bloat of Electron or the overhead of high-level monitoring tools.
 
+### 🆕 New: iStat-style Graphs & Stats Panel
+- **📉 Live Sparklines** — enable **Live Graphs** to draw recent history beside every reading, right in the taskbar.
+- **📊 Stats Panel** — click the overlay for a dropdown with history graphs, per-logical-processor load, top processes by CPU, and a system summary.
+- **🔒 Honest Sensors** — a sensor that can't be read shows a baseline, never a zero that would look like "idle".
+- **🪶 Still Idle-Free** — process sampling runs only while the panel is open, so a closed panel costs nothing.
+
 ### 📊 Core Features
 - **🚀 Ultra-Lightweight** — Dropped WinUI 3 for a lean WPF + Win32 engine. Tiny binary, zero bloat.
 - **⚡ Ultra-Low Overhead** — Uses low-level Win32 APIs and GDI+ for near-zero CPU usage.

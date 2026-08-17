@@ -25,8 +25,37 @@ The overlay is a slim, elegant pill that sits directly on your **Windows 11 task
 - **GPU**: Raw load and temperatures from your graphics processor.
 - **DISK**: Real-time activity and storage usage for multiple drives simultaneously.
 
+### 📉 Live Graphs
+Turn on **Live Graphs** in **Appearance** to draw a small bar chart of recent history beside each
+reading, so you can see a trend rather than just an instant value. Graphs work in both Standard and
+Compact label modes, and a sensor that cannot be read shows a flat baseline rather than a
+misleading zero.
+
+---
+
+## 📊 The Stats Panel
+
+**Click the overlay** to open the stats panel — a dropdown with the detail the taskbar has no room
+for:
+
+- **History graphs** for processor, memory, graphics, network and storage.
+- **Per-logical-processor load**, one bar per thread.
+- **Top processes** by CPU, with their memory use.
+- **System summary**: processor model, graphics adapter, total memory, Windows build and uptime.
+
+Press **Esc** or click anywhere else to dismiss it. Process sampling only runs while the panel is
+open, so a closed panel costs nothing.
+
+If you would rather clicking never opened the panel, turn off **Panel on Click** in **Appearance**;
+the panel stays available from the right-click menu as **Show Stats Panel**.
+
+---
+
 ### 🖱️ Overlay Controls
-- **Drag & Move**: Left-click and drag the overlay to reposition it. *(Note: Only works when **Snap to Taskbar** is OFF and **Lock Position** is OFF).*
+- **Click**: Opens the stats panel.
+- **Drag & Move**: Press and drag the overlay to reposition it. A click that does not move opens
+  the panel instead, so both gestures share the same button. *(Dragging requires **Lock Position**
+  OFF.)*
 - **Snap to Taskbar**: When enabled, the overlay snaps to the taskbar area. Disable this to **free-float** the overlay anywhere on your screen.
 - **Toggle Lock**: Right-click the overlay and select **Lock Position** to prevent any accidental movement.
 - **Settings**: Right-click to quickly jump into the dashboard.

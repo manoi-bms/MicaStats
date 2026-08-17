@@ -114,6 +114,7 @@ namespace Kil0bitSystemMonitor.ViewModels
         private readonly MetricsHistory _history;
         private readonly AppConfig _config;
         private readonly Action _onHistoryUpdated;
+        private readonly ProcessSampler _processes = new();
         private bool _isLive;
         private bool _disposed;
 
@@ -137,12 +138,40 @@ namespace Kil0bitSystemMonitor.ViewModels
             Sections = new ObservableCollection<MetricSection> { _cpu, _memory, _gpu, _network, _disk };
             Cores = new ObservableCollection<CoreLoad>();
 
+            TopProcesses = new ObservableCollection<ProcessUsage>();
+
             _onHistoryUpdated = () => { if (IsLive) Refresh(); };
             _history.Updated += _onHistoryUpdated;
+            _processes.Updated += OnProcessesUpdated;
         }
 
         public ObservableCollection<MetricSection> Sections { get; }
         public ObservableCollection<CoreLoad> Cores { get; }
+
+        /// <summary>Highest CPU consumers, refreshed only while the panel is open.</summary>
+        public ObservableCollection<ProcessUsage> TopProcesses { get; }
+
+        public bool HasProcesses => TopProcesses.Count > 0;
+
+        /// <summary>
+        /// The sampler raises this on its own timer thread, so the collection update is marshalled
+        /// to the UI thread before touching anything bound.
+        /// </summary>
+        private void OnProcessesUpdated()
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null) return;
+
+            dispatcher.BeginInvoke(() =>
+            {
+                if (_disposed || !IsLive) return;
+
+                bool had = TopProcesses.Count > 0;
+                TopProcesses.Clear();
+                foreach (var p in _processes.TopByCpu) TopProcesses.Add(p);
+                if (had != (TopProcesses.Count > 0)) OnPropertyChanged(nameof(HasProcesses));
+            });
+        }
 
         /// <summary>
         /// Whether to keep the sections current. Set false when the panel closes so a hidden panel
@@ -156,7 +185,17 @@ namespace Kil0bitSystemMonitor.ViewModels
                 if (_isLive == value) return;
                 _isLive = value;
                 OnPropertyChanged();
+
+                // Process enumeration is the one genuinely costly sample, so it runs only while the
+                // panel is actually on screen.
+                _processes.Enabled = _isLive;
+
                 if (_isLive) Refresh();
+                else
+                {
+                    TopProcesses.Clear();
+                    OnPropertyChanged(nameof(HasProcesses));
+                }
             }
         }
 
@@ -324,6 +363,8 @@ namespace Kil0bitSystemMonitor.ViewModels
             if (_disposed) return;
             _disposed = true;
             _history.Updated -= _onHistoryUpdated;
+            _processes.Updated -= OnProcessesUpdated;
+            _processes.Dispose();
         }
     }
 }

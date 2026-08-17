@@ -1,8 +1,25 @@
+using System;
 using System.Windows.Media;
 using System.Linq;
+using System.Collections.Generic;
 
 namespace Kil0bitSystemMonitor.Models
 {
+    /// <summary>
+    /// Whether a metric series has usable data. A graph has no "N/A" glyph, so a series that
+    /// cannot be read must be distinguishable from one reading zero — otherwise a flat line at
+    /// the baseline asserts "idle" when the truth is "unreadable".
+    /// </summary>
+    public enum Availability
+    {
+        /// <summary>The sensor could not be read at all (no counter, no driver, access denied).</summary>
+        Unavailable,
+        /// <summary>The sensor works but no sample has arrived yet.</summary>
+        NoDataYet,
+        /// <summary>At least one real sample is present.</summary>
+        Value
+    }
+
     public class DiskMetric
     {
         public string Name { get; set; } = "";
@@ -15,7 +32,10 @@ namespace Kil0bitSystemMonitor.Models
         public float CpuUsage { get; set; }
         public float RamPercent { get; set; }
         public float GpuUsage { get; set; }
+
+        /// <summary>GPU temperature in Celsius, or -1 when no source could supply it.</summary>
         public float GpuTemperature { get; set; }
+
         public float NetUpKbps { get; set; }
         public float NetDownKbps { get; set; }
         public string NetUpText { get; set; } = "0 KB/s";
@@ -23,10 +43,31 @@ namespace Kil0bitSystemMonitor.Models
         public float DiskUsage { get; set; }
         public float DiskPercent { get; set; }
         public System.Collections.Generic.List<DiskMetric> Disks { get; set; } = new();
+
+        /// <summary>
+        /// Per-logical-processor usage, ordered by (NUMA node, index-within-node). Empty when
+        /// per-core sampling is unavailable. The array index is a display ordinal, not a
+        /// processor number — the counter's second field restarts per NUMA node.
+        /// </summary>
+        public float[] CoreUsage { get; set; } = System.Array.Empty<float>();
+
+        /// <summary>Total physical memory in bytes, or 0 if unknown.</summary>
+        public ulong RamTotalBytes { get; set; }
+
+        /// <summary>Physical memory currently in use in bytes, or 0 if unknown.</summary>
+        public ulong RamUsedBytes { get; set; }
     }
 
     public class AppConfig : System.ComponentModel.INotifyPropertyChanged
     {
+        /// <summary>
+        /// Schema version of the persisted file. Bumped when a field's meaning changes so a
+        /// future build can migrate rather than guess.
+        /// </summary>
+        public const int CurrentVersion = 1;
+
+        private int _configVersion = CurrentVersion;
+
         private bool _showOverlay = true;
         private bool _lockPosition = false;
         private bool _launchOnStartup = false;
@@ -59,8 +100,15 @@ namespace Kil0bitSystemMonitor.Models
         private int _updateInterval = 1000;
         private int _gpuIndex = 0;
         private bool _showPods = true;
-        private string _podColorHex = "#0FFFFFFF"; 
+        private string _podColorHex = "#0FFFFFFF";
         private bool _alwaysOnTop = true;
+
+        // Sparkline rendering. Deliberately orthogonal to DisplayStyle, which is really a
+        // label-width axis ("CPU" vs "C") — a third DisplayStyle value would make
+        // compact-labels-plus-graphs unexpressible.
+        private bool _showGraphs = false;
+        private int _graphHistorySeconds = 60;
+        private bool _showPanelOnClick = true;
 
         // Per-section label colors (null = use global LabelColorHex)
         private string? _netLabelColorHex = null;
@@ -73,57 +121,69 @@ namespace Kil0bitSystemMonitor.Models
         private string? _cpuRamAccentColorHex = null;
         private string? _gpuAccentColorHex = null;
         private string? _diskAccentColorHex = null;
-        public bool ShowOverlay { get => _showOverlay; set { _showOverlay = value; OnPropertyChanged(); } }
-        public bool LockPosition { get => _lockPosition; set { _lockPosition = value; OnPropertyChanged(); } }
-        public bool LaunchOnStartup { get => _launchOnStartup; set { _launchOnStartup = value; OnPropertyChanged(); } }
 
-        public bool ShowCpu { get => _showCpu; set { _showCpu = value; OnPropertyChanged(); } }
-        public bool ShowRam { get => _showRam; set { _showRam = value; OnPropertyChanged(); } }
-        public bool ShowGpu { get => _showGpu; set { _showGpu = value; OnPropertyChanged(); } }
-        public bool ShowTemp { get => _showTemp; set { _showTemp = value; OnPropertyChanged(); } }
-        public bool ShowDisk { get => _showDisk; set { _showDisk = value; OnPropertyChanged(); } }
-        public bool ShowDiskSpeed { get => _showDiskSpeed; set { _showDiskSpeed = value; OnPropertyChanged(); } }
-        public bool ShowNetUp { get => _showNetUp; set { _showNetUp = value; OnPropertyChanged(); } }
-        public bool ShowNetDown { get => _showNetDown; set { _showNetDown = value; OnPropertyChanged(); } }
+        public int ConfigVersion { get => _configVersion; set { Set(ref _configVersion, value); } }
 
-        public string NetworkAdapter { get => _networkAdapter; set { _networkAdapter = value; OnPropertyChanged(); } }
-        public string GpuAdapter { get => _gpuAdapter; set { _gpuAdapter = value; OnPropertyChanged(); } }
-        public string SelectedDisks { get => _selectedDisks; set { _selectedDisks = value; OnPropertyChanged(); } }
-        public string DisplayStyle { get => _displayStyle; set { _displayStyle = value; OnPropertyChanged(); } }
-        public string FontFamily { get => _fontFamily; set { _fontFamily = value; OnPropertyChanged(); } }
+        public bool ShowOverlay { get => _showOverlay; set { Set(ref _showOverlay, value); } }
+        public bool LockPosition { get => _lockPosition; set { Set(ref _lockPosition, value); } }
+        public bool LaunchOnStartup { get => _launchOnStartup; set { Set(ref _launchOnStartup, value); } }
 
-        public string AccentColorHex { get => _accentColorHex; set { _accentColorHex = value; OnPropertyChanged(); OnPropertyChanged(nameof(AccentColor)); } }
-        public string LabelColorHex { get => _labelColorHex; set { _labelColorHex = value; OnPropertyChanged(); OnPropertyChanged(nameof(LabelColor)); } }
-        public string BackgroundColorHex { get => _backgroundColorHex; set { _backgroundColorHex = value; OnPropertyChanged(); OnPropertyChanged(nameof(BackgroundColor)); } }
+        public bool ShowCpu { get => _showCpu; set { Set(ref _showCpu, value); } }
+        public bool ShowRam { get => _showRam; set { Set(ref _showRam, value); } }
+        public bool ShowGpu { get => _showGpu; set { Set(ref _showGpu, value); } }
+        public bool ShowTemp { get => _showTemp; set { Set(ref _showTemp, value); } }
+        public bool ShowDisk { get => _showDisk; set { Set(ref _showDisk, value); } }
+        public bool ShowDiskSpeed { get => _showDiskSpeed; set { Set(ref _showDiskSpeed, value); } }
+        public bool ShowNetUp { get => _showNetUp; set { Set(ref _showNetUp, value); } }
+        public bool ShowNetDown { get => _showNetDown; set { Set(ref _showNetDown, value); } }
 
-        public double ScaleFactor { get => _scaleFactor; set { _scaleFactor = value; OnPropertyChanged(); } }
-        public bool IsTextBold { get => _isTextBold; set { _isTextBold = value; OnPropertyChanged(); } }
-        public int ColumnSpacing { get => _columnSpacing; set { _columnSpacing = Math.Clamp(value, 0, 20); OnPropertyChanged(); } }
+        public string NetworkAdapter { get => _networkAdapter; set { Set(ref _networkAdapter, value); } }
+        public string GpuAdapter { get => _gpuAdapter; set { Set(ref _gpuAdapter, value); } }
+        public string SelectedDisks { get => _selectedDisks; set { Set(ref _selectedDisks, value); } }
+        public string DisplayStyle { get => _displayStyle; set { Set(ref _displayStyle, value); } }
+        public string FontFamily { get => _fontFamily; set { Set(ref _fontFamily, value); } }
 
-        public string Theme { get => _theme; set { _theme = value; OnPropertyChanged(); } }
-        public int UpdateInterval { get => _updateInterval; set { _updateInterval = value; OnPropertyChanged(); } }
-        public int GpuIndex { get => _gpuIndex; set { _gpuIndex = value; OnPropertyChanged(); } }
-        public bool ShowPods { get => _showPods; set { _showPods = value; OnPropertyChanged(); } }
-        public string PodColorHex { get => _podColorHex; set { _podColorHex = value; OnPropertyChanged(); OnPropertyChanged(nameof(PodColor)); } }
-        public bool AlwaysOnTop { get => _alwaysOnTop; set { _alwaysOnTop = value; OnPropertyChanged(); } }
+        public string AccentColorHex { get => _accentColorHex; set { if (Set(ref _accentColorHex, value)) OnPropertyChanged(nameof(AccentColor)); } }
+        public string LabelColorHex { get => _labelColorHex; set { if (Set(ref _labelColorHex, value)) OnPropertyChanged(nameof(LabelColor)); } }
+        public string BackgroundColorHex { get => _backgroundColorHex; set { if (Set(ref _backgroundColorHex, value)) OnPropertyChanged(nameof(BackgroundColor)); } }
+
+        public double ScaleFactor { get => _scaleFactor; set { Set(ref _scaleFactor, value); } }
+        public bool IsTextBold { get => _isTextBold; set { Set(ref _isTextBold, value); } }
+        public int ColumnSpacing { get => _columnSpacing; set { Set(ref _columnSpacing, Math.Clamp(value, 0, 20)); } }
+
+        public string Theme { get => _theme; set { Set(ref _theme, value); } }
+        public int UpdateInterval { get => _updateInterval; set { Set(ref _updateInterval, value); } }
+        public int GpuIndex { get => _gpuIndex; set { Set(ref _gpuIndex, value); } }
+        public bool ShowPods { get => _showPods; set { Set(ref _showPods, value); } }
+        public string PodColorHex { get => _podColorHex; set { if (Set(ref _podColorHex, value)) OnPropertyChanged(nameof(PodColor)); } }
+        public bool AlwaysOnTop { get => _alwaysOnTop; set { Set(ref _alwaysOnTop, value); } }
+
+        /// <summary>Render a live sparkline beside each metric value in the overlay.</summary>
+        public bool ShowGraphs { get => _showGraphs; set { Set(ref _showGraphs, value); } }
+
+        /// <summary>Seconds of history the detail panel graphs span.</summary>
+        public int GraphHistorySeconds { get => _graphHistorySeconds; set { Set(ref _graphHistorySeconds, Math.Clamp(value, 10, 300)); } }
+
+        /// <summary>Whether tapping the overlay opens the detail panel.</summary>
+        public bool ShowPanelOnClick { get => _showPanelOnClick; set { Set(ref _showPanelOnClick, value); } }
 
         // Per-section label colors (null/empty = inherit global LabelColorHex)
-        public string? NetLabelColorHex { get => _netLabelColorHex; set { _netLabelColorHex = value; OnPropertyChanged(); } }
-        public string? CpuRamLabelColorHex { get => _cpuRamLabelColorHex; set { _cpuRamLabelColorHex = value; OnPropertyChanged(); } }
-        public string? GpuLabelColorHex { get => _gpuLabelColorHex; set { _gpuLabelColorHex = value; OnPropertyChanged(); } }
-        public string? DiskLabelColorHex { get => _diskLabelColorHex; set { _diskLabelColorHex = value; OnPropertyChanged(); } }
+        public string? NetLabelColorHex { get => _netLabelColorHex; set { Set(ref _netLabelColorHex, value); } }
+        public string? CpuRamLabelColorHex { get => _cpuRamLabelColorHex; set { Set(ref _cpuRamLabelColorHex, value); } }
+        public string? GpuLabelColorHex { get => _gpuLabelColorHex; set { Set(ref _gpuLabelColorHex, value); } }
+        public string? DiskLabelColorHex { get => _diskLabelColorHex; set { Set(ref _diskLabelColorHex, value); } }
 
         // Per-section metric/accent colors (null/empty = inherit global AccentColorHex)
-        public string? NetAccentColorHex { get => _netAccentColorHex; set { _netAccentColorHex = value; OnPropertyChanged(); } }
-        public string? CpuRamAccentColorHex { get => _cpuRamAccentColorHex; set { _cpuRamAccentColorHex = value; OnPropertyChanged(); } }
-        public string? GpuAccentColorHex { get => _gpuAccentColorHex; set { _gpuAccentColorHex = value; OnPropertyChanged(); } }
-        public string? DiskAccentColorHex { get => _diskAccentColorHex; set { _diskAccentColorHex = value; OnPropertyChanged(); } }
+        public string? NetAccentColorHex { get => _netAccentColorHex; set { Set(ref _netAccentColorHex, value); } }
+        public string? CpuRamAccentColorHex { get => _cpuRamAccentColorHex; set { Set(ref _cpuRamAccentColorHex, value); } }
+        public string? GpuAccentColorHex { get => _gpuAccentColorHex; set { Set(ref _gpuAccentColorHex, value); } }
+        public string? DiskAccentColorHex { get => _diskAccentColorHex; set { Set(ref _diskAccentColorHex, value); } }
 
-        public double X { get => _x; set { _x = value; OnPropertyChanged(); } }
-        public double Y { get => _y; set { _y = value; OnPropertyChanged(); } }
-        public bool HideOnFullscreen { get => _hideOnFullscreen; set { _hideOnFullscreen = value; OnPropertyChanged(); } }
-        public bool StickToTaskbar { get => _stickToTaskbar; set { _stickToTaskbar = value; OnPropertyChanged(); } }
-        public bool ShowBackground { get => _showBackground; set { _showBackground = value; OnPropertyChanged(); } }
+        public double X { get => _x; set { Set(ref _x, value); } }
+        public double Y { get => _y; set { Set(ref _y, value); } }
+        public bool HideOnFullscreen { get => _hideOnFullscreen; set { Set(ref _hideOnFullscreen, value); } }
+        public bool StickToTaskbar { get => _stickToTaskbar; set { Set(ref _stickToTaskbar, value); } }
+        public bool ShowBackground { get => _showBackground; set { Set(ref _showBackground, value); } }
 
         [System.Text.Json.Serialization.JsonIgnore]
         public System.Windows.Media.Color AccentColor { get => HexToColor(AccentColorHex); set => AccentColorHex = ColorToHex(value); }
@@ -163,6 +223,20 @@ namespace Kil0bitSystemMonitor.Models
         }
 
         private string ColorToHex(System.Windows.Media.Color c) => $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}";
+
+        /// <summary>
+        /// Assigns a backing field and notifies only when the value actually changed.
+        /// Every notification triggers a full config file rewrite and an overlay repaint, so an
+        /// unguarded setter turns an idempotent assignment into disk I/O plus a re-render.
+        /// </summary>
+        /// <returns>True if the value changed and a notification was raised.</returns>
+        private bool Set<T>(ref T field, T value, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+            field = value;
+            OnPropertyChanged(name);
+            return true;
+        }
 
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)

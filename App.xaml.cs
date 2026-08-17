@@ -20,6 +20,7 @@ namespace Kil0bitSystemMonitor
         private Window? m_dummyWindow;
         private OverlayWindow? m_overlay;
         private Kil0bitSystemMonitor.Services.TelemetryService? m_telemetry;
+        private Kil0bitSystemMonitor.Services.ConfigService? m_config;
         private static System.Threading.Mutex? s_mutex;
         public static SettingsWindow? SettingsWindow { get; private set; }
 
@@ -55,6 +56,7 @@ namespace Kil0bitSystemMonitor
             if (m_overlay != null) return;
             
             var config = new Kil0bitSystemMonitor.Services.ConfigService();
+            m_config = config;
             
             m_dummyWindow = new Window();
             m_dummyWindow.Title = "Kil0bit System Monitor Host";
@@ -109,6 +111,8 @@ namespace Kil0bitSystemMonitor
             {
                 m_overlay?.Dispose();
                 m_telemetry?.Dispose();
+                // Flushes any config change still inside the save debounce window.
+                m_config?.Dispose();
                 m_dummyWindow?.Close();
                 s_mutex?.ReleaseMutex();
                 s_mutex?.Dispose();

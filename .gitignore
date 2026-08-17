@@ -499,3 +499,6 @@ obj/
 
 # Test artifacts
 [Tt]est[Rr]esults/
+
+# Local deployment staging (copied to Program Files by hand)
+deploy/

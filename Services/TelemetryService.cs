@@ -961,11 +961,14 @@ namespace Kil0bitSystemMonitor.Services
                     {
                         foreach (ManagementObject obj in results)
                         {
-                            try 
+                            try
                             {
                                 float k = Convert.ToSingle(obj["CurrentTemperature"]);
                                 float c = (k - 2732f) / 10f; // Tenths of Kelvin to Celsius
-                                if (c > 10 && c < 120) { temp = c; break; }
+                                // Hottest zone, not the first: firmware lists several zones
+                                // (CPU package, SoC, chassis) and the first is often a cool
+                                // skin sensor, which under-reports what the user cares about.
+                                if (c > 10 && c < 120) temp = Math.Max(temp, c);
                             }
                             finally { obj.Dispose(); }
                         }

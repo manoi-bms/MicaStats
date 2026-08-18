@@ -102,9 +102,14 @@ namespace Kil0bitSystemMonitor
 
             ApplyWindowAppearance(helper.Handle);
 
+            // SizeChanged passes its fresh layout size: the native window still has the OLD
+            // bounds at that moment, so positioning from GetWindowRect there used a stale
+            // height — with a bottom taskbar that height feeds "top = anchor - gap - height"
+            // directly and the panel landed at the wrong vertical position.
             SourceInitialized += (s, e) => Reposition();
-            SizeChanged += (s, e) => Reposition();
+            SizeChanged += (s, e) => Reposition(e.NewSize);
             DpiChanged += (s, e) => Reposition();
+            ContentRendered += (s, e) => Reposition();
             Deactivated += OnDeactivated;
             PreviewKeyDown += OnPreviewKeyDown;
             Activated += (s, e) => IsHoverMode = false; // clicking a hover dropdown pins it
@@ -133,7 +138,9 @@ namespace Kil0bitSystemMonitor
         /// Places the panel against the overlay, flipping above or below using the same rule the
         /// overlay's native context menu applies, and clamping to the monitor's work area.
         /// </summary>
-        public void Reposition()
+        public void Reposition() => Reposition(null);
+
+        private void Reposition(System.Windows.Size? freshDipSize)
         {
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero) return;
@@ -149,17 +156,40 @@ namespace Kil0bitSystemMonitor
             if (dpi == 0) dpi = 96;
             double scale = dpi / 96.0;
 
-            if (!GetWindowRect(hwnd, out Win32Helper.RECT self)) return;
-            int w = self.Right - self.Left;
-            int h = self.Bottom - self.Top;
-            if (w <= 0 || h <= 0) return;
-
             int gap = (int)Math.Round(AnchorGapDip * scale);
 
             IntPtr mon = MonitorFromWindow(reference, MONITOR_DEFAULTTONEAREST);
             var mi = new MONITORINFO { cbSize = (uint)Marshal.SizeOf(typeof(MONITORINFO)) };
             if (!GetMonitorInfo(mon, ref mi)) return;
             Win32Helper.RECT work = mi.rcWork;
+
+            // Never let the panel outgrow the work area: on short screens the fixed 880-DIP cap
+            // exceeded it, and after clamping the panel's bottom vanished behind the taskbar.
+            uint selfDpi = GetDpiForWindow(hwnd);
+            if (selfDpi == 0) selfDpi = dpi;
+            double selfScale = selfDpi / 96.0;
+            double workDipCap = Math.Max(200, (work.Bottom - work.Top - 2 * gap) / selfScale);
+            double targetMax = Math.Min(880, workDipCap);
+            if (Math.Abs(MaxHeight - targetMax) > 0.5) MaxHeight = targetMax; // re-layout re-runs Reposition
+
+            // The window's size, freshest source first: during SizeChanged the native window
+            // still carries its previous bounds, so the layout size must win over GetWindowRect
+            // or the flip-above equation positions with a stale height.
+            int w, h;
+            double dipW = freshDipSize?.Width ?? ActualWidth;
+            double dipH = freshDipSize?.Height ?? ActualHeight;
+            if (!double.IsNaN(dipW) && !double.IsNaN(dipH) && dipW > 0 && dipH > 0)
+            {
+                w = (int)Math.Round(dipW * selfScale);
+                h = (int)Math.Round(Math.Min(dipH, MaxHeight) * selfScale);
+            }
+            else if (GetWindowRect(hwnd, out Win32Helper.RECT self))
+            {
+                w = self.Right - self.Left;
+                h = self.Bottom - self.Top;
+            }
+            else return;
+            if (w <= 0 || h <= 0) return;
 
             // Flip above when the overlay sits in the lower half of the work area, matching the
             // context menu's behaviour so both popups feel the same.

@@ -549,6 +549,12 @@ namespace Kil0bitSystemMonitor
             /// glance even with graphs off.
             /// </summary>
             public float Level { get; set; } = -1f;
+
+            /// <summary>
+            /// One mini bar per entry instead of the single <see cref="Level"/> bar. Used by
+            /// the combined storage zone, where each bar is one drive's activity.
+            /// </summary>
+            public float[]? MultiLevels { get; set; }
         }
 
         private sealed class MetricColumn
@@ -754,22 +760,21 @@ namespace Kil0bitSystemMonitor
                 float textW, graphPart = 0f, levelPart = 0f;
                 if (col.Kind == SectionKind.Net)
                 {
-                    // Live-value widths: reserving worst-case strings ("↑ 1023 MB/s") left a
-                    // band of dead space in every module. The column now hugs its content and
-                    // only shifts when the digit count or unit genuinely changes.
-                    textW = Math.Max(
-                        col.Top != null ? MeasureNoCache(col.Top.Value, netFont) : 0f,
-                        col.Bottom != null ? MeasureNoCache(col.Bottom.Value, netFont) : 0f);
+                    // Live width with a typical-case floor (the Reserve string): worst-case
+                    // reservations left dead space, but a pure live width made the module
+                    // shrink and grow as digit counts changed, which read as flicker. The
+                    // floor covers the common range so the zone only moves on genuine
+                    // magnitude changes.
+                    textW = Math.Max(FlooredWidth(col.Top, netFont), FlooredWidth(col.Bottom, netFont));
                     if (graphs && (col.Top?.History != null || col.Bottom?.History != null)) graphPart = graphW + gap;
                 }
                 else
                 {
                     var item = (col.Top ?? col.Bottom)!;
-                    textW = Math.Max(
-                        GetCachedMeasure(item.Label, labelFont),
-                        MeasureNoCache(item.Value, valueFont));
+                    textW = Math.Max(GetCachedMeasure(item.Label, labelFont), FlooredWidth(item, valueFont));
                     if (graphs && item.History != null) graphPart = graphW + gap;
-                    if (item.Level >= 0f) levelPart = levelGap + levelW;
+                    int nBars = item.MultiLevels?.Length ?? (item.Level >= 0f ? 1 : 0);
+                    if (nBars > 0) levelPart = levelGap + nBars * levelW + (nBars - 1) * (2 * scale);
                 }
                 widths[i] = textW + graphPart + levelPart + pad * 2;
                 total += widths[i] + podGap;
@@ -842,18 +847,27 @@ namespace Kil0bitSystemMonitor
                     _offscreenGraphics.DrawString(item.Label, labelFont, StackedLabelBrush, contentX, ty, StringFormat.GenericTypographic);
                     _offscreenGraphics.DrawString(item.Value, valueFont, StackedValueBrush, contentX, ty + labelFont.Height, StringFormat.GenericTypographic);
 
-                    if (item.Level >= 0f)
+                    int barCount = item.MultiLevels?.Length ?? (item.Level >= 0f ? 1 : 0);
+                    if (barCount > 0)
                     {
-                        // Right-edge mini level bar: a dark track filled bottom-up with the
-                        // instant reading, so the level is visible even with graphs off.
-                        float bx = cx + widths[i] - pad - levelW;
+                        // Right-edge mini level bars: dark tracks filled bottom-up with the
+                        // instant reading. CPU/RAM/GPU carry one; the storage zone carries
+                        // one per drive.
+                        float miniGap = 2 * scale;
+                        float barsW = barCount * levelW + (barCount - 1) * miniGap;
+                        float bx = cx + widths[i] - pad - barsW;
                         float bh = textBlockH;
                         float by = (h - bh) / 2f;
-                        float fill = Math.Max(1f, Math.Clamp(item.Level, 0f, 100f) / 100f * bh);
                         var prevMode = _offscreenGraphics.SmoothingMode;
                         _offscreenGraphics.SmoothingMode = SmoothingMode.None;
-                        _offscreenGraphics.FillRectangle((SolidBrush)StackedTrackBrush, bx, by, levelW, bh);
-                        _offscreenGraphics.FillRectangle((SolidBrush)StackedGraphBrush, bx, by + bh - fill, levelW, fill);
+                        for (int b = 0; b < barCount; b++)
+                        {
+                            float level = item.MultiLevels != null ? item.MultiLevels[b] : item.Level;
+                            float fill = Math.Max(1f, Math.Clamp(level, 0f, 100f) / 100f * bh);
+                            float x0 = bx + b * (levelW + miniGap);
+                            _offscreenGraphics.FillRectangle((SolidBrush)StackedTrackBrush, x0, by, levelW, bh);
+                            _offscreenGraphics.FillRectangle((SolidBrush)StackedGraphBrush, x0, by + bh - fill, levelW, fill);
+                        }
                         _offscreenGraphics.SmoothingMode = prevMode;
                     }
                 }
@@ -875,45 +889,52 @@ namespace Kil0bitSystemMonitor
 
             var list = new System.Collections.Generic.List<MetricColumn>();
 
+            // Reserve strings are FLOORS, not worst cases: wide enough that everyday digit
+            // changes never move the layout, narrow enough to leave no dead space.
             if (c.ShowNetUp || c.ShowNetDown)
                 list.Add(new MetricColumn {
                     Kind = SectionKind.Net,
                     Panel = PanelSection.Network,
-                    Top = c.ShowNetUp ? Item("↑", "↑ " + m.NetUpText, "↑ 1023 MB/s", _history.NetUp, netMax) : null,
-                    Bottom = c.ShowNetDown ? Item("↓", "↓ " + m.NetDownText, "↓ 1023 MB/s", _history.NetDown, netMax) : null,
+                    Top = c.ShowNetUp ? Item("↑", "↑ " + m.NetUpText, "↑ 88.8 MB/s", _history.NetUp, netMax) : null,
+                    Bottom = c.ShowNetDown ? Item("↓", "↓ " + m.NetDownText, "↓ 88.8 MB/s", _history.NetDown, netMax) : null,
                 });
 
             if (c.ShowCpu)
-                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Panel = PanelSection.Cpu, Top = Item("CPU", $"{(int)m.CpuUsage}%", "100%", _history.Cpu, level: m.CpuUsage) });
+                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Panel = PanelSection.Cpu, Top = Item("CPU", $"{(int)m.CpuUsage}%", "88%", _history.Cpu, level: m.CpuUsage) });
             if (c.ShowRam)
-                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Panel = PanelSection.Memory, Top = Item("RAM", $"{(int)m.RamPercent}%", "100%", _history.Ram, level: m.RamPercent) });
+                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Panel = PanelSection.Memory, Top = Item("RAM", $"{(int)m.RamPercent}%", "88%", _history.Ram, level: m.RamPercent) });
             if (c.ShowGpu)
-                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("GPU", $"{(int)m.GpuUsage}%", "100%", _history.Gpu, level: m.GpuUsage) });
+                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("GPU", $"{(int)m.GpuUsage}%", "88%", _history.Gpu, level: m.GpuUsage) });
             if (c.ShowTemp)
             {
                 string tempStr = m.GpuTemperature > 0 ? $"{(int)m.GpuTemperature}°" : "N/A";
-                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("TMP", tempStr, "100°", _history.Temp) });
+                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("TMP", tempStr, "88°", _history.Temp) });
             }
 
-            if ((c.ShowDisk || c.ShowDiskSpeed) && m.Disks != null)
+            if ((c.ShowDisk || c.ShowDiskSpeed) && m.Disks != null && m.Disks.Count > 0)
             {
+                // One compact zone for every drive: the text follows the busiest drive and the
+                // right edge carries one mini bar per drive, so a machine with three drives
+                // shows one module instead of three. The Disks hover dropdown has the detail.
+                bool byActivity = c.ShowDiskSpeed;
+
+                DiskMetric busiest = m.Disks[0];
                 foreach (var d in m.Disks)
                 {
-                    string letter = d.Name;
-                    int colonIdx = letter.IndexOf(':');
-                    if (colonIdx > 0) letter = letter.Substring(colonIdx - 1, 1);
-                    else if (letter.Length > 0) letter = letter.Substring(0, 1);
-
-                    // Activity is the live signal, so it wins the single value slot; space-used
-                    // only shows when activity is switched off entirely.
-                    float value = c.ShowDiskSpeed ? d.ActivityPercent : d.SpacePercent;
-                    Series? hist = c.ShowDiskSpeed ? _history.Disk(d.Name) : null;
-                    list.Add(new MetricColumn {
-                        Kind = SectionKind.Disk,
-                        Panel = PanelSection.Disks,
-                        Top = Item(letter.ToUpper() + ":", $"{(int)value}%", "100%", hist),
-                    });
+                    float dv = byActivity ? d.ActivityPercent : d.SpacePercent;
+                    float bv = byActivity ? busiest.ActivityPercent : busiest.SpacePercent;
+                    if (dv > bv) busiest = d;
                 }
+
+                var levels = new float[m.Disks.Count];
+                for (int i = 0; i < m.Disks.Count; i++)
+                    levels[i] = byActivity ? m.Disks[i].ActivityPercent : m.Disks[i].SpacePercent;
+
+                float value = byActivity ? busiest.ActivityPercent : busiest.SpacePercent;
+                var zone = Item("DSK", $"{DriveLetter(busiest.Name)} {(int)value}%", "C 88%",
+                                byActivity ? _history.Disk(busiest.Name) : null);
+                zone.MultiLevels = levels;
+                list.Add(new MetricColumn { Kind = SectionKind.Disk, Panel = PanelSection.Disks, Top = zone });
             }
 
             return list;
@@ -1226,6 +1247,27 @@ namespace Kil0bitSystemMonitor
 
         // Live values change every tick; caching them would grow the measure cache without bound.
         private float MeasureNoCache(string t, Font f) => _measureGraphics == null ? 0f : _measureGraphics.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width;
+
+        /// <summary>"0 C:" (PerformanceCounter instance name) → "C".</summary>
+        private static string DriveLetter(string name)
+        {
+            int colonIdx = name.IndexOf(':');
+            if (colonIdx > 0) return name.Substring(colonIdx - 1, 1).ToUpperInvariant();
+            return name.Length > 0 ? name.Substring(0, 1).ToUpperInvariant() : "?";
+        }
+
+        /// <summary>
+        /// A value's display width: the live string, but never below the width of its Reserve
+        /// string. The floor keeps a zone from breathing as digits come and go (3% vs 10%);
+        /// the live part still lets it grow for genuinely long readings.
+        /// </summary>
+        private float FlooredWidth(MetricItem? item, Font f)
+        {
+            if (item == null) return 0f;
+            float w = MeasureNoCache(item.Value, f);
+            if (item.Reserve != null) w = Math.Max(w, GetCachedMeasure(item.Reserve, f));
+            return w;
+        }
         private void ClearCaches() { foreach (var f in _fontCache.Values) f.Dispose(); _fontCache.Clear(); _measureCache.Clear(); }
         private void SetBitmap(Bitmap bitmap)
         {

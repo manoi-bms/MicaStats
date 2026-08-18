@@ -56,6 +56,19 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>Physical memory currently in use in bytes, or 0 if unknown.</summary>
         public ulong RamUsedBytes { get; set; }
+
+        /// <summary>
+        /// Share of total CPU time spent in kernel mode ("% Privileged Time" of the totals
+        /// instance), or -1 when the counter could not be read. Drives the iStat-style
+        /// User/System split; 0 is a legitimate reading, so the sentinel must be negative.
+        /// </summary>
+        public float CpuSystem { get; set; } = -1f;
+
+        /// <summary>
+        /// Commit charge in use as a percentage of the commit limit, or 0 if unknown. The
+        /// closest Windows analogue to macOS "memory pressure" for the panel's second ring.
+        /// </summary>
+        public float CommitPercent { get; set; }
     }
 
     public class AppConfig : System.ComponentModel.INotifyPropertyChanged
@@ -109,6 +122,7 @@ namespace Kil0bitSystemMonitor.Models
         private bool _showGraphs = false;
         private int _graphHistorySeconds = 60;
         private bool _showPanelOnClick = true;
+        private bool _stackedTaskbar = true;
 
         // Per-section label colors (null = use global LabelColorHex)
         private string? _netLabelColorHex = null;
@@ -166,6 +180,14 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>Whether tapping the overlay opens the detail panel.</summary>
         public bool ShowPanelOnClick { get => _showPanelOnClick; set { Set(ref _showPanelOnClick, value); } }
+
+        /// <summary>
+        /// iStat-style taskbar layout: each metric is its own module with a small dim label
+        /// stacked above a bold value (network as paired ↑/↓ lines). Orthogonal to
+        /// DisplayStyle and ShowGraphs for the same reason ShowGraphs is — combining either
+        /// with stacking must stay expressible. Off = the classic two-row inline layout.
+        /// </summary>
+        public bool StackedTaskbar { get => _stackedTaskbar; set { Set(ref _stackedTaskbar, value); } }
 
         // Per-section label colors (null/empty = inherit global LabelColorHex)
         public string? NetLabelColorHex { get => _netLabelColorHex; set { Set(ref _netLabelColorHex, value); } }

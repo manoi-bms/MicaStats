@@ -453,6 +453,14 @@ namespace Kil0bitSystemMonitor.Services
                 metrics.RamPercent = (float)used / memStatus.ullTotalPhys * 100f;
                 metrics.RamTotalBytes = memStatus.ullTotalPhys;
                 metrics.RamUsedBytes = used;
+
+                // Commit charge, from the same struct: TotalPageFile is the commit limit and
+                // AvailPageFile the headroom, so no extra system call is needed.
+                if (memStatus.ullTotalPageFile > 0)
+                {
+                    ulong committed = memStatus.ullTotalPageFile - memStatus.ullAvailPageFile;
+                    metrics.CommitPercent = (float)(committed / (double)memStatus.ullTotalPageFile * 100.0);
+                }
             }
 
             // Per-core. Kept on this timer thread deliberately: the performance-counter library
@@ -624,6 +632,26 @@ namespace Kil0bitSystemMonitor.Services
                 }
 
                 metrics.CoreUsage = usage;
+
+                // Kernel-versus-user split from the same snapshot. The totals instance is named
+                // "_Total" on single-group machines and "0,_Total" per group elsewhere; both may
+                // exist, and "_Total" is the machine-wide one, so it is preferred.
+                var privileged = snapshot["% Privileged Time"];
+                if (privileged != null)
+                {
+                    var totalInstance = privileged["_Total"] ?? privileged["0,_Total"];
+                    if (totalInstance != null)
+                    {
+                        const string key = " priv_total"; // cannot collide with a real "N,M" instance name
+                        CounterSample current = totalInstance.Sample;
+                        if (_previousCoreSamples.TryGetValue(key, out CounterSample previous))
+                        {
+                            float value = CounterSampleCalculator.ComputeCounterValue(previous, current);
+                            metrics.CpuSystem = Math.Clamp(value, 0f, 100f);
+                        }
+                        _previousCoreSamples[key] = current;
+                    }
+                }
             }
             catch
             {

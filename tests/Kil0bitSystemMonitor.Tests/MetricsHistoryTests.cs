@@ -254,5 +254,36 @@ namespace Kil0bitSystemMonitor.Tests
             h.Dispose();
             h.Dispose();
         }
+
+        [Fact]
+        public void CpuSystem_records_the_kernel_share_capped_at_the_total()
+        {
+            using var h = new MetricsHistory(capacity: 8);
+
+            var m = Sample(cpu: 40);
+            m.CpuSystem = 12f;
+            h.Append(m);
+
+            // A racing pair of counter deltas can read system above total; the stacked graph
+            // must never draw the tip outside the bar.
+            var over = Sample(cpu: 30);
+            over.CpuSystem = 35f;
+            h.Append(over);
+
+            Assert.Equal(Availability.Value, h.CpuSystem.Availability);
+            Assert.Equal(12f, h.CpuSystem[0]);
+            Assert.Equal(30f, h.CpuSystem.Latest);
+        }
+
+        [Fact]
+        public void CpuSystem_sentinel_marks_the_series_unavailable_without_a_sample()
+        {
+            using var h = new MetricsHistory(capacity: 8);
+
+            h.Append(Sample(cpu: 40)); // Sample() leaves CpuSystem at the -1 sentinel
+
+            Assert.Equal(0, h.CpuSystem.Count);
+            Assert.Equal(Availability.Unavailable, h.CpuSystem.Availability);
+        }
     }
 }

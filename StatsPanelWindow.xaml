@@ -4,13 +4,14 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:vm="clr-namespace:Kil0bitSystemMonitor.ViewModels"
+    xmlns:ctrl="clr-namespace:Kil0bitSystemMonitor.Controls"
     Title="Kil0bit System Monitor Stats"
     WindowStyle="None"
     ResizeMode="NoResize"
     ShowInTaskbar="False"
     SizeToContent="Height"
-    Width="368"
-    MaxHeight="860"
+    Width="372"
+    MaxHeight="880"
     ShowActivated="True"
     Background="Transparent"
     Foreground="#E9EDEDF2"
@@ -21,220 +22,404 @@
     TextOptions.TextFormattingMode="Display">
 
     <!--
-      Foreground is set ON THE WINDOW deliberately: TextElement.Foreground inherits down the tree,
-      and without it every plain TextBlock falls back to WPF's default black on this dark panel.
+      iStat Menus 7 dark layout: rounded cards on a near-black plate, a strict two-hue data
+      palette (cyan primary, red counterpart), uppercase grey card headers with the live value
+      at the right, discrete-bar history graphs, and ring gauges.
+
+      Foreground is set ON THE WINDOW deliberately: TextElement.Foreground inherits down the
+      tree, and without it every plain TextBlock falls back to WPF's default black.
       RequestedTheme only swaps ModernWpf resource brushes; it does not touch plain TextBlocks.
 
       AllowsTransparency is deliberately NOT set (a per-pixel-alpha layered window can never be
-      rounded by DWM). Topmost is deliberately NOT set (the window is owned by the overlay's HWND
-      and inherits WS_EX_TOPMOST; setting it here would fight the overlay's z-order re-assert).
+      rounded by DWM). Topmost is deliberately NOT set (the window is owned by the overlay's
+      HWND and inherits WS_EX_TOPMOST; setting it here would fight the z-order re-assert).
     -->
 
     <Window.Resources>
-        <!-- Quarter-height gridlines behind every graph, the iStat signature. -->
-        <DrawingBrush x:Key="GraphGrid" TileMode="Tile" Viewport="0,0,320,14"
-                      ViewportUnits="Absolute" Stretch="None">
-            <DrawingBrush.Drawing>
-                <GeometryDrawing>
-                    <GeometryDrawing.Geometry>
-                        <LineGeometry StartPoint="0,13.5" EndPoint="320,13.5" />
-                    </GeometryDrawing.Geometry>
-                    <GeometryDrawing.Pen>
-                        <Pen Brush="#12FFFFFF" Thickness="1" />
-                    </GeometryDrawing.Pen>
-                </GeometryDrawing>
-            </DrawingBrush.Drawing>
-        </DrawingBrush>
+        <SolidColorBrush x:Key="DataCyan" Color="#3FD2E4" />
+        <SolidColorBrush x:Key="DataRed" Color="#FF5147" />
+        <SolidColorBrush x:Key="DimDot" Color="#55FFFFFF" />
 
-        <Style x:Key="SectionTitle" TargetType="TextBlock">
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="#F01A1A22" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <!-- Card title, e.g. "MEMORY". Uppercase is in the text itself; small caps look wrong at this size. -->
+        <Style x:Key="CardHeader" TargetType="TextBlock">
             <Setter Property="FontSize" Value="10.5" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="#8AEDEDF2" />
-            <Setter Property="Typography.Capitals" Value="AllSmallCaps" />
+            <Setter Property="Foreground" Value="#8CE9EDF2" />
         </Style>
 
-        <Style x:Key="StatLabel" TargetType="TextBlock">
+        <!-- The live value on a card's title row. -->
+        <Style x:Key="HeaderValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{StaticResource DataCyan}" />
+        </Style>
+
+        <Style x:Key="SubLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="9.5" />
-            <Setter Property="Foreground" Value="#66EDEDF2" />
+            <Setter Property="Foreground" Value="#6EE9EDF2" />
         </Style>
 
-        <Style x:Key="StatValue" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="11.5" />
+        <Style x:Key="LegendValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#DDEDEDF2" />
         </Style>
+
+        <Style x:Key="LegendDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="7" />
+            <Setter Property="Height" Value="7" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,1,5,0" />
+        </Style>
+
+        <!-- A big reading with its dotted label underneath (network Upload/Download). -->
+        <Style x:Key="BigValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#F2FFFFFF" />
+        </Style>
     </Window.Resources>
 
-    <Border x:Name="Root" Background="#F5131316" BorderBrush="#2AFFFFFF"
-            BorderThickness="1" CornerRadius="10">
+    <Border Background="#F70E0E13" BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="12">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="16,14,16,14">
+            <StackPanel Margin="10">
 
-                <!-- Identity header -->
-                <TextBlock Text="{Binding CpuName}" FontSize="12.5" FontWeight="SemiBold"
-                           Foreground="#F2EDEDF2" TextTrimming="CharacterEllipsis" />
-                <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
-                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding TotalRamText}" />
-                    <TextBlock Style="{StaticResource StatLabel}" Text="   " />
-                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding OsVersion}" />
-                    <TextBlock Style="{StaticResource StatLabel}" Text="   up " />
-                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding Uptime}" />
-                </StackPanel>
+                <!-- Identity card -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding CpuName}" FontSize="12.5" FontWeight="SemiBold"
+                                   Foreground="#F2FFFFFF" TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{Binding TotalRamText}" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="  ·  " />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{Binding OsVersion}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
 
-                <!-- Metric sections -->
-                <ItemsControl ItemsSource="{Binding Sections}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:MetricSection}">
-                            <StackPanel>
-                                <Rectangle Height="1" Fill="#14FFFFFF" Margin="0,12,0,10" />
+                <!-- CPU card -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,7">
+                            <TextBlock Style="{StaticResource CardHeader}" Text="CPU" />
+                            <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
+                                       Text="{Binding CpuValueText}" />
+                        </Grid>
 
-                                <!-- Title row: name left, live value right -->
-                                <Grid Margin="0,0,0,6">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Rectangle Width="3" Height="10" RadiusX="1.5" RadiusY="1.5"
-                                                   Fill="{Binding Accent}" VerticalAlignment="Center"
-                                                   Margin="0,0,6,0" />
-                                        <TextBlock Style="{StaticResource SectionTitle}"
-                                                   Text="{Binding Title}" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="{Binding Primary}"
-                                               FontSize="13.5" FontWeight="Bold"
-                                               Foreground="{Binding Accent}" />
-                                </Grid>
+                        <ctrl:HistoryBarGraph Height="56" Mode="Stacked" Max="100"
+                                              Series="{Binding CpuSeries}"
+                                              SecondarySeries="{Binding CpuSystemSeries}"
+                                              Tick="{Binding Tick}" />
 
-                                <!-- Gridded history graph -->
-                                <Border Width="320" Height="56" HorizontalAlignment="Left"
-                                        Background="{StaticResource GraphGrid}"
-                                        BorderBrush="#1CFFFFFF" BorderThickness="0,0,0,1"
-                                        ClipToBounds="True">
-                                    <Grid>
-                                        <Canvas ClipToBounds="True">
-                                            <Polygon Points="{Binding Area}"
-                                                     Fill="{Binding AreaFill}"
-                                                     Stroke="{Binding Accent}"
-                                                     StrokeThickness="1.2"
-                                                     StrokeLineJoin="Round" />
-                                        </Canvas>
-                                        <TextBlock Text="{Binding StatusText}" FontSize="10"
-                                                   Foreground="#55EDEDF2"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsAvailable}" Value="False">
-                                                            <Setter Property="Visibility" Value="Visible" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Grid>
-                                </Border>
+                        <!-- ● User x%   ● System y% -->
+                        <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+                            <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataCyan}" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{Binding CpuLegend1Label}"
+                                       VerticalAlignment="Center" Margin="0,0,5,0" />
+                            <TextBlock Style="{StaticResource LegendValue}" Text="{Binding CpuLegend1Value}"
+                                       VerticalAlignment="Center" Margin="0,0,16,0" />
+                            <Ellipse VerticalAlignment="Center" Margin="0,1,5,0" Width="7" Height="7">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="{StaticResource DimDot}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasCpuSplit}" Value="True">
+                                                <Setter Property="Fill" Value="{StaticResource DataRed}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{Binding CpuLegend2Label}"
+                                       VerticalAlignment="Center" Margin="0,0,5,0" />
+                            <TextBlock Style="{StaticResource LegendValue}" Text="{Binding CpuLegend2Value}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
 
-                                <!-- Per-core strip, fused under the processor graph only -->
-                                <ItemsControl ItemsSource="{Binding DataContext.Cores,
-                                                  RelativeSource={RelativeSource AncestorType=Window}}"
-                                              Margin="0,5,0,0" HorizontalAlignment="Left">
-                                    <ItemsControl.Style>
-                                        <Style TargetType="ItemsControl">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsCpu}" Value="True">
-                                                    <Setter Property="Visibility" Value="Visible" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ItemsControl.Style>
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <StackPanel Orientation="Horizontal" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="{x:Type vm:CoreLoad}">
-                                            <!-- One thin bottom-anchored bar per logical processor -->
-                                            <Border Width="9" Height="22" Margin="0,0,4,0"
-                                                    Background="#17FFFFFF">
-                                                <Rectangle Width="9" Fill="#4FC3F7"
-                                                           Height="{Binding BarHeight}"
-                                                           VerticalAlignment="Bottom" />
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                        <!-- One ring per logical processor -->
+                        <ItemsControl ItemsSource="{Binding Cores}" Margin="0,9,0,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:CoreLoad}">
+                                    <ctrl:RingGauge Width="19" Height="19" RingThickness="2.5"
+                                                    Margin="0,0,6,6"
+                                                    Value="{Binding Percent}"
+                                                    ToolTip="{Binding Label}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
 
-                                <!-- Stat trio -->
-                                <UniformGrid Columns="3" Margin="0,7,0,0" Width="320"
-                                             HorizontalAlignment="Left">
-                                    <UniformGrid.Resources>
-                                        <DataTemplate DataType="{x:Type vm:StatPair}">
-                                            <StackPanel Margin="0,0,8,0">
-                                                <TextBlock Style="{StaticResource StatLabel}"
-                                                           Text="{Binding Label}" />
-                                                <TextBlock Style="{StaticResource StatValue}"
-                                                           Text="{Binding Value}" Margin="0,1,0,0" />
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </UniformGrid.Resources>
-                                    <ContentPresenter Content="{Binding Stats[0]}" />
-                                    <ContentPresenter Content="{Binding Stats[1]}" />
-                                    <ContentPresenter Content="{Binding Stats[2]}" />
-                                </UniformGrid>
+                        <Grid Margin="0,4,0,0">
+                            <TextBlock Style="{StaticResource SubLabel}" Text="UPTIME" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
+                                       Text="{Binding UptimeText}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Memory card -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,9">
+                            <TextBlock Style="{StaticResource CardHeader}" Text="MEMORY" />
+                            <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
+                                       Text="{Binding MemoryRingText}" />
+                        </Grid>
+
+                        <!-- The two iStat rings: physical memory and commit charge -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Grid Width="76" Height="76" Margin="0,0,26,0">
+                                <ctrl:RingGauge RingThickness="5" Value="{Binding MemoryPercent}" />
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding MemoryRingText}" FontSize="15" FontWeight="SemiBold"
+                                               Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
+                                    <TextBlock Text="MEMORY" FontSize="7.5" Foreground="#6EE9EDF2"
+                                               HorizontalAlignment="Center" Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Width="76" Height="76">
+                                <ctrl:RingGauge RingThickness="5" Value="{Binding CommitPercent}" />
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding CommitRingText}" FontSize="15" FontWeight="SemiBold"
+                                               Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
+                                    <TextBlock Text="COMMIT" FontSize="7.5" Foreground="#6EE9EDF2"
+                                               HorizontalAlignment="Center" Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Breakdown rows: dot, label, value right -->
+                        <Grid Margin="0,10,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataCyan}" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="Used" VerticalAlignment="Center" />
                             </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                            <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
+                                       Text="{Binding MemUsedText}" />
+                        </Grid>
+                        <Grid Margin="0,4,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DimDot}" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="Free" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
+                                       Text="{Binding MemFreeText}" />
+                        </Grid>
+                        <Grid Margin="0,4,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataRed}" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="Committed" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
+                                       Text="{Binding MemCommitText}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-                <!-- Top processes -->
-                <StackPanel>
-                    <StackPanel.Style>
-                        <Style TargetType="StackPanel">
-                            <Setter Property="Visibility" Value="Collapsed" />
+                <!-- GPU card -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,2">
+                            <TextBlock Style="{StaticResource CardHeader}" Text="GPU" />
+                            <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
+                                       Text="{Binding GpuValueText}" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource SubLabel}" Text="{Binding GpuName}"
+                                   TextTrimming="CharacterEllipsis" Margin="0,0,0,8" />
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                            <Grid Width="48" Height="48" Margin="0,0,22,0">
+                                <ctrl:RingGauge RingThickness="3.5" Value="{Binding GpuPercent}" />
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding GpuValueText}" FontSize="10.5" FontWeight="SemiBold"
+                                               Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
+                                    <TextBlock Text="GPU" FontSize="6.5" Foreground="#6EE9EDF2"
+                                               HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Width="48" Height="48">
+                                <ctrl:RingGauge RingThickness="3.5" Value="{Binding GpuTempPercent}"
+                                                ProgressBrush="{StaticResource DataRed}" />
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding GpuTempText}" FontSize="10.5" FontWeight="SemiBold"
+                                               Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
+                                    <TextBlock Text="TMP" FontSize="6.5" Foreground="#6EE9EDF2"
+                                               HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <Grid>
+                            <ctrl:HistoryBarGraph Height="44" Mode="Bars" Max="100"
+                                                  Series="{Binding GpuSeries}"
+                                                  Tick="{Binding Tick}" />
+                            <TextBlock Text="This sensor could not be read on this system."
+                                       FontSize="9.5" Foreground="#55EDEDF2"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding GpuGraphAvailable}" Value="False">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Network card -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,9">
+                            <TextBlock Style="{StaticResource CardHeader}" Text="NETWORK" />
+                        </Grid>
+
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource BigValue}" Text="{Binding NetUpBigText}" />
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataRed}" />
+                                    <TextBlock Style="{StaticResource SubLabel}" Text="Upload" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                <TextBlock Style="{StaticResource BigValue}" Text="{Binding NetDownBigText}"
+                                           HorizontalAlignment="Right" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,2,0,0">
+                                    <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataCyan}" />
+                                    <TextBlock Style="{StaticResource SubLabel}" Text="Download" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Upload above the dashed axis, download below, one shared scale -->
+                        <ctrl:HistoryBarGraph Height="56" Mode="Mirrored"
+                                              Series="{Binding NetDownSeries}"
+                                              SecondarySeries="{Binding NetUpSeries}"
+                                              Max="{Binding NetGraphMax}"
+                                              Tick="{Binding Tick}" />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+                            <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataRed}" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="Peak ↑" VerticalAlignment="Center" Margin="0,0,5,0" />
+                            <TextBlock Style="{StaticResource LegendValue}" Text="{Binding NetPeakUpText}"
+                                       VerticalAlignment="Center" Margin="0,0,16,0" />
+                            <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataCyan}" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="Peak ↓" VerticalAlignment="Center" Margin="0,0,5,0" />
+                            <TextBlock Style="{StaticResource LegendValue}" Text="{Binding NetPeakDownText}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Disks card -->
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasProcesses}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible" />
+                                <DataTrigger Binding="{Binding HasDisks}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
-                    </StackPanel.Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,7">
+                            <TextBlock Style="{StaticResource CardHeader}" Text="DISKS" />
+                            <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
+                                       Text="{Binding DiskValueText}" />
+                        </Grid>
 
-                    <Rectangle Height="1" Fill="#14FFFFFF" Margin="0,12,0,10" />
-                    <Grid Margin="0,0,0,7">
-                        <TextBlock Style="{StaticResource SectionTitle}" Text="Top Processes" />
-                        <TextBlock Style="{StaticResource StatLabel}" Text="share of total CPU"
-                                   HorizontalAlignment="Right" VerticalAlignment="Center" />
-                    </Grid>
+                        <ctrl:HistoryBarGraph Height="44" Mode="Bars" Max="100"
+                                              Series="{Binding DiskSeries}"
+                                              Tick="{Binding Tick}" />
 
-                    <ItemsControl ItemsSource="{Binding TopProcesses}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="0,0,0,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="64" />
-                                        <ColumnDefinition Width="46" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Name}" FontSize="11"
-                                               Foreground="#CFEDEDF2"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Column="1" Text="{Binding WorkingSetText}"
-                                               FontSize="10" Foreground="#66EDEDF2"
-                                               TextAlignment="Right" Margin="0,0,10,0"
-                                               VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="2" Text="{Binding CpuText}"
-                                               FontSize="11" FontWeight="SemiBold"
-                                               Foreground="#4FC3F7" TextAlignment="Right" />
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
+                        <ItemsControl ItemsSource="{Binding DiskRows}" Margin="0,7,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:DiskRow}">
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="44" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Name}" FontSize="11" Foreground="#CFEDEDF2" />
+                                        <TextBlock Grid.Column="1" Style="{StaticResource SubLabel}"
+                                                   Text="{Binding Space}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Activity}" FontSize="11"
+                                                   FontWeight="SemiBold" Foreground="{StaticResource DataCyan}"
+                                                   TextAlignment="Right" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Processes card -->
+                <Border Margin="0">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                            <Setter Property="Margin" Value="0" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasProcesses}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,7">
+                            <TextBlock Style="{StaticResource CardHeader}" Text="PROCESSES"
+                                       Foreground="{StaticResource DataCyan}" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="CPU"
+                                       HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding TopProcesses}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="46" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Name}" FontSize="11"
+                                                   Foreground="#E0EDEDF2"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="1" Text="{Binding WorkingSetText}"
+                                                   FontSize="10" Foreground="#6EE9EDF2"
+                                                   TextAlignment="Right" Margin="0,0,10,0"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{Binding CpuText}"
+                                                   FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource DataCyan}" TextAlignment="Right" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
     </Border>

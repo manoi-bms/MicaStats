@@ -160,6 +160,14 @@ namespace Kil0bitSystemMonitor.Services
         private bool _disposed;
 
         public Series Cpu { get; }
+
+        /// <summary>
+        /// Kernel-mode share of total CPU, for the stacked User/System graph. Unavailable when
+        /// the "% Privileged Time" counter cannot be read; the graph then falls back to a
+        /// single-colour bar rather than asserting "no system time".
+        /// </summary>
+        public Series CpuSystem { get; }
+
         public Series Ram { get; }
         public Series Gpu { get; }
         public Series Temp { get; }
@@ -186,6 +194,7 @@ namespace Kil0bitSystemMonitor.Services
             _capacity = capacity;
 
             Cpu = new Series(capacity);
+            CpuSystem = new Series(capacity);
             Ram = new Series(capacity);
             Gpu = new Series(capacity);
             Temp = new Series(capacity);
@@ -200,6 +209,7 @@ namespace Kil0bitSystemMonitor.Services
             _capacity = capacity;
 
             Cpu = new Series(capacity);
+            CpuSystem = new Series(capacity);
             Ram = new Series(capacity);
             Gpu = new Series(capacity);
             Temp = new Series(capacity);
@@ -240,6 +250,13 @@ namespace Kil0bitSystemMonitor.Services
             Latest = m;
 
             Cpu.Add(m.CpuUsage);
+
+            // -1 is the sampler's "counter unreadable". The value is also capped at the total:
+            // the two are computed from separate counter deltas, so a busy tick can race them
+            // slightly apart, and a system share above the total would draw outside the bar.
+            if (m.CpuSystem >= 0f) CpuSystem.Add(Math.Min(m.CpuSystem, m.CpuUsage));
+            else CpuSystem.AddUnavailable();
+
             Ram.Add(m.RamPercent);
             Gpu.Add(m.GpuUsage);
 

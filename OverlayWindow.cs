@@ -548,6 +548,7 @@ namespace Kil0bitSystemMonitor
         private void UpdateLayer()
         {
             if (_targetAlpha == 0 && _currentAlpha == 0) return;
+            if (_config.Config.StackedTaskbar) { UpdateLayerStacked(); return; }
             var columns = PrepareMetricsData();
             float scale = _dpiScale * (float)_config.Config.ScaleFactor;
             float textScale = (float)_config.Config.ScaleFactor;
@@ -684,6 +685,291 @@ namespace Kil0bitSystemMonitor
             if (kbps >= 1024 * 1024) return $"{(kbps / 1024f / 1024f):F1} GB/s";
             if (kbps >= 1024f) return $"{(kbps / 1024f):F1} MB/s";
             return $"{kbps:F0} KB/s";
+        }
+
+        // The stacked (iStat) taskbar uses a fixed palette rather than the per-section colour
+        // settings: dim grey labels, white values, cyan graphs, red for upload. Honouring
+        // arbitrary user colours here would break the single cohesive theme the mode exists
+        // to provide; the classic layout keeps full colour customisation.
+        private static readonly Brush StackedLabelBrush = new SolidBrush(Color.FromArgb(0xB0, 0xA6, 0xAC, 0xB4));
+        private static readonly Brush StackedValueBrush = new SolidBrush(Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF));
+        private static readonly Brush StackedGraphBrush = new SolidBrush(Color.FromArgb(0xFF, 0x3F, 0xD2, 0xE4));
+        private static readonly Brush StackedUpBrush = new SolidBrush(Color.FromArgb(0xFF, 0xFF, 0x51, 0x47));
+
+        /// <summary>
+        /// iStat-style layout: every metric is its own module with a small dim label stacked
+        /// above a bold value, network as paired ↑/↓ lines with a mirrored graph. Graph slots
+        /// span the full text-block height, so sparklines get roughly twice the resolution of
+        /// the classic single-row slot.
+        /// </summary>
+        private void UpdateLayerStacked()
+        {
+            var columns = PrepareStackedColumns();
+            float scale = _dpiScale * (float)_config.Config.ScaleFactor;
+            float textScale = (float)_config.Config.ScaleFactor;
+            bool pods = _config.Config.ShowPods;
+            string fontName = _config.Config.FontFamily;
+            if (string.IsNullOrEmpty(fontName) || fontName == "Default") fontName = "Segoe UI";
+            var valueStyle = _config.Config.IsTextBold ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
+
+            Font labelFont = GetCachedFont(fontName, 6.6f * textScale, System.Drawing.FontStyle.Regular);
+            Font valueFont = GetCachedFont(fontName, 9.0f * textScale, valueStyle);
+            Font netFont = GetCachedFont(fontName, 7.6f * textScale, valueStyle);
+
+            int h = (int)((pods ? 36 : 32) * scale);
+            float gap = 3 * scale;
+            float podGap = Math.Max(0, _config.Config.ColumnSpacing) * scale;
+            float pad = (pods ? 5 : 2) * scale;
+            bool graphs = _config.Config.ShowGraphs;
+
+            float textBlockH = labelFont.Height + valueFont.Height;
+            float netBlockH = netFont.Height * 2 + (1 * scale);
+            float graphH = Math.Max(textBlockH, netBlockH);
+            float graphW = graphs ? MathF.Round(graphH * 1.5f) : 0f;
+
+            float[] widths = new float[columns.Count];
+            float total = 2 * scale;
+            for (int i = 0; i < columns.Count; i++)
+            {
+                var col = columns[i];
+                float textW, graphPart = 0f;
+                if (col.Kind == SectionKind.Net)
+                {
+                    textW = Math.Max(
+                        col.Top != null ? GetCachedMeasure(col.Top.Reserve ?? col.Top.Value, netFont) : 0f,
+                        col.Bottom != null ? GetCachedMeasure(col.Bottom.Reserve ?? col.Bottom.Value, netFont) : 0f);
+                    if (graphs && (col.Top?.History != null || col.Bottom?.History != null)) graphPart = graphW + gap;
+                }
+                else
+                {
+                    var item = (col.Top ?? col.Bottom)!;
+                    textW = Math.Max(
+                        GetCachedMeasure(item.Label, labelFont),
+                        GetCachedMeasure(item.Reserve ?? item.Value, valueFont));
+                    if (graphs && item.History != null) graphPart = graphW + gap;
+                }
+                widths[i] = textW + graphPart + pad * 2;
+                total += widths[i] + podGap;
+            }
+            total = total - podGap + (2 * scale);
+
+            int w = (int)Math.Max(20, total);
+            EnsureOffscreenBuffer(w, h);
+            if (_offscreenGraphics == null || _offscreenBitmap == null) return;
+
+            _offscreenGraphics.Clear(Color.Transparent);
+            RenderBackground(_offscreenGraphics, w, h, scale);
+            RenderHoverEffect(_offscreenGraphics, w, h, scale);
+
+            bool ownPBrush = _cachedPodBrush == null;
+            Brush pBrush = _cachedPodBrush ?? new SolidBrush(Color.FromArgb(15, 255, 255, 255));
+            using var pPen = new Pen(Color.FromArgb(20, 255, 255, 255), 1);
+
+            float cx = 2 * scale;
+            for (int i = 0; i < columns.Count; i++)
+            {
+                var col = columns[i];
+                if (pods)
+                {
+                    using (var path = CreateRoundedRectPath((int)cx, (int)(2 * scale), (int)widths[i], (int)(h - 4 * scale), (int)(6 * scale)))
+                    { _offscreenGraphics.FillPath(pBrush, path); _offscreenGraphics.DrawPath(pPen, path); }
+                }
+
+                float contentX = cx + pad;
+
+                if (col.Kind == SectionKind.Net)
+                {
+                    if (graphs && (col.Top?.History != null || col.Bottom?.History != null))
+                    {
+                        float gy = (h - graphH) / 2f;
+                        float max = col.Top?.GraphMax ?? col.Bottom?.GraphMax ?? 1f;
+                        DrawMirroredSparkline(_offscreenGraphics, col.Top?.History, col.Bottom?.History,
+                            contentX, gy, graphW, graphH, StackedUpBrush, StackedGraphBrush, max);
+                        contentX += graphW + gap;
+                    }
+
+                    // A single enabled direction centres alone; two stack around the midline.
+                    if (col.Top != null && col.Bottom != null)
+                    {
+                        float ty = (h - netBlockH) / 2f;
+                        _offscreenGraphics.DrawString(col.Top.Value, netFont, StackedUpBrush, contentX, ty, StringFormat.GenericTypographic);
+                        _offscreenGraphics.DrawString(col.Bottom.Value, netFont, StackedGraphBrush, contentX, ty + netFont.Height + (1 * scale), StringFormat.GenericTypographic);
+                    }
+                    else
+                    {
+                        var single = col.Top ?? col.Bottom;
+                        if (single != null)
+                        {
+                            Brush b = col.Top != null ? StackedUpBrush : StackedGraphBrush;
+                            _offscreenGraphics.DrawString(single.Value, netFont, b, contentX, (h - netFont.Height) / 2f, StringFormat.GenericTypographic);
+                        }
+                    }
+                }
+                else
+                {
+                    var item = (col.Top ?? col.Bottom)!;
+                    if (graphs && item.History != null)
+                    {
+                        float gy = (h - graphH) / 2f;
+                        DrawSparklineRect(_offscreenGraphics, item.History, item.GraphMax, contentX, gy, graphW, graphH, StackedGraphBrush);
+                        contentX += graphW + gap;
+                    }
+
+                    float ty = (h - textBlockH) / 2f;
+                    _offscreenGraphics.DrawString(item.Label, labelFont, StackedLabelBrush, contentX, ty, StringFormat.GenericTypographic);
+                    _offscreenGraphics.DrawString(item.Value, valueFont, StackedValueBrush, contentX, ty + labelFont.Height, StringFormat.GenericTypographic);
+                }
+                cx += widths[i] + podGap;
+            }
+            SetBitmap(_offscreenBitmap);
+            if (ownPBrush) pBrush.Dispose();
+        }
+
+        /// <summary>Column list for the stacked layout: one module per metric, network combined.</summary>
+        private System.Collections.Generic.List<MetricColumn> PrepareStackedColumns()
+        {
+            var m = _viewModel.Metrics; var c = _config.Config;
+            float netMax = _history.SharedNetPeak;
+
+            MetricItem Item(string label, string value, string reserve, Series? hist, float max = 100f)
+                => new MetricItem { Label = label, Value = value, Reserve = reserve, History = hist, GraphMax = max };
+
+            var list = new System.Collections.Generic.List<MetricColumn>();
+
+            if (c.ShowNetUp || c.ShowNetDown)
+                list.Add(new MetricColumn {
+                    Kind = SectionKind.Net,
+                    Top = c.ShowNetUp ? Item("↑", "↑ " + m.NetUpText, "↑ 1023 MB/s", _history.NetUp, netMax) : null,
+                    Bottom = c.ShowNetDown ? Item("↓", "↓ " + m.NetDownText, "↓ 1023 MB/s", _history.NetDown, netMax) : null,
+                });
+
+            if (c.ShowCpu)
+                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Top = Item("CPU", $"{(int)m.CpuUsage}%", "100%", _history.Cpu) });
+            if (c.ShowRam)
+                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Top = Item("RAM", $"{(int)m.RamPercent}%", "100%", _history.Ram) });
+            if (c.ShowGpu)
+                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Top = Item("GPU", $"{(int)m.GpuUsage}%", "100%", _history.Gpu) });
+            if (c.ShowTemp)
+            {
+                string tempStr = m.GpuTemperature > 0 ? $"{(int)m.GpuTemperature}°" : "N/A";
+                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Top = Item("TMP", tempStr, "100°", _history.Temp) });
+            }
+
+            if ((c.ShowDisk || c.ShowDiskSpeed) && m.Disks != null)
+            {
+                foreach (var d in m.Disks)
+                {
+                    string letter = d.Name;
+                    int colonIdx = letter.IndexOf(':');
+                    if (colonIdx > 0) letter = letter.Substring(colonIdx - 1, 1);
+                    else if (letter.Length > 0) letter = letter.Substring(0, 1);
+
+                    // Activity is the live signal, so it wins the single value slot; space-used
+                    // only shows when activity is switched off entirely.
+                    float value = c.ShowDiskSpeed ? d.ActivityPercent : d.SpacePercent;
+                    Series? hist = c.ShowDiskSpeed ? _history.Disk(d.Name) : null;
+                    list.Add(new MetricColumn {
+                        Kind = SectionKind.Disk,
+                        Top = Item(letter.ToUpper() + ":", $"{(int)value}%", "100%", hist),
+                    });
+                }
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// Dense full-height sparkline for the stacked layout. Bar sizing derives from the slot
+        /// height so the taller slot gets thin iStat-style bars rather than scaled-up chunks.
+        /// </summary>
+        private void DrawSparklineRect(Graphics g, Series? series, float max, float x, float y, float w, float h, Brush brush)
+        {
+            if (series == null || w <= 0 || h <= 0) return;
+
+            if (series.Availability != Availability.Value)
+            {
+                var prevMode = g.SmoothingMode;
+                g.SmoothingMode = SmoothingMode.None;
+                using (var pen = new Pen(Color.FromArgb(60, 255, 255, 255), 1f))
+                    g.DrawLine(pen, x, y + h - 1f, x + w, y + h - 1f);
+                g.SmoothingMode = prevMode;
+                return;
+            }
+
+            float barW = Math.Max(1f, MathF.Round(h / 12f));
+            float barGap = Math.Max(1f, MathF.Round(barW / 2f));
+
+            int n = Helpers.SparklineGeometry.Bars(series, w, h, max, barW, barGap, _barScratch);
+            if (n <= 0) return;
+
+            var rects = new RectangleF[n];
+            for (int i = 0; i < n; i++)
+            {
+                var r = _barScratch[i];
+                rects[i] = new RectangleF(x + r.X, y + r.Y, r.Width, r.Height);
+            }
+
+            var prev = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.None;
+            g.FillRectangles(brush, rects);
+            g.SmoothingMode = prev;
+        }
+
+        /// <summary>
+        /// Upload above and download below a dashed centre axis, one shared scale — the iStat
+        /// network graph. Either series may be null when that direction is disabled.
+        /// </summary>
+        private void DrawMirroredSparkline(Graphics g, Series? up, Series? down, float x, float y, float w, float h, Brush upBrush, Brush downBrush, float max)
+        {
+            if (w <= 0 || h <= 0) return;
+
+            float axis = MathF.Round(y + h / 2f);
+            float half = h / 2f - 1f;
+            if (half < 2f) return;
+
+            float barW = Math.Max(1f, MathF.Round(half / 6f));
+            float barGap = Math.Max(1f, MathF.Round(barW / 2f));
+
+            var prev = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.None;
+
+            if (up != null && up.Availability == Availability.Value)
+            {
+                int n = Helpers.SparklineGeometry.Bars(up, w, half, max, barW, barGap, _barScratch);
+                if (n > 0)
+                {
+                    var rects = new RectangleF[n];
+                    for (int i = 0; i < n; i++)
+                    {
+                        var r = _barScratch[i];
+                        rects[i] = new RectangleF(x + r.X, axis - r.Height, r.Width, r.Height);
+                    }
+                    g.FillRectangles(upBrush, rects);
+                }
+            }
+
+            if (down != null && down.Availability == Availability.Value)
+            {
+                int n = Helpers.SparklineGeometry.Bars(down, w, half, max, barW, barGap, _barScratch);
+                if (n > 0)
+                {
+                    var rects = new RectangleF[n];
+                    for (int i = 0; i < n; i++)
+                    {
+                        var r = _barScratch[i];
+                        rects[i] = new RectangleF(x + r.X, axis + 1f, r.Width, r.Height);
+                    }
+                    g.FillRectangles(downBrush, rects);
+                }
+            }
+
+            using (var axisPen = new Pen(Color.FromArgb(70, 255, 255, 255), 1f))
+            {
+                axisPen.DashStyle = DashStyle.Dash;
+                g.DrawLine(axisPen, x, axis, x + w, axis);
+            }
+
+            g.SmoothingMode = prev;
         }
 
         private System.Collections.Generic.List<MetricColumn> PrepareMetricsData()

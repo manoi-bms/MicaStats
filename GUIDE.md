@@ -25,23 +25,40 @@ The overlay is a slim, elegant pill that sits directly on your **Windows 11 task
 - **GPU**: Raw load and temperatures from your graphics processor.
 - **DISK**: Real-time activity and storage usage for multiple drives simultaneously.
 
+### 🍏 iStat-Style Taskbar (default)
+The overlay ships in a stacked layout modelled on iStat Menus for macOS: every metric is its own
+module with a small dim label above a bold value, and network shows paired **↑ upload / ↓ download**
+lines (red up, cyan down). With **Live Graphs** on, each module gains a full-height mini bar chart,
+and network gets a mirrored up/down graph around a dashed axis — the iStat signature.
+
+Prefer the classic single-row layout? Turn off **iStat Taskbar (stacked)** in **Appearance**; the
+classic mode keeps all per-section colour customisation. The stacked mode uses a fixed palette
+(grey labels, white values, cyan graphs) so it always looks cohesive.
+
 ### 📉 Live Graphs
 Turn on **Live Graphs** in **Appearance** to draw a small bar chart of recent history beside each
-reading, so you can see a trend rather than just an instant value. Graphs work in both Standard and
-Compact label modes, and a sensor that cannot be read shows a flat baseline rather than a
+reading, so you can see a trend rather than just an instant value. Graphs work in stacked, Standard
+and Compact label modes, and a sensor that cannot be read shows a flat baseline rather than a
 misleading zero.
 
 ---
 
 ## 📊 The Stats Panel
 
-**Click the overlay** to open the stats panel — a dropdown with the detail the taskbar has no room
-for:
+**Click the overlay** to open the stats panel — an iStat Menus-style dropdown of dark rounded
+cards with the detail the taskbar has no room for:
 
-- **History graphs** for processor, memory, graphics, network and storage.
-- **Per-logical-processor load**, one bar per thread.
-- **Top processes** by CPU, with their memory use.
-- **System summary**: processor model, graphics adapter, total memory, Windows build and uptime.
+- **CPU card**: stacked User/System history bars, a ● User / ● System legend, one ring gauge per
+  logical processor, and uptime.
+- **Memory card**: MEMORY and COMMIT ring gauges with a Used / Free / Committed breakdown.
+- **GPU card**: usage and temperature rings above a history graph.
+- **Network card**: big upload/download readings and a mirrored ↑/↓ graph around a dashed axis,
+  with window peaks.
+- **Disks card**: activity history for the busiest drive plus a row per selected drive.
+- **Processes card**: top CPU consumers with their memory use.
+
+Everything follows the iStat two-hue rule — cyan for the primary series, red for its counterpart
+(System time, Upload) — on near-black cards.
 
 Press **Esc** or click anywhere else to dismiss it. Process sampling only runs while the panel is
 open, so a closed panel costs nothing.

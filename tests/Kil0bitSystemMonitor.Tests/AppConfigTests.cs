@@ -180,5 +180,18 @@ namespace Kil0bitSystemMonitor.Tests
             var c = new AppConfig();
             Assert.Equal(AppConfig.CurrentVersion, c.ConfigVersion);
         }
+
+        [Fact]
+        public void Stacked_taskbar_defaults_on_so_old_configs_inherit_the_new_look()
+        {
+            // Configs saved before the field existed deserialize without it and must land on
+            // true, which is what makes the iStat layout the default after an upgrade.
+            var c = new AppConfig();
+            Assert.True(c.StackedTaskbar);
+
+            var seen = Track(c);
+            c.StackedTaskbar = false;
+            Assert.Contains(nameof(AppConfig.StackedTaskbar), seen);
+        }
     }
 }

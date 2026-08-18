@@ -2,108 +2,12 @@ using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using System.Windows.Media;
-using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services;
 
-// UseWindowsForms and ImplicitUsings together put System.Drawing in scope, which collides with
-// System.Windows.Media on Color and Brush. This view model is WPF-facing, so bind the names there.
-using Color = System.Windows.Media.Color;
-using Brush = System.Windows.Media.Brush;
-
 namespace Kil0bitSystemMonitor.ViewModels
 {
-    /// <summary>One label/value cell of a section's statistics grid (e.g. "Peak" / "87%").</summary>
-    public sealed class StatPair : INotifyPropertyChanged
-    {
-        private string _value = "—";
-
-        public StatPair(string label) => Label = label;
-
-        public string Label { get; }
-
-        public string Value
-        {
-            get => _value;
-            set
-            {
-                if (_value == value) return;
-                _value = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Value)));
-            }
-        }
-
-        public event PropertyChangedEventHandler? PropertyChanged;
-    }
-
-    /// <summary>One row of the detail panel: a heading, readouts, a bar and a history graph.</summary>
-    public sealed class MetricSection : INotifyPropertyChanged
-    {
-        /// <summary>
-        /// Graph box in device-independent units. Fixed so the geometry helper can project into a
-        /// known size without the view having to report its layout back to the view model.
-        /// </summary>
-        public const double GraphWidth = 320;
-        public const double GraphHeight = 56;
-
-        private string _primary = "";
-        private string _secondary = "";
-        private double _percent;
-        private bool _isAvailable = true;
-        private string _statusText = "";
-        private PointCollection _area = new();
-
-        public MetricSection(string title, Color accent)
-        {
-            Title = title;
-            var stroke = new SolidColorBrush(accent);
-            stroke.Freeze();
-            Accent = stroke;
-            var fill = new SolidColorBrush(Color.FromArgb(52, accent.R, accent.G, accent.B));
-            fill.Freeze();
-            AreaFill = fill;
-        }
-
-        public string Title { get; }
-        public Brush Accent { get; }
-        public Brush AreaFill { get; }
-
-        /// <summary>Marks the processor section so the view can fuse the per-core strip under its graph.</summary>
-        public bool IsCpu { get; init; }
-
-        /// <summary>The section's statistics grid, fixed at construction; only values change.</summary>
-        public System.Collections.ObjectModel.ObservableCollection<StatPair> Stats { get; } = new();
-
-        /// <summary>Headline reading, e.g. "45%".</summary>
-        public string Primary { get => _primary; set => Set(ref _primary, value); }
-
-        /// <summary>Supporting detail, e.g. "9.8 / 16.0 GB". Empty when there is none.</summary>
-        public string Secondary { get => _secondary; set => Set(ref _secondary, value); }
-
-        /// <summary>0-100 for the horizontal bar.</summary>
-        public double Percent { get => _percent; set => Set(ref _percent, value); }
-
-        /// <summary>False when the sensor cannot be read; the view shows a notice instead of a graph.</summary>
-        public bool IsAvailable { get => _isAvailable; set => Set(ref _isAvailable, value); }
-
-        /// <summary>Why there is no graph, when <see cref="IsAvailable"/> is false.</summary>
-        public string StatusText { get => _statusText; set => Set(ref _statusText, value); }
-
-        /// <summary>Closed polygon for the filled history area, in graph-box coordinates.</summary>
-        public PointCollection Area { get => _area; set => Set(ref _area, value); }
-
-        public event PropertyChangedEventHandler? PropertyChanged;
-
-        private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
-        {
-            if (Equals(field, value)) return;
-            field = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-        }
-    }
-
-    /// <summary>One logical processor's current load.</summary>
+    /// <summary>One logical processor's current load, rendered as a small ring gauge.</summary>
     public sealed class CoreLoad : INotifyPropertyChanged
     {
         private double _percent;
@@ -124,22 +28,46 @@ namespace Kil0bitSystemMonitor.ViewModels
                 if (Math.Abs(_percent - value) < 0.01) return;
                 _percent = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Percent)));
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BarHeight)));
             }
         }
 
-        /// <summary>Bar height in the 22px-tall core strip.</summary>
-        public double BarHeight => Math.Max(1.0, _percent * 0.22);
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
+
+    /// <summary>One drive's row in the Disks card.</summary>
+    public sealed class DiskRow : INotifyPropertyChanged
+    {
+        private string _activity = "—";
+        private string _space = "";
+
+        public DiskRow(string name) => Name = name;
+
+        /// <summary>Drive letter(s), e.g. "C:".</summary>
+        public string Name { get; }
+
+        public string Activity
+        {
+            get => _activity;
+            set { if (_activity != value) { _activity = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Activity))); } }
+        }
+
+        public string Space
+        {
+            get => _space;
+            set { if (_space != value) { _space = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Space))); } }
+        }
 
         public event PropertyChangedEventHandler? PropertyChanged;
     }
 
     /// <summary>
-    /// Shapes <see cref="MetricsHistory"/> into bindable sections for the detail panel.
+    /// Shapes <see cref="MetricsHistory"/> into the iStat-style card layout: fixed cards
+    /// (CPU, Memory, GPU, Network, Disks, Processes) with explicit properties per readout.
     ///
     /// <para>
-    /// Recomputation is gated on <see cref="IsLive"/>. A closed panel does no work at all: no
-    /// geometry projection, no PointCollection rebuilds, no notifications.
+    /// Graphs bind to the history's <see cref="Series"/> instances directly and re-render off
+    /// <see cref="Tick"/>; this class only produces text, percentages and the tick. All of it
+    /// is gated on <see cref="IsLive"/>, so a closed panel does no work at all.
     /// </para>
     /// </summary>
     public sealed class StatsPanelViewModel : INotifyPropertyChanged, IDisposable
@@ -151,33 +79,13 @@ namespace Kil0bitSystemMonitor.ViewModels
         private bool _isLive;
         private bool _disposed;
 
-        private readonly MetricSection _cpu;
-        private readonly MetricSection _memory;
-        private readonly MetricSection _gpu;
-        private readonly MetricSection _network;
-        private readonly MetricSection _disk;
-
         public StatsPanelViewModel(MetricsHistory history, AppConfig config)
         {
             _history = history ?? throw new ArgumentNullException(nameof(history));
             _config = config ?? throw new ArgumentNullException(nameof(config));
 
-            _cpu = new MetricSection("Processor", Color.FromRgb(0x4F, 0xC3, 0xF7)) { IsCpu = true };
-            _memory = new MetricSection("Memory", Color.FromRgb(0x81, 0xC7, 0x84));
-            _gpu = new MetricSection("Graphics", Color.FromRgb(0xBA, 0x68, 0xC8));
-            _network = new MetricSection("Network", Color.FromRgb(0xFF, 0xB7, 0x4D));
-            _disk = new MetricSection("Storage", Color.FromRgb(0xE5, 0x73, 0x73));
-
-            // Fixed stat cells; Refresh only rewrites their values, so nothing rebinds per tick.
-            foreach (var l in new[] { "Average", "Peak", "Cores" }) _cpu.Stats.Add(new StatPair(l));
-            foreach (var l in new[] { "Used", "Free", "Peak" }) _memory.Stats.Add(new StatPair(l));
-            foreach (var l in new[] { "Temp", "Average", "Peak" }) _gpu.Stats.Add(new StatPair(l));
-            foreach (var l in new[] { "↓ Peak", "↑ Peak", "↓ Avg" }) _network.Stats.Add(new StatPair(l));
-            foreach (var l in new[] { "Average", "Peak", "Used" }) _disk.Stats.Add(new StatPair(l));
-
-            Sections = new ObservableCollection<MetricSection> { _cpu, _memory, _gpu, _network, _disk };
             Cores = new ObservableCollection<CoreLoad>();
-
+            DiskRows = new ObservableCollection<DiskRow>();
             TopProcesses = new ObservableCollection<ProcessUsage>();
 
             _onHistoryUpdated = () => { if (IsLive) Refresh(); };
@@ -185,13 +93,130 @@ namespace Kil0bitSystemMonitor.ViewModels
             _processes.Updated += OnProcessesUpdated;
         }
 
-        public ObservableCollection<MetricSection> Sections { get; }
+        // ---- graph sources (stable instances; the controls re-render off Tick) ----
+
+        public Series CpuSeries => _history.Cpu;
+        public Series CpuSystemSeries => _history.CpuSystem;
+        public Series GpuSeries => _history.Gpu;
+        public Series NetUpSeries => _history.NetUp;
+        public Series NetDownSeries => _history.NetDown;
+
+        private Series? _diskSeries;
+        /// <summary>History of the busiest selected drive; instance changes when the busiest drive does.</summary>
+        public Series? DiskSeries { get => _diskSeries; private set => Set(ref _diskSeries, value); }
+
+        private int _tick;
+        /// <summary>Monotonic sample counter; every graph invalidates when it changes.</summary>
+        public int Tick { get => _tick; private set => Set(ref _tick, value); }
+
+        // ---- CPU card ----
+
+        private string _cpuValueText = "—";
+        public string CpuValueText { get => _cpuValueText; private set => Set(ref _cpuValueText, value); }
+
+        private bool _hasCpuSplit;
+        /// <summary>True when the kernel/user split is readable; the legend then shows User/System.</summary>
+        public bool HasCpuSplit { get => _hasCpuSplit; private set => Set(ref _hasCpuSplit, value); }
+
+        private string _cpuLegend1Label = "Usage";
+        public string CpuLegend1Label { get => _cpuLegend1Label; private set => Set(ref _cpuLegend1Label, value); }
+
+        private string _cpuLegend1Value = "—";
+        public string CpuLegend1Value { get => _cpuLegend1Value; private set => Set(ref _cpuLegend1Value, value); }
+
+        private string _cpuLegend2Label = "Peak";
+        public string CpuLegend2Label { get => _cpuLegend2Label; private set => Set(ref _cpuLegend2Label, value); }
+
+        private string _cpuLegend2Value = "—";
+        public string CpuLegend2Value { get => _cpuLegend2Value; private set => Set(ref _cpuLegend2Value, value); }
+
+        private string _uptimeText = "";
+        public string UptimeText { get => _uptimeText; private set => Set(ref _uptimeText, value); }
+
+        // ---- Memory card ----
+
+        private double _memoryPercent;
+        public double MemoryPercent { get => _memoryPercent; private set => Set(ref _memoryPercent, value); }
+
+        private string _memoryRingText = "—";
+        public string MemoryRingText { get => _memoryRingText; private set => Set(ref _memoryRingText, value); }
+
+        private double _commitPercent;
+        public double CommitPercent { get => _commitPercent; private set => Set(ref _commitPercent, value); }
+
+        private string _commitRingText = "—";
+        public string CommitRingText { get => _commitRingText; private set => Set(ref _commitRingText, value); }
+
+        private string _memUsedText = "—";
+        public string MemUsedText { get => _memUsedText; private set => Set(ref _memUsedText, value); }
+
+        private string _memFreeText = "—";
+        public string MemFreeText { get => _memFreeText; private set => Set(ref _memFreeText, value); }
+
+        private string _memCommitText = "—";
+        public string MemCommitText { get => _memCommitText; private set => Set(ref _memCommitText, value); }
+
+        // ---- GPU card ----
+
+        private string _gpuValueText = "—";
+        public string GpuValueText { get => _gpuValueText; private set => Set(ref _gpuValueText, value); }
+
+        private double _gpuPercent;
+        public double GpuPercent { get => _gpuPercent; private set => Set(ref _gpuPercent, value); }
+
+        private double _gpuTempPercent;
+        public double GpuTempPercent { get => _gpuTempPercent; private set => Set(ref _gpuTempPercent, value); }
+
+        private string _gpuTempText = "—";
+        public string GpuTempText { get => _gpuTempText; private set => Set(ref _gpuTempText, value); }
+
+        private bool _gpuGraphAvailable = true;
+        public bool GpuGraphAvailable { get => _gpuGraphAvailable; private set => Set(ref _gpuGraphAvailable, value); }
+
+        // ---- Network card ----
+
+        private string _netUpBigText = "0 KB/s";
+        public string NetUpBigText { get => _netUpBigText; private set => Set(ref _netUpBigText, value); }
+
+        private string _netDownBigText = "0 KB/s";
+        public string NetDownBigText { get => _netDownBigText; private set => Set(ref _netDownBigText, value); }
+
+        private string _netPeakUpText = "—";
+        public string NetPeakUpText { get => _netPeakUpText; private set => Set(ref _netPeakUpText, value); }
+
+        private string _netPeakDownText = "—";
+        public string NetPeakDownText { get => _netPeakDownText; private set => Set(ref _netPeakDownText, value); }
+
+        private double _netGraphMax = 1;
+        /// <summary>Shared full-scale for both directions, so upload and download stay comparable.</summary>
+        public double NetGraphMax { get => _netGraphMax; private set => Set(ref _netGraphMax, value); }
+
+        // ---- Disks card ----
+
+        private string _diskValueText = "—";
+        public string DiskValueText { get => _diskValueText; private set => Set(ref _diskValueText, value); }
+
+        private bool _hasDisks;
+        public bool HasDisks { get => _hasDisks; private set => Set(ref _hasDisks, value); }
+
+        public ObservableCollection<DiskRow> DiskRows { get; }
+
+        // ---- shared collections ----
+
         public ObservableCollection<CoreLoad> Cores { get; }
 
         /// <summary>Highest CPU consumers, refreshed only while the panel is open.</summary>
         public ObservableCollection<ProcessUsage> TopProcesses { get; }
 
         public bool HasProcesses => TopProcesses.Count > 0;
+        public bool HasCores => Cores.Count > 0;
+
+        // ---- identity header ----
+
+        public string CpuName => SystemInfoProvider.Current.CpuName;
+        public string GpuName => SystemInfoProvider.Current.GpuName;
+        public string TotalRamText => SystemInfoProvider.Current.TotalRamText;
+        public string OsVersion => SystemInfoProvider.Current.OsVersion;
 
         /// <summary>
         /// The sampler raises this on its own timer thread, so the collection update is marshalled
@@ -214,7 +239,7 @@ namespace Kil0bitSystemMonitor.ViewModels
         }
 
         /// <summary>
-        /// Whether to keep the sections current. Set false when the panel closes so a hidden panel
+        /// Whether to keep the cards current. Set false when the panel closes so a hidden panel
         /// costs nothing.
         /// </summary>
         public bool IsLive
@@ -239,94 +264,117 @@ namespace Kil0bitSystemMonitor.ViewModels
             }
         }
 
-        public string CpuName => SystemInfoProvider.Current.CpuName;
-        public string GpuName => SystemInfoProvider.Current.GpuName;
-        public string TotalRamText => SystemInfoProvider.Current.TotalRamText;
-        public string OsVersion => SystemInfoProvider.Current.OsVersion;
-        public string Uptime => SystemInfoProvider.FormatUptime(SystemInfoProvider.Uptime);
-        public bool HasCores => Cores.Count > 0;
-
-        /// <summary>Re-derives every section from the current history. UI thread only.</summary>
+        /// <summary>Re-derives every card from the current history. UI thread only.</summary>
         public void Refresh()
         {
             if (_disposed) return;
 
             var m = _history.Latest;
 
-            UpdatePercentSection(_cpu, _history.Cpu, m.CpuUsage, $"{(int)m.CpuUsage}%", CoreSummary());
-            UpdatePercentSection(_memory, _history.Ram, m.RamPercent, $"{(int)m.RamPercent}%", MemorySummary(m));
-            UpdatePercentSection(_gpu, _history.Gpu, m.GpuUsage, $"{(int)m.GpuUsage}%", TempSummary(m));
+            // CPU
+            CpuValueText = $"{(int)m.CpuUsage}%";
+            bool split = _history.CpuSystem.Availability == Availability.Value;
+            HasCpuSplit = split;
+            if (split)
+            {
+                float sys = Math.Min(_history.CpuSystem.Latest, m.CpuUsage);
+                CpuLegend1Label = "User";
+                CpuLegend1Value = $"{(int)Math.Max(0f, m.CpuUsage - sys)}%";
+                CpuLegend2Label = "System";
+                CpuLegend2Value = $"{(int)sys}%";
+            }
+            else
+            {
+                CpuLegend1Label = "Usage";
+                CpuLegend1Value = $"{(int)m.CpuUsage}%";
+                CpuLegend2Label = "Peak";
+                CpuLegend2Value = $"{_history.Cpu.Max:F0}%";
+            }
+            UptimeText = SystemInfoProvider.FormatUptime(SystemInfoProvider.Uptime);
 
-            UpdateNetworkSection(m);
-            UpdateDiskSection(m);
+            // Memory
+            MemoryPercent = Math.Clamp(m.RamPercent, 0, 100);
+            MemoryRingText = $"{(int)m.RamPercent}%";
+            CommitPercent = Math.Clamp(m.CommitPercent, 0, 100);
+            CommitRingText = $"{(int)m.CommitPercent}%";
+            if (m.RamTotalBytes > 0)
+            {
+                MemUsedText = $"{m.RamUsedBytes / 1024d / 1024d / 1024d:F1} GB";
+                MemFreeText = $"{(m.RamTotalBytes - m.RamUsedBytes) / 1024d / 1024d / 1024d:F1} GB";
+            }
+            MemCommitText = $"{(int)m.CommitPercent}%";
+
+            // GPU
+            GpuValueText = $"{(int)m.GpuUsage}%";
+            GpuPercent = Math.Clamp(m.GpuUsage, 0, 100);
+            bool hasTemp = m.GpuTemperature > 0;
+            GpuTempPercent = hasTemp ? Math.Clamp(m.GpuTemperature, 0, 100) : 0;
+            GpuTempText = hasTemp ? $"{(int)m.GpuTemperature}°" : "—";
+            GpuGraphAvailable = _history.Gpu.Availability == Availability.Value;
+
+            // Network
+            NetUpBigText = m.NetUpText;
+            NetDownBigText = m.NetDownText;
+            NetPeakUpText = FormatKbps(_history.NetUp.Max);
+            NetPeakDownText = FormatKbps(_history.NetDown.Max);
+            NetGraphMax = Math.Max(1f, _history.SharedNetPeak);
+
+            UpdateDisks(m);
             UpdateCores(m);
-            UpdateStats(m);
 
-            OnPropertyChanged(nameof(Uptime));
             OnPropertyChanged(nameof(CpuName));
             OnPropertyChanged(nameof(GpuName));
             OnPropertyChanged(nameof(TotalRamText));
             OnPropertyChanged(nameof(OsVersion));
+
+            // Bump last: every HistoryBarGraph repaints once per refresh, after all text settled.
+            Tick = unchecked(_tick + 1);
         }
 
-        private string CoreSummary() =>
-            _history.Cores.Count > 0 ? $"{_history.Cores.Count} logical processors" : "";
-
-        private static string MemorySummary(SystemMetrics m)
-        {
-            if (m.RamTotalBytes == 0) return "";
-            double usedGb = m.RamUsedBytes / 1024d / 1024d / 1024d;
-            double totalGb = m.RamTotalBytes / 1024d / 1024d / 1024d;
-            return $"{usedGb:F1} / {totalGb:F1} GB";
-        }
-
-        private static string TempSummary(SystemMetrics m) =>
-            m.GpuTemperature > 0 ? $"{(int)m.GpuTemperature} °C" : "temperature unavailable";
-
-        private void UpdatePercentSection(MetricSection section, Series series, float value, string primary, string secondary)
-        {
-            section.Primary = primary;
-            section.Secondary = secondary;
-            section.Percent = Math.Clamp(value, 0, 100);
-            ApplyGraph(section, series, max: 100f);
-        }
-
-        private void UpdateNetworkSection(SystemMetrics m)
-        {
-            _network.Primary = $"↓ {m.NetDownText}";
-            _network.Secondary = $"↑ {m.NetUpText}";
-
-            // Both directions share one scale, so the bar shows download against the shared peak
-            // rather than against an absolute link speed we cannot know.
-            float peak = _history.SharedNetPeak;
-            _network.Percent = peak > 0 ? Math.Clamp(m.NetDownKbps / peak * 100f, 0, 100) : 0;
-            ApplyGraph(_network, _history.NetDown, max: peak);
-        }
-
-        private void UpdateDiskSection(SystemMetrics m)
+        private void UpdateDisks(SystemMetrics m)
         {
             if (m.Disks == null || m.Disks.Count == 0)
             {
-                _disk.Primary = "—";
-                _disk.Secondary = "no drives selected";
-                _disk.Percent = 0;
-                _disk.IsAvailable = false;
-                _disk.StatusText = "No drives are selected in Monitoring settings.";
-                _disk.Area = new PointCollection();
+                HasDisks = false;
+                DiskValueText = "—";
+                DiskSeries = null;
+                if (DiskRows.Count > 0) DiskRows.Clear();
                 return;
             }
 
-            // Show the busiest drive; the overlay already breaks out each one individually.
+            HasDisks = true;
+
+            // Headline and graph follow the busiest drive; the rows list every selected one.
             DiskMetric busiest = m.Disks[0];
             foreach (var d in m.Disks)
             {
                 if (d.ActivityPercent > busiest.ActivityPercent) busiest = d;
             }
+            DiskValueText = $"{(int)busiest.ActivityPercent}%";
 
-            _disk.Primary = $"{(int)busiest.ActivityPercent}%";
-            _disk.Secondary = $"{Trim(busiest.Name)} · {(int)busiest.SpacePercent}% used";
-            _disk.Percent = Math.Clamp(busiest.ActivityPercent, 0, 100);
-            ApplyGraph(_disk, _history.Disk(busiest.Name), max: 100f);
+            var series = _history.Disk(busiest.Name);
+            if (!ReferenceEquals(series, DiskSeries)) DiskSeries = series;
+
+            // Rebuild rows only when the drive set changes; otherwise update text in place.
+            bool sameSet = DiskRows.Count == m.Disks.Count;
+            if (sameSet)
+            {
+                for (int i = 0; i < m.Disks.Count; i++)
+                {
+                    if (!string.Equals(DiskRows[i].Name, Trim(m.Disks[i].Name), StringComparison.OrdinalIgnoreCase))
+                    { sameSet = false; break; }
+                }
+            }
+            if (!sameSet)
+            {
+                DiskRows.Clear();
+                foreach (var d in m.Disks) DiskRows.Add(new DiskRow(Trim(d.Name)));
+            }
+            for (int i = 0; i < m.Disks.Count; i++)
+            {
+                DiskRows[i].Activity = $"{(int)m.Disks[i].ActivityPercent}%";
+                DiskRows[i].Space = $"{(int)m.Disks[i].SpacePercent}% used";
+            }
         }
 
         private static string Trim(string instanceName)
@@ -354,44 +402,6 @@ namespace Kil0bitSystemMonitor.ViewModels
             if (had != Cores.Count) OnPropertyChanged(nameof(HasCores));
         }
 
-        /// <summary>Rewrites every section's statistics grid from the retained window.</summary>
-        private void UpdateStats(SystemMetrics m)
-        {
-            _cpu.Stats[0].Value = $"{_history.Cpu.Average:F0}%";
-            _cpu.Stats[1].Value = $"{_history.Cpu.Max:F0}%";
-            _cpu.Stats[2].Value = _history.Cores.Count > 0 ? _history.Cores.Count.ToString() : "—";
-
-            if (m.RamTotalBytes > 0)
-            {
-                double usedGb = m.RamUsedBytes / 1024d / 1024d / 1024d;
-                double freeGb = (m.RamTotalBytes - m.RamUsedBytes) / 1024d / 1024d / 1024d;
-                _memory.Stats[0].Value = $"{usedGb:F1} GB";
-                _memory.Stats[1].Value = $"{freeGb:F1} GB";
-            }
-            _memory.Stats[2].Value = $"{_history.Ram.Max:F0}%";
-
-            _gpu.Stats[0].Value = m.GpuTemperature > 0 ? $"{(int)m.GpuTemperature}°C" : "—";
-            _gpu.Stats[1].Value = $"{_history.Gpu.Average:F0}%";
-            _gpu.Stats[2].Value = $"{_history.Gpu.Max:F0}%";
-
-            _network.Stats[0].Value = FormatKbps(_history.NetDown.Max);
-            _network.Stats[1].Value = FormatKbps(_history.NetUp.Max);
-            _network.Stats[2].Value = FormatKbps(_history.NetDown.Average);
-
-            Series? busiest = null;
-            float space = 0;
-            if (m.Disks != null && m.Disks.Count > 0)
-            {
-                DiskMetric top = m.Disks[0];
-                foreach (var d in m.Disks) if (d.ActivityPercent > top.ActivityPercent) top = d;
-                busiest = _history.Disk(top.Name);
-                space = top.SpacePercent;
-            }
-            _disk.Stats[0].Value = busiest != null ? $"{busiest.Average:F0}%" : "—";
-            _disk.Stats[1].Value = busiest != null ? $"{busiest.Max:F0}%" : "—";
-            _disk.Stats[2].Value = busiest != null ? $"{space:F0}%" : "—";
-        }
-
         /// <summary>Renders a KB/s figure with the same unit thresholds the overlay uses.</summary>
         private static string FormatKbps(float kbps)
         {
@@ -400,50 +410,17 @@ namespace Kil0bitSystemMonitor.ViewModels
             return $"{kbps:F0} KB/s";
         }
 
-        /// <summary>
-        /// Projects a series into a closed polygon for the filled area chart. An unreadable sensor
-        /// yields no geometry and flips the section to unavailable, because a flat line at the
-        /// baseline would read as "idle" rather than "cannot be measured".
-        /// </summary>
-        private static void ApplyGraph(MetricSection section, Series? series, float max)
-        {
-            if (series == null || series.Availability != Availability.Value || series.Count == 0)
-            {
-                section.IsAvailable = false;
-                section.StatusText = series?.Availability == Availability.Unavailable
-                    ? "This sensor could not be read on this system."
-                    : "Collecting data…";
-                section.Area = new PointCollection();
-                return;
-            }
-
-            section.IsAvailable = true;
-            section.StatusText = "";
-
-            float w = (float)MetricSection.GraphWidth;
-            float h = (float)MetricSection.GraphHeight;
-
-            Span<System.Drawing.PointF> pts = stackalloc System.Drawing.PointF[512];
-            int n = SparklineGeometry.Project(series, w, h, max, pts);
-            if (n <= 0)
-            {
-                section.Area = new PointCollection();
-                return;
-            }
-
-            // Close the polygon along the baseline so it fills as an area rather than a stroke.
-            var poly = new PointCollection(n + 2);
-            poly.Add(new System.Windows.Point(pts[0].X, h));
-            for (int i = 0; i < n; i++) poly.Add(new System.Windows.Point(pts[i].X, pts[i].Y));
-            poly.Add(new System.Windows.Point(pts[n - 1].X, h));
-            poly.Freeze();
-            section.Area = poly;
-        }
-
         public event PropertyChangedEventHandler? PropertyChanged;
 
         private void OnPropertyChanged([CallerMemberName] string? name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+        private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+        {
+            if (System.Collections.Generic.EqualityComparer<T>.Default.Equals(field, value)) return;
+            field = value;
+            OnPropertyChanged(name);
+        }
 
         public void Dispose()
         {

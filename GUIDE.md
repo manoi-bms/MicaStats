@@ -65,6 +65,10 @@ top processes), Memory, GPU, Network or Disks — then retargets as you slide al
 exactly like iStat Menus. It never steals focus; clicking inside pins it as the full panel. Turn
 this off with **Hover Panels** in **Appearance**.
 
+Every card ends with **quick-action buttons** that open the matching Windows tool — Task Manager
+and Resource Monitor from CPU and Memory, Display Settings from GPU, Network Settings and
+Connections from Network, Disk Management and Storage Settings from Disks.
+
 Press **Esc** or click anywhere else to dismiss it. Process sampling only runs while the panel is
 open, so a closed panel costs nothing.
 

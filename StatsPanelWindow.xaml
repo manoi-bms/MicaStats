@@ -85,6 +85,31 @@
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#F2FFFFFF" />
         </Style>
+
+        <!-- Footer quick-action pill, the iStat "open the system tool" buttons. -->
+        <Style x:Key="QuickButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#CFEDEDF2" />
+            <Setter Property="FontSize" Value="9.5" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="#1FFFFFFF" CornerRadius="5" Padding="9,3">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#33FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#473FD2E4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border Background="#F70E0E13" BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="12">
@@ -183,6 +208,11 @@
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding UptimeText}" />
                         </Grid>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                            <Button Style="{StaticResource QuickButton}" Content="Task Manager" Tag="taskmgr" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="Resource Monitor" Tag="resmon" Click="OnQuickAction" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -288,6 +318,11 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                            <Button Style="{StaticResource QuickButton}" Content="Task Manager" Tag="taskmgr" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="Resource Monitor" Tag="resmon" Click="OnQuickAction" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -358,6 +393,11 @@
                                 </TextBlock.Style>
                             </TextBlock>
                         </Grid>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                            <Button Style="{StaticResource QuickButton}" Content="Task Manager" Tag="taskmgr" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="Display Settings" Tag="ms-settings:display" Click="OnQuickAction" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -433,6 +473,11 @@
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding NetTotalsText}" />
                         </Grid>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                            <Button Style="{StaticResource QuickButton}" Content="Network Settings" Tag="ms-settings:network" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="Connections" Tag="ncpa.cpl" Click="OnQuickAction" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -480,6 +525,11 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                            <Button Style="{StaticResource QuickButton}" Content="Disk Management" Tag="diskmgmt.msc" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="Storage Settings" Tag="ms-settings:storagesense" Click="OnQuickAction" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 

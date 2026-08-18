@@ -207,6 +207,22 @@ namespace Kil0bitSystemMonitor
                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
         }
 
+        /// <summary>
+        /// Footer quick-action buttons: opens the Windows tool named by the button's Tag
+        /// (taskmgr, resmon, ncpa.cpl, ms-settings: URIs...). ShellExecute resolves all of
+        /// them; a missing tool fails silently rather than taking the panel down.
+        /// </summary>
+        private void OnQuickAction(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.Tag is not string command || command.Length == 0) return;
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(command) { UseShellExecute = true });
+            }
+            catch { }
+        }
+
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Escape)

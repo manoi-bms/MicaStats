@@ -1,124 +1,390 @@
-# kil0bit System Monitor v3
-
 <div align="center">
 
-<img src="icon.png" width="100" height="100" alt="kil0bit System Monitor" />
+# MicaStats
 
-**The high-precision, low-latency system monitor for Windows 11.**  
-Built with C#, WPF, and raw Win32 power  
+**A compact, modern system monitor designed for Windows 11.**
 
-[Download v3.0.0](https://github.com/kil0bit-kb/kil0bit-system-monitor/releases/latest) | [User Guide](GUIDE.md) | [Report Bug](https://github.com/kil0bit-kb/kil0bit-system-monitor/issues)
+Monitor CPU, memory, GPU, network, and disk activity through a clean taskbar overlay and a menu-style Windows 11 dashboard.
 
-[![GitHub release](https://img.shields.io/github/v/release/kil0bit-kb/kil0bit-system-monitor?style=flat-square)](https://github.com/kil0bit-kb/kil0bit-system-monitor/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![.NET 8](https://img.shields.io/badge/.NET-8.0-blueviolet?style=flat-square)](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
+[Features](#features) · [Screenshots](#screenshots) · [Installation](#installation) · [Build from source](#build-from-source) · [Contributing](#contributing) · [Credits](#credits-and-attribution)
+
+![Platform](https://img.shields.io/badge/platform-Windows%2011-0078D4?style=flat-square)
+![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?style=flat-square)
+![UI](https://img.shields.io/badge/UI-WPF-5C2D91?style=flat-square)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+![Status](https://img.shields.io/badge/status-active%20development-orange?style=flat-square)
 
 </div>
 
 ---
 
-## ✨ Why kil0bit System Monitor?
+## About MicaStats
 
-Kil0bit System Monitor is a modern successor to legacy taskbar monitors. It’s designed specifically for **Windows 11 power users** who need accurate, real-time metrics without the bloat of Electron or the overhead of high-level monitoring tools.
+MicaStats is an open-source system-monitoring application for Windows 11. It provides real-time hardware and performance information in a compact interface that remains visible without occupying a full application window.
 
-### 🆕 New: The iStat Menus Look, on Windows
-- **🍏 iStat Taskbar** — stacked modules (dim label over bold value) with mini level bars on CPU/RAM/GPU and paired ↑/↓ network lines, straight out of iStat Menus' menu bar. On by default; classic layout one toggle away.
-- **🖱️ Hover Dropdowns** — pause over any module and its own section panel opens, retargeting as you slide along the taskbar; click to pin.
-- **📉 Live Sparklines** — enable **Live Graphs** for dense bar history beside every reading, plus a mirrored up/down network graph.
-- **📊 Stats Panel** — click the overlay for an iStat-style dropdown of dark cards: stacked User/System CPU bars, per-core ring gauges, MEMORY + COMMIT rings, mirrored network graph, disks and top processes.
-- **🔒 Honest Sensors** — a sensor that can't be read shows a baseline, never a zero that would look like "idle".
-- **🪶 Still Idle-Free** — process sampling runs only while the panel is open, so a closed panel costs nothing.
+This project is based on [kil0bit System Monitor](https://github.com/kil0bit-kb/kil0bit-system-monitor) and introduces a redesigned, menu-style interface inspired by the compact presentation of modern desktop monitoring utilities.
 
-### 📊 Core Features
-- **🚀 Ultra-Lightweight** — Dropped WinUI 3 for a lean WPF + Win32 engine. Tiny binary, zero bloat.
-- **⚡ Ultra-Low Overhead** — Uses low-level Win32 APIs and GDI+ for near-zero CPU usage.
-- **🖥️ Taskbar Integration** — Sits directly inside your taskbar. Always visible, never in your way.
-- **📐 Flexible Layout** — Enable "Snap to Taskbar" for a native look, or disable it to **free-float** the overlay anywhere on your desktop.
-- **🏠 High-Performance Dashboard** — A modern, snappy control center built for speed.
-- **🎨 Pixel-Perfect Design** — Glassmorphism, Mica effects, and fully customizable themes.
-- **🛡️ High-DPI Ready** — Precision rendering that looks sharp on 4K, Ultrawides, and multi-monitor setups.
-- **⚙️ Power-User Settings** — Customize sensors (CPU, GPU, Network, Disk), colors, and smart startup behavior.
+The visual design has been adapted specifically for Windows 11, with Fluent-style typography, spacing, rounded surfaces, transparency, and Mica-inspired presentation.
+
+> [!NOTE]
+> MicaStats is maintained independently from the upstream project. Problems specific to this fork should be reported in this repository rather than to the upstream maintainer.
 
 ---
 
-## ✨ v3
-- **🪶 Ultra-Lightweight**: Re-engineered for a tiny **~2.71 MB footprint** by optimizing for the native .NET 8 runtime.
-- **🚀 Multi-Disk Monitoring**: Track activity across all your drives simultaneously with a dynamic 3x3 layout.
-- **📐 Smart Alignment**: Pixel-perfect layout stability across Icon, Text, and Compact modes.
-- **🛡️ Admin-Less Telemetry**: Access hardware telemetry without UAC elevation or system crashes.
-- **🖥️ Taskbar Stability**: Hybrid Owned-Appbar integration for rock-solid visibility during system interactions.
-- **🏠 Refined Dashboard**: Modern, high-contrast Welcome screen with glassmorphism effects.
+## Why MicaStats Exists
 
-## 📸 Screenshots
+I recently got a new notebook that came preinstalled with Windows 11. Once I finished migrating everything over from Windows 10, one thing was clearly missing from my daily setup: a robust, real-time system monitor living right in the taskbar.
 
-### 🛠️ Professional Dashboard
-![Settings Dashboard](Assets/preview/dashboard.png)
+I also have a MacBook, and on macOS [iStat Menus](https://bjango.com/mac/istatmenus/) has long been my favorite utility — compact metric modules in the menu bar, each with its own beautifully dense dropdown. Nothing on Windows felt quite like it.
 
-### 📊 Multi-Disk Monitoring & Settings
-![Monitoring Config](Assets/preview/monitoring.png)
-
-### 📈 Refined Overlay Modes
-
-<div align="center">
-  <p><b>Detailed Mode (Maximum Telemetry)</b></p>
-  <img src="Assets/preview/detailed.png" width="500" alt="Detailed Style" />
-  <p><b>Compact Mode (Clean & Minimal)</b></p>
-  <img src="Assets/preview/compact.png" width="500" alt="Compact Style" />
-</div>
+So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI on Windows: the stacked label-over-value taskbar modules, the per-section hover dropdowns, the ring gauges, the mirrored up/down network graphs, and the two-tone cyan/red data palette are all modeled on the iStat Menus experience, rebuilt natively for the Windows 11 taskbar.
 
 ---
 
-### 1. Uninstall Previous Versions
+## Features
+
+### Real-time monitoring
+
+* **CPU** — Current total processor utilization
+* **Memory** — RAM usage and memory pressure
+* **GPU** — Graphics processor load and available temperature information
+* **Network** — Real-time upload and download throughput
+* **Disk** — Activity monitoring for one or more storage devices
+
+Sensor availability may vary depending on the installed hardware, device drivers, Windows performance counters, and system configuration.
+
+### Windows 11 interface
+
+* Compact, menu-style monitoring panels
+* Fluent Design–inspired visual hierarchy
+* Mica-style surfaces and transparency
+* Rounded Windows 11–style controls
+* Clear typography for at-a-glance monitoring
+* Detailed and compact display modes
+* High-DPI and multi-resolution support
+
+### Taskbar and desktop overlay
+
+* Display selected metrics near the Windows taskbar
+* Snap the overlay to the taskbar
+* Use the overlay as a free-floating desktop panel
+* Drag the overlay to a preferred position
+* Lock the overlay position
+* Keep the overlay above other windows
+* Automatically hide it during full-screen applications
+
+### Customization
+
+* Select which metrics are displayed
+* Choose the active network adapter
+* Select multiple disks for monitoring
+* Configure the monitoring refresh interval
+* Customize fonts and accent colors
+* Enable automatic startup with Windows
+* Switch between compact and detailed layouts
+
+---
+
+## What This Fork Changes
+
+Compared with the original kil0bit System Monitor, MicaStats focuses on a different presentation and interaction model:
+
+* Redesigned monitoring panels with a compact menu-style appearance
+* Updated spacing, typography, and information hierarchy
+* Windows 11–oriented Fluent and Mica visual treatment
+* Faster access to individual monitoring categories
+* Cleaner separation between summary information and detailed metrics
+* A more consistent appearance across the taskbar overlay and settings dashboard
+
+The underlying monitoring functionality remains derived from the original project, while the interface and user experience are being developed independently.
+
+---
+
+## Screenshots
+
+<!--
+Replace the files below with current screenshots from your fork.
+Using the existing paths prevents broken images in a fork of the upstream repository.
+-->
+
+### Dashboard
+
+<p align="center">
+  <img src="Assets/preview/dashboard.png" width="850" alt="MicaStats dashboard" />
+</p>
+
+### Monitoring Configuration
+
+<p align="center">
+  <img src="Assets/preview/monitoring.png" width="850" alt="MicaStats monitoring configuration" />
+</p>
+
+### Detailed Overlay
+
+<p align="center">
+  <img src="Assets/preview/detailed.png" width="650" alt="MicaStats detailed taskbar overlay" />
+</p>
+
+### Compact Overlay
+
+<p align="center">
+  <img src="Assets/preview/compact.png" width="650" alt="MicaStats compact taskbar overlay" />
+</p>
+
+---
+
+## System Requirements
+
+### Running MicaStats
+
+* Windows 11 is the primary supported platform
+* Windows 10 build 19041 or later may work, but is not the primary visual target
+* .NET 8 Desktop Runtime when using a framework-dependent release
+* Compatible Windows performance counters and hardware drivers
+
+### Building MicaStats
+
+* Windows 10 or Windows 11
+* [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+* Visual Studio 2022 with the **.NET desktop development** workload, or another compatible .NET development environment
+* Git
+
+---
+
+## Installation
+
+### Download a Release
+
+1. Open the [Releases](https://github.com/manoi-bms/MicaStats/releases) page.
+2. Download the latest installer or portable package.
+3. Extract the package when necessary.
+4. Run MicaStats.
+5. Select the metrics you want to display from the Monitoring settings.
+
 > [!IMPORTANT]
-> Please **uninstall all previous versions** of Kil0bit System Monitor before installing v3.0 to ensure a smooth transition to the new engine.
+> Uninstall or close an older build before installing a new version, particularly when switching from the original kil0bit System Monitor to MicaStats.
 
-### 2. Download the Installer
-Head over to the [**Releases**](https://github.com/kil0bit-kb/kil0bit-system-monitor/releases) page and download:
-- **`Kil0bitSystemMonitor-Setup.exe`**: The official high-performance installer.
+> [!NOTE]
+> Community builds may display a Microsoft Defender SmartScreen warning when the executable has not been code-signed. Review the release source and checksums before running downloaded software.
 
-### 3. Run & Enjoy
-Launch the setup and follow the prompts. The app will automatically initialize the v3.0 overlay and open the high-contrast Welcome dashboard for your first configuration.
+When no packaged release is available, build the application directly from source.
 
 ---
 
-## 🔨 Build from Source
+## Build from Source
 
-### Prerequisites
-- **Visual Studio 2022** (17.10+) with the "Windows App Development" workload.
-- **.NET 8.0 SDK**.
-- **Windows 11** (recommended) or Windows 10 (Build 19041+).
+### Clone the Repository
 
-### Steps
 ```powershell
-# Clone the repository
-git clone https://github.com/kil0bit-kb/kil0bit-system-monitor.git
-cd kil0bit-system-monitor
-
-# Build the project
-dotnet build -c Release
+git clone https://github.com/manoi-bms/MicaStats.git
+cd MicaStats
 ```
-The resulting executable will be in `kil0bit-system-monitor/bin/Release/net8.0-windows/win-x64/`.
+
+### Restore Dependencies
+
+```powershell
+dotnet restore
+```
+
+### Build a Release Version
+
+```powershell
+dotnet build --configuration Release
+```
+
+The compiled files will normally be created under:
+
+```text
+bin/Release/net8.0-windows/
+```
+
+### Run from Source
+
+```powershell
+dotnet run
+```
+
+### Publish a Framework-Dependent Windows Build
+
+```powershell
+dotnet publish `
+  --configuration Release `
+  --runtime win-x64 `
+  --self-contained false `
+  --output ./publish
+```
+
+The published application will be created in the `publish` directory.
 
 ---
 
-## 🧰 The Tech Stack
+## Technology
 
-| Layer | Technology |
-|---|---|
-| **Language** | C# 12 |
-| **Framework** | WPF + ModernWPF |
-| **Runtime** | .NET 8.0 |
-| **Graphics** | Win32 GDI+ (BitBlt, AlphaBlend) |
-| **Persistence** | JSON (`ConfigService`) |
+| Component           | Technology                                   |
+| ------------------- | -------------------------------------------- |
+| Language            | C#                                           |
+| Runtime             | .NET 8                                       |
+| Desktop framework   | Windows Presentation Foundation              |
+| UI library          | ModernWpfUI                                  |
+| Windows integration | Win32 APIs                                   |
+| Performance data    | Windows performance counters and system APIs |
+| Graphics            | WPF and native Windows rendering             |
+| Configuration       | Local application settings                   |
+
+MicaStats uses a native Windows desktop stack rather than a browser-based desktop runtime.
 
 ---
 
-## ❤️ Credits & Support
+## Basic Usage
 
-| Platform | Link |
-|---|---|
-| 📺 YouTube | [@kilObit](https://www.youtube.com/@kilObit) |
-| ✍️ Blog | [kil0bit.blogspot.com](https://kil0bit.blogspot.com/) |
-| ❤️ Support the Dev | [Patreon](https://www.patreon.com/cw/KB_kilObit) |
+After launching MicaStats:
 
-Built with ❤️ by **KB - kil0bit**.
+1. Open the settings dashboard.
+2. Go to **Monitoring**.
+3. Enable CPU, memory, GPU, network, or disk modules.
+4. Select the correct network adapter when network traffic shows zero.
+5. Configure the refresh interval.
+6. Choose compact or detailed presentation.
+7. Enable **Snap to Taskbar** for a taskbar-integrated layout.
+8. Disable **Snap to Taskbar** to position the overlay freely on the desktop.
+9. Enable **Lock Position** after placing the overlay.
+10. Enable **Launch on Startup** when MicaStats should start automatically with Windows.
+
+Right-click the overlay to access settings and common overlay actions.
+
+---
+
+## Troubleshooting
+
+### The overlay is not visible
+
+Confirm that at least one monitoring module is enabled. Also check whether the overlay is positioned outside the visible desktop area or hidden by the full-screen detection option.
+
+### Network speed remains at zero
+
+Open the Monitoring settings and select the active Ethernet, Wi-Fi, VPN, or virtual network adapter.
+
+### GPU information is unavailable
+
+GPU metrics depend on the graphics hardware, driver implementation, and Windows performance-counter support. Update the GPU driver and restart MicaStats.
+
+### The application does not start with Windows
+
+Disable and re-enable the startup option. Also verify that Windows has not disabled the application under **Settings → Apps → Startup**.
+
+### Windows displays a SmartScreen warning
+
+Unsigned community applications can trigger SmartScreen. Download builds only from this repository’s official Releases page or build the source yourself.
+
+### The overlay moves unexpectedly
+
+Place the overlay in the desired location and enable **Lock Position**.
+
+---
+
+## Contributing
+
+Contributions are welcome.
+
+Before beginning a substantial change, open an issue to describe the proposal and confirm that it fits the project direction.
+
+### Development Workflow
+
+1. Fork this repository.
+2. Create a feature branch:
+
+```bash
+git checkout -b feature/your-feature-name
+```
+
+3. Make and test your changes.
+4. Commit with a clear description:
+
+```bash
+git commit -m "Add: description of the change"
+```
+
+5. Push the branch:
+
+```bash
+git push origin feature/your-feature-name
+```
+
+6. Open a pull request.
+
+Please keep pull requests focused and include screenshots for visible interface changes.
+
+---
+
+## Reporting Bugs
+
+Use the [GitHub issue tracker](https://github.com/manoi-bms/MicaStats/issues) to report defects.
+
+Include:
+
+* Windows version and build number
+* MicaStats version or commit hash
+* CPU and GPU model
+* Display scale and resolution
+* Steps required to reproduce the problem
+* Expected and actual behavior
+* Relevant screenshots or logs
+
+For security-sensitive reports, do not publish exploit details in a public issue. Contact the maintainer privately using the contact method listed in the repository profile.
+
+---
+
+## Credits and Attribution
+
+MicaStats is a derivative work based on:
+
+**[kil0bit System Monitor](https://github.com/kil0bit-kb/kil0bit-system-monitor)**
+Created by **KB – kil0bit**
+
+Original portions:
+
+```text
+Copyright (c) 2026 KB - kil0bit
+```
+
+MicaStats modifications:
+
+```text
+Copyright (c) 2026 Chaiyaporn Suratemeekul (manoi-bms)
+```
+
+MicaStats is created and maintained by **Chaiyaporn Suratemeekul** ([@manoi-bms](https://github.com/manoi-bms)), with the iStat Menus-style UX/UI developed with the help of [Claude Code](https://claude.com/claude-code).
+
+The original project is distributed under the MIT License. MicaStats retains the original copyright and license notice as required by that license.
+
+The upstream author is not responsible for modifications, releases, support, or defects introduced by this fork.
+
+---
+
+## Independent Project Notice
+
+MicaStats is an independent open-source project.
+
+It is not affiliated with or endorsed by Bjango, iStat Menus, Apple, Microsoft, or the maintainer of the original kil0bit System Monitor project. Product and company names are used only to identify the platforms or applications being discussed.
+
+MicaStats uses its own name, icons, screenshots, visual assets, and branding.
+
+---
+
+## License
+
+This project is available under the [MIT License](LICENSE).
+
+The `LICENSE` file must retain the original kil0bit System Monitor copyright notice. A separate copyright notice for MicaStats modifications may be added without removing the upstream notice.
+
+---
+
+<div align="center">
+
+**MicaStats — Your system, at a glance.**
+
+[Releases](https://github.com/manoi-bms/MicaStats/releases) ·
+[Issues](https://github.com/manoi-bms/MicaStats/issues) ·
+[Upstream Project](https://github.com/kil0bit-kb/kil0bit-system-monitor)
+
+</div>

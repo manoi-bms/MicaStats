@@ -308,6 +308,7 @@ namespace Kil0bitSystemMonitor
             c.StickToTaskbar = true;
             c.AlwaysOnTop = true;
             c.ShowPanelOnClick = true;
+            c.HoverPanels = true;
 
             c.ShowCpu = true;
             c.ShowRam = true;

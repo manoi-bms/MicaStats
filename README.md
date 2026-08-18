@@ -22,7 +22,8 @@ Built with C#, WPF, and raw Win32 power
 Kil0bit System Monitor is a modern successor to legacy taskbar monitors. It’s designed specifically for **Windows 11 power users** who need accurate, real-time metrics without the bloat of Electron or the overhead of high-level monitoring tools.
 
 ### 🆕 New: The iStat Menus Look, on Windows
-- **🍏 iStat Taskbar** — stacked modules (dim label over bold value) with paired ↑/↓ network lines, straight out of iStat Menus' menu bar. On by default; classic layout one toggle away.
+- **🍏 iStat Taskbar** — stacked modules (dim label over bold value) with mini level bars on CPU/RAM/GPU and paired ↑/↓ network lines, straight out of iStat Menus' menu bar. On by default; classic layout one toggle away.
+- **🖱️ Hover Dropdowns** — pause over any module and its own section panel opens, retargeting as you slide along the taskbar; click to pin.
 - **📉 Live Sparklines** — enable **Live Graphs** for dense bar history beside every reading, plus a mirrored up/down network graph.
 - **📊 Stats Panel** — click the overlay for an iStat-style dropdown of dark cards: stacked User/System CPU bars, per-core ring gauges, MEMORY + COMMIT rings, mirrored network graph, disks and top processes.
 - **🔒 Honest Sensors** — a sensor that can't be read shows a baseline, never a zero that would look like "idle".

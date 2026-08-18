@@ -58,13 +58,39 @@ namespace Kil0bitSystemMonitor
         /// </summary>
         public static DateTime LastClosedUtc { get; private set; } = DateTime.MinValue;
 
+        /// <summary>
+        /// True while this panel is an unfocused hover dropdown. Cleared on activation, at
+        /// which point normal dismiss-on-deactivate behaviour takes over.
+        /// </summary>
+        public bool IsHoverMode { get; private set; }
+
+        /// <summary>Limits the visible cards to one section (hover) or shows all (click).</summary>
+        public void SetFilter(PanelSection section) => _vm.Filter = section;
+
+        /// <summary>Re-anchors the panel; used when the hover dropdown moves between modules.</summary>
+        public void RefreshPosition() => Reposition();
+
+        /// <summary>Turns a hover dropdown into the full pinned panel (user clicked the overlay).</summary>
+        public void PromoteToPinned()
+        {
+            IsHoverMode = false;
+            _vm.Filter = PanelSection.All;
+            Activate();
+        }
+
         public StatsPanelWindow(MetricsHistory history, AppConfig config, IntPtr ownerHwnd,
-                                Func<Win32Helper.RECT?> getAnchorRect)
+                                Func<Win32Helper.RECT?> getAnchorRect, bool hoverMode = false)
         {
             InitializeComponent();
 
             _ownerHwnd = ownerHwnd;
             _getAnchorRect = getAnchorRect;
+
+            // A hover dropdown must not steal focus from whatever the user is doing. Clicking
+            // inside it activates it, which promotes it to a normal pinned panel.
+            IsHoverMode = hoverMode;
+            ShowActivated = !hoverMode;
+
             _vm = new StatsPanelViewModel(history, config);
             DataContext = _vm;
 
@@ -81,6 +107,7 @@ namespace Kil0bitSystemMonitor
             DpiChanged += (s, e) => Reposition();
             Deactivated += OnDeactivated;
             PreviewKeyDown += OnPreviewKeyDown;
+            Activated += (s, e) => IsHoverMode = false; // clicking a hover dropdown pins it
             Closed += (s, e) => { LastClosedUtc = DateTime.UtcNow; _vm.IsLive = false; _vm.Dispose(); };
 
             _vm.IsLive = true;

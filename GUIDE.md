@@ -60,6 +60,11 @@ cards with the detail the taskbar has no room for:
 Everything follows the iStat two-hue rule — cyan for the primary series, red for its counterpart
 (System time, Upload) — on near-black cards.
 
+**Or just hover**: pause over any taskbar module and its own compact dropdown opens — CPU (with
+top processes), Memory, GPU, Network or Disks — then retargets as you slide along the taskbar,
+exactly like iStat Menus. It never steals focus; clicking inside pins it as the full panel. Turn
+this off with **Hover Panels** in **Appearance**.
+
 Press **Esc** or click anywhere else to dismiss it. Process sampling only runs while the panel is
 open, so a closed panel costs nothing.
 

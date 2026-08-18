@@ -43,8 +43,8 @@
         <Style x:Key="Card" TargetType="Border">
             <Setter Property="Background" Value="#F01A1A22" />
             <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Padding" Value="12,10" />
-            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="Margin" Value="0,0,0,7" />
         </Style>
 
         <!-- Card title, e.g. "MEMORY". Uppercase is in the text itself; small caps look wrong at this size. -->
@@ -81,7 +81,7 @@
 
         <!-- A big reading with its dotted label underneath (network Upload/Download). -->
         <Style x:Key="BigValue" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontSize" Value="17" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#F2FFFFFF" />
         </Style>
@@ -92,7 +92,16 @@
             <StackPanel Margin="10">
 
                 <!-- Identity card -->
-                <Border Style="{StaticResource Card}">
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowHeaderCard}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
                         <TextBlock Text="{Binding CpuName}" FontSize="12.5" FontWeight="SemiBold"
                                    Foreground="#F2FFFFFF" TextTrimming="CharacterEllipsis" />
@@ -105,7 +114,16 @@
                 </Border>
 
                 <!-- CPU card -->
-                <Border Style="{StaticResource Card}">
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowCpuCard}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,7">
                             <TextBlock Style="{StaticResource CardHeader}" Text="CPU" />
@@ -113,7 +131,7 @@
                                        Text="{Binding CpuValueText}" />
                         </Grid>
 
-                        <ctrl:HistoryBarGraph Height="56" Mode="Stacked" Max="100"
+                        <ctrl:HistoryBarGraph Height="50" Mode="Stacked" Max="100"
                                               Series="{Binding CpuSeries}"
                                               SecondarySeries="{Binding CpuSystemSeries}"
                                               Tick="{Binding Tick}" />
@@ -152,8 +170,8 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:CoreLoad}">
-                                    <ctrl:RingGauge Width="19" Height="19" RingThickness="2.5"
-                                                    Margin="0,0,6,6"
+                                    <ctrl:RingGauge Width="18" Height="18" RingThickness="2.5"
+                                                    Margin="0,0,5,5"
                                                     Value="{Binding Percent}"
                                                     ToolTip="{Binding Label}" />
                                 </DataTemplate>
@@ -169,7 +187,16 @@
                 </Border>
 
                 <!-- Memory card -->
-                <Border Style="{StaticResource Card}">
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowMemoryCard}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,9">
                             <TextBlock Style="{StaticResource CardHeader}" Text="MEMORY" />
@@ -179,19 +206,19 @@
 
                         <!-- The two iStat rings: physical memory and commit charge -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <Grid Width="76" Height="76" Margin="0,0,26,0">
+                            <Grid Width="68" Height="68" Margin="0,0,26,0">
                                 <ctrl:RingGauge RingThickness="5" Value="{Binding MemoryPercent}" />
                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                    <TextBlock Text="{Binding MemoryRingText}" FontSize="15" FontWeight="SemiBold"
+                                    <TextBlock Text="{Binding MemoryRingText}" FontSize="14" FontWeight="SemiBold"
                                                Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
                                     <TextBlock Text="MEMORY" FontSize="7.5" Foreground="#6EE9EDF2"
                                                HorizontalAlignment="Center" Margin="0,1,0,0" />
                                 </StackPanel>
                             </Grid>
-                            <Grid Width="76" Height="76">
+                            <Grid Width="68" Height="68">
                                 <ctrl:RingGauge RingThickness="5" Value="{Binding CommitPercent}" />
                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                    <TextBlock Text="{Binding CommitRingText}" FontSize="15" FontWeight="SemiBold"
+                                    <TextBlock Text="{Binding CommitRingText}" FontSize="14" FontWeight="SemiBold"
                                                Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
                                     <TextBlock Text="COMMIT" FontSize="7.5" Foreground="#6EE9EDF2"
                                                HorizontalAlignment="Center" Margin="0,1,0,0" />
@@ -228,7 +255,16 @@
                 </Border>
 
                 <!-- GPU card -->
-                <Border Style="{StaticResource Card}">
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowGpuCard}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,2">
                             <TextBlock Style="{StaticResource CardHeader}" Text="GPU" />
@@ -239,7 +275,7 @@
                                    TextTrimming="CharacterEllipsis" Margin="0,0,0,8" />
 
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
-                            <Grid Width="48" Height="48" Margin="0,0,22,0">
+                            <Grid Width="44" Height="44" Margin="0,0,22,0">
                                 <ctrl:RingGauge RingThickness="3.5" Value="{Binding GpuPercent}" />
                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                     <TextBlock Text="{Binding GpuValueText}" FontSize="10.5" FontWeight="SemiBold"
@@ -248,7 +284,7 @@
                                                HorizontalAlignment="Center" />
                                 </StackPanel>
                             </Grid>
-                            <Grid Width="48" Height="48">
+                            <Grid Width="44" Height="44">
                                 <ctrl:RingGauge RingThickness="3.5" Value="{Binding GpuTempPercent}"
                                                 ProgressBrush="{StaticResource DataRed}" />
                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -261,7 +297,7 @@
                         </StackPanel>
 
                         <Grid>
-                            <ctrl:HistoryBarGraph Height="44" Mode="Bars" Max="100"
+                            <ctrl:HistoryBarGraph Height="40" Mode="Bars" Max="100"
                                                   Series="{Binding GpuSeries}"
                                                   Tick="{Binding Tick}" />
                             <TextBlock Text="This sensor could not be read on this system."
@@ -283,7 +319,16 @@
                 </Border>
 
                 <!-- Network card -->
-                <Border Style="{StaticResource Card}">
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowNetworkCard}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,9">
                             <TextBlock Style="{StaticResource CardHeader}" Text="NETWORK" />
@@ -312,7 +357,7 @@
                         </Grid>
 
                         <!-- Upload above the dashed axis, download below, one shared scale -->
-                        <ctrl:HistoryBarGraph Height="56" Mode="Mirrored"
+                        <ctrl:HistoryBarGraph Height="50" Mode="Mirrored"
                                               Series="{Binding NetDownSeries}"
                                               SecondarySeries="{Binding NetUpSeries}"
                                               Max="{Binding NetGraphMax}"
@@ -339,6 +384,9 @@
                                 <DataTrigger Binding="{Binding HasDisks}" Value="False">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                 </DataTrigger>
+                                <DataTrigger Binding="{Binding ShowDisksCard}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
@@ -349,7 +397,7 @@
                                        Text="{Binding DiskValueText}" />
                         </Grid>
 
-                        <ctrl:HistoryBarGraph Height="44" Mode="Bars" Max="100"
+                        <ctrl:HistoryBarGraph Height="38" Mode="Bars" Max="100"
                                               Series="{Binding DiskSeries}"
                                               Tick="{Binding Tick}" />
 
@@ -382,6 +430,9 @@
                             <Setter Property="Margin" Value="0" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding HasProcesses}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding ShowProcessesCard}" Value="False">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                 </DataTrigger>
                             </Style.Triggers>

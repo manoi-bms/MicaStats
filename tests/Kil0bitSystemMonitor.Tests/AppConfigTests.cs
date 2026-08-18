@@ -182,6 +182,13 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Hover_panels_default_on()
+        {
+            var c = new AppConfig();
+            Assert.True(c.HoverPanels);
+        }
+
+        [Fact]
         public void Stacked_taskbar_defaults_on_so_old_configs_inherit_the_new_look()
         {
             // Configs saved before the field existed deserialize without it and must land on

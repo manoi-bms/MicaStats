@@ -109,6 +109,40 @@ namespace Kil0bitSystemMonitor.ViewModels
         /// <summary>Monotonic sample counter; every graph invalidates when it changes.</summary>
         public int Tick { get => _tick; private set => Set(ref _tick, value); }
 
+        private PanelSection _filter = PanelSection.All;
+
+        /// <summary>
+        /// Which cards render. A hover dropdown shows a single section; the click-opened
+        /// panel shows everything.
+        /// </summary>
+        public PanelSection Filter
+        {
+            get => _filter;
+            set
+            {
+                if (_filter == value) return;
+                _filter = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ShowHeaderCard));
+                OnPropertyChanged(nameof(ShowCpuCard));
+                OnPropertyChanged(nameof(ShowMemoryCard));
+                OnPropertyChanged(nameof(ShowGpuCard));
+                OnPropertyChanged(nameof(ShowNetworkCard));
+                OnPropertyChanged(nameof(ShowDisksCard));
+                OnPropertyChanged(nameof(ShowProcessesCard));
+            }
+        }
+
+        public bool ShowHeaderCard => _filter == PanelSection.All;
+        public bool ShowCpuCard => _filter is PanelSection.All or PanelSection.Cpu;
+        public bool ShowMemoryCard => _filter is PanelSection.All or PanelSection.Memory;
+        public bool ShowGpuCard => _filter is PanelSection.All or PanelSection.Gpu;
+        public bool ShowNetworkCard => _filter is PanelSection.All or PanelSection.Network;
+        public bool ShowDisksCard => _filter is PanelSection.All or PanelSection.Disks;
+
+        /// <summary>The process list is CPU-ranked, so it accompanies the CPU view and the full panel.</summary>
+        public bool ShowProcessesCard => _filter is PanelSection.All or PanelSection.Cpu;
+
         // ---- CPU card ----
 
         private string _cpuValueText = "—";

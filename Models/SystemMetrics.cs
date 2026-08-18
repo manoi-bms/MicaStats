@@ -27,6 +27,21 @@ namespace Kil0bitSystemMonitor.Models
         public float ActivityPercent { get; set; }
     }
 
+    /// <summary>
+    /// Which slice of the stats panel is shown. <see cref="All"/> is the full click-opened
+    /// panel; the rest are the per-module hover dropdowns, one per taskbar section — the
+    /// iStat Menus model where every menu bar item owns its own dropdown.
+    /// </summary>
+    public enum PanelSection
+    {
+        All,
+        Cpu,
+        Memory,
+        Gpu,
+        Network,
+        Disks
+    }
+
     public class SystemMetrics
     {
         public float CpuUsage { get; set; }
@@ -123,6 +138,7 @@ namespace Kil0bitSystemMonitor.Models
         private int _graphHistorySeconds = 60;
         private bool _showPanelOnClick = true;
         private bool _stackedTaskbar = true;
+        private bool _hoverPanels = true;
 
         // Per-section label colors (null = use global LabelColorHex)
         private string? _netLabelColorHex = null;
@@ -188,6 +204,13 @@ namespace Kil0bitSystemMonitor.Models
         /// with stacking must stay expressible. Off = the classic two-row inline layout.
         /// </summary>
         public bool StackedTaskbar { get => _stackedTaskbar; set { Set(ref _stackedTaskbar, value); } }
+
+        /// <summary>
+        /// Hovering a stacked-taskbar module opens that section's own detail dropdown after a
+        /// short dwell, iStat-style. Only active while <see cref="StackedTaskbar"/> is on,
+        /// because the classic layout fuses two metrics per column.
+        /// </summary>
+        public bool HoverPanels { get => _hoverPanels; set { Set(ref _hoverPanels, value); } }
 
         // Per-section label colors (null/empty = inherit global LabelColorHex)
         public string? NetLabelColorHex { get => _netLabelColorHex; set { Set(ref _netLabelColorHex, value); } }

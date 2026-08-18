@@ -33,6 +33,12 @@ namespace Kil0bitSystemMonitor
         // press is therefore captured first and the loop is entered only after real movement.
         private bool _pressPending;
         private Win32Helper.POINT _pressAnchor;
+
+        // Hover-dropdown state. Zones are the per-module hit ranges of the stacked layout,
+        // rebuilt on every repaint in client-pixel space (identical to the bitmap space).
+        private readonly System.Collections.Generic.List<(PanelSection Section, float X, float W)> _moduleZones = new();
+        private PanelSection _pendingHoverSection = PanelSection.All;
+        private System.Windows.Threading.DispatcherTimer? _hoverDwellTimer;
         private bool _shellFullscreen = false;
         private bool _appbarRegistered = false;
         private readonly Action? _onHistoryUpdated;
@@ -536,6 +542,13 @@ namespace Kil0bitSystemMonitor
 
             /// <summary>Full-scale value for the sparkline. 0 autoscales to the series peak.</summary>
             public float GraphMax { get; set; } = 100f;
+
+            /// <summary>
+            /// Current level 0-100 for the stacked layout's right-edge mini bar, or negative
+            /// for none. Shown for CPU, RAM and GPU so the instant reading is visible at a
+            /// glance even with graphs off.
+            /// </summary>
+            public float Level { get; set; } = -1f;
         }
 
         private sealed class MetricColumn
@@ -543,6 +556,9 @@ namespace Kil0bitSystemMonitor
             public SectionKind Kind { get; init; }
             public MetricItem? Top { get; init; }
             public MetricItem? Bottom { get; init; }
+
+            /// <summary>Which hover dropdown this column belongs to. All = no dropdown.</summary>
+            public PanelSection Panel { get; init; } = PanelSection.All;
         }
 
         private void UpdateLayer()
@@ -695,6 +711,7 @@ namespace Kil0bitSystemMonitor
         private static readonly Brush StackedValueBrush = new SolidBrush(Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF));
         private static readonly Brush StackedGraphBrush = new SolidBrush(Color.FromArgb(0xFF, 0x3F, 0xD2, 0xE4));
         private static readonly Brush StackedUpBrush = new SolidBrush(Color.FromArgb(0xFF, 0xFF, 0x51, 0x47));
+        private static readonly Brush StackedTrackBrush = new SolidBrush(Color.FromArgb(0x3C, 0xFF, 0xFF, 0xFF));
 
         /// <summary>
         /// iStat-style layout: every metric is its own module with a small dim label stacked
@@ -719,8 +736,10 @@ namespace Kil0bitSystemMonitor
             int h = (int)((pods ? 36 : 32) * scale);
             float gap = 3 * scale;
             float podGap = Math.Max(0, _config.Config.ColumnSpacing) * scale;
-            float pad = (pods ? 5 : 2) * scale;
+            float pad = (pods ? 4 : 2) * scale;
             bool graphs = _config.Config.ShowGraphs;
+            float levelW = 4 * scale;      // right-edge mini level bar (CPU/RAM/GPU)
+            float levelGap = 3 * scale;
 
             float textBlockH = labelFont.Height + valueFont.Height;
             float netBlockH = netFont.Height * 2 + (1 * scale);
@@ -732,12 +751,15 @@ namespace Kil0bitSystemMonitor
             for (int i = 0; i < columns.Count; i++)
             {
                 var col = columns[i];
-                float textW, graphPart = 0f;
+                float textW, graphPart = 0f, levelPart = 0f;
                 if (col.Kind == SectionKind.Net)
                 {
+                    // Live-value widths: reserving worst-case strings ("↑ 1023 MB/s") left a
+                    // band of dead space in every module. The column now hugs its content and
+                    // only shifts when the digit count or unit genuinely changes.
                     textW = Math.Max(
-                        col.Top != null ? GetCachedMeasure(col.Top.Reserve ?? col.Top.Value, netFont) : 0f,
-                        col.Bottom != null ? GetCachedMeasure(col.Bottom.Reserve ?? col.Bottom.Value, netFont) : 0f);
+                        col.Top != null ? MeasureNoCache(col.Top.Value, netFont) : 0f,
+                        col.Bottom != null ? MeasureNoCache(col.Bottom.Value, netFont) : 0f);
                     if (graphs && (col.Top?.History != null || col.Bottom?.History != null)) graphPart = graphW + gap;
                 }
                 else
@@ -745,10 +767,11 @@ namespace Kil0bitSystemMonitor
                     var item = (col.Top ?? col.Bottom)!;
                     textW = Math.Max(
                         GetCachedMeasure(item.Label, labelFont),
-                        GetCachedMeasure(item.Reserve ?? item.Value, valueFont));
+                        MeasureNoCache(item.Value, valueFont));
                     if (graphs && item.History != null) graphPart = graphW + gap;
+                    if (item.Level >= 0f) levelPart = levelGap + levelW;
                 }
-                widths[i] = textW + graphPart + pad * 2;
+                widths[i] = textW + graphPart + levelPart + pad * 2;
                 total += widths[i] + podGap;
             }
             total = total - podGap + (2 * scale);
@@ -763,16 +786,16 @@ namespace Kil0bitSystemMonitor
 
             bool ownPBrush = _cachedPodBrush == null;
             Brush pBrush = _cachedPodBrush ?? new SolidBrush(Color.FromArgb(15, 255, 255, 255));
-            using var pPen = new Pen(Color.FromArgb(20, 255, 255, 255), 1);
-
+            _moduleZones.Clear();
             float cx = 2 * scale;
             for (int i = 0; i < columns.Count; i++)
             {
                 var col = columns[i];
                 if (pods)
                 {
+                    // Fill only — the hairline outline read as clutter at this size.
                     using (var path = CreateRoundedRectPath((int)cx, (int)(2 * scale), (int)widths[i], (int)(h - 4 * scale), (int)(6 * scale)))
-                    { _offscreenGraphics.FillPath(pBrush, path); _offscreenGraphics.DrawPath(pPen, path); }
+                        _offscreenGraphics.FillPath(pBrush, path);
                 }
 
                 float contentX = cx + pad;
@@ -818,7 +841,23 @@ namespace Kil0bitSystemMonitor
                     float ty = (h - textBlockH) / 2f;
                     _offscreenGraphics.DrawString(item.Label, labelFont, StackedLabelBrush, contentX, ty, StringFormat.GenericTypographic);
                     _offscreenGraphics.DrawString(item.Value, valueFont, StackedValueBrush, contentX, ty + labelFont.Height, StringFormat.GenericTypographic);
+
+                    if (item.Level >= 0f)
+                    {
+                        // Right-edge mini level bar: a dark track filled bottom-up with the
+                        // instant reading, so the level is visible even with graphs off.
+                        float bx = cx + widths[i] - pad - levelW;
+                        float bh = textBlockH;
+                        float by = (h - bh) / 2f;
+                        float fill = Math.Max(1f, Math.Clamp(item.Level, 0f, 100f) / 100f * bh);
+                        var prevMode = _offscreenGraphics.SmoothingMode;
+                        _offscreenGraphics.SmoothingMode = SmoothingMode.None;
+                        _offscreenGraphics.FillRectangle((SolidBrush)StackedTrackBrush, bx, by, levelW, bh);
+                        _offscreenGraphics.FillRectangle((SolidBrush)StackedGraphBrush, bx, by + bh - fill, levelW, fill);
+                        _offscreenGraphics.SmoothingMode = prevMode;
+                    }
                 }
+                _moduleZones.Add((col.Panel, cx, widths[i]));
                 cx += widths[i] + podGap;
             }
             SetBitmap(_offscreenBitmap);
@@ -831,28 +870,29 @@ namespace Kil0bitSystemMonitor
             var m = _viewModel.Metrics; var c = _config.Config;
             float netMax = _history.SharedNetPeak;
 
-            MetricItem Item(string label, string value, string reserve, Series? hist, float max = 100f)
-                => new MetricItem { Label = label, Value = value, Reserve = reserve, History = hist, GraphMax = max };
+            MetricItem Item(string label, string value, string reserve, Series? hist, float max = 100f, float level = -1f)
+                => new MetricItem { Label = label, Value = value, Reserve = reserve, History = hist, GraphMax = max, Level = level };
 
             var list = new System.Collections.Generic.List<MetricColumn>();
 
             if (c.ShowNetUp || c.ShowNetDown)
                 list.Add(new MetricColumn {
                     Kind = SectionKind.Net,
+                    Panel = PanelSection.Network,
                     Top = c.ShowNetUp ? Item("↑", "↑ " + m.NetUpText, "↑ 1023 MB/s", _history.NetUp, netMax) : null,
                     Bottom = c.ShowNetDown ? Item("↓", "↓ " + m.NetDownText, "↓ 1023 MB/s", _history.NetDown, netMax) : null,
                 });
 
             if (c.ShowCpu)
-                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Top = Item("CPU", $"{(int)m.CpuUsage}%", "100%", _history.Cpu) });
+                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Panel = PanelSection.Cpu, Top = Item("CPU", $"{(int)m.CpuUsage}%", "100%", _history.Cpu, level: m.CpuUsage) });
             if (c.ShowRam)
-                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Top = Item("RAM", $"{(int)m.RamPercent}%", "100%", _history.Ram) });
+                list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Panel = PanelSection.Memory, Top = Item("RAM", $"{(int)m.RamPercent}%", "100%", _history.Ram, level: m.RamPercent) });
             if (c.ShowGpu)
-                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Top = Item("GPU", $"{(int)m.GpuUsage}%", "100%", _history.Gpu) });
+                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("GPU", $"{(int)m.GpuUsage}%", "100%", _history.Gpu, level: m.GpuUsage) });
             if (c.ShowTemp)
             {
                 string tempStr = m.GpuTemperature > 0 ? $"{(int)m.GpuTemperature}°" : "N/A";
-                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Top = Item("TMP", tempStr, "100°", _history.Temp) });
+                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("TMP", tempStr, "100°", _history.Temp) });
             }
 
             if ((c.ShowDisk || c.ShowDiskSpeed) && m.Disks != null)
@@ -870,6 +910,7 @@ namespace Kil0bitSystemMonitor
                     Series? hist = c.ShowDiskSpeed ? _history.Disk(d.Name) : null;
                     list.Add(new MetricColumn {
                         Kind = SectionKind.Disk,
+                        Panel = PanelSection.Disks,
                         Top = Item(letter.ToUpper() + ":", $"{(int)value}%", "100%", hist),
                     });
                 }
@@ -1090,6 +1131,58 @@ namespace Kil0bitSystemMonitor
             g.SmoothingMode = previous;
         }
 
+        private void EnsureHoverDwellTimer()
+        {
+            if (_hoverDwellTimer != null) return;
+            _hoverDwellTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                // Long enough that sweeping the pointer across the taskbar opens nothing.
+                Interval = TimeSpan.FromMilliseconds(350)
+            };
+            _hoverDwellTimer.Tick += (s, e) =>
+            {
+                _hoverDwellTimer!.Stop();
+                var section = _pendingHoverSection;
+                if (section == PanelSection.All) return;
+                if (GetModuleScreenRect(section, out var rect))
+                    App.ShowHoverPanel(section, rect, _config, this);
+            };
+        }
+
+        private PanelSection HitTestModule(int clientX)
+        {
+            foreach (var zone in _moduleZones)
+            {
+                if (clientX >= zone.X && clientX < zone.X + zone.W) return zone.Section;
+            }
+            return PanelSection.All;
+        }
+
+        /// <summary>Screen rectangle spanning every module of one section (disks can span several).</summary>
+        private bool GetModuleScreenRect(PanelSection section, out Win32Helper.RECT rect)
+        {
+            rect = default;
+            if (!Win32Helper.GetWindowRect(_hWnd, out Win32Helper.RECT wr)) return false;
+
+            float left = float.MaxValue, right = float.MinValue;
+            foreach (var zone in _moduleZones)
+            {
+                if (zone.Section != section) continue;
+                left = Math.Min(left, zone.X);
+                right = Math.Max(right, zone.X + zone.W);
+            }
+            if (left > right) return false;
+
+            rect = new Win32Helper.RECT
+            {
+                Left = wr.Left + (int)left,
+                Top = wr.Top,
+                Right = wr.Left + (int)right,
+                Bottom = wr.Bottom,
+            };
+            return true;
+        }
+
         private void EnsureOffscreenBuffer(int w, int h)
         {
             if (_offscreenBitmap == null || _offscreenBitmap.Width != w || _offscreenBitmap.Height != h)
@@ -1130,6 +1223,9 @@ namespace Kil0bitSystemMonitor
         }
 
         private float GetCachedMeasure(string t, Font f) { if (_measureGraphics == null) return 0; string k = $"{t}_{f.Name}_{f.Size}_{f.Style}"; if (!_measureCache.TryGetValue(k, out var w)) { w = _measureGraphics.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width; _measureCache[k] = w; } return w; }
+
+        // Live values change every tick; caching them would grow the measure cache without bound.
+        private float MeasureNoCache(string t, Font f) => _measureGraphics == null ? 0f : _measureGraphics.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width;
         private void ClearCaches() { foreach (var f in _fontCache.Values) f.Dispose(); _fontCache.Clear(); _measureCache.Clear(); }
         private void SetBitmap(Bitmap bitmap)
         {
@@ -1197,8 +1293,41 @@ namespace Kil0bitSystemMonitor
                         }
                     }
                 }
+                else if (_config.Config.HoverPanels && _config.Config.StackedTaskbar)
+                {
+                    // Per-module hover dropdowns, the iStat model: dwell over a module opens
+                    // its section; sliding to another module retargets the open dropdown
+                    // immediately, dwell applies only to the first open.
+                    int mx = unchecked((short)((long)lParam & 0xFFFF));
+                    var section = HitTestModule(mx);
+                    if (section != _pendingHoverSection)
+                    {
+                        _pendingHoverSection = section;
+                        EnsureHoverDwellTimer();
+                        _hoverDwellTimer!.Stop();
+                        if (section != PanelSection.All)
+                        {
+                            if (App.StatsPanel is { IsHoverMode: true })
+                            {
+                                if (GetModuleScreenRect(section, out var rect))
+                                    App.ShowHoverPanel(section, rect, _config, this);
+                            }
+                            else
+                            {
+                                _hoverDwellTimer.Start();
+                            }
+                        }
+                    }
+                }
             }
-            if (msg == WM_MOUSELEAVE) { _trackingMouse = false; _isHovered = false; UpdateLayer(); }
+            if (msg == WM_MOUSELEAVE)
+            {
+                _trackingMouse = false; _isHovered = false;
+                _pendingHoverSection = PanelSection.All;
+                _hoverDwellTimer?.Stop();
+                App.OverlayHoverLost();
+                UpdateLayer();
+            }
             if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK)
             {
                 // CS_DBLCLKS means the second press of a double-tap arrives as WM_LBUTTONDBLCLK

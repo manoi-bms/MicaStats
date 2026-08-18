@@ -117,7 +117,10 @@ namespace Kil0bitSystemMonitor
         {
             if (StatsPanel != null)
             {
-                StatsPanel.DismissNow();
+                // A hover dropdown is promoted to the full pinned panel rather than dismissed:
+                // the click means the user reached for more, not less.
+                if (StatsPanel.IsHoverMode) StatsPanel.PromoteToPinned();
+                else StatsPanel.DismissNow();
                 return;
             }
 
@@ -135,6 +138,71 @@ namespace Kil0bitSystemMonitor
 
         /// <summary>Closes the detail panel if it is open. Safe to call from any overlay state change.</summary>
         public static void ClosePanelIfOpen() => StatsPanel?.DismissNow();
+
+        // ---- per-module hover dropdowns -------------------------------------------------
+
+        private static Kil0bitSystemMonitor.Helpers.Win32Helper.RECT _hoverAnchor;
+        private static System.Windows.Threading.DispatcherTimer? _hoverCloseTimer;
+        private static bool _pointerInsidePanel;
+
+        /// <summary>
+        /// Opens (or retargets) the hover dropdown for one taskbar module. Never steals
+        /// focus; a click inside pins it. A pinned or click-opened panel always wins.
+        /// </summary>
+        public static void ShowHoverPanel(Kil0bitSystemMonitor.Models.PanelSection section,
+                                          Kil0bitSystemMonitor.Helpers.Win32Helper.RECT anchor,
+                                          Kil0bitSystemMonitor.Services.ConfigService config,
+                                          OverlayWindow overlay)
+        {
+            _hoverCloseTimer?.Stop();
+            _hoverAnchor = anchor;
+
+            if (StatsPanel != null)
+            {
+                if (!StatsPanel.IsHoverMode) return;
+                StatsPanel.SetFilter(section);
+                StatsPanel.RefreshPosition();
+                return;
+            }
+
+            var history = (Current as App)?.m_history;
+            if (history == null) return;
+
+            var panel = new StatsPanelWindow(history, config.Config, overlay.Handle,
+                                             () => _hoverAnchor, hoverMode: true);
+            panel.SetFilter(section);
+            StatsPanel = panel;
+            panel.Closed += (s, e) => { if (ReferenceEquals(StatsPanel, panel)) StatsPanel = null; };
+            panel.MouseEnter += (s, e) => { _pointerInsidePanel = true; _hoverCloseTimer?.Stop(); };
+            panel.MouseLeave += (s, e) => { _pointerInsidePanel = false; if (panel.IsHoverMode) StartHoverClose(); };
+            panel.Show();
+        }
+
+        /// <summary>The pointer left the overlay; close the hover dropdown unless it moved into the panel.</summary>
+        public static void OverlayHoverLost()
+        {
+            if (StatsPanel is { IsHoverMode: true }) StartHoverClose();
+        }
+
+        private static void StartHoverClose()
+        {
+            if (_hoverCloseTimer == null)
+            {
+                _hoverCloseTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    // Long enough to cross the anchor gap into the panel, short enough that a
+                    // dropdown never lingers after the pointer has moved on.
+                    Interval = TimeSpan.FromMilliseconds(420)
+                };
+                _hoverCloseTimer.Tick += (s, e) =>
+                {
+                    _hoverCloseTimer!.Stop();
+                    if (StatsPanel is { IsHoverMode: true } && !_pointerInsidePanel) StatsPanel.DismissNow();
+                };
+            }
+            _hoverCloseTimer.Stop();
+            _hoverCloseTimer.Start();
+        }
 
         public static void OpenSettings(Kil0bitSystemMonitor.ViewModels.MainViewModel viewModel, Kil0bitSystemMonitor.Services.ConfigService config)
         {

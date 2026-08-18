@@ -6,7 +6,10 @@ namespace Kil0bitSystemMonitor.Services
 {
     public static class StartupService
     {
-        private const string AppName = "Kil0bitSystemMonitor";
+        private const string AppName = "MicaStats";
+
+        /// <summary>The upstream app's Run value, cleaned up so a migrated machine does not autostart a ghost.</summary>
+        private const string LegacyAppName = "Kil0bitSystemMonitor";
         private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
         public static void SetStartup(bool enable)
@@ -22,6 +25,7 @@ namespace Kil0bitSystemMonitor.Services
                         {
                             key.SetValue(AppName, $"\"{appPath}\" --startup");
                         }
+                        key.DeleteValue(LegacyAppName, false);
                     }
                     else
                     {

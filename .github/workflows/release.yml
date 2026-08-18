@@ -68,6 +68,6 @@ jobs:
           
           (See README.md for full installation guide.)
         files: |
-          Output/Kil0bitSystemMonitor-v${{ github.event.inputs.version }}-Setup.exe
+          Output/MicaStats-v${{ github.event.inputs.version }}-Setup.exe
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

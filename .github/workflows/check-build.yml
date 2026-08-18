@@ -30,7 +30,7 @@ jobs:
         dotnet tool install --global wix --version 5.0.2 || dotnet tool update --global wix --version 5.0.2
         wix extension add WixToolset.UI.wixext/5.0.2 --global
         # Verify wix scripts using the publish output
-        wix build wix/main.wxs -ext WixToolset.UI.wixext -d "Version=0.0.0" -d "publish=dryrun-publish" -d "EXE_NAME=Kil0bitSystemMonitor.exe" -o "dryrun.msi"
+        wix build wix/main.wxs -ext WixToolset.UI.wixext -d "Version=0.0.0" -d "publish=dryrun-publish" -d "EXE_NAME=MicaStats.exe" -o "dryrun.msi"
         # Cleanup
         if (Test-Path "dryrun.msi") { Remove-Item "dryrun.msi" }
         if (Test-Path "dryrun-publish") { Remove-Item -Recurse -Force "dryrun-publish" }

@@ -38,11 +38,20 @@ namespace Kil0bitSystemMonitor.Services
         public ConfigService()
         {
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            string configDir = Path.Combine(appData, "kil0bit-system-monitor");
+            string configDir = Path.Combine(appData, "MicaStats");
             Directory.CreateDirectory(configDir);
             _configPath = Path.Combine(configDir, "config.json");
             _tempPath = _configPath + ".tmp";
             _corruptPath = _configPath + ".corrupt";
+
+            // One-time migration: a machine coming from the upstream kil0bit app keeps its
+            // settings. Copy, not move — uninstalling MicaStats must not strand the old app.
+            try
+            {
+                string legacy = Path.Combine(appData, "kil0bit-system-monitor", "config.json");
+                if (!File.Exists(_configPath) && File.Exists(legacy)) File.Copy(legacy, _configPath);
+            }
+            catch { }
 
             Config = LoadConfig();
 

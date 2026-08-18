@@ -39,7 +39,7 @@ namespace Kil0bitSystemMonitor
 
             // Robust single-instance check using Mutex
             bool createdNew;
-            s_mutex = new System.Threading.Mutex(true, "Local\\Kil0bitSystemMonitor_SingleInstance_Mutex", out createdNew);
+            s_mutex = new System.Threading.Mutex(true, "Local\\MicaStats_SingleInstance_Mutex", out createdNew);
             
             if (!createdNew)
             {

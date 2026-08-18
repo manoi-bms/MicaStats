@@ -502,3 +502,7 @@ obj/
 
 # Local deployment staging (copied to Program Files by hand)
 deploy/
+
+# Installer build staging (never commit build artifacts)
+release-output/
+Output/

@@ -4,22 +4,22 @@
         <OutputType>WinExe</OutputType>
         <ApplicationIcon>icon.ico</ApplicationIcon>
         <Win32Icon>icon.ico</Win32Icon>
-        <Authors>KB - kil0bit</Authors>
-        <Company>KB - kil0bit</Company>
-        <Product>Kil0bit System Monitor</Product>
+        <Authors>Chaiyaporn Suratemeekul (manoi-bms)</Authors>
+        <Company>manoi-bms</Company>
+        <Product>MicaStats</Product>
         <Description>Advanced Hardware Telemetry Overlay for Windows 11</Description>
-        <Copyright>Copyright © 2026 KB - kil0bit</Copyright>
+        <Copyright>Copyright © 2026 Chaiyaporn Suratemeekul (manoi-bms)</Copyright>
         <UseWPF>true</UseWPF>
         <UseWindowsForms>true</UseWindowsForms>
         <DefaultLanguage>en-US</DefaultLanguage>
-        <Version>3.0.0</Version>
+        <Version>1.0.0</Version>
 
         <!-- Project Options -->
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
         <ImplicitUsings>enable</ImplicitUsings>
         <SatelliteResourceLanguages>en-US</SatelliteResourceLanguages>
-        <AssemblyName>Kil0bitSystemMonitor</AssemblyName>
+        <AssemblyName>MicaStats</AssemblyName>
         <RootNamespace>Kil0bitSystemMonitor</RootNamespace>
 
         <!-- App Options -->

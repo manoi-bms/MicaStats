@@ -506,6 +506,4 @@ deploy/
 # Installer build staging (never commit build artifacts)
 release-output/
 Output/
-[INFO] Recording command outcome: printf
 
-[OK] Command outcome recorded

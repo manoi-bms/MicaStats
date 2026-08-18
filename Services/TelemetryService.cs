@@ -36,6 +36,17 @@ namespace Kil0bitSystemMonitor.Services
         private DateTime _lastDriveRefresh = DateTime.MinValue;
         private System.Net.NetworkInformation.NetworkInterface[]? _cachedNetworkInterfaces;
         private DateTime _lastNetworkRefresh = DateTime.MinValue;
+        private string _netAdapterName = "";
+        private string _netIpAddress = "";
+        private long _netBaseUp = -1, _netBaseDown = -1;
+
+        private readonly CpuTemperatureProvider _cpuTempProvider = new();
+        private PerformanceCounterCategory? _gpuMemCategory;
+        private DateTime _lastVramRead = DateTime.MinValue;
+        private ulong _gpuVramUsed;
+
+        /// <summary>Nominal clock from the registry; effective clock = this x performance ratio.</summary>
+        private static readonly float BaseMhz = ReadBaseMhz();
         private DateTime _lastGpuCounterRefresh = DateTime.MinValue;
 
         // Per-logical-processor sampling. One ReadCategory per tick covers every core at roughly
@@ -419,6 +430,7 @@ namespace Kil0bitSystemMonitor.Services
                 catch { return (0, 0); }
             }
 
+            NetworkInterface? firstMatch = null;
             foreach (var ni in _cachedNetworkInterfaces)
             {
                 if (IsSelectableAdapter(ni))
@@ -432,9 +444,24 @@ namespace Kil0bitSystemMonitor.Services
                         var iStats = ni.GetIPStatistics();
                         up += iStats.BytesSent;
                         down += iStats.BytesReceived;
+                        firstMatch ??= ni;
                     }
                 }
             }
+
+            // Identity for the network dropdown. The IP lookup walks the address table, so it
+            // only re-runs when the monitored adapter actually changes.
+            if (firstMatch == null)
+            {
+                _netAdapterName = "";
+                _netIpAddress = "";
+            }
+            else if (firstMatch.Name != _netAdapterName || _netIpAddress.Length == 0)
+            {
+                _netAdapterName = firstMatch.Name;
+                _netIpAddress = GetIPv4(firstMatch);
+            }
+
             return (up, down);
         }
 
@@ -460,8 +487,12 @@ namespace Kil0bitSystemMonitor.Services
                 {
                     ulong committed = memStatus.ullTotalPageFile - memStatus.ullAvailPageFile;
                     metrics.CommitPercent = (float)(committed / (double)memStatus.ullTotalPageFile * 100.0);
+                    metrics.CommitUsedBytes = committed;
+                    metrics.CommitLimitBytes = memStatus.ullTotalPageFile;
                 }
             }
+
+            metrics.CachedBytes = ReadSystemCacheBytes();
 
             // Per-core. Kept on this timer thread deliberately: the performance-counter library
             // retries a busy provider with an exponential backoff that has been measured to stall
@@ -513,6 +544,18 @@ namespace Kil0bitSystemMonitor.Services
                 metrics.NetDownText = FormatNet(metrics.NetDownKbps);
             }
 
+            // Adapter identity and session totals for the network dropdown. The baseline
+            // resets with the counters (adapter reconnect), so totals never go negative.
+            metrics.NetAdapterName = _netAdapterName;
+            metrics.NetIpAddress = _netIpAddress;
+            if (_netBaseUp < 0 || netStats.up < _netBaseUp || netStats.down < _netBaseDown)
+            {
+                _netBaseUp = netStats.up;
+                _netBaseDown = netStats.down;
+            }
+            metrics.NetSessionUpBytes = (ulong)(netStats.up - _netBaseUp);
+            metrics.NetSessionDownBytes = (ulong)(netStats.down - _netBaseDown);
+
             // Disks (Multi-monitor support)
             metrics.Disks.Clear();
             float maxActivity = 0;
@@ -524,6 +567,7 @@ namespace Kil0bitSystemMonitor.Services
                     float activity = entry.Value.Usage.NextValue();
                     
                     float spacePct = 0;
+                    ulong freeBytes = 0, totalBytes = 0;
                     try {
                         string instanceName = entry.Key; // e.g. "0 C:"
                         int colonIdx = instanceName.IndexOf(':');
@@ -535,6 +579,8 @@ namespace Kil0bitSystemMonitor.Services
                                 spacePct = (1.0f - (float)drive.TotalFreeSpace / drive.TotalSize) * 100f;
                                 totalSpaceSize += drive.TotalSize;
                                 totalFreeSpace += drive.TotalFreeSpace;
+                                freeBytes = (ulong)drive.TotalFreeSpace;
+                                totalBytes = (ulong)drive.TotalSize;
                             }
                         }
                     } catch { }
@@ -542,7 +588,9 @@ namespace Kil0bitSystemMonitor.Services
                     metrics.Disks.Add(new DiskMetric {
                         Name = entry.Key,
                         SpacePercent = spacePct,
-                        ActivityPercent = Math.Min(100f, activity)
+                        ActivityPercent = Math.Min(100f, activity),
+                        FreeBytes = freeBytes,
+                        TotalBytes = totalBytes
                     });
 
                     maxActivity = Math.Max(maxActivity, activity);
@@ -552,8 +600,11 @@ namespace Kil0bitSystemMonitor.Services
             metrics.DiskPercent = totalSpaceSize > 0 ? (1.0f - (float)totalFreeSpace / totalSpaceSize) * 100f : 0;
             metrics.DiskUsage = Math.Min(100f, maxActivity);
 
-            // Temperature
+            // Temperature. The CPU value comes from Core Temp / a hardware-monitor app when
+            // one is running (matching those tools exactly); -1 otherwise.
             metrics.GpuTemperature = GetGpuTemperature();
+            metrics.CpuTemperature = _cpuTempProvider.Read();
+            metrics.GpuVramUsedBytes = ReadGpuVramUsed();
 
             _lastNetUp = netStats.up;
             _lastNetDown = netStats.down;
@@ -652,11 +703,107 @@ namespace Kil0bitSystemMonitor.Services
                         _previousCoreSamples[key] = current;
                     }
                 }
+
+                // Effective clock, still from the same snapshot: performance ratio x base MHz.
+                // The ratio routinely exceeds 100 on a boosting CPU, which is the point.
+                var performance = snapshot["% Processor Performance"];
+                if (performance != null && BaseMhz > 0)
+                {
+                    var perfTotal = performance["_Total"] ?? performance["0,_Total"];
+                    if (perfTotal != null)
+                    {
+                        const string perfKey = " perf_total";
+                        CounterSample perfCurrent = perfTotal.Sample;
+                        if (_previousCoreSamples.TryGetValue(perfKey, out CounterSample perfPrevious))
+                        {
+                            float pct = CounterSampleCalculator.ComputeCounterValue(perfPrevious, perfCurrent);
+                            if (pct > 0) metrics.CpuFrequencyGhz = BaseMhz * pct / 100_000f;
+                        }
+                        _previousCoreSamples[perfKey] = perfCurrent;
+                    }
+                }
             }
             catch
             {
                 // Per-core detail is supplementary; losing it must not disturb the main metrics.
             }
+        }
+
+        private static float ReadBaseMhz()
+        {
+            try
+            {
+                object? v = Microsoft.Win32.Registry.GetValue(
+                    @"HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0", "~MHz", null);
+                if (v is int mhz && mhz > 0) return mhz;
+            }
+            catch { }
+            return 0;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PERFORMANCE_INFORMATION
+        {
+            public uint cb;
+            public IntPtr CommitTotal, CommitLimit, CommitPeak;
+            public IntPtr PhysicalTotal, PhysicalAvailable, SystemCache;
+            public IntPtr KernelTotal, KernelPaged, KernelNonpaged, PageSize;
+            public uint HandleCount, ProcessCount, ThreadCount;
+        }
+
+        [DllImport("psapi.dll", SetLastError = true)]
+        private static extern bool GetPerformanceInfo(out PERFORMANCE_INFORMATION info, uint size);
+
+        private static ulong ReadSystemCacheBytes()
+        {
+            try
+            {
+                if (GetPerformanceInfo(out var pi, (uint)Marshal.SizeOf<PERFORMANCE_INFORMATION>()))
+                    return (ulong)pi.SystemCache * (ulong)pi.PageSize;
+            }
+            catch { }
+            return 0;
+        }
+
+        /// <summary>
+        /// Dedicated GPU memory in use, summed over adapters. Instantaneous raw bytes; perflib
+        /// is not free, so a 5-second cache is plenty for a readout row.
+        /// </summary>
+        private ulong ReadGpuVramUsed()
+        {
+            if ((DateTime.Now - _lastVramRead).TotalSeconds < 5) return _gpuVramUsed;
+            _lastVramRead = DateTime.Now;
+            try
+            {
+                _gpuMemCategory ??= new PerformanceCounterCategory("GPU Adapter Memory");
+                var snapshot = _gpuMemCategory.ReadCategory();
+                var dedicated = snapshot["Dedicated Usage"];
+                if (dedicated == null) return _gpuVramUsed = 0;
+
+                ulong total = 0;
+                foreach (InstanceData inst in dedicated.Values)
+                    total += (ulong)Math.Max(0L, inst.Sample.RawValue);
+                _gpuVramUsed = total;
+            }
+            catch
+            {
+                _gpuVramUsed = 0;
+            }
+            return _gpuVramUsed;
+        }
+
+        private static string GetIPv4(NetworkInterface ni)
+        {
+            try
+            {
+                foreach (var addr in ni.GetIPProperties().UnicastAddresses)
+                {
+                    if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        return addr.Address.ToString();
+                }
+            }
+            catch { }
+            return "";
         }
 
         private static int NodeOf(string instance)

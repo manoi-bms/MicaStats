@@ -276,6 +276,21 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Temp_series_prefers_the_cpu_package_over_the_gpu_sensor()
+        {
+            using var h = new MetricsHistory(capacity: 8);
+
+            var m = Sample(temp: 44);       // GPU sensor says 44
+            m.CpuTemperature = 72f;         // CPU package says 72 — what Core Temp shows
+            h.Append(m);
+
+            Assert.Equal(72f, h.Temp.Latest);
+
+            h.Append(Sample(temp: 44));     // no CPU source this tick -> fall back to GPU
+            Assert.Equal(44f, h.Temp.Latest);
+        }
+
+        [Fact]
         public void CpuSystem_sentinel_marks_the_series_unavailable_without_a_sample()
         {
             using var h = new MetricsHistory(capacity: 8);

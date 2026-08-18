@@ -260,9 +260,11 @@ namespace Kil0bitSystemMonitor.Services
             Ram.Add(m.RamPercent);
             Gpu.Add(m.GpuUsage);
 
-            // -1 is TelemetryService's "no source could supply a temperature". Appending it as a
-            // value would draw a line below the axis and claim the GPU is at -1 degrees.
-            if (m.GpuTemperature > 0) Temp.Add(m.GpuTemperature);
+            // The temperature series prefers the CPU package (what temperature-watchers mean by
+            // "temp") and falls back to the GPU sensor. -1 is "no source could supply one";
+            // appending it would draw below the axis and claim minus one degree.
+            float displayTemp = m.CpuTemperature > 0 ? m.CpuTemperature : m.GpuTemperature;
+            if (displayTemp > 0) Temp.Add(displayTemp);
             else Temp.AddUnavailable();
 
             NetUp.Add(m.NetUpKbps);

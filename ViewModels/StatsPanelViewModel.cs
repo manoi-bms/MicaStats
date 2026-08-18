@@ -38,7 +38,7 @@ namespace Kil0bitSystemMonitor.ViewModels
     public sealed class DiskRow : INotifyPropertyChanged
     {
         private string _activity = "—";
-        private string _space = "";
+        private string _detail = "";
 
         public DiskRow(string name) => Name = name;
 
@@ -51,10 +51,11 @@ namespace Kil0bitSystemMonitor.ViewModels
             set { if (_activity != value) { _activity = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Activity))); } }
         }
 
-        public string Space
+        /// <summary>"62% used · 234 GB free".</summary>
+        public string Detail
         {
-            get => _space;
-            set { if (_space != value) { _space = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Space))); } }
+            get => _detail;
+            set { if (_detail != value) { _detail = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Detail))); } }
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -148,6 +149,10 @@ namespace Kil0bitSystemMonitor.ViewModels
         private string _cpuValueText = "—";
         public string CpuValueText { get => _cpuValueText; private set => Set(ref _cpuValueText, value); }
 
+        private string _cpuHeaderText = "—";
+        /// <summary>"8% · 3.87 GHz · 72°" — usage plus whatever else is readable, iStat style.</summary>
+        public string CpuHeaderText { get => _cpuHeaderText; private set => Set(ref _cpuHeaderText, value); }
+
         private bool _hasCpuSplit;
         /// <summary>True when the kernel/user split is readable; the legend then shows User/System.</summary>
         public bool HasCpuSplit { get => _hasCpuSplit; private set => Set(ref _hasCpuSplit, value); }
@@ -190,6 +195,13 @@ namespace Kil0bitSystemMonitor.ViewModels
         private string _memCommitText = "—";
         public string MemCommitText { get => _memCommitText; private set => Set(ref _memCommitText, value); }
 
+        private string _memCommitGbText = "—";
+        /// <summary>Commit charge as "34.2 / 68.0 GB".</summary>
+        public string MemCommitGbText { get => _memCommitGbText; private set => Set(ref _memCommitGbText, value); }
+
+        private string _memCachedText = "—";
+        public string MemCachedText { get => _memCachedText; private set => Set(ref _memCachedText, value); }
+
         // ---- GPU card ----
 
         private string _gpuValueText = "—";
@@ -206,6 +218,9 @@ namespace Kil0bitSystemMonitor.ViewModels
 
         private bool _gpuGraphAvailable = true;
         public bool GpuGraphAvailable { get => _gpuGraphAvailable; private set => Set(ref _gpuGraphAvailable, value); }
+
+        private string _gpuVramText = "—";
+        public string GpuVramText { get => _gpuVramText; private set => Set(ref _gpuVramText, value); }
 
         // ---- Network card ----
 
@@ -225,6 +240,16 @@ namespace Kil0bitSystemMonitor.ViewModels
         /// <summary>Shared full-scale for both directions, so upload and download stay comparable.</summary>
         public double NetGraphMax { get => _netGraphMax; private set => Set(ref _netGraphMax, value); }
 
+        private string _netAdapterText = "—";
+        public string NetAdapterText { get => _netAdapterText; private set => Set(ref _netAdapterText, value); }
+
+        private string _netIpText = "—";
+        public string NetIpText { get => _netIpText; private set => Set(ref _netIpText, value); }
+
+        private string _netTotalsText = "—";
+        /// <summary>Session transfer totals, "↓ 4.2 GB · ↑ 310 MB".</summary>
+        public string NetTotalsText { get => _netTotalsText; private set => Set(ref _netTotalsText, value); }
+
         // ---- Disks card ----
 
         private string _diskValueText = "—";
@@ -242,7 +267,11 @@ namespace Kil0bitSystemMonitor.ViewModels
         /// <summary>Highest CPU consumers, refreshed only while the panel is open.</summary>
         public ObservableCollection<ProcessUsage> TopProcesses { get; }
 
+        /// <summary>Highest memory consumers, for the Memory card's mini list.</summary>
+        public ObservableCollection<ProcessUsage> MemoryTopProcesses { get; } = new();
+
         public bool HasProcesses => TopProcesses.Count > 0;
+        public bool HasMemoryProcesses => MemoryTopProcesses.Count > 0;
         public bool HasCores => Cores.Count > 0;
 
         // ---- identity header ----
@@ -269,6 +298,16 @@ namespace Kil0bitSystemMonitor.ViewModels
                 TopProcesses.Clear();
                 foreach (var p in _processes.TopByCpu) TopProcesses.Add(p);
                 if (had != (TopProcesses.Count > 0)) OnPropertyChanged(nameof(HasProcesses));
+
+                bool hadMem = MemoryTopProcesses.Count > 0;
+                MemoryTopProcesses.Clear();
+                int taken = 0;
+                foreach (var p in _processes.TopByRam)
+                {
+                    MemoryTopProcesses.Add(p);
+                    if (++taken >= 3) break;
+                }
+                if (hadMem != (MemoryTopProcesses.Count > 0)) OnPropertyChanged(nameof(HasMemoryProcesses));
             });
         }
 
@@ -293,7 +332,9 @@ namespace Kil0bitSystemMonitor.ViewModels
                 else
                 {
                     TopProcesses.Clear();
+                    MemoryTopProcesses.Clear();
                     OnPropertyChanged(nameof(HasProcesses));
+                    OnPropertyChanged(nameof(HasMemoryProcesses));
                 }
             }
         }
@@ -307,6 +348,10 @@ namespace Kil0bitSystemMonitor.ViewModels
 
             // CPU
             CpuValueText = $"{(int)m.CpuUsage}%";
+            string header = $"{(int)m.CpuUsage}%";
+            if (m.CpuFrequencyGhz > 0) header += $" · {m.CpuFrequencyGhz:F2} GHz";
+            if (m.CpuTemperature > 0) header += $" · {(int)m.CpuTemperature}°";
+            CpuHeaderText = header;
             bool split = _history.CpuSystem.Availability == Availability.Value;
             HasCpuSplit = split;
             if (split)
@@ -337,6 +382,10 @@ namespace Kil0bitSystemMonitor.ViewModels
                 MemFreeText = $"{(m.RamTotalBytes - m.RamUsedBytes) / 1024d / 1024d / 1024d:F1} GB";
             }
             MemCommitText = $"{(int)m.CommitPercent}%";
+            MemCommitGbText = m.CommitLimitBytes > 0
+                ? $"{m.CommitUsedBytes / 1024d / 1024d / 1024d:F1} / {m.CommitLimitBytes / 1024d / 1024d / 1024d:F0} GB"
+                : $"{(int)m.CommitPercent}%";
+            MemCachedText = m.CachedBytes > 0 ? FormatBytes(m.CachedBytes) : "—";
 
             // GPU
             GpuValueText = $"{(int)m.GpuUsage}%";
@@ -345,6 +394,7 @@ namespace Kil0bitSystemMonitor.ViewModels
             GpuTempPercent = hasTemp ? Math.Clamp(m.GpuTemperature, 0, 100) : 0;
             GpuTempText = hasTemp ? $"{(int)m.GpuTemperature}°" : "—";
             GpuGraphAvailable = _history.Gpu.Availability == Availability.Value;
+            GpuVramText = m.GpuVramUsedBytes > 0 ? FormatBytes(m.GpuVramUsedBytes) : "—";
 
             // Network
             NetUpBigText = m.NetUpText;
@@ -352,6 +402,9 @@ namespace Kil0bitSystemMonitor.ViewModels
             NetPeakUpText = FormatKbps(_history.NetUp.Max);
             NetPeakDownText = FormatKbps(_history.NetDown.Max);
             NetGraphMax = Math.Max(1f, _history.SharedNetPeak);
+            NetAdapterText = string.IsNullOrEmpty(m.NetAdapterName) ? "—" : m.NetAdapterName;
+            NetIpText = string.IsNullOrEmpty(m.NetIpAddress) ? "—" : m.NetIpAddress;
+            NetTotalsText = $"↓ {FormatBytes(m.NetSessionDownBytes)} · ↑ {FormatBytes(m.NetSessionUpBytes)}";
 
             UpdateDisks(m);
             UpdateCores(m);
@@ -406,8 +459,11 @@ namespace Kil0bitSystemMonitor.ViewModels
             }
             for (int i = 0; i < m.Disks.Count; i++)
             {
-                DiskRows[i].Activity = $"{(int)m.Disks[i].ActivityPercent}%";
-                DiskRows[i].Space = $"{(int)m.Disks[i].SpacePercent}% used";
+                var d = m.Disks[i];
+                DiskRows[i].Activity = $"{(int)d.ActivityPercent}%";
+                DiskRows[i].Detail = d.FreeBytes > 0
+                    ? $"{(int)d.SpacePercent}% used · {FormatBytes(d.FreeBytes)} free"
+                    : $"{(int)d.SpacePercent}% used";
             }
         }
 
@@ -434,6 +490,14 @@ namespace Kil0bitSystemMonitor.ViewModels
             for (int i = 0; i < usage.Length; i++) Cores[i].Percent = Math.Clamp(usage[i], 0, 100);
 
             if (had != Cores.Count) OnPropertyChanged(nameof(HasCores));
+        }
+
+        /// <summary>Bytes as a compact human figure ("3.2 GB", "412 MB").</summary>
+        private static string FormatBytes(ulong bytes)
+        {
+            if (bytes >= 1024UL * 1024 * 1024) return $"{bytes / 1024d / 1024d / 1024d:F1} GB";
+            if (bytes >= 1024UL * 1024) return $"{bytes / 1024d / 1024d:F0} MB";
+            return $"{bytes / 1024d:F0} KB";
         }
 
         /// <summary>Renders a KB/s figure with the same unit thresholds the overlay uses.</summary>

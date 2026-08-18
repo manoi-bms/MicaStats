@@ -907,8 +907,13 @@ namespace Kil0bitSystemMonitor
                 list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("GPU", $"{(int)m.GpuUsage}%", "88%", _history.Gpu, level: m.GpuUsage) });
             if (c.ShowTemp)
             {
-                string tempStr = m.GpuTemperature > 0 ? $"{(int)m.GpuTemperature}°" : "N/A";
-                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("TMP", tempStr, "88°", _history.Temp) });
+                // CPU package first (that is what a taskbar temperature means to people, and it
+                // matches Core Temp when it is running), GPU sensor as the fallback. The hover
+                // dropdown follows the source.
+                float displayTemp = m.CpuTemperature > 0 ? m.CpuTemperature : m.GpuTemperature;
+                string tempStr = displayTemp > 0 ? $"{(int)displayTemp}°" : "N/A";
+                var tempPanel = m.CpuTemperature > 0 ? PanelSection.Cpu : PanelSection.Gpu;
+                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = tempPanel, Top = Item("TMP", tempStr, "88°", _history.Temp) });
             }
 
             if ((c.ShowDisk || c.ShowDiskSpeed) && m.Disks != null && m.Disks.Count > 0)

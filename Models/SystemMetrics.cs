@@ -25,6 +25,12 @@ namespace Kil0bitSystemMonitor.Models
         public string Name { get; set; } = "";
         public float SpacePercent { get; set; }
         public float ActivityPercent { get; set; }
+
+        /// <summary>Free capacity in bytes, or 0 if the drive was not ready.</summary>
+        public ulong FreeBytes { get; set; }
+
+        /// <summary>Total capacity in bytes, or 0 if the drive was not ready.</summary>
+        public ulong TotalBytes { get; set; }
     }
 
     /// <summary>
@@ -84,6 +90,39 @@ namespace Kil0bitSystemMonitor.Models
         /// closest Windows analogue to macOS "memory pressure" for the panel's second ring.
         /// </summary>
         public float CommitPercent { get; set; }
+
+        /// <summary>Commit charge in use, bytes. 0 if unknown.</summary>
+        public ulong CommitUsedBytes { get; set; }
+
+        /// <summary>Commit limit, bytes. 0 if unknown.</summary>
+        public ulong CommitLimitBytes { get; set; }
+
+        /// <summary>System file cache, bytes. 0 if unknown.</summary>
+        public ulong CachedBytes { get; set; }
+
+        /// <summary>
+        /// Hottest CPU core in Celsius, published by Core Temp or a hardware-monitor app; -1
+        /// when no publisher is running (the die sensors need ring-0, which this app avoids).
+        /// </summary>
+        public float CpuTemperature { get; set; } = -1f;
+
+        /// <summary>Effective CPU clock in GHz (base clock x performance ratio), or 0 if unknown.</summary>
+        public float CpuFrequencyGhz { get; set; }
+
+        /// <summary>Dedicated GPU memory in use, bytes. 0 if unknown.</summary>
+        public ulong GpuVramUsedBytes { get; set; }
+
+        /// <summary>The monitored adapter's name, or empty when none matched.</summary>
+        public string NetAdapterName { get; set; } = "";
+
+        /// <summary>The monitored adapter's IPv4 address, or empty when unknown.</summary>
+        public string NetIpAddress { get; set; } = "";
+
+        /// <summary>Bytes received since this app started sampling.</summary>
+        public ulong NetSessionDownBytes { get; set; }
+
+        /// <summary>Bytes sent since this app started sampling.</summary>
+        public ulong NetSessionUpBytes { get; set; }
     }
 
     public class AppConfig : System.ComponentModel.INotifyPropertyChanged

@@ -128,7 +128,7 @@
                         <Grid Margin="0,0,0,7">
                             <TextBlock Style="{StaticResource CardHeader}" Text="CPU" />
                             <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
-                                       Text="{Binding CpuValueText}" />
+                                       Text="{Binding CpuHeaderText}" />
                         </Grid>
 
                         <ctrl:HistoryBarGraph Height="50" Mode="Stacked" Max="100"
@@ -249,8 +249,45 @@
                                 <TextBlock Style="{StaticResource SubLabel}" Text="Committed" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
-                                       Text="{Binding MemCommitText}" />
+                                       Text="{Binding MemCommitGbText}" />
                         </Grid>
+                        <Grid Margin="0,4,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DimDot}" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="Cached" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
+                                       Text="{Binding MemCachedText}" />
+                        </Grid>
+
+                        <!-- Top memory consumers, the iStat memory-dropdown signature -->
+                        <StackPanel Margin="0,9,0,0">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasMemoryProcesses}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Style="{StaticResource CardHeader}" Foreground="{StaticResource DataCyan}"
+                                       Text="TOP MEMORY" Margin="0,0,0,5" />
+                            <ItemsControl ItemsSource="{Binding MemoryTopProcesses}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,3">
+                                            <TextBlock Text="{Binding Name}" FontSize="10.5"
+                                                       Foreground="#CFEDEDF2" TextTrimming="CharacterEllipsis"
+                                                       Margin="0,0,70,0" />
+                                            <TextBlock Text="{Binding WorkingSetText}" FontSize="10.5"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource DataCyan}"
+                                                       HorizontalAlignment="Right" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -295,6 +332,12 @@
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
+
+                        <Grid Margin="0,0,0,7">
+                            <TextBlock Style="{StaticResource SubLabel}" Text="VRAM" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
+                                       Text="{Binding GpuVramText}" />
+                        </Grid>
 
                         <Grid>
                             <ctrl:HistoryBarGraph Height="40" Mode="Bars" Max="100"
@@ -373,6 +416,23 @@
                             <TextBlock Style="{StaticResource LegendValue}" Text="{Binding NetPeakDownText}"
                                        VerticalAlignment="Center" />
                         </StackPanel>
+
+                        <!-- Connection identity and session totals -->
+                        <Grid Margin="0,9,0,0">
+                            <TextBlock Style="{StaticResource SubLabel}" Text="ADAPTER" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
+                                       Text="{Binding NetAdapterText}" TextTrimming="CharacterEllipsis" MaxWidth="220" />
+                        </Grid>
+                        <Grid Margin="0,4,0,0">
+                            <TextBlock Style="{StaticResource SubLabel}" Text="IP ADDRESS" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
+                                       Text="{Binding NetIpText}" />
+                        </Grid>
+                        <Grid Margin="0,4,0,0">
+                            <TextBlock Style="{StaticResource SubLabel}" Text="SESSION" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
+                                       Text="{Binding NetTotalsText}" />
+                        </Grid>
                     </StackPanel>
                 </Border>
 
@@ -412,7 +472,7 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding Name}" FontSize="11" Foreground="#CFEDEDF2" />
                                         <TextBlock Grid.Column="1" Style="{StaticResource SubLabel}"
-                                                   Text="{Binding Space}" VerticalAlignment="Center" />
+                                                   Text="{Binding Detail}" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="2" Text="{Binding Activity}" FontSize="11"
                                                    FontWeight="SemiBold" Foreground="{StaticResource DataCyan}"
                                                    TextAlignment="Right" />

@@ -102,33 +102,38 @@ The underlying monitoring functionality remains derived from the original projec
 
 ## Screenshots
 
-<!--
-Replace the files below with current screenshots from your fork.
-Using the existing paths prevents broken images in a fork of the upstream repository.
--->
+All images below are rendered by the actual application code with representative data.
 
-### Dashboard
+### Taskbar Overlay — iStat-style stacked modules
+
+Each metric is its own module: a dim label over a bold value, dense history bars, mini level bars on CPU / RAM / GPU, one combined storage zone with a bar per drive, and paired ↑/↓ network lines around a mirrored graph.
 
 <p align="center">
-  <img src="Assets/preview/dashboard.png" width="850" alt="MicaStats dashboard" />
+  <img src="Assets/preview/istat-taskbar.png" width="850" alt="MicaStats taskbar overlay with live graphs" />
 </p>
 
-### Monitoring Configuration
+With **Live Graphs** switched off, the same layout in its most compact form:
 
 <p align="center">
-  <img src="Assets/preview/monitoring.png" width="850" alt="MicaStats monitoring configuration" />
+  <img src="Assets/preview/istat-taskbar-compact.png" width="500" alt="MicaStats compact taskbar overlay" />
 </p>
 
-### Detailed Overlay
+### Stats Panel
+
+Click the overlay for the full dropdown: stacked User/System CPU history, one ring gauge per logical processor, MEMORY and COMMIT rings with a Used / Free / Committed / Cached breakdown, GPU rings with VRAM, a mirrored network graph with session totals, per-drive storage rows, and top processes.
 
 <p align="center">
-  <img src="Assets/preview/detailed.png" width="650" alt="MicaStats detailed taskbar overlay" />
+  <img src="Assets/preview/stats-panel.png" width="420" alt="MicaStats stats panel" />
 </p>
 
-### Compact Overlay
+### Per-Section Hover Dropdowns
+
+Pause over any taskbar module and its own compact dropdown opens, retargeting as you slide between modules — the iStat Menus interaction, on Windows.
 
 <p align="center">
-  <img src="Assets/preview/compact.png" width="650" alt="MicaStats compact taskbar overlay" />
+  <img src="Assets/preview/hover-cpu.png" width="300" alt="CPU hover dropdown" />
+  <img src="Assets/preview/hover-memory.png" width="300" alt="Memory hover dropdown" />
+  <img src="Assets/preview/hover-network.png" width="300" alt="Network hover dropdown" />
 </p>
 
 ---

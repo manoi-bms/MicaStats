@@ -99,6 +99,7 @@ namespace Kil0bitSystemMonitor.ViewModels
         public Series CpuSeries => _history.Cpu;
         public Series CpuSystemSeries => _history.CpuSystem;
         public Series GpuSeries => _history.Gpu;
+        public Series RamSeries => _history.Ram;
         public Series NetUpSeries => _history.NetUp;
         public Series NetDownSeries => _history.NetDown;
 

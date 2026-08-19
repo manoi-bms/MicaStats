@@ -290,6 +290,11 @@
                                        Text="{Binding MemCachedText}" />
                         </Grid>
 
+                        <!-- Memory pressure over time — the same history treatment the CPU card gets -->
+                        <ctrl:HistoryBarGraph Height="40" Mode="Bars" Max="100" Margin="0,9,0,0"
+                                              Series="{Binding RamSeries}"
+                                              Tick="{Binding Tick}" />
+
                         <!-- Top memory consumers, the iStat memory-dropdown signature -->
                         <StackPanel Margin="0,9,0,0">
                             <StackPanel.Style>

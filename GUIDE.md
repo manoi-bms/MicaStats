@@ -35,6 +35,14 @@ Prefer the classic single-row layout? Turn off **iStat Taskbar (stacked)** in **
 classic mode keeps all per-section colour customisation. The stacked mode uses a fixed palette
 (grey labels, white values, cyan graphs) so it always looks cohesive.
 
+### 🚫 Start Menu Avoidance
+A centred Windows 11 taskbar moves its Start button **left** as apps open, so a fixed overlay
+would eventually sit underneath it. The stacked overlay now watches the Start button (and the
+tray, for right-side placements) and caps its own width to stay clear: sparkline graphs hide
+first, then trailing modules one by one — network and CPU survive longest — and everything
+returns automatically once the space is back. Hidden metrics stay one hover or click away in
+the panels. Turn this off with **Avoid Start Menu** in **Appearance**.
+
 ### 📉 Live Graphs
 Turn on **Live Graphs** in **Appearance** to draw a small bar chart of recent history beside each
 reading, so you can see a trend rather than just an instant value. Graphs work in stacked, Standard
@@ -50,7 +58,8 @@ cards with the detail the taskbar has no room for:
 
 - **CPU card**: stacked User/System history bars, a ● User / ● System legend, one ring gauge per
   logical processor, and uptime.
-- **Memory card**: MEMORY and COMMIT ring gauges with a Used / Free / Committed breakdown.
+- **Memory card**: MEMORY and COMMIT ring gauges, a memory-pressure history graph, and a
+  Used / Free / Committed / Cached breakdown with top memory consumers.
 - **GPU card**: usage and temperature rings above a history graph.
 - **Network card**: big upload/download readings and a mirrored ↑/↓ graph around a dashed axis,
   with window peaks.

@@ -72,6 +72,7 @@ Sensor availability may vary depending on the installed hardware, device drivers
 * Lock the overlay position
 * Keep the overlay above other windows
 * Automatically hide it during full-screen applications
+* Auto-avoid the Start button: the stacked overlay narrows itself (graphs first, then trailing modules) so the centred Windows 11 Start button and tray never end up underneath it
 
 ### Customization
 
@@ -100,6 +101,8 @@ The underlying monitoring functionality remains derived from the original projec
 
 ---
 
+Curious where MicaStats is heading? The researched feature roadmap lives in [ROADMAP.md](ROADMAP.md).
+
 ## Screenshots
 
 All images below are rendered by the actual application code with representative data.
@@ -120,7 +123,7 @@ With **Live Graphs** switched off, the same layout in its most compact form:
 
 ### Stats Panel
 
-Click the overlay for the full dropdown: stacked User/System CPU history, one ring gauge per logical processor, MEMORY and COMMIT rings with a Used / Free / Committed / Cached breakdown, GPU rings with VRAM, a mirrored network graph with session totals, per-drive storage rows, and top processes.
+Click the overlay for the full dropdown: stacked User/System CPU history, one ring gauge per logical processor, MEMORY and COMMIT rings with a memory history graph and a Used / Free / Committed / Cached breakdown, GPU rings with VRAM, a mirrored network graph with session totals, per-drive storage rows, and top processes.
 
 <p align="center">
   <img src="Assets/preview/stats-panel.png" width="420" alt="MicaStats stats panel" />

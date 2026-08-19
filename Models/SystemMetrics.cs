@@ -178,6 +178,7 @@ namespace Kil0bitSystemMonitor.Models
         private bool _showPanelOnClick = true;
         private bool _stackedTaskbar = true;
         private bool _hoverPanels = true;
+        private bool _avoidStartMenu = true;
 
         // Per-section label colors (null = use global LabelColorHex)
         private string? _netLabelColorHex = null;
@@ -250,6 +251,14 @@ namespace Kil0bitSystemMonitor.Models
         /// because the classic layout fuses two metrics per column.
         /// </summary>
         public bool HoverPanels { get => _hoverPanels; set { Set(ref _hoverPanels, value); } }
+
+        /// <summary>
+        /// Cap the stacked overlay's width so it never overlaps the taskbar's own buttons.
+        /// A centred Windows 11 taskbar moves its Start button LEFT as icons are added, so a
+        /// fixed-position overlay eventually collides; with this on, sparklines hide first,
+        /// then trailing modules, and everything returns once the space is back.
+        /// </summary>
+        public bool AvoidStartMenu { get => _avoidStartMenu; set { Set(ref _avoidStartMenu, value); } }
 
         // Per-section label colors (null/empty = inherit global LabelColorHex)
         public string? NetLabelColorHex { get => _netLabelColorHex; set { Set(ref _netLabelColorHex, value); } }

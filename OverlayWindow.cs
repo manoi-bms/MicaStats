@@ -40,6 +40,8 @@ namespace Kil0bitSystemMonitor
         private PanelSection _pendingHoverSection = PanelSection.All;
         private System.Windows.Threading.DispatcherTimer? _hoverDwellTimer;
         private bool _shellFullscreen = false;
+        private int _stackedFitLevel;   // StackedFitPlanner hysteresis state
+        private float? _testWidthCapPx = null; // render-harness override (reflection) for the Start-menu width cap
         private bool _appbarRegistered = false;
         private readonly Action? _onHistoryUpdated;
         private readonly System.ComponentModel.PropertyChangedEventHandler? _onConfigPropertyChanged;
@@ -753,7 +755,7 @@ namespace Kil0bitSystemMonitor
             float graphW = graphs ? MathF.Round(graphH * 1.5f) : 0f;
 
             float[] widths = new float[columns.Count];
-            float total = 2 * scale;
+            float[] graphParts = new float[columns.Count];
             for (int i = 0; i < columns.Count; i++)
             {
                 var col = columns[i];
@@ -777,11 +779,40 @@ namespace Kil0bitSystemMonitor
                     if (nBars > 0) levelPart = levelGap + nBars * levelW + (nBars - 1) * (2 * scale);
                 }
                 widths[i] = textW + graphPart + levelPart + pad * 2;
-                total += widths[i] + podGap;
+                graphParts[i] = graphPart;
             }
-            total = total - podGap + (2 * scale);
 
-            int w = (int)Math.Max(20, total);
+            // Auto-avoid the taskbar's own buttons. With a centred Win11 taskbar the Start
+            // button slides LEFT as icons are added, so the frontier to respect is the
+            // nearest obstacle right of our own left edge — the Start button, or the tray
+            // for an overlay parked on the right side. The planner sheds sparklines first,
+            // then trailing modules, and restores them only with slack to spare so the
+            // layout never flaps at the boundary.
+            float? cap = _testWidthCapPx;
+            if (cap == null && _config.Config.AvoidStartMenu && _hWnd != IntPtr.Zero
+                && Win32Helper.GetWindowRect(_hWnd, out Win32Helper.RECT selfRect))
+            {
+                float margin = 6 * scale;
+                float best = float.MaxValue;
+                void Consider(Win32Helper.RECT? obstacle)
+                {
+                    if (obstacle is not Win32Helper.RECT o) return;
+                    if (selfRect.Top >= o.Bottom || selfRect.Bottom <= o.Top) return; // different band
+                    if (o.Left < selfRect.Left) return;                              // not to our right
+                    best = Math.Min(best, o.Left - selfRect.Left - margin);
+                }
+                Consider(TaskbarButtonsLocator.GetStartButtonRect());
+                Consider(TaskbarButtonsLocator.GetTrayNotifyRect());
+                if (best != float.MaxValue) cap = Math.Max(20, best);
+            }
+
+            var plan = StackedFitPlanner.Fit(widths, graphParts, podGap, 4 * scale, cap, _stackedFitLevel, 24 * scale);
+            _stackedFitLevel = plan.Level;
+            bool drawGraphs = graphs && plan.ShowGraphs;
+            if (!plan.ShowGraphs)
+                for (int i = 0; i < widths.Length; i++) widths[i] -= graphParts[i];
+
+            int w = (int)Math.Max(20, plan.Width);
             EnsureOffscreenBuffer(w, h);
             if (_offscreenGraphics == null || _offscreenBitmap == null) return;
 
@@ -793,7 +824,7 @@ namespace Kil0bitSystemMonitor
             Brush pBrush = _cachedPodBrush ?? new SolidBrush(Color.FromArgb(15, 255, 255, 255));
             _moduleZones.Clear();
             float cx = 2 * scale;
-            for (int i = 0; i < columns.Count; i++)
+            for (int i = 0; i < plan.VisibleColumns; i++)
             {
                 var col = columns[i];
                 if (pods)
@@ -807,7 +838,7 @@ namespace Kil0bitSystemMonitor
 
                 if (col.Kind == SectionKind.Net)
                 {
-                    if (graphs && (col.Top?.History != null || col.Bottom?.History != null))
+                    if (drawGraphs && (col.Top?.History != null || col.Bottom?.History != null))
                     {
                         float gy = (h - graphH) / 2f;
                         float max = col.Top?.GraphMax ?? col.Bottom?.GraphMax ?? 1f;
@@ -836,7 +867,7 @@ namespace Kil0bitSystemMonitor
                 else
                 {
                     var item = (col.Top ?? col.Bottom)!;
-                    if (graphs && item.History != null)
+                    if (drawGraphs && item.History != null)
                     {
                         float gy = (h - graphH) / 2f;
                         DrawSparklineRect(_offscreenGraphics, item.History, item.GraphMax, contentX, gy, graphW, graphH, StackedGraphBrush);

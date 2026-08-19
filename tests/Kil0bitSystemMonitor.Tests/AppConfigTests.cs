@@ -189,6 +189,15 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Avoid_start_menu_default_on()
+        {
+            // Pre-existing configs lack the field; deserializing must land on true so the
+            // overlap fix applies to upgraders without a settings visit.
+            var c = new AppConfig();
+            Assert.True(c.AvoidStartMenu);
+        }
+
+        [Fact]
         public void Stacked_taskbar_defaults_on_so_old_configs_inherit_the_new_look()
         {
             // Configs saved before the field existed deserialize without it and must land on

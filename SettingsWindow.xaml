@@ -602,6 +602,8 @@
 
                                         <ui:ToggleSwitch Header="Hover Panels" IsOn="{Binding Config.HoverPanels, Mode=TwoWay}" Margin="0,0,0,8" />
 
+                                        <ui:ToggleSwitch Header="Avoid Start Menu" IsOn="{Binding Config.AvoidStartMenu, Mode=TwoWay}" Margin="0,0,0,8" />
+
                                         <ui:ToggleSwitch Header="Enable Capsules" IsOn="{Binding Config.ShowPods, Mode=TwoWay}" Margin="0,0,0,8" />
                                         
                                         <ui:ToggleSwitch Header="Background Plate" IsOn="{Binding Config.ShowBackground, Mode=TwoWay}" Margin="0,0,0,8" />

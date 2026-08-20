@@ -983,17 +983,6 @@ namespace Kil0bitSystemMonitor
                 list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Panel = PanelSection.Memory, Top = Item("RAM", $"{(int)m.RamPercent}%", "88%", _history.Ram, level: m.RamPercent) });
             if (c.ShowGpu)
                 list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("GPU", $"{(int)m.GpuUsage}%", "88%", _history.Gpu, level: m.GpuUsage) });
-            if (c.ShowTemp)
-            {
-                // CPU package first (that is what a taskbar temperature means to people, and it
-                // matches Core Temp when it is running), GPU sensor as the fallback. The hover
-                // dropdown follows the source.
-                float displayTemp = m.CpuTemperature > 0 ? m.CpuTemperature : m.GpuTemperature;
-                string tempStr = displayTemp > 0 ? $"{(int)displayTemp}°" : "N/A";
-                var tempPanel = m.CpuTemperature > 0 ? PanelSection.Cpu : PanelSection.Gpu;
-                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = tempPanel, Top = Item("TMP", tempStr, "88°", _history.Temp) });
-            }
-
             if ((c.ShowDisk || c.ShowDiskSpeed) && m.Disks != null && m.Disks.Count > 0)
             {
                 // One compact zone for every drive: the text follows the busiest drive and the
@@ -1018,6 +1007,22 @@ namespace Kil0bitSystemMonitor
                                 byActivity ? _history.Disk(busiest.Name) : null);
                 zone.MultiLevels = levels;
                 list.Add(new MetricColumn { Kind = SectionKind.Disk, Panel = PanelSection.Disks, Top = zone });
+            }
+
+            if (c.ShowTemp)
+            {
+                // CPU package first (that is what a taskbar temperature means to people, and it
+                // matches Core Temp when it is running), GPU sensor as the fallback. The hover
+                // dropdown follows the source.
+                //
+                // Deliberately LAST: column order is drop priority under Start-menu avoidance,
+                // and temperature is the strip's most duplicated reading (the CPU hover header
+                // carries it too) while the disk zone appears nowhere else — so TMP yields its
+                // space before storage does.
+                float displayTemp = m.CpuTemperature > 0 ? m.CpuTemperature : m.GpuTemperature;
+                string tempStr = displayTemp > 0 ? $"{(int)displayTemp}°" : "N/A";
+                var tempPanel = m.CpuTemperature > 0 ? PanelSection.Cpu : PanelSection.Gpu;
+                list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = tempPanel, Top = Item("TMP", tempStr, "88°", _history.Temp) });
             }
 
             return list;

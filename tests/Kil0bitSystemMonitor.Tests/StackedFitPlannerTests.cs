@@ -70,13 +70,36 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void Restore_needs_slack_so_the_boundary_cannot_flap()
         {
-            // Cap 290 fits level 0 (284) but not with the 24px slack (284 > 266): stay put.
-            var held = Fit(cap: 290f, prev: 1);
+            // Squeezed level 0 becomes reachable at 224 (184 + 0.4*100); restoring on top of
+            // that demands the 24px slack: 240-24=216 misses it, 260-24=236 clears it.
+            var held = Fit(cap: 240f, prev: 1);
             Assert.Equal(1, held.Level);
 
-            // Cap 320 clears the slack (284 <= 296): restore to full.
-            var restored = Fit(cap: 320f, prev: 1);
+            var restored = Fit(cap: 260f, prev: 1);
             Assert.Equal(0, restored.Level);
+            Assert.Equal(0.76, restored.GraphScale, 2);
+        }
+
+        [Fact]
+        public void Graphs_squeeze_to_soak_up_the_exact_space_available()
+        {
+            // Between full (284) and graphless (184) the sparklines scale continuously, so
+            // the plan's width equals the cap instead of leaving a blank strip beside it.
+            var p = Fit(cap: 250f);
+            Assert.Equal(0, p.Level);
+            Assert.True(p.ShowGraphs);
+            Assert.Equal(0.66, p.GraphScale, 2);
+            Assert.Equal(250.0, p.Width, 1);
+        }
+
+        [Fact]
+        public void Graphs_drop_only_below_the_minimum_squeeze()
+        {
+            // 184 + 0.4*100 = 224 is the squeeze floor; under it the graphs go entirely.
+            var p = Fit(cap: 220f);
+            Assert.Equal(1, p.Level);
+            Assert.False(p.ShowGraphs);
+            Assert.Equal(184f, p.Width);
         }
 
         [Fact]

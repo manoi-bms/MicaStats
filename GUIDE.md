@@ -40,10 +40,11 @@ A centred Windows 11 taskbar moves its Start button **left** as apps open, so a 
 would eventually sit underneath it. The stacked overlay watches the taskbar's own buttons
 (widgets, Start, tray) and stays inside the free corridor between them — **sliding left into
 unused space first**, so it keeps every module whenever the corridor has room, and drifting
-back to your chosen spot as apps close. Only when the whole corridor genuinely cannot hold
-everything does it shed content: sparkline graphs first, then trailing modules one by one —
-network and CPU survive longest — with a small **⋯** marker showing that modules are elided
-rather than missing. Everything hidden stays one hover or click away in the panels. Turn
+back to your chosen spot as apps close. When the corridor tightens, the sparklines squeeze
+down first (to 40% of their width) so the layout always fills the available space exactly;
+only below that do they disappear, then trailing modules one by one — network and CPU
+survive longest — with a small **⋯** marker showing that modules are elided rather than
+missing. Everything hidden stays one hover or click away in the panels. Turn
 this off with **Avoid Start Menu** in **Appearance**.
 
 ### 📉 Live Graphs
@@ -130,7 +131,9 @@ Open the **Settings Window** to customize your experience:
 
 ### 🎨 Appearance & Design
 - **Accent Color**: Pick a color that matches your Windows theme.
-- **Font Selection**: Choose from high-legibility fonts (Segoe UI, Outfit, Inter).
+- **Font Selection**: Choose from high-legibility fonts (Segoe UI, Outfit, Inter). On
+  Windows 11 the default renders with **Segoe UI Variable** — Text for values, Small for the
+  tiny labels — the face designed for exactly these sizes.
 - **Design Mode**: Toggle between **Standard** and **Compact** modes for different levels of detail.
 
 ---

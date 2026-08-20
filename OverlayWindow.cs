@@ -41,6 +41,7 @@ namespace Kil0bitSystemMonitor
         private System.Windows.Threading.DispatcherTimer? _hoverDwellTimer;
         private bool _shellFullscreen = false;
         private int _stackedFitLevel;   // StackedFitPlanner hysteresis state
+        private float _stackedGraphScale = 1f; // sparkline squeeze carried across ticks (frozen during drag)
         private bool _inSizeMove;       // inside the native move loop: avoidance must not fight the drag
         private float? _testWidthCapPx = null; // render-harness override (reflection) for the Start-menu width cap
         private bool _appbarRegistered = false;
@@ -580,7 +581,8 @@ namespace Kil0bitSystemMonitor
             float textScale = (float)_config.Config.ScaleFactor;
             bool pods = _config.Config.ShowPods;
             string fontName = _config.Config.FontFamily;
-            if (string.IsNullOrEmpty(fontName) || fontName == "Default") fontName = "Segoe UI";
+            bool defaultFont = string.IsNullOrEmpty(fontName) || fontName == "Default" || fontName == "Segoe UI";
+            if (defaultFont) { DetectDefaultFonts(); fontName = _defaultValueFont!; }
             System.Drawing.FontStyle style = _config.Config.IsTextBold ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
             Font font = GetCachedFont(fontName, 8.5f * textScale, style);
 
@@ -736,10 +738,11 @@ namespace Kil0bitSystemMonitor
             float textScale = (float)_config.Config.ScaleFactor;
             bool pods = _config.Config.ShowPods;
             string fontName = _config.Config.FontFamily;
-            if (string.IsNullOrEmpty(fontName) || fontName == "Default") fontName = "Segoe UI";
+            bool defaultFont = string.IsNullOrEmpty(fontName) || fontName == "Default" || fontName == "Segoe UI";
+            if (defaultFont) { DetectDefaultFonts(); fontName = _defaultValueFont!; }
             var valueStyle = _config.Config.IsTextBold ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
 
-            Font labelFont = GetCachedFont(fontName, 6.6f * textScale, System.Drawing.FontStyle.Regular);
+            Font labelFont = GetCachedFont(defaultFont ? _defaultLabelFont! : fontName, 6.6f * textScale, System.Drawing.FontStyle.Regular);
             Font valueFont = GetCachedFont(fontName, 9.0f * textScale, valueStyle);
             Font netFont = GetCachedFont(fontName, 7.6f * textScale, valueStyle);
 
@@ -812,7 +815,7 @@ namespace Kil0bitSystemMonitor
             }
 
             var plan = frozen
-                ? StackedFitPlanner.FitAtLevel(widths, graphParts, podGap, 4 * scale, _stackedFitLevel)
+                ? StackedFitPlanner.FitAtLevel(widths, graphParts, podGap, 4 * scale, _stackedFitLevel, _stackedGraphScale)
                 : StackedFitPlanner.Fit(widths, graphParts, podGap, 4 * scale, cap, _stackedFitLevel, 24 * scale);
 
             // When modules must hide, re-plan with room for a trailing "⋯" marker so elision
@@ -827,9 +830,12 @@ namespace Kil0bitSystemMonitor
             }
             if (plan.VisibleColumns >= columns.Count) ellipsisW = 0f;
             _stackedFitLevel = plan.Level;
+            _stackedGraphScale = plan.GraphScale;
             bool drawGraphs = graphs && plan.ShowGraphs;
             if (!plan.ShowGraphs)
                 for (int i = 0; i < widths.Length; i++) widths[i] -= graphParts[i];
+            else if (plan.GraphScale < 1f)
+                for (int i = 0; i < widths.Length; i++) widths[i] -= graphParts[i] * (1f - plan.GraphScale);
 
             int w = (int)Math.Max(20, plan.Width + ellipsisW);
 
@@ -873,9 +879,10 @@ namespace Kil0bitSystemMonitor
                     {
                         float gy = (h - graphH) / 2f;
                         float max = col.Top?.GraphMax ?? col.Bottom?.GraphMax ?? 1f;
+                        float gwDraw = Math.Max(3 * scale, graphParts[i] * plan.GraphScale - gap);
                         DrawMirroredSparkline(_offscreenGraphics, col.Top?.History, col.Bottom?.History,
-                            contentX, gy, graphW, graphH, StackedUpBrush, StackedGraphBrush, max);
-                        contentX += graphW + gap;
+                            contentX, gy, gwDraw, graphH, StackedUpBrush, StackedGraphBrush, max);
+                        contentX += gwDraw + gap;
                     }
 
                     // A single enabled direction centres alone; two stack around the midline.
@@ -901,8 +908,9 @@ namespace Kil0bitSystemMonitor
                     if (drawGraphs && item.History != null)
                     {
                         float gy = (h - graphH) / 2f;
-                        DrawSparklineRect(_offscreenGraphics, item.History, item.GraphMax, contentX, gy, graphW, graphH, StackedGraphBrush);
-                        contentX += graphW + gap;
+                        float gwDraw = Math.Max(3 * scale, graphParts[i] * plan.GraphScale - gap);
+                        DrawSparklineRect(_offscreenGraphics, item.History, item.GraphMax, contentX, gy, gwDraw, graphH, StackedGraphBrush);
+                        contentX += gwDraw + gap;
                     }
 
                     float ty = (h - textBlockH) / 2f;
@@ -1294,6 +1302,32 @@ namespace Kil0bitSystemMonitor
         private void RenderBackground(Graphics g, int w, int h, float s) { if (!_config.Config.ShowBackground || _cachedBgBrush == null) return; using (var p = CreateRoundedRectPath(0, 0, w, h, (int)(12 * s))) g.FillPath(_cachedBgBrush, p); }
         private void RenderHoverEffect(Graphics g, int w, int h, float s) { if (!_isHovered || _cachedHoverBrush == null || _cachedHoverPen == null) return; using (var p = CreateRoundedRectPath(0, 0, w - 1, h - 1, (int)(12 * s))) { g.FillPath(_cachedHoverBrush, p); g.DrawPath(_cachedHoverPen, p); } }
         private GraphicsPath CreateRoundedRectPath(int x, int y, int w, int h, int r) { GraphicsPath p = new GraphicsPath(); if (r <= 0) { p.AddRectangle(new Rectangle(x, y, w, h)); return p; } p.AddArc(x, y, r, r, 180, 90); p.AddArc(x + w - r, y, r, r, 270, 90); p.AddArc(x + w - r, y + h - r, r, r, 0, 90); p.AddArc(x, y + h - r, r, r, 90, 90); p.CloseFigure(); return p; }
+        // Windows 11's Segoe UI Variable renders noticeably better at taskbar sizes than
+        // classic Segoe UI — "Text" is drawn for body sizes, "Small" for the sub-9pt labels
+        // (higher x-height, opened counters). Detected once per process; classic Segoe UI
+        // stands in when the variable family is absent, and an explicit user font choice
+        // always wins.
+        private static string? _defaultValueFont;
+        private static string? _defaultLabelFont;
+        private static void DetectDefaultFonts()
+        {
+            if (_defaultValueFont != null) return;
+            string value = "Segoe UI", label = "Segoe UI";
+            try
+            {
+                using var installed = new System.Drawing.Text.InstalledFontCollection();
+                foreach (var family in installed.Families)
+                {
+                    if (family.Name == "Segoe UI Variable Text") value = family.Name;
+                    else if (family.Name == "Segoe UI Variable Small") label = family.Name;
+                }
+                if (label == "Segoe UI" && value != "Segoe UI") label = value;
+            }
+            catch { /* fonts not enumerable: classic Segoe UI stands */ }
+            _defaultValueFont = value;
+            _defaultLabelFont = label;
+        }
+
         private Font GetCachedFont(string f, float s, System.Drawing.FontStyle st) { string k = $"{f}_{s}_{st}"; if (!_fontCache.TryGetValue(k, out var font)) { font = new Font(f, s, st); _fontCache[k] = font; } return font; }
         private void UpdateCachedColors()
         {

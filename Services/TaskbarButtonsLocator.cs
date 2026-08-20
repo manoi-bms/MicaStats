@@ -28,6 +28,14 @@ namespace Kil0bitSystemMonitor.Services
         private static long _uiaRetryAfter;
         private static int _uiaRefreshRunning;
 
+        // The widgets button has no Win32 child window at all (probed on 26200), so it is
+        // UIA-only — but it also never moves, parked at the taskbar's far left, so a long
+        // TTL keeps the background traffic negligible.
+        private const int WidgetsTtlMs = 30000;
+        private static Win32Helper.RECT? _widgetsRect;
+        private static long _widgetsFreshUntil;
+        private static int _widgetsRefreshRunning;
+
         /// <summary>The Start button's screen rect in physical pixels, or null when unknowable.</summary>
         public static Win32Helper.RECT? GetStartButtonRect()
         {
@@ -41,6 +49,47 @@ namespace Kil0bitSystemMonitor.Services
                 return rect;
 
             return GetUiaStartRect(tray);
+        }
+
+        /// <summary>
+        /// The Widgets button's screen rect (taskbar far left), or null when hidden, absent,
+        /// or not yet resolved — it is UIA-only, so the first call after startup returns null
+        /// while a background query fills the 30-second cache.
+        /// </summary>
+        public static Win32Helper.RECT? GetWidgetsRect()
+        {
+            IntPtr tray = Win32Helper.FindWindow("Shell_TrayWnd", null);
+            if (tray == IntPtr.Zero) return null;
+
+            long now = Environment.TickCount64;
+            Win32Helper.RECT? cached;
+            bool stale;
+            lock (Sync)
+            {
+                cached = _widgetsRect;
+                stale = now >= _widgetsFreshUntil;
+            }
+
+            if (stale && Interlocked.CompareExchange(ref _widgetsRefreshRunning, 1, 0) == 0)
+            {
+                Task.Run(() =>
+                {
+                    Win32Helper.RECT? found = null;
+                    try { found = QueryUiaRect(tray, "WidgetsButton"); }
+                    catch { /* absent counts the same as hidden: no obstacle */ }
+                    finally
+                    {
+                        lock (Sync)
+                        {
+                            _widgetsRect = found;
+                            _widgetsFreshUntil = Environment.TickCount64 + WidgetsTtlMs;
+                        }
+                        Interlocked.Exchange(ref _widgetsRefreshRunning, 0);
+                    }
+                });
+            }
+
+            return cached;
         }
 
         /// <summary>The notification-area rect (clock, tray icons), or null when unknowable.</summary>
@@ -79,7 +128,7 @@ namespace Kil0bitSystemMonitor.Services
                 {
                     try
                     {
-                        var found = QueryUiaStartRect(tray);
+                        var found = QueryUiaRect(tray, "StartButton");
                         lock (Sync)
                         {
                             _uiaRect = found;
@@ -101,17 +150,17 @@ namespace Kil0bitSystemMonitor.Services
             return cached;
         }
 
-        private static Win32Helper.RECT? QueryUiaStartRect(IntPtr tray)
+        private static Win32Helper.RECT? QueryUiaRect(IntPtr tray, string automationId)
         {
             var root = System.Windows.Automation.AutomationElement.FromHandle(tray);
-            var startEl = root.FindFirst(
+            var el = root.FindFirst(
                 System.Windows.Automation.TreeScope.Descendants,
                 new System.Windows.Automation.PropertyCondition(
-                    System.Windows.Automation.AutomationElement.AutomationIdProperty, "StartButton"));
-            if (startEl == null) return null;
+                    System.Windows.Automation.AutomationElement.AutomationIdProperty, automationId));
+            if (el == null || el.Current.IsOffscreen) return null;
 
             // UIA bounding rectangles are physical screen pixels, same space as GetWindowRect.
-            var b = startEl.Current.BoundingRectangle;
+            var b = el.Current.BoundingRectangle;
             if (b.IsEmpty || b.Width <= 0 || b.Height <= 0) return null;
             return new Win32Helper.RECT
             {

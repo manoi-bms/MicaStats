@@ -37,11 +37,14 @@ classic mode keeps all per-section colour customisation. The stacked mode uses a
 
 ### 🚫 Start Menu Avoidance
 A centred Windows 11 taskbar moves its Start button **left** as apps open, so a fixed overlay
-would eventually sit underneath it. The stacked overlay now watches the Start button (and the
-tray, for right-side placements) and caps its own width to stay clear: sparkline graphs hide
-first, then trailing modules one by one — network and CPU survive longest — and everything
-returns automatically once the space is back. Hidden metrics stay one hover or click away in
-the panels. Turn this off with **Avoid Start Menu** in **Appearance**.
+would eventually sit underneath it. The stacked overlay watches the taskbar's own buttons
+(widgets, Start, tray) and stays inside the free corridor between them — **sliding left into
+unused space first**, so it keeps every module whenever the corridor has room, and drifting
+back to your chosen spot as apps close. Only when the whole corridor genuinely cannot hold
+everything does it shed content: sparkline graphs first, then trailing modules one by one —
+network and CPU survive longest — with a small **⋯** marker showing that modules are elided
+rather than missing. Everything hidden stays one hover or click away in the panels. Turn
+this off with **Avoid Start Menu** in **Appearance**.
 
 ### 📉 Live Graphs
 Turn on **Live Graphs** in **Appearance** to draw a small bar chart of recent history beside each

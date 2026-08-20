@@ -41,6 +41,7 @@ namespace Kil0bitSystemMonitor
         private System.Windows.Threading.DispatcherTimer? _hoverDwellTimer;
         private bool _shellFullscreen = false;
         private int _stackedFitLevel;   // StackedFitPlanner hysteresis state
+        private bool _inSizeMove;       // inside the native move loop: avoidance must not fight the drag
         private float? _testWidthCapPx = null; // render-harness override (reflection) for the Start-menu width cap
         private bool _appbarRegistered = false;
         private readonly Action? _onHistoryUpdated;
@@ -103,6 +104,7 @@ namespace Kil0bitSystemMonitor
         private const int WM_MOUSELEAVE = 0x02A3;
         private const int WM_WINDOWPOSCHANGING = 0x0046;
         private const int WM_WINDOWPOSCHANGED = 0x0047;
+        private const int WM_ENTERSIZEMOVE = 0x0231;
         private const int WM_EXITSIZEMOVE = 0x0232;
         private const int WM_DISPLAYCHANGE = 0x007E;
         private const int WM_DPICHANGED = 0x02E0;
@@ -782,37 +784,66 @@ namespace Kil0bitSystemMonitor
                 graphParts[i] = graphPart;
             }
 
-            // Auto-avoid the taskbar's own buttons. With a centred Win11 taskbar the Start
-            // button slides LEFT as icons are added, so the frontier to respect is the
-            // nearest obstacle right of our own left edge — the Start button, or the tray
-            // for an overlay parked on the right side. The planner sheds sparklines first,
-            // then trailing modules, and restores them only with slack to spare so the
-            // layout never flaps at the boundary.
+            // Auto-avoid the taskbar's own buttons — but spend free space before shedding
+            // content. The corridor is the gap between the obstacles flanking the overlay's
+            // saved anchor (widgets button / Start button / tray); the overlay slides left
+            // inside it to make room, and only when the whole corridor cannot hold a level
+            // does the planner shed sparklines, then trailing modules. Position and level
+            // freeze during a drag so the gesture never fights the avoidance.
+            float margin = 6 * scale;
             float? cap = _testWidthCapPx;
-            if (cap == null && _config.Config.AvoidStartMenu && _hWnd != IntPtr.Zero
-                && Win32Helper.GetWindowRect(_hWnd, out Win32Helper.RECT selfRect))
+            (float Left, float Right)? corridor = null;
+            Win32Helper.RECT selfRect = default;
+            bool frozen = _config.Config.AvoidStartMenu && (_inSizeMove || _pressPending);
+            if (cap == null && _config.Config.AvoidStartMenu && !frozen && _hWnd != IntPtr.Zero
+                && Win32Helper.GetWindowRect(_hWnd, out selfRect))
             {
-                float margin = 6 * scale;
-                float best = float.MaxValue;
-                void Consider(Win32Helper.RECT? obstacle)
+                IntPtr tray = Win32Helper.FindWindow("Shell_TrayWnd", null);
+                if (tray != IntPtr.Zero && Win32Helper.GetWindowRect(tray, out Win32Helper.RECT trayRect))
                 {
-                    if (obstacle is not Win32Helper.RECT o) return;
-                    if (selfRect.Top >= o.Bottom || selfRect.Bottom <= o.Top) return; // different band
-                    if (o.Left < selfRect.Left) return;                              // not to our right
-                    best = Math.Min(best, o.Left - selfRect.Left - margin);
+                    corridor = StackedFitPlanner.Corridor(
+                        (float)_config.Config.X, selfRect.Top, selfRect.Bottom, trayRect,
+                        TaskbarButtonsLocator.GetWidgetsRect(),
+                        TaskbarButtonsLocator.GetStartButtonRect(),
+                        TaskbarButtonsLocator.GetTrayNotifyRect());
+                    if (corridor is (float cLeft, float cRight))
+                        cap = Math.Max(20, cRight - cLeft - 2 * margin);
                 }
-                Consider(TaskbarButtonsLocator.GetStartButtonRect());
-                Consider(TaskbarButtonsLocator.GetTrayNotifyRect());
-                if (best != float.MaxValue) cap = Math.Max(20, best);
             }
 
-            var plan = StackedFitPlanner.Fit(widths, graphParts, podGap, 4 * scale, cap, _stackedFitLevel, 24 * scale);
+            var plan = frozen
+                ? StackedFitPlanner.FitAtLevel(widths, graphParts, podGap, 4 * scale, _stackedFitLevel)
+                : StackedFitPlanner.Fit(widths, graphParts, podGap, 4 * scale, cap, _stackedFitLevel, 24 * scale);
+
+            // When modules must hide, re-plan with room for a trailing "⋯" marker so elision
+            // is visible rather than looking like a dead sensor. The restore slack exceeds
+            // the marker's width, so the marker cannot itself cause level flapping.
+            float ellipsisW = 0f;
+            if (plan.VisibleColumns < columns.Count && cap is float capValue)
+            {
+                ellipsisW = GetCachedMeasure("⋯", valueFont) + pad;
+                plan = StackedFitPlanner.Fit(widths, graphParts, podGap, 4 * scale,
+                    Math.Max(20, capValue - ellipsisW), plan.Level, 24 * scale);
+            }
+            if (plan.VisibleColumns >= columns.Count) ellipsisW = 0f;
             _stackedFitLevel = plan.Level;
             bool drawGraphs = graphs && plan.ShowGraphs;
             if (!plan.ShowGraphs)
                 for (int i = 0; i < widths.Length; i++) widths[i] -= graphParts[i];
 
-            int w = (int)Math.Max(20, plan.Width);
+            int w = (int)Math.Max(20, plan.Width + ellipsisW);
+
+            // Slide inside the corridor: hold the saved anchor while it fits, give ground
+            // leftward as the Start button encroaches, drift home when it retreats. The
+            // anchor in config is never rewritten, so the user's chosen spot is permanent.
+            if (corridor is (float lo0, float hi0))
+            {
+                float lo = lo0 + margin;
+                float hi = Math.Max(lo, hi0 - margin - w);
+                int targetX = (int)Math.Round(Math.Clamp((float)_config.Config.X, lo, hi));
+                if (targetX != selfRect.Left)
+                    SetWindowPos(_hWnd, IntPtr.Zero, targetX, selfRect.Top, 0, 0, 0x0001 | 0x0004 | 0x0010);
+            }
             EnsureOffscreenBuffer(w, h);
             if (_offscreenGraphics == null || _offscreenBitmap == null) return;
 
@@ -904,6 +935,14 @@ namespace Kil0bitSystemMonitor
                 }
                 _moduleZones.Add((col.Panel, cx, widths[i]));
                 cx += widths[i] + podGap;
+            }
+
+            if (ellipsisW > 0f)
+            {
+                // Elision marker: everything hidden here is one click away in the stats panel.
+                float ex = Math.Min(cx, w - GetCachedMeasure("⋯", valueFont) - 2 * scale);
+                _offscreenGraphics.DrawString("⋯", valueFont, StackedLabelBrush,
+                    ex, (h - valueFont.Height) / 2f, StringFormat.GenericTypographic);
             }
             SetBitmap(_offscreenBitmap);
             if (ownPBrush) pBrush.Dispose();
@@ -1342,7 +1381,8 @@ namespace Kil0bitSystemMonitor
             }
             if (msg == WM_WINDOWPOSCHANGED) { if (_appbarRegistered) { APPBARDATA abd = new APPBARDATA { cbSize = Marshal.SizeOf(typeof(APPBARDATA)), hWnd = _hWnd }; SHAppBarMessage(ABM_WINDOWPOSCHANGED, ref abd); } return IntPtr.Zero; }
             if (msg == WM_APPBAR_CALLBACK) { if ((uint)wParam.ToInt32() == ABN_FULLSCREENAPP) { _shellFullscreen = (lParam != IntPtr.Zero); _dispatcher.BeginInvoke(UpdateVisibility); } return IntPtr.Zero; }
-            if (msg == WM_EXITSIZEMOVE) { if (Win32Helper.GetWindowRect(hWnd, out Win32Helper.RECT r)) { _config.Config.X = r.Left; _config.Config.Y = r.Top; _config.SaveConfig(); } }
+            if (msg == WM_ENTERSIZEMOVE) { _inSizeMove = true; }
+            if (msg == WM_EXITSIZEMOVE) { _inSizeMove = false; if (Win32Helper.GetWindowRect(hWnd, out Win32Helper.RECT r)) { _config.Config.X = r.Left; _config.Config.Y = r.Top; _config.SaveConfig(); } }
             if (msg == WM_SHOW_SETTINGS) { _dispatcher.BeginInvoke(() => App.OpenSettings(_viewModel, _config)); return IntPtr.Zero; }
             if (msg == WM_DPICHANGED) { _currentDpi = (uint)(wParam.ToInt32() & 0xFFFF); _dpiScale = _currentDpi / 96.0f; ClearCaches(); AlignToTaskbarCenter(); UpdateLayer(); return IntPtr.Zero; }
             if (msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE) { AlignToTaskbarCenter(); UpdateLayer(); return IntPtr.Zero; }

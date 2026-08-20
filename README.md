@@ -72,7 +72,7 @@ Sensor availability may vary depending on the installed hardware, device drivers
 * Lock the overlay position
 * Keep the overlay above other windows
 * Automatically hide it during full-screen applications
-* Auto-avoid the Start button: the stacked overlay narrows itself (graphs first, then trailing modules) so the centred Windows 11 Start button and tray never end up underneath it
+* Auto-avoid the Start button: the stacked overlay slides into free taskbar space first, and only then narrows itself (graphs first, then trailing modules, with a ⋯ elision marker) so the centred Windows 11 Start button, widgets button and tray never end up underneath it
 
 ### Customization
 

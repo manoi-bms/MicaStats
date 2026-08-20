@@ -106,5 +106,64 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2, p.VisibleColumns);
             Assert.Equal(100f, p.Width);
         }
+
+        // ---- Corridor: the free span the overlay may slide within ----
+        // Geometry from the live probe on this machine: taskbar band 1032-1080, widgets
+        // button 6-158, Start button 294-339, tray from 1589.
+
+        private static Win32Helper.RECT R(int l, int t, int r, int b)
+            => new() { Left = l, Top = t, Right = r, Bottom = b };
+
+        [Fact]
+        public void Corridor_spans_between_flanking_obstacles()
+        {
+            var c = StackedFitPlanner.Corridor(200, 1032, 1080, R(0, 1032, 1920, 1080),
+                R(6, 1032, 158, 1080), R(294, 1032, 339, 1080), R(1589, 1032, 1920, 1080));
+            Assert.True(c.HasValue);
+            Assert.Equal(158f, c!.Value.Left);
+            Assert.Equal(294f, c.Value.Right);
+        }
+
+        [Fact]
+        public void Corridor_is_null_off_the_taskbar_band()
+        {
+            // A free-floating overlay in mid-screen shares no band with any obstacle.
+            var c = StackedFitPlanner.Corridor(200, 400, 436, R(0, 1032, 1920, 1080),
+                R(6, 1032, 158, 1080), R(294, 1032, 339, 1080), null);
+            Assert.Null(c);
+        }
+
+        [Fact]
+        public void Corridor_defaults_open_sides_to_the_taskbar_bounds()
+        {
+            var c = StackedFitPlanner.Corridor(200, 1032, 1080, R(0, 1032, 1920, 1080),
+                null, R(294, 1032, 339, 1080), null);
+            Assert.True(c.HasValue);
+            Assert.Equal(0f, c!.Value.Left);
+            Assert.Equal(294f, c.Value.Right);
+        }
+
+        [Fact]
+        public void Corridor_pushes_out_of_an_obstacle_containing_the_anchor()
+        {
+            // An anchor dropped onto the Start button treats it as a left bound: the overlay
+            // re-homes just right of it instead of sitting underneath.
+            var c = StackedFitPlanner.Corridor(300, 1032, 1080, R(0, 1032, 1920, 1080),
+                null, R(294, 1032, 339, 1080), R(1589, 1032, 1920, 1080));
+            Assert.True(c.HasValue);
+            Assert.Equal(339f, c!.Value.Left);
+            Assert.Equal(1589f, c.Value.Right);
+        }
+
+        [Fact]
+        public void FitAtLevel_pins_the_level_and_clamps_out_of_range_values()
+        {
+            var pinned = StackedFitPlanner.FitAtLevel(Widths, Graphs, 10f, 4f, 2);
+            Assert.Equal(2, pinned.Level);
+            Assert.Equal(154f, pinned.Width);
+
+            Assert.Equal(0, StackedFitPlanner.FitAtLevel(Widths, Graphs, 10f, 4f, -3).Level);
+            Assert.Equal(4, StackedFitPlanner.FitAtLevel(Widths, Graphs, 10f, 4f, 99).Level);
+        }
     }
 }

@@ -793,7 +793,7 @@ namespace Kil0bitSystemMonitor
             // inside it to make room, and only when the whole corridor cannot hold a level
             // does the planner shed sparklines, then trailing modules. Position and level
             // freeze during a drag so the gesture never fights the avoidance.
-            float margin = 6 * scale;
+            float margin = 4 * scale;
             float? cap = _testWidthCapPx;
             (float Left, float Right)? corridor = null;
             Win32Helper.RECT selfRect = default;
@@ -814,9 +814,17 @@ namespace Kil0bitSystemMonitor
                 }
             }
 
+            // What the compact stage can give back: tightened pod padding, halved column
+            // gaps, slimmer leading/trailing chrome — reclaimable whitespace, not content.
+            float padTight = (pods ? 2 : 1) * scale;
+            float padSave = 2 * (pad - padTight);
+            float gapTight = Math.Min(podGap, 2 * scale);
+            float gapSave = podGap - gapTight;
+            float chromeSave = 2 * scale;
+
             var plan = frozen
-                ? StackedFitPlanner.FitAtLevel(widths, graphParts, podGap, 4 * scale, _stackedFitLevel, _stackedGraphScale)
-                : StackedFitPlanner.Fit(widths, graphParts, podGap, 4 * scale, cap, _stackedFitLevel, 24 * scale);
+                ? StackedFitPlanner.FitAtLevel(widths, graphParts, podGap, 4 * scale, _stackedFitLevel, _stackedGraphScale, padSave, gapSave, chromeSave)
+                : StackedFitPlanner.Fit(widths, graphParts, podGap, 4 * scale, cap, _stackedFitLevel, 12 * scale, padSave, gapSave, chromeSave);
 
             // When modules must hide, re-plan with room for a trailing "⋯" marker so elision
             // is visible rather than looking like a dead sensor. The restore slack exceeds
@@ -826,7 +834,7 @@ namespace Kil0bitSystemMonitor
             {
                 ellipsisW = GetCachedMeasure("⋯", valueFont) + pad;
                 plan = StackedFitPlanner.Fit(widths, graphParts, podGap, 4 * scale,
-                    Math.Max(20, capValue - ellipsisW), plan.Level, 24 * scale);
+                    Math.Max(20, capValue - ellipsisW), plan.Level, 12 * scale, padSave, gapSave, chromeSave);
             }
             if (plan.VisibleColumns >= columns.Count) ellipsisW = 0f;
             _stackedFitLevel = plan.Level;
@@ -836,6 +844,13 @@ namespace Kil0bitSystemMonitor
                 for (int i = 0; i < widths.Length; i++) widths[i] -= graphParts[i];
             else if (plan.GraphScale < 1f)
                 for (int i = 0; i < widths.Length; i++) widths[i] -= graphParts[i] * (1f - plan.GraphScale);
+
+            if (plan.Compact)
+            {
+                for (int i = 0; i < widths.Length; i++) widths[i] -= padSave;
+                pad -= padSave / 2f;
+                podGap = gapTight;
+            }
 
             int w = (int)Math.Max(20, plan.Width + ellipsisW);
 
@@ -860,7 +875,7 @@ namespace Kil0bitSystemMonitor
             bool ownPBrush = _cachedPodBrush == null;
             Brush pBrush = _cachedPodBrush ?? new SolidBrush(Color.FromArgb(15, 255, 255, 255));
             _moduleZones.Clear();
-            float cx = 2 * scale;
+            float cx = (plan.Compact ? 1 : 2) * scale;
             for (int i = 0; i < plan.VisibleColumns; i++)
             {
                 var col = columns[i];

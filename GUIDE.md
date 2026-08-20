@@ -42,10 +42,11 @@ would eventually sit underneath it. The stacked overlay watches the taskbar's ow
 unused space first**, so it keeps every module whenever the corridor has room, and drifting
 back to your chosen spot as apps close. When the corridor tightens, the sparklines squeeze
 down first (to 40% of their width) so the layout always fills the available space exactly;
-only below that do they disappear, then trailing modules one by one — temperature yields
-first (its reading also lives in the CPU dropdown header), storage stays visible longer, and
-network and CPU survive longest — with a small **⋯** marker showing that modules are elided
-rather than missing. Everything hidden stays one hover or click away in the panels. Turn
+below that they disappear, then the chrome itself tightens — slimmer pod padding and column
+gaps, whitespace rather than content — and only when even the compact layout cannot fit do
+trailing modules hide one by one — temperature yields first (its reading also lives in the
+CPU dropdown header), storage stays visible longer, and network and CPU survive longest —
+with a small **⋯** marker showing that modules are elided rather than missing. Everything hidden stays one hover or click away in the panels. Turn
 this off with **Avoid Start Menu** in **Appearance**.
 
 ### 📉 Live Graphs

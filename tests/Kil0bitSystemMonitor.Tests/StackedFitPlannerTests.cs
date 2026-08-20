@@ -4,10 +4,11 @@ using Xunit;
 namespace Kil0bitSystemMonitor.Tests
 {
     /// <summary>
-    /// The width-cap degradation ladder for the stacked taskbar: level 0 full, level 1 graphs
-    /// hidden, above that trailing modules hidden one per level. Reference numbers used
-    /// throughout: widths [100,50,50,50], graphParts [40,30,0,30], gap 10, chrome 4 —
-    /// level widths 284 / 184 / 154 / 94 / 64.
+    /// The width-cap degradation ladder for the stacked taskbar: level 0 full (elastic
+    /// graphs), level 1 graphs hidden, level 2 chrome tightened, above that trailing modules
+    /// hidden one per level. Reference numbers used throughout: widths [100,50,50,50],
+    /// graphParts [40,30,0,30], gap 10, chrome 4 — with zero compact savings the level
+    /// widths are 284 / 184 / 184 / 154 / 94 / 64.
     /// </summary>
     public class StackedFitPlannerTests
     {
@@ -50,9 +51,23 @@ namespace Kil0bitSystemMonitor.Tests
         public void Modules_shed_from_the_trailing_end()
         {
             var p = Fit(cap: 160f);
-            Assert.Equal(2, p.Level);
+            Assert.Equal(3, p.Level);
             Assert.Equal(3, p.VisibleColumns);
             Assert.Equal(154f, p.Width);
+        }
+
+        [Fact]
+        public void Compact_chrome_reclaims_whitespace_before_any_module_hides()
+        {
+            // Savings 4/column + 2/gap + 2 chrome shrink the graphless width from 184 to
+            // 160, so a 170 cap keeps all four modules where the roomy layout could not.
+            var p = StackedFitPlanner.Fit(Widths, Graphs, columnGap: 10f, chrome: 4f,
+                cap: 170f, previousLevel: 0, restoreSlack: 24f,
+                padSavePerColumn: 4f, gapSave: 2f, chromeSave: 2f);
+            Assert.Equal(2, p.Level);
+            Assert.True(p.Compact);
+            Assert.Equal(4, p.VisibleColumns);
+            Assert.Equal(160f, p.Width);
         }
 
         [Fact]
@@ -61,7 +76,7 @@ namespace Kil0bitSystemMonitor.Tests
             // The leftmost module (network/CPU in the real ordering) is never dropped: a
             // one-module overlay beats a vanished one, even if it still overhangs slightly.
             var p = Fit(cap: 30f);
-            Assert.Equal(4, p.Level);
+            Assert.Equal(5, p.Level);
             Assert.Equal(1, p.VisibleColumns);
             Assert.Equal(64f, p.Width);
             Assert.False(p.Fits);
@@ -106,7 +121,7 @@ namespace Kil0bitSystemMonitor.Tests
         public void Degrading_is_immediate_regardless_of_previous_level()
         {
             var p = Fit(cap: 100f, prev: 0);
-            Assert.Equal(3, p.Level);
+            Assert.Equal(4, p.Level);
             Assert.Equal(2, p.VisibleColumns);
         }
 
@@ -125,7 +140,7 @@ namespace Kil0bitSystemMonitor.Tests
             float[] w = { 50f, 50f, 50f };
             float[] g = { 0f, 0f, 0f };
             var p = StackedFitPlanner.Fit(w, g, columnGap: 0f, chrome: 0f, cap: 120f, previousLevel: 0, restoreSlack: 24f);
-            Assert.Equal(2, p.Level);
+            Assert.Equal(3, p.Level);
             Assert.Equal(2, p.VisibleColumns);
             Assert.Equal(100f, p.Width);
         }
@@ -181,12 +196,12 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void FitAtLevel_pins_the_level_and_clamps_out_of_range_values()
         {
-            var pinned = StackedFitPlanner.FitAtLevel(Widths, Graphs, 10f, 4f, 2);
-            Assert.Equal(2, pinned.Level);
+            var pinned = StackedFitPlanner.FitAtLevel(Widths, Graphs, 10f, 4f, 3);
+            Assert.Equal(3, pinned.Level);
             Assert.Equal(154f, pinned.Width);
 
             Assert.Equal(0, StackedFitPlanner.FitAtLevel(Widths, Graphs, 10f, 4f, -3).Level);
-            Assert.Equal(4, StackedFitPlanner.FitAtLevel(Widths, Graphs, 10f, 4f, 99).Level);
+            Assert.Equal(5, StackedFitPlanner.FitAtLevel(Widths, Graphs, 10f, 4f, 99).Level);
         }
     }
 }

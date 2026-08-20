@@ -3,12 +3,13 @@ using System;
 namespace Kil0bitSystemMonitor.Helpers
 {
     /// <summary>
-    /// Decides how much of the stacked taskbar layout fits inside a width cap. Level 0 is
-    /// elastic: sparklines render anywhere between full width and <see cref="MinGraphScale"/>
-    /// of it, squeezing to soak up exactly the space available. Below that the ladder is
-    /// discrete — level 1 hides every sparkline, and each level above 1 additionally hides
-    /// one trailing module (so the leftmost modules — network and CPU in the default order —
-    /// survive longest).
+    /// Decides how much of the stacked taskbar layout fits inside a width cap, shedding in
+    /// fidelity order. Level 0 is elastic — sparklines render anywhere between full width and
+    /// <see cref="MinGraphScale"/> of it, soaking up exactly the space available. Below that
+    /// the ladder is discrete: level 1 hides every sparkline, level 2 additionally tightens
+    /// the chrome (pod padding, column gaps, leading/trailing margins — the reclaimable
+    /// whitespace the eye sees), and each level above 2 hides one trailing module (the
+    /// leftmost modules — network and CPU in the default order — survive longest).
     ///
     /// <para>
     /// Pure arithmetic, no rendering types: the overlay measures, this ranks. Restoring to a
@@ -25,13 +26,19 @@ namespace Kil0bitSystemMonitor.Helpers
 
         public sealed class Plan
         {
-            /// <summary>0 = full (graphs, possibly squeezed); 1 = graphs hidden; 1+k = k trailing modules hidden too.</summary>
+            /// <summary>
+            /// 0 = full (graphs, possibly squeezed); 1 = graphs hidden; 2 = chrome tightened
+            /// too; 2+k = k trailing modules hidden as well.
+            /// </summary>
             public int Level { get; init; }
 
             public bool ShowGraphs { get; init; }
 
             /// <summary>1 = full-width sparklines, down to <see cref="MinGraphScale"/> when squeezed.</summary>
             public float GraphScale { get; init; } = 1f;
+
+            /// <summary>True when the tightened chrome (level ≥ 2) applies.</summary>
+            public bool Compact { get; init; }
 
             /// <summary>How many leading columns to draw.</summary>
             public int VisibleColumns { get; init; }
@@ -50,23 +57,31 @@ namespace Kil0bitSystemMonitor.Helpers
         /// <param name="cap">Maximum allowed width, or null for unconstrained.</param>
         /// <param name="previousLevel">Last tick's level, for hysteresis.</param>
         /// <param name="restoreSlack">Extra clearance a richer level must fit within before restoring.</param>
+        /// <param name="padSavePerColumn">Width each column gives back when the chrome tightens.</param>
+        /// <param name="gapSave">Width each column gap gives back when the chrome tightens.</param>
+        /// <param name="chromeSave">Width the leading/trailing padding gives back when tightened.</param>
         public static Plan Fit(float[] columnWidths, float[] graphParts, float columnGap, float chrome,
-                               float? cap, int previousLevel, float restoreSlack)
+                               float? cap, int previousLevel, float restoreSlack,
+                               float padSavePerColumn = 0f, float gapSave = 0f, float chromeSave = 0f)
         {
             int n = columnWidths.Length;
-            int maxLevel = Math.Max(0, n); // level n keeps only the first column
+            int maxLevel = n == 0 ? 0 : n + 1; // level n+1 keeps only the first column, compact
+
+            float WidthOf(int level) => WidthAt(columnWidths, graphParts, columnGap, chrome,
+                                                padSavePerColumn, gapSave, chromeSave, level);
 
             if (cap is not float limit || n == 0)
-                return At(columnWidths, graphParts, columnGap, chrome, 0, 1f, fits: true);
+                return At(columnWidths, graphParts, columnGap, chrome,
+                          padSavePerColumn, gapSave, chromeSave, 0, 1f, fits: true);
 
-            float w1 = WidthAt(columnWidths, graphParts, columnGap, chrome, 1);
-            float parts = WidthAt(columnWidths, graphParts, columnGap, chrome, 0) - w1;
+            float w1 = WidthOf(1);
+            float parts = WidthOf(0) - w1;
 
             int prev = Math.Clamp(previousLevel, 0, maxLevel);
 
             bool Fittable(int level, float within) => level == 0
                 ? within >= w1 + MinGraphScale * parts
-                : WidthAt(columnWidths, graphParts, columnGap, chrome, level) <= within;
+                : WidthOf(level) <= within;
 
             int? FirstFitting(float within)
             {
@@ -77,7 +92,8 @@ namespace Kil0bitSystemMonitor.Helpers
 
             int? baseline = FirstFitting(limit);
             if (baseline == null)
-                return At(columnWidths, graphParts, columnGap, chrome, maxLevel, 1f, fits: false);
+                return At(columnWidths, graphParts, columnGap, chrome,
+                          padSavePerColumn, gapSave, chromeSave, maxLevel, 1f, fits: false);
 
             // Degrading (or holding) is immediate; restoring requires slack-clearance.
             int chosen;
@@ -91,9 +107,11 @@ namespace Kil0bitSystemMonitor.Helpers
             if (chosen == 0)
             {
                 float graphScale = parts > 0 ? Math.Clamp((limit - w1) / parts, MinGraphScale, 1f) : 1f;
-                return At(columnWidths, graphParts, columnGap, chrome, 0, graphScale, fits: true);
+                return At(columnWidths, graphParts, columnGap, chrome,
+                          padSavePerColumn, gapSave, chromeSave, 0, graphScale, fits: true);
             }
-            return At(columnWidths, graphParts, columnGap, chrome, chosen, 1f, fits: true);
+            return At(columnWidths, graphParts, columnGap, chrome,
+                      padSavePerColumn, gapSave, chromeSave, chosen, 1f, fits: true);
         }
 
         /// <summary>
@@ -102,11 +120,14 @@ namespace Kil0bitSystemMonitor.Helpers
         /// mid-gesture would make the window resize and slide under the cursor.
         /// </summary>
         public static Plan FitAtLevel(float[] columnWidths, float[] graphParts, float columnGap,
-                                      float chrome, int level, float graphScale = 1f)
+                                      float chrome, int level, float graphScale = 1f,
+                                      float padSavePerColumn = 0f, float gapSave = 0f, float chromeSave = 0f)
         {
-            int clamped = Math.Clamp(level, 0, Math.Max(0, columnWidths.Length));
+            int maxLevel = columnWidths.Length == 0 ? 0 : columnWidths.Length + 1;
+            int clamped = Math.Clamp(level, 0, maxLevel);
             float scale = clamped == 0 ? Math.Clamp(graphScale, MinGraphScale, 1f) : 1f;
-            return At(columnWidths, graphParts, columnGap, chrome, clamped, scale, fits: true);
+            return At(columnWidths, graphParts, columnGap, chrome,
+                      padSavePerColumn, gapSave, chromeSave, clamped, scale, fits: true);
         }
 
         /// <summary>
@@ -133,24 +154,29 @@ namespace Kil0bitSystemMonitor.Helpers
             return any ? (left, right) : null;
         }
 
-        private static float WidthAt(float[] widths, float[] graphParts, float gap, float chrome, int level)
+        private static float WidthAt(float[] widths, float[] graphParts, float gap, float chrome,
+                                     float padSave, float gapSave, float chromeSave, int level)
         {
             int n = widths.Length;
-            int visible = n - Math.Max(0, level - 1);
-            if (visible <= 0) return chrome;
+            int visible = n - Math.Max(0, level - 2);
+            bool compact = level >= 2;
+            if (visible <= 0) return chrome - (compact ? chromeSave : 0f);
+
             float sum = chrome + gap * (visible - 1);
             for (int i = 0; i < visible; i++)
                 sum += widths[i] - (level >= 1 ? graphParts[i] : 0f);
+            if (compact) sum -= chromeSave + padSave * visible + gapSave * (visible - 1);
             return sum;
         }
 
         private static Plan At(float[] widths, float[] graphParts, float gap, float chrome,
+                               float padSave, float gapSave, float chromeSave,
                                int level, float graphScale, bool fits)
         {
-            float w = WidthAt(widths, graphParts, gap, chrome, level);
+            float w = WidthAt(widths, graphParts, gap, chrome, padSave, gapSave, chromeSave, level);
             if (level == 0 && graphScale < 1f)
             {
-                float w1 = WidthAt(widths, graphParts, gap, chrome, 1);
+                float w1 = WidthAt(widths, graphParts, gap, chrome, padSave, gapSave, chromeSave, 1);
                 w = w1 + graphScale * (w - w1);
             }
             return new()
@@ -158,7 +184,8 @@ namespace Kil0bitSystemMonitor.Helpers
                 Level = level,
                 ShowGraphs = level == 0,
                 GraphScale = level == 0 ? graphScale : 1f,
-                VisibleColumns = widths.Length - Math.Max(0, level - 1),
+                Compact = level >= 2,
+                VisibleColumns = widths.Length - Math.Max(0, level - 2),
                 Width = w,
                 Fits = fits,
             };

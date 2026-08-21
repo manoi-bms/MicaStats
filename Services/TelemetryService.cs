@@ -19,7 +19,9 @@ namespace Kil0bitSystemMonitor.Services
             public void Dispose() { Usage?.Dispose(); Read?.Dispose(); Write?.Dispose(); }
         }
         private System.Collections.Generic.Dictionary<string, DiskCounterSet> _diskCounters = new();
-        private System.Collections.Generic.Dictionary<string, PerformanceCounter> _gpuCounters = new();
+        private PerformanceCounterCategory? _gpuEngineCategory;
+        private readonly System.Collections.Generic.Dictionary<string, CounterSample> _previousGpuSamples = new();
+        private readonly System.Collections.Generic.HashSet<string> _gpuSeenInstances = new();
         private string? _selectedGpuLuid; // Lowercase luid e.g. "0x00000000_0x0000e3aa"
         private int _nvidiaGlobalIndex = -1;
         private bool _isNvidiaSelected = false;
@@ -47,7 +49,6 @@ namespace Kil0bitSystemMonitor.Services
 
         /// <summary>Nominal clock from the registry; effective clock = this x performance ratio.</summary>
         private static readonly float BaseMhz = ReadBaseMhz();
-        private DateTime _lastGpuCounterRefresh = DateTime.MinValue;
 
         // Per-logical-processor sampling. One ReadCategory per tick covers every core at roughly
         // the cost of a single PerformanceCounter read; creating one counter per core costs
@@ -212,9 +213,8 @@ namespace Kil0bitSystemMonitor.Services
                 _nvidiaGlobalIndex = -1;
                 _isNvidiaSelected = false;
 
-                // Dispose existing counters
-                foreach (var c in _gpuCounters.Values) c.Dispose();
-                _gpuCounters.Clear();
+                // A different adapter selection invalidates the previous engine samples.
+                _previousGpuSamples.Clear();
 
                 // 1. SMART DEFAULT DISCOVERY (and 'All' mode fallback for Temp)
                 if (selectedName == "Default" || selectedName == "All")
@@ -300,9 +300,6 @@ namespace Kil0bitSystemMonitor.Services
                     catch { }
                 }
 
-                // Initial update of counters
-                UpdateGpuCounters();
-                
                 StartSmiReader();
                 _adlService?.Dispose();
                 _adlService = new AmdAdlService(selectedName);
@@ -348,40 +345,51 @@ namespace Kil0bitSystemMonitor.Services
 
 
 
-        private void UpdateGpuCounters()
+        /// <summary>
+        /// Sum of 3D-engine utilization from ONE "GPU Engine" category snapshot. The previous
+        /// implementation held a PerformanceCounter per engine instance and called NextValue
+        /// on each — and every NextValue re-reads the whole category blob, so N engines cost
+        /// N full reads per tick. One ReadCategory plus manual rate math (the same pattern
+        /// <see cref="UpdateCoreUsage"/> uses) costs one read regardless of engine count, and
+        /// no instance enumeration pass is needed at all.
+        /// </summary>
+        private float ReadGpuUsageSnapshot()
         {
             try
             {
-                bool isEmpty = _gpuCounters.Count == 0;
-                bool throttleExpired = (DateTime.Now - _lastGpuCounterRefresh).TotalSeconds >= 30;
-                // Throttle enumeration to once every 30 seconds to save CPU
-                if (!throttleExpired && !isEmpty) return;
-                _lastGpuCounterRefresh = DateTime.Now;
+                _gpuEngineCategory ??= new PerformanceCounterCategory("GPU Engine");
+                var snapshot = _gpuEngineCategory.ReadCategory();
+                var util = snapshot["Utilization Percentage"];
+                if (util == null) return 0f;
 
-                var category = new PerformanceCounterCategory("GPU Engine");
-                var instances = category.GetInstanceNames();
-                var targetInstances = instances.Where(name => 
+                float total = 0f;
+                _gpuSeenInstances.Clear();
+                foreach (InstanceData inst in util.Values)
                 {
-                    if (!name.Contains("engtype_3D")) return false;
-                    if (_selectedGpuLuid != null) return name.ToLowerInvariant().Contains(_selectedGpuLuid);
-                    return true;
-                }).ToList();
+                    string name = inst.InstanceName;
+                    if (!name.Contains("engtype_3D")) continue;
+                    if (_selectedGpuLuid != null && !name.ToLowerInvariant().Contains(_selectedGpuLuid)) continue;
 
-                // Add new instances
-                foreach (var inst in targetInstances)
-                {
-                    if (!_gpuCounters.ContainsKey(inst))
-                    {
-                        try { _gpuCounters[inst] = new PerformanceCounter("GPU Engine", "Utilization Percentage", inst); }
-                        catch { }
-                    }
+                    _gpuSeenInstances.Add(name);
+                    CounterSample current = inst.Sample;
+                    if (_previousGpuSamples.TryGetValue(name, out CounterSample previous))
+                        total += Math.Clamp(CounterSampleCalculator.ComputeCounterValue(previous, current), 0f, 100f);
+                    _previousGpuSamples[name] = current;
                 }
 
-                // Always clean up stale instances — not just when >100 — to prevent resource leak
-                var toRemove = _gpuCounters.Keys.Where(k => !targetInstances.Contains(k)).ToList();
-                foreach (var r in toRemove) { _gpuCounters[r].Dispose(); _gpuCounters.Remove(r); }
+                // Engine instances come and go with processes; prune the departed so the
+                // sample dictionary cannot grow without bound.
+                if (_previousGpuSamples.Count > _gpuSeenInstances.Count)
+                {
+                    var stale = new System.Collections.Generic.List<string>();
+                    foreach (var key in _previousGpuSamples.Keys)
+                        if (!_gpuSeenInstances.Contains(key)) stale.Add(key);
+                    foreach (var key in stale) _previousGpuSamples.Remove(key);
+                }
+
+                return Math.Min(total, 100f);
             }
-            catch { }
+            catch { return 0f; }
         }
 
         private System.Collections.Generic.List<string> GetNvidiaGpus()
@@ -516,15 +524,7 @@ namespace Kil0bitSystemMonitor.Services
                 }
                 else
                 {
-                    UpdateGpuCounters(); // fallback PerfomanceCounter
-                    var deadCounters = new System.Collections.Generic.List<string>();
-                    foreach (var kvp in _gpuCounters)
-                    {
-                        try { gpuUsage += kvp.Value.NextValue(); }
-                        catch { deadCounters.Add(kvp.Key); }
-                    }
-                    foreach (var k in deadCounters) { _gpuCounters[k].Dispose(); _gpuCounters.Remove(k); }
-                    gpuUsage = Math.Min(gpuUsage, 100f);
+                    gpuUsage = ReadGpuUsageSnapshot(); // one category read for every engine
                 }
             }
             metrics.GpuUsage = gpuUsage;
@@ -1244,7 +1244,6 @@ namespace Kil0bitSystemMonitor.Services
                 StopSmiReader();
                 _cpuCounter.Dispose();
                 foreach (var set in _diskCounters.Values) set.Dispose();
-                foreach (var c in _gpuCounters.Values) c.Dispose();
                 _adlService?.Dispose();
             }
             catch { }

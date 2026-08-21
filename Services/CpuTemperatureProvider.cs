@@ -40,13 +40,28 @@ namespace Kil0bitSystemMonitor.Services
         private string? _workingWmiNamespace;
 
         /// <summary>Hottest CPU core in Celsius, or -1 when no source is available.</summary>
+        private float _lastGoodValue = -1f;
+        private DateTime _lastGoodReadAt = DateTime.MinValue;
+
         public float Read()
         {
-            float t = ReadCoreTemp();
-            if (t > 0) return t;
+            // Temperatures move on seconds, not ticks: reuse a recent good reading so the
+            // WMI path (LibreHardwareMonitor / OpenHardwareMonitor) is queried at most every
+            // 2.5s instead of every tick. Core Temp shared memory is nearly free, but one
+            // uniform cache keeps behaviour identical whichever source is live.
+            if (_lastGoodValue > 0 && (DateTime.UtcNow - _lastGoodReadAt).TotalMilliseconds < 2500)
+                return _lastGoodValue;
 
-            t = ReadHardwareMonitorWmi();
-            return t > 0 ? t : -1f;
+            float t = ReadCoreTemp();
+            if (t <= 0) t = ReadHardwareMonitorWmi();
+            if (t > 0)
+            {
+                _lastGoodValue = t;
+                _lastGoodReadAt = DateTime.UtcNow;
+                return t;
+            }
+            _lastGoodValue = -1f;
+            return -1f;
         }
 
         private float ReadCoreTemp()

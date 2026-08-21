@@ -42,6 +42,7 @@ namespace Kil0bitSystemMonitor
         private bool _shellFullscreen = false;
         private int _stackedFitLevel;   // StackedFitPlanner hysteresis state
         private float _stackedGraphScale = 1f; // sparkline squeeze carried across ticks (frozen during drag)
+        private string? _lastStackedFrameKey;  // idle-frame skip: fingerprint of the last rendered frame (graphs off)
         private bool _inSizeMove;       // inside the native move loop: avoidance must not fight the drag
         private float? _testWidthCapPx = null; // render-harness override (reflection) for the Start-menu width cap
         private bool _appbarRegistered = false;
@@ -234,6 +235,7 @@ namespace Kil0bitSystemMonitor
                             IntPtr zOrder = _config.Config.AlwaysOnTop ? Win32Helper.HWND_TOPMOST : Win32Helper.HWND_NOTOPMOST;
                             SetWindowPos(_hWnd, zOrder, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE | 0x0040);
                         }
+                        _lastStackedFrameKey = null; // appearance may change while readouts are identical
                         UpdateLayer();
                     });
                 };
@@ -865,6 +867,35 @@ namespace Kil0bitSystemMonitor
                 if (targetX != selfRect.Left)
                     SetWindowPos(_hWnd, IntPtr.Zero, targetX, selfRect.Top, 0, 0, 0x0001 | 0x0004 | 0x0010);
             }
+
+            // With graphs hidden nothing scrolls between ticks, so identical readouts make an
+            // identical frame: skip the whole GDI+ repaint and the layered-window upload.
+            // Every visual input joins the key (mini-bar levels quantised to the percent, the
+            // granularity below which a fill change is invisible); appearance changes reset
+            // the key through ClearCaches and the config handler.
+            if (!drawGraphs)
+            {
+                var fp = new StringBuilder(160);
+                fp.Append(w).Append('|').Append(plan.Level).Append('|').Append(_isHovered)
+                  .Append('|').Append(_currentAlpha).Append('|').Append(ellipsisW > 0f);
+                for (int i = 0; i < plan.VisibleColumns; i++)
+                {
+                    var col = columns[i];
+                    fp.Append('#').Append(col.Top?.Value).Append('~').Append(col.Bottom?.Value);
+                    var probe = col.Top ?? col.Bottom;
+                    if (probe != null)
+                    {
+                        fp.Append('^').Append((int)probe.Level);
+                        if (probe.MultiLevels != null)
+                            foreach (float lv in probe.MultiLevels) fp.Append(',').Append((int)lv);
+                    }
+                }
+                string frameKey = fp.ToString();
+                if (frameKey == _lastStackedFrameKey) return; // bitmap and hover zones already match
+                _lastStackedFrameKey = frameKey;
+            }
+            else _lastStackedFrameKey = null;
+
             EnsureOffscreenBuffer(w, h);
             if (_offscreenGraphics == null || _offscreenBitmap == null) return;
 
@@ -1397,7 +1428,7 @@ namespace Kil0bitSystemMonitor
             if (item.Reserve != null) w = Math.Max(w, GetCachedMeasure(item.Reserve, f));
             return w;
         }
-        private void ClearCaches() { foreach (var f in _fontCache.Values) f.Dispose(); _fontCache.Clear(); _measureCache.Clear(); }
+        private void ClearCaches() { foreach (var f in _fontCache.Values) f.Dispose(); _fontCache.Clear(); _measureCache.Clear(); _lastStackedFrameKey = null; }
         private void SetBitmap(Bitmap bitmap)
         {
             IntPtr windowDC = GetWindowDC(_hWnd); IntPtr memDC = CreateCompatibleDC(windowDC); IntPtr hBitmap = IntPtr.Zero; IntPtr oldBitmap = IntPtr.Zero;

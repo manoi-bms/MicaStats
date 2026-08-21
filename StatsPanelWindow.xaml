@@ -138,6 +138,11 @@
                             <TextBlock Style="{StaticResource SubLabel}" Text="  ·  " />
                             <TextBlock Style="{StaticResource SubLabel}" Text="{Binding OsVersion}" />
                         </StackPanel>
+
+                        <!-- Full CPU-Z-style inspector; the panel closes itself as focus moves there. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Style="{StaticResource QuickButton}" Content="Hardware" Click="OnOpenHardware" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 

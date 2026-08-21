@@ -58,6 +58,14 @@ namespace Kil0bitSystemMonitor
             
             var config = new Kil0bitSystemMonitor.Services.ConfigService();
             m_config = config;
+
+            // Diagnostics file at %APPDATA%\MicaStats\logs — the investigation trail requested
+            // alongside the hardware inspector. Startup identity plus any dispatcher crash.
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("app",
+                "MicaStats " + (typeof(App).Assembly.GetName().Version?.ToString(3) ?? "?") +
+                " starting — " + Environment.OSVersion.VersionString);
+            DispatcherUnhandledException += (s, ex) =>
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("app", "Unhandled dispatcher exception", ex.Exception);
             
             m_dummyWindow = new Window();
             m_dummyWindow.Title = "MicaStats Host";

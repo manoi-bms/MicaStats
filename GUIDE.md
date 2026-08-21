@@ -97,6 +97,47 @@ the panel stays available from the right-click menu as **Show Stats Panel**.
 
 ---
 
+## 🔩 Hardware Inspector
+
+The **Hardware** button at the top of the stats panel opens a CPU-Z-style inspector with six tabs:
+
+- **CPU** — name, vendor, socket, family/model/stepping, core topology (with the P/E split on
+  hybrid processors), every cache level, base/boost/bus clocks, and the supported instruction
+  sets (SSE…AVX-512, AES-NI, VT-x / AMD-V).
+- **MAINBOARD** — system, board and BIOS identity, including the SMBIOS version.
+- **MEMORY** — total, slots used and configured speed, then one card per module: size, type
+  (DDR4/DDR5/LPDDR5…), manufacturer, part number, rated vs configured MT/s, and voltage.
+- **GRAPHICS** — every adapter with driver version/date and full video memory (read from the
+  driver registry, which is immune to the well-known 4 GB WMI truncation), plus the primary
+  display mode.
+- **STORAGE** — each physical disk with capacity, bus (NVMe/SATA/USB), kind (SSD/HDD),
+  firmware and health.
+- **SYSTEM** — Windows edition/version/build, architecture, hypervisor presence, uptime and
+  the MicaStats data folder.
+
+The strip on top shows the **live effective core clock** (base clock scaled by the processor
+performance counter, so turbo reads above base) and memory load, once per second while the
+window is open.
+
+The data comes from the same sources CPU-Z reads where user mode allows: the **CPUID
+instruction** executed directly, the **raw SMBIOS/DMI firmware tables**, and the kernel's
+processor-topology API. What genuinely requires CPU-Z's kernel driver (MSR core voltage, SPD
+timing tables over SMBus) is omitted rather than guessed.
+
+**Save Report** writes the whole inspection to a timestamped text file under
+`%APPDATA%\MicaStats\reports\` and reveals it in Explorer — handy for support threads or
+comparing machines. **Data Folder** opens `%APPDATA%\MicaStats`, which also holds the
+diagnostics log below.
+
+### 🧾 Diagnostics Log
+
+MicaStats appends informative events — startup identity, a one-line hardware summary, sensor
+sources that failed, report saves, unexpected errors — to
+`%APPDATA%\MicaStats\logs\micastats.log` (plain text, rotated at 512 KB). If something looks
+wrong, this file is the first place to look.
+
+---
+
 ### 🖱️ Overlay Controls
 - **Click**: Opens the stats panel.
 - **Drag & Move**: Press and drag the overlay to reposition it. A click that does not move opens

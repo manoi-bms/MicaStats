@@ -223,6 +223,12 @@ namespace Kil0bitSystemMonitor
             catch { }
         }
 
+        /// <summary>
+        /// Opens the CPU-Z-style hardware inspector. The panel dismisses itself through its
+        /// normal deactivate path as focus moves to the new window — menu-like by design.
+        /// </summary>
+        private void OnOpenHardware(object sender, RoutedEventArgs e) => HardwareInfoWindow.ShowHardware();
+
         private bool _openAnimated;
 
         /// <summary>

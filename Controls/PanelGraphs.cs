@@ -39,9 +39,60 @@ namespace Kil0bitSystemMonitor.Controls
     /// </summary>
     public sealed class RingGauge : FrameworkElement
     {
+        /// <summary>
+        /// Kills every ring animation globally. The render harness flips this on: a capture
+        /// taken mid-sweep would show half-empty rings and fail visual comparison.
+        /// </summary>
+        public static bool DisableAnimations;
+
         public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(
             nameof(Value), typeof(double), typeof(RingGauge),
+            new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender, OnValueChanged));
+
+        // What OnRender actually draws. Value is the bound truth; VisualValue chases it with
+        // an ease so readings sweep instead of jumping — all motion runs on WPF's GPU-composited
+        // animation clock and only while a panel exists, so the idle app animates nothing.
+        private static readonly DependencyProperty VisualValueProperty = DependencyProperty.Register(
+            "VisualValue", typeof(double), typeof(RingGauge),
             new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
+
+        /// <summary>
+        /// False for the tiny per-core rings: two dozen 18px elements easing on every tick
+        /// would invalidate continuously for imperceptible motion. The open sweep still runs.
+        /// </summary>
+        public bool AnimateChanges { get; set; } = true;
+
+        public RingGauge()
+        {
+            // The iStat signature: rings sweep from zero to their reading when a panel opens.
+            Loaded += (s, e) =>
+            {
+                SetValue(VisualValueProperty, 0d);
+                DriveVisual(Value, TimeSpan.FromMilliseconds(550));
+            };
+        }
+
+        private static void OnValueChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+            => ((RingGauge)d).DriveVisual((double)e.NewValue, TimeSpan.FromMilliseconds(280));
+
+        private void DriveVisual(double to, TimeSpan duration)
+        {
+            double from = (double)GetValue(VisualValueProperty);
+            bool openSweep = duration.TotalMilliseconds >= 500;
+            if (DisableAnimations || !IsLoaded || (!AnimateChanges && !openSweep) || Math.Abs(to - from) < 1.0)
+            {
+                BeginAnimation(VisualValueProperty, null);
+                SetValue(VisualValueProperty, to);
+                return;
+            }
+            BeginAnimation(VisualValueProperty, new System.Windows.Media.Animation.DoubleAnimation(from, to, duration)
+            {
+                EasingFunction = new System.Windows.Media.Animation.CubicEase
+                {
+                    EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut
+                },
+            });
+        }
 
         public static readonly DependencyProperty RingThicknessProperty = DependencyProperty.Register(
             nameof(RingThickness), typeof(double), typeof(RingGauge),
@@ -70,7 +121,7 @@ namespace Kil0bitSystemMonitor.Controls
             var center = new Point(w / 2.0, h / 2.0);
             dc.DrawEllipse(null, new Pen(TrackBrush, thickness), center, radius, radius);
 
-            double pct = Math.Clamp(Value, 0.0, 100.0);
+            double pct = Math.Clamp((double)GetValue(VisualValueProperty), 0.0, 100.0);
             if (pct <= 0.05) return;
 
             var pen = new Pen(ProgressBrush, thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
@@ -157,6 +208,31 @@ namespace Kil0bitSystemMonitor.Controls
         public Brush BarBrush { get => (Brush)GetValue(BarBrushProperty); set => SetValue(BarBrushProperty, value); }
         public Brush SecondaryBrush { get => (Brush)GetValue(SecondaryBrushProperty); set => SetValue(SecondaryBrushProperty, value); }
 
+        // Depth treatment shared by every mode: faint quarter guides plus a floor hairline
+        // give the reading a scale, and bars fill with a vertical gradient anchored to the
+        // graph (not the bar), so taller bars reach into brighter colour — the iStat look.
+        private static readonly Pen GridPen = FrozenHairline(0x12);
+        private static readonly Pen FloorPen = FrozenHairline(0x28);
+
+        private static Pen FrozenHairline(byte alpha)
+        {
+            var pen = new Pen(new SolidColorBrush(Color.FromArgb(alpha, 0xFF, 0xFF, 0xFF)), 1.0);
+            pen.Freeze();
+            return pen;
+        }
+
+        private static Brush GradientFor(Brush source, double yBright, double yDim)
+        {
+            if (source is not SolidColorBrush solid) return source;
+            Color c = solid.Color;
+            var dim = Color.FromArgb((byte)(c.A * 0.45), c.R, c.G, c.B);
+            var g = new LinearGradientBrush(c, dim,
+                new Point(0, yBright), new Point(0, yDim))
+            { MappingMode = BrushMappingMode.Absolute };
+            g.Freeze();
+            return g;
+        }
+
         protected override void OnRender(DrawingContext dc)
         {
             double w = ActualWidth, h = ActualHeight;
@@ -187,6 +263,15 @@ namespace Kil0bitSystemMonitor.Controls
                 double axisY = Math.Round(h / 2.0);
                 double halfH = axisY - 1;
 
+                // Half-scale guides either side of the axis, then bars rooted bright at the
+                // axis fading toward the edges.
+                double guide = Math.Round(halfH / 2.0);
+                dc.DrawLine(GridPen, new Point(0, axisY - guide + 0.5), new Point(w, axisY - guide + 0.5));
+                dc.DrawLine(GridPen, new Point(0, axisY + guide - 0.5), new Point(w, axisY + guide - 0.5));
+
+                Brush upFill = GradientFor(SecondaryBrush, axisY, 0);
+                Brush downFill = GradientFor(BarBrush, axisY, h);
+
                 for (int k = 0; k < slots; k++)
                 {
                     double x = w - BarWidth - k * BarStep;
@@ -198,7 +283,7 @@ namespace Kil0bitSystemMonitor.Controls
                         if (upIdx >= 0)
                         {
                             double uh = BarHeight(secondary[upIdx], max, halfH);
-                            if (uh > 0) dc.DrawRectangle(SecondaryBrush, null, new Rect(x, axisY - uh, BarWidth, uh));
+                            if (uh > 0) dc.DrawRectangle(upFill, null, new Rect(x, axisY - uh, BarWidth, uh));
                         }
                     }
 
@@ -206,7 +291,7 @@ namespace Kil0bitSystemMonitor.Controls
                     if (downIdx >= 0)
                     {
                         double dh = BarHeight(primary[downIdx], max, halfH);
-                        if (dh > 0) dc.DrawRectangle(BarBrush, null, new Rect(x, axisY, BarWidth, dh));
+                        if (dh > 0) dc.DrawRectangle(downFill, null, new Rect(x, axisY, BarWidth, dh));
                     }
                 }
 
@@ -217,6 +302,14 @@ namespace Kil0bitSystemMonitor.Controls
                 return;
             }
 
+            for (int q = 1; q <= 3; q++)
+            {
+                double gy = Math.Round(h * q / 4.0) + 0.5;
+                dc.DrawLine(GridPen, new Point(0, gy), new Point(w, gy));
+            }
+            dc.DrawLine(FloorPen, new Point(0, h - 0.5), new Point(w, h - 0.5));
+
+            Brush fill = GradientFor(BarBrush, 0, h);
             for (int k = 0; k < slots; k++)
             {
                 double x = w - BarWidth - k * BarStep;
@@ -227,7 +320,7 @@ namespace Kil0bitSystemMonitor.Controls
 
                 double total = BarHeight(primary[idx], max, h);
                 if (total <= 0) continue;
-                dc.DrawRectangle(BarBrush, null, new Rect(x, h - total, BarWidth, total));
+                dc.DrawRectangle(fill, null, new Rect(x, h - total, BarWidth, total));
 
                 if (Mode == GraphMode.Stacked && hasSecondary)
                 {

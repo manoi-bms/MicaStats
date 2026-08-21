@@ -52,6 +52,7 @@
             <Setter Property="FontSize" Value="10.5" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#8CE9EDF2" />
+            <Setter Property="FontFamily" Value="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI" />
         </Style>
 
         <!-- The live value on a card's title row. -->
@@ -59,6 +60,7 @@
             <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="Foreground" Value="{StaticResource DataCyan}" />
+            <Setter Property="FontFamily" Value="Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI" />
         </Style>
 
         <Style x:Key="SubLabel" TargetType="TextBlock">
@@ -84,6 +86,7 @@
             <Setter Property="FontSize" Value="17" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#F2FFFFFF" />
+            <Setter Property="FontFamily" Value="Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI" />
         </Style>
 
         <!-- Footer quick-action pill, the iStat "open the system tool" buttons. -->
@@ -195,7 +198,7 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:CoreLoad}">
-                                    <ctrl:RingGauge Width="18" Height="18" RingThickness="2.5"
+                                    <ctrl:RingGauge Width="18" Height="18" RingThickness="2.5" AnimateChanges="False"
                                                     Margin="0,0,5,5"
                                                     Value="{Binding Percent}"
                                                     ToolTip="{Binding Label}" />

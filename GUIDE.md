@@ -84,6 +84,11 @@ Every card ends with **quick-action buttons** that open the matching Windows too
 and Resource Monitor from CPU and Memory, Display Settings from GPU, Network Settings and
 Connections from Network, Disk Management and Storage Settings from Disks.
 
+Panels open with a quick rise-and-fade, and every ring gauge sweeps from zero to its reading
+— then eases between values while the panel stays open. All motion runs on WPF's
+GPU-composited animation clock and exists only while a panel is on screen, so the idle app
+animates nothing; the taskbar overlay keeps its efficient once-per-second GDI+ pipeline.
+
 Press **Esc** or click anywhere else to dismiss it. Process sampling only runs while the panel is
 open, so a closed panel costs nothing.
 

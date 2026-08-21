@@ -109,7 +109,7 @@ namespace Kil0bitSystemMonitor
             SourceInitialized += (s, e) => Reposition();
             SizeChanged += (s, e) => Reposition(e.NewSize);
             DpiChanged += (s, e) => Reposition();
-            ContentRendered += (s, e) => Reposition();
+            ContentRendered += (s, e) => { Reposition(); PlayOpenAnimation(); };
             Deactivated += OnDeactivated;
             PreviewKeyDown += OnPreviewKeyDown;
             Activated += (s, e) => IsHoverMode = false; // clicking a hover dropdown pins it
@@ -221,6 +221,31 @@ namespace Kil0bitSystemMonitor
                     new System.Diagnostics.ProcessStartInfo(command) { UseShellExecute = true });
             }
             catch { }
+        }
+
+        private bool _openAnimated;
+
+        /// <summary>
+        /// Rise-and-fade on first presentation. Content-level only (opacity + a 10px
+        /// translate on the root element), so it cannot fight the SetWindowPos anchoring,
+        /// and it runs on WPF's GPU-composited animation clock.
+        /// </summary>
+        private void PlayOpenAnimation()
+        {
+            if (_openAnimated || Controls.RingGauge.DisableAnimations) return;
+            _openAnimated = true;
+            if (Content is not FrameworkElement root) return;
+
+            var slide = new System.Windows.Media.TranslateTransform(0, 10);
+            root.RenderTransform = slide;
+            var ease = new System.Windows.Media.Animation.CubicEase
+            {
+                EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut
+            };
+            root.BeginAnimation(OpacityProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)) { EasingFunction = ease });
+            slide.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(200)) { EasingFunction = ease });
         }
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)

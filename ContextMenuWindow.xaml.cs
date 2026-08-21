@@ -52,7 +52,7 @@ namespace Kil0bitSystemMonitor
             var aboutItem = new MenuItem { Header = "About" };
             aboutItem.Click += (s, e) =>
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/kil0bit-kb/kil0bit-system-monitor") { UseShellExecute = true });
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/manoi-bms/MicaStats") { UseShellExecute = true });
                 this.Close();
             };
 

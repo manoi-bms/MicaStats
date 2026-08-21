@@ -60,7 +60,7 @@ namespace Kil0bitSystemMonitor
             m_config = config;
             
             m_dummyWindow = new Window();
-            m_dummyWindow.Title = "Kil0bit System Monitor Host";
+            m_dummyWindow.Title = "MicaStats Host";
             m_dummyWindow.Width = 0;
             m_dummyWindow.Height = 0;
             m_dummyWindow.WindowStyle = WindowStyle.None;

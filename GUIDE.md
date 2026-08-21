@@ -1,4 +1,4 @@
-# kil0bit System Monitor — User Guide (v3.0.0)
+# MicaStats — User Guide
 
 A complete guide to using, customizing, and mastering your hardware telemetry overlay.
 
@@ -8,9 +8,9 @@ A complete guide to using, customizing, and mastering your hardware telemetry ov
 
 ### 1. Installation
 The app is provided as a unified installer:
-- **`Kil0bitSystemMonitor-Setup.exe`**: A high-performance setup that handles your Start Menu, Desktop shortcuts, and ensures the app is registered correctly for startup.
+- **`MicaStats-vX.Y.Z-Setup.exe`**: A high-performance setup that handles your Start Menu, Desktop shortcuts, and ensures the app is registered correctly for startup.
 
-Download the latest version from [GitHub Releases](https://github.com/kil0bit-kb/kil0bit-system-monitor/releases) and launch.
+Download the latest version from [GitHub Releases](https://github.com/manoi-bms/MicaStats/releases) and launch.
 
 ---
 
@@ -158,5 +158,7 @@ A: In **Monitoring** settings, select the correct active Network Adapter from th
 
 ## 🌐 Community & Support
 
-Built with ❤️ by **KB - kil0bit**.
-For feedback, bug reports, or feature requests, visit the [GitHub Repository](https://github.com/kil0bit-kb/kil0bit-system-monitor).
+Built with ❤️ by **Chaiyaporn Suratemeekul (manoi-bms)**, with Claude Code. MicaStats is a
+fork of [kil0bit System Monitor](https://github.com/kil0bit-kb/kil0bit-system-monitor) (MIT)
+by KB - kil0bit; the UX/UI is modeled on iStat Menus for macOS.
+For feedback, bug reports, or feature requests, visit the [GitHub Repository](https://github.com/manoi-bms/MicaStats).

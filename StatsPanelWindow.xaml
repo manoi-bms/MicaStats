@@ -5,7 +5,7 @@
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:vm="clr-namespace:Kil0bitSystemMonitor.ViewModels"
     xmlns:ctrl="clr-namespace:Kil0bitSystemMonitor.Controls"
-    Title="Kil0bit System Monitor Stats"
+    Title="MicaStats"
     WindowStyle="None"
     ResizeMode="NoResize"
     ShowInTaskbar="False"

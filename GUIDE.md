@@ -185,6 +185,92 @@ diagnostics log below.
 
 ---
 
+## 🩺 Diagnostics
+
+Windows measures how long your boot took, which app delayed it, and how worn your battery is —
+and shows you almost none of it. **Diagnostics** turns those measurements into numbers.
+
+Open it from the **Diagnostics** button on the stats panel, from **Diagnostics…** in the
+overlay's right-click menu, or from **Settings → Diagnostics**.
+
+### ⏱️ Slowdowns
+
+Task Manager only ever shows the present instant. By the time a four-second freeze is over, the
+process responsible has finished and left nothing behind, which is why these are so rarely
+diagnosed. MicaStats keeps a rolling window — five minutes by default — of per-process **CPU,
+memory and disk activity**, so the question can still be answered afterwards.
+
+- **Record what just happened** saves the retained window as a timeline report. The same command
+  sits in the overlay's right-click menu as **Record Slowdown Now**, which is where your hand
+  already is the moment after a stall
+- With **Save a report automatically** on, a report is written by itself when the CPU, disk or
+  memory stays past its threshold for long enough. A ten-minute cooldown stops one bad afternoon
+  producing fifty files, and the thirty newest reports are kept
+- Reports land in `%APPDATA%\MicaStats\reports\` as plain text and are listed in the tab
+
+Each report carries a second-by-second timeline and a **worst offenders** summary, so the
+culprit is named rather than merely present.
+
+> **Note on cost.** A sample is one kernel snapshot that already carries CPU time, working set
+> and disk bytes for every process, so recording adds a single system call every two seconds
+> rather than a per-process performance counter read.
+
+> **Note on network.** Per-process network traffic is deliberately missing. Windows exposes
+> per-process byte counts only to an administrator, and MicaStats runs unelevated — which is
+> exactly why tools that do show it install a service or a driver.
+
+### 🔌 Boot
+
+- **Time to desktop** for the last start, split into core startup and the part after sign-in
+- **Trend** across recent boots, so you can tell whether last week's change actually helped
+- **What held the last boot up** — every application, driver and service Windows measured as
+  delaying startup, with its real duration in seconds
+- **Starts with Windows** lists every registered program *and whether it is already switched
+  off*, which `Win32_StartupCommand` alone cannot tell you
+
+Clearing a box stops that program launching at sign-in, using the same switch Task Manager
+operates. Entries registered for **all users** need administrator rights, so they are shown but
+left read-only rather than failing silently — the status line says so if you try.
+
+All of this is read **without administrator rights**.
+
+### 🔋 Battery
+
+Only appears on a portable; on a desktop the tab and the taskbar module hide themselves rather
+than showing a row of dashes.
+
+- **Health** against design capacity, with a plain verdict and the cycle count. Windows has no
+  battery health readout at all and never warns that a pack is wearing out
+- **Right now**: charge, power source, and the actual charge or discharge in **watts**
+- **Time remaining** computed from the power being drawn. Windows' own estimate is shown beside
+  it for comparison, and frequently reads *Not available* — it returns a placeholder of roughly
+  136 years when it does not know, which is why MicaStats does not forward it
+
+Turn on the taskbar module in **Settings → Diagnostics**; its label reads `CHG` while charging.
+
+### 🔔 Alerts
+
+MicaStats has always watched temperature, disk space, memory and GPU load — and never said
+anything about them. A drive fills overnight, a cooler clogs and the processor throttles for
+weeks, and all of it is visible only in a panel nobody had open at the time.
+
+Alerts appear as a quiet amber card in the corner. They never take focus, up to three stack at
+once, and every firing is written to the diagnostics log.
+
+| Rule | Default |
+| :--- | :--- |
+| CPU temperature | Above 95 °C for 30 s — **on** |
+| Free space on a drive | Below 10 GB for 60 s — **on** |
+| Memory in use | Above 92 % for 120 s — off |
+| Battery health | Below 80 % — **on** |
+
+Two rules keep them trustworthy: a reading must **hold** for the whole sustain window before
+anything fires, and a fired rule only re-arms once the reading has recovered past a margin — so
+a value hovering on the threshold cannot flicker on and off. A sensor that cannot be read never
+fires at all, because a missing temperature probe must not look like a cold processor.
+
+---
+
 ## ⬆️ Updates
 
 MicaStats checks GitHub for a newer release **once a day**, a short while after startup, and
@@ -227,6 +313,9 @@ wrong, this file is the first place to look.
 - **Show Desktop**: Right-click and choose **Show Desktop** to minimise every window; choose it
   again to bring them all back — the same toggle as the corner of the Windows taskbar.
 - **Capture**: The right-click menu also carries Capture Region / Window / Screen / All Screens.
+- **Diagnostics…**: Opens the Diagnostics window — slowdowns, boot, battery and alerts.
+- **Record Slowdown Now**: Saves the last few minutes of per-process activity to a report. Use
+  it immediately after the machine stutters, while the rolling window still holds what happened.
 
 ---
 

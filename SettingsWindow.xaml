@@ -59,6 +59,11 @@
                         <ui:FontIcon Glyph="&#xE722;" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Diagnostics" Tag="Diagnostics">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:FontIcon Glyph="&#xE916;" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
                 <ui:NavigationViewItem Content="Updates" Tag="Updates">
                     <ui:NavigationViewItem.Icon>
                         <ui:FontIcon Glyph="&#xE895;" />
@@ -953,6 +958,96 @@
                             </Grid>
                         </Border>
 
+                    </StackPanel>
+
+                    <!-- Diagnostics -->
+                    <StackPanel x:Name="DiagnosticsSection" Visibility="Collapsed">
+                        <TextBlock Text="Diagnostics" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="Windows measures how long your boot took, which app delayed it, and how worn your battery is - and shows you almost none of it. These settings control what MicaStats records and when it speaks up." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,18">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:FontIcon Glyph="&#xE916;" FontSize="22" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="Record slowdowns" FontWeight="SemiBold" FontSize="16"/>
+                                        <TextBlock Text="Keeps the last few minutes of per-process activity, so a stall can still be explained once it has passed. Task Manager only shows the present instant." Opacity="0.7" FontSize="12.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <ui:ToggleSwitch x:Name="SlowdownRecordingToggle" Grid.Column="2" Toggled="OnDiagnosticsToggle" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="Save a report automatically" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock Text="Writes a timeline naming the process when a threshold is held long enough." Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <ui:ToggleSwitch x:Name="SlowdownAutoCaptureToggle" Grid.Column="1" Toggled="OnDiagnosticsToggle" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="History kept" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock x:Name="SlowdownWindowText" Text="5 minutes" Opacity="0.65" FontSize="12" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <Slider x:Name="SlowdownWindowSlider" Grid.Column="1" Width="200" Minimum="60" Maximum="900" TickFrequency="60" IsSnapToTickEnabled="True" ValueChanged="OnSlowdownWindowChanged" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <TextBlock Text="Per-process CPU, memory and disk activity come from one kernel snapshot per sample, so recording costs a single system call. Per-process network traffic is deliberately absent: Windows only exposes it to an administrator." Opacity="0.55" FontSize="11.5" TextWrapping="Wrap" Margin="0,16,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,18">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:FontIcon Glyph="&#xEA8F;" FontSize="22" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="Tell me when something is wrong" FontWeight="SemiBold" FontSize="16"/>
+                                        <TextBlock Text="A quiet notice in the corner when the processor runs hot, a drive fills up, or the battery wears out. Monitoring you have to watch is monitoring you miss." Opacity="0.7" FontSize="12.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <ui:ToggleSwitch x:Name="AlertsToggle" Grid.Column="2" Toggled="OnDiagnosticsToggle" VerticalAlignment="Center"/>
+                                </Grid>
+                                <TextBlock x:Name="AlertRulesText" Text="" Opacity="0.55" FontSize="11.5" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE83F;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Battery in the taskbar" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock x:Name="BatteryModuleText" Text="Shows charge beside the other modules. Portables only." Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch x:Name="ShowBatteryToggle" Grid.Column="2" Toggled="OnDiagnosticsToggle" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Button Content="Open Diagnostics" Click="OnOpenDiagnosticsWindow" Padding="16,7" Margin="0,0,8,0"/>
+                            <Button Content="Open data folder" Click="OnOpenDiagnosticsFolder" Padding="16,7"/>
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- Updates -->

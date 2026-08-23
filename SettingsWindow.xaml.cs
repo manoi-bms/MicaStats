@@ -449,6 +449,7 @@ namespace Kil0bitSystemMonitor
                 AppearanceSection.Visibility = Visibility.Collapsed;
                 AboutSection.Visibility = Visibility.Collapsed;
                 CaptureSection.Visibility = Visibility.Collapsed;
+                DiagnosticsSection.Visibility = Visibility.Collapsed;
                 UpdatesSection.Visibility = Visibility.Collapsed;
 
                 switch (sectionName)
@@ -458,6 +459,7 @@ namespace Kil0bitSystemMonitor
                     case "Monitoring": MonitoringSection.Visibility = Visibility.Visible; break;
                     case "Appearance": AppearanceSection.Visibility = Visibility.Visible; break;
                     case "Capture": CaptureSection.Visibility = Visibility.Visible; break;
+                    case "Diagnostics": DiagnosticsSection.Visibility = Visibility.Visible; LoadDiagnosticsSettings(); break;
                     case "Updates": UpdatesSection.Visibility = Visibility.Visible; break;
                     case "About": AboutSection.Visibility = Visibility.Visible; break;
                 }
@@ -776,6 +778,101 @@ namespace Kil0bitSystemMonitor
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
                     Kil0bitSystemMonitor.Services.Update.UpdateService.ReleasesPage) { UseShellExecute = true });
+            }
+            catch { }
+        }
+
+
+        // ---- Diagnostics ---------------------------------------------------------------
+
+        /// <summary>
+        /// Guards the toggle handlers while the page is being populated. Assigning IsOn raises
+        /// Toggled, which would otherwise write the value straight back and save the config on
+        /// every page visit.
+        /// </summary>
+        private bool _loadingDiagnostics;
+
+        private void LoadDiagnosticsSettings()
+        {
+            var config = _config?.Config;
+            if (config == null) return;
+
+            _loadingDiagnostics = true;
+            try
+            {
+                SlowdownRecordingToggle.IsOn = config.SlowdownRecording;
+                SlowdownAutoCaptureToggle.IsOn = config.SlowdownAutoCapture;
+                AlertsToggle.IsOn = config.AlertsEnabled;
+                ShowBatteryToggle.IsOn = config.ShowBattery;
+                SlowdownWindowSlider.Value = config.SlowdownWindowSeconds;
+                UpdateSlowdownWindowText(config.SlowdownWindowSeconds);
+                UpdateAlertRulesText(config);
+                UpdateBatteryModuleText();
+            }
+            finally { _loadingDiagnostics = false; }
+        }
+
+        private void UpdateSlowdownWindowText(int seconds)
+        {
+            SlowdownWindowText.Text = seconds < 120
+                ? seconds.ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds"
+                : (seconds / 60).ToString(System.Globalization.CultureInfo.InvariantCulture) + " minutes";
+        }
+
+        private void UpdateAlertRulesText(Kil0bitSystemMonitor.Models.AppConfig config)
+        {
+            var rules = Kil0bitSystemMonitor.Services.Diagnostics.AlertRuleSettings.Parse(config.AlertRules);
+            var on = new System.Collections.Generic.List<string>();
+            foreach (var rule in rules) if (rule.Enabled) on.Add(rule.Describe());
+
+            AlertRulesText.Text = on.Count == 0
+                ? "No rules are switched on. Choose which readings matter in the Diagnostics window."
+                : "Watching: " + string.Join("; ", on) + ".  Edit these in the Diagnostics window.";
+        }
+
+        private void UpdateBatteryModuleText()
+        {
+            BatteryModuleText.Text = Kil0bitSystemMonitor.Services.Diagnostics.BatteryMonitor.HasBattery()
+                ? "Shows charge beside the other modules, with the label reading CHG while it fills."
+                : "This machine has no battery, so the module stays hidden whatever this is set to.";
+        }
+
+        private void OnDiagnosticsToggle(object sender, RoutedEventArgs e)
+        {
+            if (_loadingDiagnostics) return;
+            var config = _config?.Config;
+            if (config == null) return;
+
+            config.SlowdownRecording = SlowdownRecordingToggle.IsOn;
+            config.SlowdownAutoCapture = SlowdownAutoCaptureToggle.IsOn;
+            config.AlertsEnabled = AlertsToggle.IsOn;
+            config.ShowBattery = ShowBatteryToggle.IsOn;
+            _config?.SaveConfig();
+            App.ApplyDiagnosticsSettings();
+        }
+
+        private void OnSlowdownWindowChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_loadingDiagnostics) return;
+            var config = _config?.Config;
+            if (config == null) return;
+
+            config.SlowdownWindowSeconds = (int)e.NewValue;
+            UpdateSlowdownWindowText(config.SlowdownWindowSeconds);
+            _config?.SaveConfig();
+            App.ApplyDiagnosticsSettings();
+        }
+
+        private void OnOpenDiagnosticsWindow(object sender, RoutedEventArgs e) =>
+            DiagnosticsWindow.ShowDiagnostics();
+
+        private void OnOpenDiagnosticsFolder(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(Kil0bitSystemMonitor.Services.DiagnosticsLog.DataDir);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    Kil0bitSystemMonitor.Services.DiagnosticsLog.DataDir) { UseShellExecute = true });
             }
             catch { }
         }

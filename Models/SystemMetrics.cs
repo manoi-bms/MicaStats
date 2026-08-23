@@ -45,7 +45,8 @@ namespace Kil0bitSystemMonitor.Models
         Memory,
         Gpu,
         Network,
-        Disks
+        Disks,
+        Battery
     }
 
     public class SystemMetrics
@@ -123,6 +124,33 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>Bytes sent since this app started sampling.</summary>
         public ulong NetSessionUpBytes { get; set; }
+
+        // ----- Battery ----------------------------------------------------------------------
+        // Sampled on a slower cadence than the rest (WMI is not free) and cached between ticks.
+
+        /// <summary>Charge percentage, or -1 when this machine has no battery.</summary>
+        public int BatteryPercent { get; set; } = -1;
+
+        /// <summary>True when a battery is present and the machine is on mains power.</summary>
+        public bool BatteryOnAc { get; set; }
+
+        public bool BatteryCharging { get; set; }
+
+        /// <summary>Charge or discharge power in watts, or 0 when idle or unreported.</summary>
+        public float BatteryWatts { get; set; }
+
+        /// <summary>
+        /// Minutes of charge left at the measured draw, or -1 when that cannot be computed.
+        /// Deliberately not Windows' own estimate, which reports a 136-year sentinel when it
+        /// does not know.
+        /// </summary>
+        public int BatteryMinutesLeft { get; set; } = -1;
+
+        /// <summary>Wear as a percentage of design capacity, or -1 until it has been read.</summary>
+        public float BatteryHealthPercent { get; set; } = -1f;
+
+        /// <summary>True when a battery was found at all.</summary>
+        public bool HasBattery => BatteryPercent >= 0;
     }
 
     public class AppConfig : System.ComponentModel.INotifyPropertyChanged
@@ -197,6 +225,18 @@ namespace Kil0bitSystemMonitor.Models
         private bool _autoCheckUpdates = true;
         private string _lastUpdateCheckUtc = "";
         private string _skippedUpdateVersion = "";
+
+        // Diagnostics
+        private bool _showBattery = true;
+        private bool _slowdownRecording = true;
+        private bool _slowdownAutoCapture = true;
+        private int _slowdownWindowSeconds = 300;
+        private int _slowdownCpuPercent = 90;
+        private int _slowdownDiskMbPerSec = 150;
+        private int _slowdownMemoryPercent = 92;
+        private int _slowdownSustainSeconds = 8;
+        private bool _alertsEnabled = true;
+        private string _alertRules = "";
         private string _captureHotkeyRegion = "Ctrl+Shift+1";
         private string _captureHotkeyWindow = "Ctrl+Shift+2";
         private string _captureHotkeyFullScreen = "Ctrl+Shift+3";
@@ -322,6 +362,61 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>A version the user chose not to be reminded about again.</summary>
         public string SkippedUpdateVersion { get => _skippedUpdateVersion; set { Set(ref _skippedUpdateVersion, value); } }
+
+        // ----- Diagnostics ------------------------------------------------------------------
+
+        /// <summary>Show the battery module in the taskbar overlay. Ignored on a desktop.</summary>
+        public bool ShowBattery { get => _showBattery; set { Set(ref _showBattery, value); } }
+
+        /// <summary>
+        /// Keep a rolling window of per-process activity so a stall can be explained after it
+        /// has passed. Off means the app cannot answer "what was that?" — nothing else in
+        /// Windows keeps that history either.
+        /// </summary>
+        public bool SlowdownRecording { get => _slowdownRecording; set { Set(ref _slowdownRecording, value); } }
+
+        /// <summary>Write a report by itself when a threshold is crossed.</summary>
+        public bool SlowdownAutoCapture { get => _slowdownAutoCapture; set { Set(ref _slowdownAutoCapture, value); } }
+
+        /// <summary>Seconds of history retained for the report.</summary>
+        public int SlowdownWindowSeconds
+        {
+            get => _slowdownWindowSeconds;
+            set { Set(ref _slowdownWindowSeconds, Math.Clamp(value, 60, 900)); }
+        }
+
+        public int SlowdownCpuPercent
+        {
+            get => _slowdownCpuPercent;
+            set { Set(ref _slowdownCpuPercent, Math.Clamp(value, 50, 100)); }
+        }
+
+        public int SlowdownDiskMbPerSec
+        {
+            get => _slowdownDiskMbPerSec;
+            set { Set(ref _slowdownDiskMbPerSec, Math.Clamp(value, 10, 5000)); }
+        }
+
+        public int SlowdownMemoryPercent
+        {
+            get => _slowdownMemoryPercent;
+            set { Set(ref _slowdownMemoryPercent, Math.Clamp(value, 50, 100)); }
+        }
+
+        public int SlowdownSustainSeconds
+        {
+            get => _slowdownSustainSeconds;
+            set { Set(ref _slowdownSustainSeconds, Math.Clamp(value, 2, 120)); }
+        }
+
+        /// <summary>Say something when a threshold rule is breached.</summary>
+        public bool AlertsEnabled { get => _alertsEnabled; set { Set(ref _alertsEnabled, value); } }
+
+        /// <summary>
+        /// The alert rules, as <c>id:enabled:threshold:sustain</c> separated by semicolons.
+        /// See AlertRuleSettings for why this is a flat string rather than nested JSON.
+        /// </summary>
+        public string AlertRules { get => _alertRules; set { Set(ref _alertRules, value); } }
         public string CaptureHotkeyRegion { get => _captureHotkeyRegion; set { Set(ref _captureHotkeyRegion, value); } }
         public string CaptureHotkeyWindow { get => _captureHotkeyWindow; set { Set(ref _captureHotkeyWindow, value); } }
         public string CaptureHotkeyFullScreen { get => _captureHotkeyFullScreen; set { Set(ref _captureHotkeyFullScreen, value); } }

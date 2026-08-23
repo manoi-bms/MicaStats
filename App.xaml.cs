@@ -26,6 +26,31 @@ namespace Kil0bitSystemMonitor
         private Kil0bitSystemMonitor.Services.Capture.CaptureHotkeys? m_captureHotkeys;
         public static SettingsWindow? SettingsWindow { get; private set; }
 
+        // ---- diagnostics ----------------------------------------------------------------
+
+        /// <summary>
+        /// The one process sampler for the whole application, leased with Retain/Release.
+        ///
+        /// <para>
+        /// Shared rather than owned per consumer because a sample is a single kernel snapshot
+        /// carrying CPU, working set and disk I/O for every process at once. The stats panel
+        /// and the slowdown recorder both want it, and a second instance would pay for the
+        /// same syscall twice.
+        /// </para>
+        /// </summary>
+        public static Kil0bitSystemMonitor.Services.ProcessSampler SharedProcessSampler { get; } = new();
+
+        /// <summary>The config service, for windows that are not handed one.</summary>
+        public static Kil0bitSystemMonitor.Services.ConfigService? ConfigService { get; private set; }
+
+        /// <summary>The rolling activity recorder, or null before startup completes.</summary>
+        public static Kil0bitSystemMonitor.Services.Diagnostics.SlowdownRecorder? Recorder { get; private set; }
+
+        /// <summary>Battery wear and live draw, or null on a machine without one.</summary>
+        public static Kil0bitSystemMonitor.Services.Diagnostics.BatteryMonitor? Battery { get; private set; }
+
+        private static Kil0bitSystemMonitor.Services.Diagnostics.AlertMonitor? s_alerts;
+
         [DllImport("user32.dll", SetLastError = true)]
         static extern IntPtr FindWindow(string lpClassName, string? lpWindowName);
 
@@ -59,6 +84,7 @@ namespace Kil0bitSystemMonitor
             
             var config = new Kil0bitSystemMonitor.Services.ConfigService();
             m_config = config;
+            ConfigService = config;
 
             // Diagnostics file at %APPDATA%\MicaStats\logs — the investigation trail requested
             // alongside the hardware inspector. Startup identity plus any dispatcher crash.
@@ -129,12 +155,130 @@ namespace Kil0bitSystemMonitor
             };
             Kil0bitSystemMonitor.Services.Update.UpdateNotifier.ScheduleStartupCheck(config.Config, Dispatcher);
 
+            StartDiagnostics(config);
+
             string[] args = System.Environment.GetCommandLineArgs();
             bool isStartup = System.Linq.Enumerable.Contains(args, "--startup");
             if (!isStartup)
             {
                 OpenSettings(viewModel, config);
             }
+        }
+
+        /// <summary>
+        /// Brings up the diagnostics services: the rolling recorder, battery wear, and the
+        /// threshold alerts. All three are cheap when switched off and none blocks startup.
+        /// </summary>
+        private void StartDiagnostics(Kil0bitSystemMonitor.Services.ConfigService config)
+        {
+            try
+            {
+                Battery = new Kil0bitSystemMonitor.Services.Diagnostics.BatteryMonitor();
+
+                Recorder = new Kil0bitSystemMonitor.Services.Diagnostics.SlowdownRecorder(
+                    SharedProcessSampler, () => m_history?.Latest);
+
+                Recorder.Captured += (path, headline) =>
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        // A recording that nobody is told about helps nobody, but this must not
+                        // interrupt: the same quiet corner card the updater uses.
+                        var rule = new Kil0bitSystemMonitor.Services.Diagnostics.AlertRule(
+                            "slowdown", "The machine just struggled",
+                            Kil0bitSystemMonitor.Services.Diagnostics.AlertMetric.CpuUsage,
+                            0, true, 0, true);
+                        AlertToastWindow.ShowFor(
+                            new Kil0bitSystemMonitor.Services.Diagnostics.AlertEvent(rule, 0, headline, DateTime.Now),
+                            () => DiagnosticsWindow.ShowDiagnostics(0));
+                    }));
+
+                s_alerts = new Kil0bitSystemMonitor.Services.Diagnostics.AlertMonitor(m_history!, Battery);
+                s_alerts.Raised += alert =>
+                    AlertToastWindow.ShowFor(alert, () => DiagnosticsWindow.ShowDiagnostics(3));
+
+                ApplyDiagnosticsSettings();
+
+                // Battery wear needs a powercfg spawn, so it is resolved in the background
+                // rather than on the startup path. Nothing waits on it.
+                if (Kil0bitSystemMonitor.Services.Diagnostics.BatteryMonitor.HasBattery())
+                    _ = Battery.GetHealthAsync();
+
+                config.Config.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == null) return;
+                    if (e.PropertyName.StartsWith("Slowdown", StringComparison.Ordinal) ||
+                        e.PropertyName.StartsWith("Alert", StringComparison.Ordinal))
+                    {
+                        Dispatcher.BeginInvoke(new Action(ApplyDiagnosticsSettings));
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("diagnostics", "Startup failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// Pushes the current settings into the recorder and the alert monitor. Safe to call
+        /// repeatedly; every start and stop is idempotent.
+        /// </summary>
+        public static void ApplyDiagnosticsSettings()
+        {
+            var config = ConfigService?.Config;
+            if (config == null) return;
+
+            try
+            {
+                if (Recorder != null)
+                {
+                    Recorder.WindowSeconds = config.SlowdownWindowSeconds;
+                    Recorder.AutoCapture = config.SlowdownAutoCapture;
+                    Recorder.SetThresholds(new Kil0bitSystemMonitor.Services.Diagnostics.SlowdownThresholds(
+                        CpuPercent: config.SlowdownCpuPercent,
+                        DiskBytesPerSec: (long)config.SlowdownDiskMbPerSec * 1024 * 1024,
+                        MemoryPercent: config.SlowdownMemoryPercent,
+                        SustainSeconds: config.SlowdownSustainSeconds));
+
+                    if (config.SlowdownRecording) Recorder.Start();
+                    else Recorder.Stop();
+                }
+
+                if (s_alerts != null)
+                {
+                    s_alerts.SetRules(
+                        Kil0bitSystemMonitor.Services.Diagnostics.AlertRuleSettings.Parse(config.AlertRules));
+
+                    if (config.AlertsEnabled) s_alerts.Start();
+                    else { s_alerts.Stop(); AlertToastWindow.CloseAll(); }
+                }
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("diagnostics", "Applying settings failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// Saves the rolling window right now — the overlay's "Record Slowdown Now" entry.
+        /// Reached the moment after a stall, while the window still holds what happened.
+        /// </summary>
+        public static void RecordSlowdownNow()
+        {
+            var recorder = Recorder;
+            if (recorder == null || !recorder.IsRunning)
+            {
+                DiagnosticsWindow.ShowDiagnostics(0);
+                return;
+            }
+
+            string? path = recorder.Capture(
+                Kil0bitSystemMonitor.Services.Diagnostics.SlowdownCause.Manual);
+
+            // Either way the user sees the outcome: the report, or the reason there is none.
+            DiagnosticsWindow.ShowDiagnostics(0);
+            if (path == null)
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("slowdown", "Nothing sampled yet to record");
         }
 
         /// <summary>The open detail panel, or null when it is closed.</summary>
@@ -261,6 +405,12 @@ namespace Kil0bitSystemMonitor
             try
             {
                 m_captureHotkeys?.Dispose();
+                // Before the history: the alert monitor is subscribed to it, and the recorder
+                // holds a lease on the shared sampler.
+                s_alerts?.Dispose();
+                Recorder?.Dispose();
+                Battery?.Dispose();
+                SharedProcessSampler.Dispose();
                 m_overlay?.Dispose();
                 m_history?.Dispose();
                 m_telemetry?.Dispose();

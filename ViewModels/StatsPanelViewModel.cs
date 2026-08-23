@@ -76,7 +76,13 @@ namespace Kil0bitSystemMonitor.ViewModels
         private readonly MetricsHistory _history;
         private readonly AppConfig _config;
         private readonly Action _onHistoryUpdated;
-        private readonly ProcessSampler _processes = new();
+        /// <summary>
+        /// The process sampler, shared with the slowdown recorder rather than owned here.
+        /// One kernel snapshot serves both; a second instance would double the syscall for
+        /// identical data. Leased with Retain/Release so neither switches the other off.
+        /// </summary>
+        private readonly ProcessSampler _processes = App.SharedProcessSampler;
+        private bool _samplerLeased;
         private bool _isLive;
         private bool _disposed;
 
@@ -132,6 +138,7 @@ namespace Kil0bitSystemMonitor.ViewModels
                 OnPropertyChanged(nameof(ShowNetworkCard));
                 OnPropertyChanged(nameof(ShowDisksCard));
                 OnPropertyChanged(nameof(ShowProcessesCard));
+                OnPropertyChanged(nameof(ShowBatteryCard));
             }
         }
 
@@ -144,6 +151,79 @@ namespace Kil0bitSystemMonitor.ViewModels
 
         /// <summary>The process list is CPU-ranked, so it accompanies the CPU view and the full panel.</summary>
         public bool ShowProcessesCard => _filter is PanelSection.All or PanelSection.Cpu;
+
+        /// <summary>
+        /// The battery card, shown only on a machine that has one. A desktop must not be told
+        /// its battery is at 0%.
+        /// </summary>
+        public bool ShowBatteryCard =>
+            (_filter is PanelSection.All or PanelSection.Battery) && HasBattery;
+
+        // ---- Battery card ----
+
+        private bool _hasBattery;
+        public bool HasBattery
+        {
+            get => _hasBattery;
+            private set
+            {
+                if (_hasBattery == value) return;
+                _hasBattery = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ShowBatteryCard));
+            }
+        }
+
+        private string _batteryValueText = "—";
+        /// <summary>Charge as a percentage, e.g. "72%".</summary>
+        public string BatteryValueText { get => _batteryValueText; private set => Set(ref _batteryValueText, value); }
+
+        private double _batteryPercent;
+        /// <summary>Charge for the ring gauge, 0-100.</summary>
+        public double BatteryPercent { get => _batteryPercent; private set => Set(ref _batteryPercent, value); }
+
+        private string _batteryStateText = "—";
+        /// <summary>"Charging", "On battery", "Plugged in".</summary>
+        public string BatteryStateText { get => _batteryStateText; private set => Set(ref _batteryStateText, value); }
+
+        private string _batteryRemainingText = "—";
+        /// <summary>Our own estimate from the measured draw, never the OS sentinel.</summary>
+        public string BatteryRemainingText { get => _batteryRemainingText; private set => Set(ref _batteryRemainingText, value); }
+
+        private string _batteryPowerText = "—";
+        /// <summary>Charge or discharge power, e.g. "24.0 W".</summary>
+        public string BatteryPowerText { get => _batteryPowerText; private set => Set(ref _batteryPowerText, value); }
+
+        private string _batteryHealthText = "—";
+        /// <summary>Wear against design capacity — the figure Windows never shows.</summary>
+        public string BatteryHealthText { get => _batteryHealthText; private set => Set(ref _batteryHealthText, value); }
+
+        /// <summary>Fills the battery card from one sample.</summary>
+        private void UpdateBattery(SystemMetrics m)
+        {
+            HasBattery = m.HasBattery;
+            if (!m.HasBattery) return;
+
+            BatteryPercent = m.BatteryPercent;
+            BatteryValueText = m.BatteryPercent.ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+            BatteryStateText = m.BatteryCharging ? "Charging"
+                : m.BatteryOnAc ? "Plugged in"
+                : "On battery";
+
+            BatteryPowerText = m.BatteryWatts > 0
+                ? m.BatteryWatts.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " W"
+                : "—";
+
+            BatteryRemainingText = m.BatteryMinutesLeft >= 0
+                ? Services.Diagnostics.BatteryEstimate.Format(TimeSpan.FromMinutes(m.BatteryMinutesLeft))
+                : m.BatteryOnAc ? "—" : "Measuring…";
+
+            BatteryHealthText = m.BatteryHealthPercent >= 0
+                ? m.BatteryHealthPercent.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "%  " +
+                  Services.Diagnostics.BatteryEstimate.HealthVerdict(m.BatteryHealthPercent)
+                : "—";
+        }
 
         // ---- CPU card ----
 
@@ -327,7 +407,10 @@ namespace Kil0bitSystemMonitor.ViewModels
 
                 // Process enumeration is the one genuinely costly sample, so it runs only while the
                 // panel is actually on screen.
-                _processes.Enabled = _isLive;
+                // Leases rather than a raw Enabled flag: the recorder may be holding the
+                // sampler open, and a closing panel must not stop it sampling.
+                if (_isLive && !_samplerLeased) { _processes.Retain(); _samplerLeased = true; }
+                else if (!_isLive && _samplerLeased) { _processes.Release(); _samplerLeased = false; }
 
                 if (_isLive) Refresh();
                 else
@@ -346,6 +429,8 @@ namespace Kil0bitSystemMonitor.ViewModels
             if (_disposed) return;
 
             var m = _history.Latest;
+
+            UpdateBattery(m);
 
             // CPU
             CpuValueText = $"{(int)m.CpuUsage}%";
@@ -527,7 +612,8 @@ namespace Kil0bitSystemMonitor.ViewModels
             _disposed = true;
             _history.Updated -= _onHistoryUpdated;
             _processes.Updated -= OnProcessesUpdated;
-            _processes.Dispose();
+            // Not disposed: the sampler outlives this panel and belongs to the application.
+            if (_samplerLeased) { _processes.Release(); _samplerLeased = false; }
         }
     }
 }

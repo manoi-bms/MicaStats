@@ -1,0 +1,527 @@
+<Window
+    x:Class="Kil0bitSystemMonitor.DiagnosticsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.modernwpf.com/2019"
+    xmlns:hw="clr-namespace:Kil0bitSystemMonitor.Services.HardwareInfo"
+    xmlns:dg="clr-namespace:Kil0bitSystemMonitor.Services.Diagnostics"
+    xmlns:hlp="clr-namespace:Kil0bitSystemMonitor.Helpers"
+    Title="MicaStats Diagnostics"
+    Width="620" Height="700" MinWidth="600" MinHeight="500"
+    WindowStartupLocation="CenterScreen"
+    Background="#0E0E13"
+    Foreground="#E9EDEDF2"
+    FontFamily="Segoe UI Variable Text, Segoe UI"
+    ui:ThemeManager.RequestedTheme="Dark"
+    UseLayoutRounding="True"
+    SnapsToDevicePixels="True"
+    TextOptions.TextFormattingMode="Display">
+
+    <!--
+      The four questions Windows will not answer: what just slowed the machine down, how long
+      the last boot took and why, how worn the battery is, and what should speak up when a
+      reading goes wrong.
+
+      Styling deliberately mirrors HardwareInfoWindow so the two read as one app, and the
+      SpecGroup/SpecRow template is the same shape the inspector uses.
+    -->
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="DataCyan" Color="#3FD2E4" />
+        <SolidColorBrush x:Key="DataAmber" Color="#E8A53C" />
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="#F01A1A22" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="Margin" Value="0,0,0,7" />
+        </Style>
+
+        <Style x:Key="CardHeader" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#8CE9EDF2" />
+            <Setter Property="FontFamily" Value="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI" />
+        </Style>
+
+        <Style x:Key="SubLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="9.5" />
+            <Setter Property="Foreground" Value="#6EE9EDF2" />
+        </Style>
+
+        <Style x:Key="TabIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource DataCyan}" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="CardIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#B23FD2E4" />
+            <Setter Property="Margin" Value="0,0,7,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="ButtonIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="StripIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#8CE9EDF2" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="SpecLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Foreground" Value="#8CE9EDF2" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+
+        <Style x:Key="SpecValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#DDEDEDF2" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style x:Key="QuickButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#CFEDEDF2" />
+            <Setter Property="FontSize" Value="9.5" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="#1FFFFFFF" CornerRadius="5" Padding="9,4">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#33FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#473FD2E4" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Reused for the SpecGroup lists on the Boot and Battery tabs. -->
+        <DataTemplate x:Key="SpecGroupTemplate" DataType="{x:Type hw:SpecGroup}">
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Style="{StaticResource CardIcon}" Text="{Binding Icon}" />
+                        <TextBlock Style="{StaticResource CardHeader}" Text="{Binding Title}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding Rows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type hw:SpecRow}">
+                                <Grid Margin="0,0,0,3">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource SpecLabel}"
+                                               Text="{Binding Label}" Margin="0,0,10,0" />
+                                    <TextBlock Grid.Column="1" Style="{StaticResource SpecValue}"
+                                               Text="{Binding Value}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- Minimal owned templates so the ModernWPF theme cannot inject light chrome. -->
+        <Style TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Top" BorderBrush="#26FFFFFF" BorderThickness="0,0,0,1"
+                                    Padding="10,6,10,0">
+                                <TabPanel IsItemsHost="True" />
+                            </Border>
+                            <ContentPresenter ContentSource="SelectedContent" />
+                        </DockPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground" Value="#8CE9EDF2" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bg" Background="Transparent" Padding="8,5,8,6" Margin="0,0,1,0"
+                                BorderBrush="Transparent" BorderThickness="0,0,0,2">
+                            <ContentPresenter ContentSource="Header"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource DataCyan}" />
+                                <Setter Property="Foreground" Value="#F2FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#DDEDEDF2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#DDEDEDF2" />
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+
+        <!-- Live strip: what the recorder is holding right now. -->
+        <Border DockPanel.Dock="Top" Background="#F01A1A22" Padding="14,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock x:Name="LiveRecorderText" Text="—" FontSize="21" FontWeight="SemiBold"
+                               Foreground="#F2FFFFFF"
+                               FontFamily="Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI" />
+                    <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                        <TextBlock Style="{StaticResource StripIcon}" Text="{x:Static hlp:UiGlyphs.Stopwatch}" />
+                        <TextBlock Style="{StaticResource SubLabel}" Text="ROLLING WINDOW" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                    <TextBlock x:Name="LiveBusiestText" Text="—" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{StaticResource DataCyan}" HorizontalAlignment="Right"
+                               TextTrimming="CharacterEllipsis" MaxWidth="290"
+                               FontFamily="Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,1,0,0">
+                        <TextBlock Style="{StaticResource StripIcon}" Text="{x:Static hlp:UiGlyphs.Processes}" />
+                        <TextBlock Style="{StaticResource SubLabel}" Text="BUSIEST RIGHT NOW" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Footer: status on the left, actions on the right. -->
+        <Border DockPanel.Dock="Bottom" BorderBrush="#26FFFFFF" BorderThickness="0,1,0,0" Padding="12,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusText" Style="{StaticResource SubLabel}" VerticalAlignment="Center"
+                           Text="Reading…" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Style="{StaticResource QuickButton}" Click="OnRefresh">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Refresh}" />
+                            <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource QuickButton}" Click="OnOpenDataFolder">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Folder}" />
+                            <TextBlock Text="Data Folder" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource QuickButton}" Click="OnSaveReport">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Report}" />
+                            <TextBlock Text="Save Report" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <TabControl x:Name="Tabs">
+
+            <!-- ============================ SLOWDOWNS ============================ -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource TabIcon}" Text="{x:Static hlp:UiGlyphs.Stopwatch}" />
+                        <TextBlock Text="Slowdowns" FontSize="10.5" FontWeight="SemiBold"
+                                   FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="10">
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Stopwatch}" />
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="Recording"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+
+                                <TextBlock Style="{StaticResource SpecLabel}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="Task Manager only shows the present instant, so by the time a freeze is over the process responsible has finished and left nothing behind. MicaStats keeps the last few minutes of per-process activity so the question can still be answered afterwards." />
+
+                                <CheckBox x:Name="RecordingCheck" Content="Keep a rolling window of activity"
+                                          Click="OnToggleRecording" Margin="0,0,0,4" />
+                                <CheckBox x:Name="AutoCaptureCheck" Content="Save a report automatically when the machine struggles"
+                                          Click="OnToggleAutoCapture" Margin="0,0,0,8" />
+
+                                <TextBlock x:Name="ThresholdText" Style="{StaticResource SubLabel}"
+                                           TextWrapping="Wrap" Margin="0,0,0,8" Text="—" />
+
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource QuickButton}" Margin="0" Click="OnRecordNow">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Report}" />
+                                            <TextBlock Text="Record what just happened" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Processes}" />
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="Busiest right now"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <ItemsControl x:Name="LiveProcessList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="72" />
+                                                    <ColumnDefinition Width="86" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource SpecValue}" Text="{Binding Name}"
+                                                           TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource SpecLabel}"
+                                                           Text="{Binding CpuText}" HorizontalAlignment="Right" />
+                                                <TextBlock Grid.Column="2" Style="{StaticResource SpecLabel}"
+                                                           Text="{Binding DiskText}" HorizontalAlignment="Right" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="NoLiveText" Style="{StaticResource SubLabel}"
+                                           Text="Nothing sampled yet." Visibility="Collapsed" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Report}" />
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="Saved reports"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <ItemsControl x:Name="ReportList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type dg:SavedReport}">
+                                            <Grid Margin="0,0,0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Style="{StaticResource SpecValue}" Text="{Binding Name}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Style="{StaticResource SubLabel}" Text="{Binding WhenText}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Style="{StaticResource QuickButton}"
+                                                        Content="Open" Click="OnOpenReport"
+                                                        Tag="{Binding Path}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="NoReportsText" Style="{StaticResource SubLabel}" TextWrapping="Wrap"
+                                           Text="No reports yet. One appears here when the machine struggles, or when you record by hand." />
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================== BOOT ============================== -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource TabIcon}" Text="{x:Static hlp:UiGlyphs.Boot}" />
+                        <TextBlock Text="Boot" FontSize="10.5" FontWeight="SemiBold"
+                                   FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="10">
+                        <ItemsControl x:Name="BootGroups" ItemTemplate="{StaticResource SpecGroupTemplate}" />
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.History}" />
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="What held the last boot up"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <ItemsControl x:Name="DelayList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type dg:StartupDelay}">
+                                            <Grid Margin="0,0,0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="72" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource SpecValue}" Text="{Binding TotalText}"
+                                                           HorizontalAlignment="Right" Margin="0,0,10,0"
+                                                           Foreground="{StaticResource DataAmber}" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource SpecValue}"
+                                                           Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Style="{StaticResource SpecLabel}"
+                                                           Text="{Binding Kind}" Margin="8,0,0,0" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="NoDelaysText" Style="{StaticResource SubLabel}" TextWrapping="Wrap"
+                                           Text="Windows recorded nothing slowing this boot down." />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Processes}" />
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="Starts with Windows"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource SubLabel}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="Clearing a box stops that program launching at sign-in. Entries set for all users need administrator rights, so they are shown but cannot be changed here." />
+                                <ItemsControl x:Name="StartupList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type dg:StartupEntry}">
+                                            <Grid Margin="0,0,0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <CheckBox IsChecked="{Binding Enabled, Mode=OneTime}"
+                                                          IsEnabled="{Binding CanToggle}"
+                                                          Click="OnToggleStartupEntry"
+                                                          Tag="{Binding}"
+                                                          Content="{Binding Name}" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource SubLabel}"
+                                                           Text="{Binding Location}" VerticalAlignment="Center"
+                                                           Margin="8,0,0,0" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================= BATTERY ============================ -->
+            <TabItem x:Name="BatteryTab">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource TabIcon}" Text="{x:Static hlp:UiGlyphs.Battery}" />
+                        <TextBlock Text="Battery" FontSize="10.5" FontWeight="SemiBold"
+                                   FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="10">
+                        <ItemsControl x:Name="BatteryGroups" ItemTemplate="{StaticResource SpecGroupTemplate}" />
+                        <TextBlock Style="{StaticResource SubLabel}" TextWrapping="Wrap" Margin="2,2,2,0"
+                                   Text="Windows offers no battery health readout and never warns that a pack is wearing out. These figures come from the firmware's own report; the time remaining is worked out from the power actually being drawn, because Windows' own estimate is frequently unavailable." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================== ALERTS ============================ -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource TabIcon}" Text="{x:Static hlp:UiGlyphs.Alert}" />
+                        <TextBlock Text="Alerts" FontSize="10.5" FontWeight="SemiBold"
+                                   FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="10">
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Alert}" />
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="Tell me when"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource SpecLabel}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="MicaStats has always watched these readings and never said anything about them. A drive fills overnight, a cooler clogs and the processor throttles for weeks — all of it visible only in a panel nobody had open at the time." />
+
+                                <CheckBox x:Name="AlertsEnabledCheck" Content="Show a notice when a reading goes wrong"
+                                          Click="OnToggleAlerts" Margin="0,0,0,10" />
+
+                                <ItemsControl x:Name="AlertList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type dg:AlertRule}">
+                                            <StackPanel Margin="0,0,0,5">
+                                                <CheckBox IsChecked="{Binding Enabled, Mode=OneTime}"
+                                                          Click="OnToggleAlertRule" Tag="{Binding}"
+                                                          Content="{Binding Label}" />
+                                                <TextBlock Style="{StaticResource SubLabel}" Margin="24,1,0,0"
+                                                           Text="{Binding ThresholdText}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+    </DockPanel>
+</Window>

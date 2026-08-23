@@ -1130,6 +1130,21 @@ namespace Kil0bitSystemMonitor
                 list.Add(new MetricColumn { Kind = SectionKind.CpuRam, Panel = PanelSection.Memory, Top = Item("RAM", $"{(int)m.RamPercent}%", "88%", _history.Ram, level: m.RamPercent) });
             if (c.ShowGpu)
                 list.Add(new MetricColumn { Kind = SectionKind.Gpu, Panel = PanelSection.Gpu, Top = Item("GPU", $"{(int)m.GpuUsage}%", "88%", _history.Gpu, level: m.GpuUsage) });
+
+            // Battery. Present only on a portable — HasBattery is false on a desktop, so the
+            // module costs nothing and appears nowhere there rather than reading a flat zero.
+            if (c.ShowBattery && m.HasBattery)
+            {
+                // The label carries the state, because "72%" alone cannot distinguish a pack
+                // filling up from one draining, and that is the thing worth knowing at a glance.
+                string label = m.BatteryCharging ? "CHG" : "BAT";
+                list.Add(new MetricColumn
+                {
+                    Kind = SectionKind.CpuRam,
+                    Panel = PanelSection.Battery,
+                    Top = Item(label, $"{m.BatteryPercent}%", "88%", null, level: m.BatteryPercent),
+                });
+            }
             if ((c.ShowDisk || c.ShowDiskSpeed) && m.Disks != null && m.Disks.Count > 0)
             {
                 // One compact zone for every drive: the text follows the busiest drive and the
@@ -1662,6 +1677,11 @@ namespace Kil0bitSystemMonitor
                     SetPreferredAppMode(2); AllowDarkModeForWindow(hWnd, true); FlushMenuThemes();
                     IntPtr hMenu = CreatePopupMenu();
                     AppendMenu(hMenu, 0, 1010, "Show Stats Panel");
+                    AppendMenu(hMenu, 0, 1040, "Diagnostics…");
+                    // Offered here because this is where a person reaches the instant after a
+                    // stall: the rolling window still holds what just happened, and a few
+                    // seconds later it will not.
+                    AppendMenu(hMenu, 0, 1041, "Record Slowdown Now");
                     AppendMenu(hMenu, 0, 1001, "Settings");
                     AppendMenu(hMenu, 0, 1002, "Task Manager");
                     AppendMenu(hMenu, 0x0800, 0, null);
@@ -1718,6 +1738,8 @@ namespace Kil0bitSystemMonitor
                     else if (ch == 1021) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.ActiveWindow, _config.Config, _dispatcher);
                     else if (ch == 1022) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Screen, _config.Config, _dispatcher);
                     else if (ch == 1023) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.AllScreens, _config.Config, _dispatcher);
+                    else if (ch == 1040) _dispatcher.BeginInvoke(() => DiagnosticsWindow.ShowDiagnostics());
+                    else if (ch == 1041) _dispatcher.BeginInvoke(() => App.RecordSlowdownNow());
                     else if (ch == 1030) ShowDesktop();
                     else if (ch == 1031) _dispatcher.BeginInvoke(() => { App.OpenSettings(_viewModel, _config); App.SettingsWindow?.SelectSection("Updates"); });
                     else if (ch == 1003) _dispatcher.BeginInvoke(() => { App.OpenSettings(_viewModel, _config); App.SettingsWindow?.SelectSection("About"); });

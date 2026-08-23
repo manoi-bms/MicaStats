@@ -229,6 +229,8 @@ namespace Kil0bitSystemMonitor
         /// </summary>
         private void OnOpenHardware(object sender, RoutedEventArgs e) => HardwareInfoWindow.ShowHardware();
 
+        private void OnOpenDiagnostics(object sender, RoutedEventArgs e) => DiagnosticsWindow.ShowDiagnostics();
+
         private bool _openAnimated;
 
         /// <summary>

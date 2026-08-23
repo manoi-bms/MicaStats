@@ -108,6 +108,37 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * Every download is **verified against the SHA-256 checksum published with the release** before it is allowed to run; a file that does not match is deleted and the update refused
 * Nothing installs by itself: Windows asks for permission, and you can skip a version or turn automatic checking off entirely
 
+### Diagnostics: answering questions Windows will not
+
+Windows measures how long your boot took, which app delayed it, and how worn your battery is — and shows you almost none of it. **Diagnostics** turns those measurements into numbers you can act on. Open it from the stats panel, from the overlay's right-click menu, or from **Settings → Diagnostics**.
+
+**Slowdowns — "why did it just hang?"**
+
+* Keeps a rolling window of the last few minutes of **per-process CPU, memory and disk activity**, so a stall can still be explained after it has passed. Task Manager only ever shows the present instant; by the time a freeze is over, the process responsible has finished and left nothing behind
+* Writes a **timeline report naming the culprit** when the machine struggles — or on demand from **Record Slowdown Now** in the overlay menu, reached the moment after you feel a stall
+* Costs a single system call per sample: CPU, working set and disk bytes all come from one kernel snapshot, not from per-process performance counters
+* Per-process **network** traffic is deliberately absent — Windows exposes it only to an administrator, and MicaStats runs unelevated
+
+**Boot — in milliseconds, not "High/Medium/Low"**
+
+* The **real boot time** and its trend across recent starts, read from the log Windows has been writing all along
+* **What held it up**: each application, driver and service Windows measured as delaying startup, with its actual duration
+* Every program that **starts with Windows**, showing which ones are already switched off — state `Win32_StartupCommand` does not report — and a box to switch off any per-user entry
+* All of it read **without administrator rights**
+
+**Battery — the readout Windows does not have**
+
+* **Health** against design capacity with a plain verdict, plus cycle count — Windows never warns that a pack is wearing out
+* Live charge or discharge in **watts**, and a **time remaining computed from the power actually being drawn**, because Windows' own estimate is frequently a placeholder rather than a number
+* An optional **battery module in the taskbar overlay**, labelled `CHG` while it fills
+* Hidden entirely on a desktop rather than shown as a row of dashes
+
+**Alerts — monitoring that speaks up**
+
+* A quiet corner notice when the processor runs hot, a drive fills up, memory is exhausted, or the battery wears past a threshold
+* Each rule waits for the reading to **hold** before firing, and re-arms only after it has recovered, so nothing flickers
+* An unreadable sensor never fires — a missing temperature probe must not look like a cold processor
+
 ### Customization and diagnostics
 
 * Select which metrics are displayed
@@ -592,6 +623,37 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 * สั่ง **ดาวน์โหลดและติดตั้ง** ได้จาก **Settings → Updates** หรือจากการแจ้งเตือนโดยตรง
 * ทุกไฟล์ที่ดาวน์โหลดจะถูก **ตรวจสอบกับค่า SHA-256 ที่เผยแพร่มาพร้อมรีลีส** ก่อนเรียกใช้งานเสมอ หากค่าไม่ตรงกันไฟล์จะถูกลบและยกเลิกการอัปเดตทันที
 * ไม่มีการติดตั้งเองโดยพลการ: Windows จะขออนุญาตก่อน และคุณเลือกข้ามเวอร์ชันนั้น หรือปิดการตรวจสอบอัตโนมัติทั้งหมดได้
+
+### การวินิจฉัย: คำตอบที่ Windows ไม่ยอมบอก
+
+Windows วัดเวลาบูต วัดว่าโปรแกรมใดถ่วงการเริ่มระบบ และรู้ว่าแบตเตอรี่เสื่อมไปเท่าไร แต่แทบไม่แสดงให้เห็นเลย หน้าต่าง **Diagnostics** เปลี่ยนค่าเหล่านั้นให้เป็นตัวเลขที่ใช้งานได้จริง เปิดได้จากแผงสถิติ จากเมนูคลิกขวาบนแถบงาน หรือจาก **Settings → Diagnostics**
+
+**Slowdowns — "เมื่อกี้เครื่องค้างเพราะอะไร?"**
+
+* เก็บ **กิจกรรมของแต่ละโปรเซส (CPU, หน่วยความจำ, ดิสก์)** ย้อนหลังไม่กี่นาทีแบบต่อเนื่อง เพื่อให้อธิบายอาการหน่วงได้แม้เหตุการณ์จะผ่านไปแล้ว — Task Manager แสดงเฉพาะขณะปัจจุบัน พอเครื่องหายค้าง โปรเซสต้นเหตุก็จบไปแล้วโดยไม่เหลือร่องรอย
+* เขียน **รายงานไทม์ไลน์ที่ระบุชื่อโปรเซสต้นเหตุ** เมื่อเครื่องเริ่มทำงานหนักผิดปกติ หรือสั่งเองได้จาก **Record Slowdown Now** ในเมนูคลิกขวา ซึ่งเป็นจุดที่มือไปถึงทันทีหลังรู้สึกว่าเครื่องหน่วง
+* ใช้ system call เพียงครั้งเดียวต่อการเก็บตัวอย่าง เพราะค่า CPU, หน่วยความจำ และไบต์ดิสก์มาจาก kernel snapshot ชุดเดียวกัน ไม่ใช่ performance counter รายโปรเซส
+* **ไม่มี** ปริมาณเครือข่ายรายโปรเซสโดยตั้งใจ เพราะ Windows เปิดให้อ่านเฉพาะสิทธิ์ผู้ดูแลระบบ ขณะที่ MicaStats ทำงานด้วยสิทธิ์ผู้ใช้ปกติ
+
+**Boot — เป็นมิลลิวินาที ไม่ใช่แค่ "สูง/กลาง/ต่ำ"**
+
+* **เวลาบูตจริง** พร้อมแนวโน้มเทียบกับการเปิดเครื่องครั้งก่อน ๆ อ่านจากบันทึกที่ Windows เขียนไว้อยู่แล้ว
+* **อะไรถ่วงการบูต**: แอป ไดรเวอร์ และบริการที่ Windows วัดว่าทำให้การเริ่มระบบช้า พร้อมระยะเวลาจริงของแต่ละตัว
+* รายการโปรแกรมที่ **เริ่มพร้อม Windows** ทั้งหมด พร้อมบอกว่าตัวใดถูกปิดไว้แล้ว — ข้อมูลที่ `Win32_StartupCommand` ไม่ได้บอก — และมีช่องให้ปิดรายการของผู้ใช้ปัจจุบันได้ทันที
+* ทั้งหมดนี้อ่านได้ **โดยไม่ต้องใช้สิทธิ์ผู้ดูแลระบบ**
+
+**Battery — ค่าที่ Windows ไม่มีให้ดู**
+
+* **สุขภาพแบตเตอรี่** เทียบกับความจุตามการออกแบบ พร้อมคำอธิบายตรงไปตรงมาและจำนวนรอบการชาร์จ — Windows ไม่เคยเตือนว่าแบตเตอรี่กำลังเสื่อม
+* อัตราการชาร์จหรือคายประจุเป็น **วัตต์** และ **เวลาที่เหลือซึ่งคำนวณจากกำลังไฟที่ใช้จริง** เพราะค่าประมาณของ Windows เองมักเป็นค่าสำรองที่ใช้ไม่ได้
+* เพิ่ม **โมดูลแบตเตอรี่บนแถบงาน** ได้ตามต้องการ โดยแสดงป้าย `CHG` ขณะกำลังชาร์จ
+* บนเครื่องเดสก์ท็อปจะซ่อนทั้งหมด แทนที่จะแสดงเป็นขีดว่าง ๆ
+
+**Alerts — การเฝ้าระวังที่ส่งเสียงเอง**
+
+* แจ้งเตือนเงียบ ๆ ที่มุมจอเมื่อซีพียูร้อนเกินกำหนด ไดรฟ์ใกล้เต็ม หน่วยความจำถูกใช้จนหมด หรือแบตเตอรี่เสื่อมเกินเกณฑ์
+* แต่ละกฎจะรอให้ค่านั้น **คงอยู่นานพอ** ก่อนแจ้งเตือน และจะกลับมาพร้อมเตือนอีกครั้งก็ต่อเมื่อค่ากลับสู่ปกติแล้วเท่านั้น จึงไม่มีการแจ้งเตือนกะพริบไปมา
+* เซ็นเซอร์ที่อ่านค่าไม่ได้จะไม่ทำให้เกิดการแจ้งเตือน เพราะเซ็นเซอร์อุณหภูมิที่หายไปต้องไม่ถูกตีความว่าซีพียูเย็น
 
 ### การปรับแต่งและการตรวจสอบปัญหา
 

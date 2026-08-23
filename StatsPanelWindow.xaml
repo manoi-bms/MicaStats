@@ -186,6 +186,12 @@
                                     <TextBlock Text="Hardware" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
+                            <Button Style="{StaticResource QuickButton}" Click="OnOpenDiagnostics">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Stopwatch}" />
+                                    <TextBlock Text="Diagnostics" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -388,6 +394,60 @@
                         <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
                             <Button Style="{StaticResource QuickButton}" Content="Task Manager" Tag="taskmgr" Click="OnQuickAction" />
                             <Button Style="{StaticResource QuickButton}" Content="Resource Monitor" Tag="resmon" Click="OnQuickAction" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!--
+                  Battery card. Collapses entirely on a desktop rather than rendering dashes:
+                  ShowBatteryCard is false unless a pack was actually found.
+                -->
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowBatteryCard}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
+                            <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Battery}" />
+                            <TextBlock Style="{StaticResource CardHeader}" Text="BATTERY" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource SubLabel}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                       Text="{Binding BatteryStateText}" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding BatteryValueText}" FontSize="30" FontWeight="SemiBold"
+                                       Foreground="#F2FFFFFF" VerticalAlignment="Center"
+                                       FontFamily="Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI" />
+                            <StackPanel Margin="14,2,0,0" VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource SubLabel}" Text="{Binding BatteryRemainingText}" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="{Binding BatteryPowerText}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Grid Margin="0,7,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Health}"
+                                       VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Style="{StaticResource SubLabel}" Text="HEALTH" />
+                                <TextBlock Style="{StaticResource LegendValue}" Text="{Binding BatteryHealthText}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                            <Button Style="{StaticResource QuickButton}" Content="Power Settings"
+                                    Tag="ms-settings:batterysaver" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="Diagnostics"
+                                    Click="OnOpenDiagnostics" />
                         </StackPanel>
                     </StackPanel>
                 </Border>

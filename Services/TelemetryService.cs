@@ -605,6 +605,7 @@ namespace Kil0bitSystemMonitor.Services
             metrics.GpuTemperature = GetGpuTemperature();
             metrics.CpuTemperature = _cpuTempProvider.Read();
             metrics.GpuVramUsedBytes = ReadGpuVramUsed();
+            FillBattery(metrics);
 
             _lastNetUp = netStats.up;
             _lastNetDown = netStats.down;
@@ -614,6 +615,45 @@ namespace Kil0bitSystemMonitor.Services
         }
 
 
+
+        /// <summary>
+        /// Fills the battery fields from the cached WMI sample.
+        ///
+        /// <para>
+        /// The time remaining is computed here from the measured draw rather than taken from
+        /// <c>Win32_Battery.EstimatedRunTime</c>, which returns a sentinel of roughly 136 years
+        /// on the development machine and is widely unreliable elsewhere.
+        /// </para>
+        /// </summary>
+        private static void FillBattery(SystemMetrics metrics)
+        {
+            try
+            {
+                var reading = Services.Diagnostics.BatteryMonitor.ReadCached();
+                if (!reading.Present)
+                {
+                    metrics.BatteryPercent = -1;      // no battery: the module hides itself
+                    return;
+                }
+
+                metrics.BatteryPercent = reading.Percent;
+                metrics.BatteryOnAc = reading.OnAcPower;
+                metrics.BatteryCharging = reading.Charging;
+                metrics.BatteryWatts = (float)reading.Watts;
+                metrics.BatteryHealthPercent =
+                    (float)Services.Diagnostics.BatteryMonitor.LastKnownHealthPercent;
+
+                var left = reading.Discharging
+                    ? Services.Diagnostics.BatteryEstimate.TimeToEmpty(reading.RemainingMwh, reading.RateMw)
+                    : null;
+                metrics.BatteryMinutesLeft = left == null ? -1 : (int)left.Value.TotalMinutes;
+            }
+            catch
+            {
+                // Battery detail is supplementary; a failure must never disturb the tick.
+                metrics.BatteryPercent = -1;
+            }
+        }
 
         /// <summary>
         /// Samples every logical processor from a single snapshot of the "Processor Information"

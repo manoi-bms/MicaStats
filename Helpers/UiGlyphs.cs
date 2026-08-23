@@ -97,6 +97,32 @@ namespace Kil0bitSystemMonitor.Helpers
         /// <summary>U+E72C — refresh arrow.</summary>
         public static readonly string Refresh = Glyph(0xE72C);
 
+        // ----- Diagnostics --------------------------------------------------------------------
+        // Every codepoint below was rendered from the installed font and chosen by eye before
+        // being written here. That step is not ceremony: U+EA8D, an obvious-looking candidate
+        // for a health icon, turns out to draw a construction worker.
+
+        /// <summary>U+E83F — filled battery.</summary>
+        public static readonly string Battery = Glyph(0xE83F);
+
+        /// <summary>U+E83E — battery with a lightning bolt, for the charging state.</summary>
+        public static readonly string BatteryCharging = Glyph(0xE83E);
+
+        /// <summary>U+E95E — heart with a pulse trace, for battery wear.</summary>
+        public static readonly string Health = Glyph(0xE95E);
+
+        /// <summary>U+E7E8 — power button, for the boot and startup section.</summary>
+        public static readonly string Boot = Glyph(0xE7E8);
+
+        /// <summary>U+E916 — stopwatch, for the slowdown recorder.</summary>
+        public static readonly string Stopwatch = Glyph(0xE916);
+
+        /// <summary>U+EA8F — bell, for threshold alerts.</summary>
+        public static readonly string Alert = Glyph(0xEA8F);
+
+        /// <summary>U+E81C — clock with a back arrow, for the boot-time trend.</summary>
+        public static readonly string History = Glyph(0xE81C);
+
         /// <summary>
         /// True when <paramref name="glyph"/> is a single character in the Unicode Private Use
         /// Area (U+E000..U+F8FF), where every icon-font glyph lives. A codepoint outside it is a

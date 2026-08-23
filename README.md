@@ -139,6 +139,12 @@ Windows measures how long your boot took, which app delayed it, and how worn you
 * Each rule waits for the reading to **hold** before firing, and re-arms only after it has recovered, so nothing flickers
 * An unreadable sensor never fires — a missing temperature probe must not look like a cold processor
 
+### Works on a light taskbar
+
+* The overlay paints **directly onto the taskbar**, so its colours have to work against whatever the taskbar is. On a light theme the shipped white readings measured **1.10:1 contrast** — effectively invisible. They now switch to dark ink with darkened accents, measured at **16:1**
+* **Appearance → Taskbar colours** offers *Match Windows* (the default), *Always light* or *Always dark*, and the overlay repaints the moment you switch Windows between light and dark
+* A dark taskbar is unchanged, pixel for pixel, and any colour you customised yourself is never overridden
+
 ### Customization and diagnostics
 
 * Select which metrics are displayed
@@ -654,6 +660,12 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 * แจ้งเตือนเงียบ ๆ ที่มุมจอเมื่อซีพียูร้อนเกินกำหนด ไดรฟ์ใกล้เต็ม หน่วยความจำถูกใช้จนหมด หรือแบตเตอรี่เสื่อมเกินเกณฑ์
 * แต่ละกฎจะรอให้ค่านั้น **คงอยู่นานพอ** ก่อนแจ้งเตือน และจะกลับมาพร้อมเตือนอีกครั้งก็ต่อเมื่อค่ากลับสู่ปกติแล้วเท่านั้น จึงไม่มีการแจ้งเตือนกะพริบไปมา
 * เซ็นเซอร์ที่อ่านค่าไม่ได้จะไม่ทำให้เกิดการแจ้งเตือน เพราะเซ็นเซอร์อุณหภูมิที่หายไปต้องไม่ถูกตีความว่าซีพียูเย็น
+
+### รองรับแถบงานธีมสว่าง
+
+* โอเวอร์เลย์วาดลงบน **แถบงานโดยตรง** สีที่ใช้จึงต้องอ่านออกบนพื้นหลังของแถบงานจริง ๆ บนธีมสว่าง ค่าตัวเลขสีขาวเดิมวัดค่าคอนทราสต์ได้เพียง **1.10:1** ซึ่งแทบมองไม่เห็น ตอนนี้เปลี่ยนเป็นหมึกสีเข้มพร้อมสีเน้นที่เข้มขึ้น วัดได้ **16:1**
+* **Appearance → Taskbar colours** เลือกได้ระหว่าง *Match Windows* (ค่าเริ่มต้น), *Always light* หรือ *Always dark* และโอเวอร์เลย์จะวาดใหม่ทันทีเมื่อสลับธีมของ Windows
+* แถบงานธีมมืดยังคงเหมือนเดิมทุกพิกเซล และสีที่คุณตั้งเองจะไม่ถูกเขียนทับ
 
 ### การปรับแต่งและการตรวจสอบปัญหา
 

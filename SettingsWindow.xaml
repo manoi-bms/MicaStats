@@ -515,6 +515,26 @@
                     </StackPanel>
 
                     <StackPanel x:Name="AppearanceSection" Visibility="Collapsed">
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE793;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Taskbar colours" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock x:Name="OverlayThemeHint" Text="" Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <ComboBox x:Name="OverlayThemeCombo" Grid.Column="2" Width="150" VerticalAlignment="Center" SelectionChanged="OnOverlayThemeChanged">
+                                    <ComboBoxItem Content="Match Windows" Tag="Auto"/>
+                                    <ComboBoxItem Content="Always light" Tag="Light"/>
+                                    <ComboBoxItem Content="Always dark" Tag="Dark"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
                         <TextBlock Text="Appearance" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,24"/>
                         
                         <Grid>

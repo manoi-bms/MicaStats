@@ -226,6 +226,9 @@ namespace Kil0bitSystemMonitor.Models
         private string _lastUpdateCheckUtc = "";
         private string _skippedUpdateVersion = "";
 
+        // Appearance follow-up
+        private string _overlayTheme = "Auto";
+
         // Diagnostics
         private bool _showBattery = true;
         private bool _slowdownRecording = true;
@@ -362,6 +365,23 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>A version the user chose not to be reminded about again.</summary>
         public string SkippedUpdateVersion { get => _skippedUpdateVersion; set { Set(ref _skippedUpdateVersion, value); } }
+
+        /// <summary>
+        /// Which colours the taskbar overlay draws with: "Auto", "Light" or "Dark".
+        ///
+        /// <para>
+        /// The overlay paints directly onto the taskbar, so its colours only work against
+        /// whatever the taskbar is. <b>Auto</b> follows the Windows setting — a light taskbar
+        /// gets dark ink and darkened accents, a dark one keeps exactly the colours the app has
+        /// always used. Light and Dark pin it regardless of Windows.
+        /// </para>
+        ///
+        /// <para>
+        /// A colour you have customised yourself is never overridden; only values still at
+        /// their shipped default follow the theme.
+        /// </para>
+        /// </summary>
+        public string OverlayTheme { get => _overlayTheme; set { Set(ref _overlayTheme, value); } }
 
         // ----- Diagnostics ------------------------------------------------------------------
 

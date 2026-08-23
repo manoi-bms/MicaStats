@@ -27,20 +27,32 @@ namespace Kil0bitSystemMonitor.Services.Capture
         public static bool IsBusy => _busy;
 
         /// <summary>Starts a capture on the UI thread. Safe to call from a hotkey handler.</summary>
-        public static void Start(CaptureMode mode, AppConfig? config, Dispatcher dispatcher)
+        /// <summary>
+        /// Queues a capture on the UI thread.
+        /// </summary>
+        /// <param name="fromMenu">
+        /// True when the user picked this from a popup menu. The menu is logically closed by
+        /// now but its pixels are still fading off the screen, so the grab has to wait for it
+        /// or the picture contains the menu that asked for it.
+        /// </param>
+        public static void Start(CaptureMode mode, AppConfig? config, Dispatcher dispatcher,
+                                 bool fromMenu = false)
         {
             if (dispatcher == null) return;
-            dispatcher.BeginInvoke(new Action(() => Run(mode, config)));
+            dispatcher.BeginInvoke(new Action(() => Run(mode, config, fromMenu)));
         }
 
         /// <summary>Runs a capture. Must be called on the UI thread.</summary>
-        public static void Run(CaptureMode mode, AppConfig? config)
+        public static void Run(CaptureMode mode, AppConfig? config, bool fromMenu = false)
         {
             if (_busy) return;
             _busy = true;
             try
             {
                 var settings = CaptureSettings.From(config);
+
+                // Before anything else: a menu that was just dismissed is still on screen.
+                if (fromMenu) CaptureSettle.WaitForMenusToClose();
 
                 if (settings.DelaySeconds > 0) WaitPumping(settings.DelaySeconds);
 

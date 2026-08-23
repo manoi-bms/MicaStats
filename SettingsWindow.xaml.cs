@@ -457,7 +457,7 @@ namespace Kil0bitSystemMonitor
                     case "Home": HomeSection.Visibility = Visibility.Visible; break;
                     case "General": GeneralSection.Visibility = Visibility.Visible; break;
                     case "Monitoring": MonitoringSection.Visibility = Visibility.Visible; break;
-                    case "Appearance": AppearanceSection.Visibility = Visibility.Visible; break;
+                    case "Appearance": AppearanceSection.Visibility = Visibility.Visible; LoadOverlayTheme(); break;
                     case "Capture": CaptureSection.Visibility = Visibility.Visible; break;
                     case "Diagnostics": DiagnosticsSection.Visibility = Visibility.Visible; LoadDiagnosticsSettings(); break;
                     case "Updates": UpdatesSection.Visibility = Visibility.Visible; break;
@@ -875,6 +875,61 @@ namespace Kil0bitSystemMonitor
                     Kil0bitSystemMonitor.Services.DiagnosticsLog.DataDir) { UseShellExecute = true });
             }
             catch { }
+        }
+
+
+        // ---- Taskbar colours -------------------------------------------------------------
+
+        private bool _loadingOverlayTheme;
+
+        private void LoadOverlayTheme()
+        {
+            var config = _config?.Config;
+            if (config == null) return;
+
+            _loadingOverlayTheme = true;
+            try
+            {
+                string want = config.OverlayTheme ?? "Auto";
+                foreach (var item in OverlayThemeCombo.Items)
+                {
+                    if (item is System.Windows.Controls.ComboBoxItem ci &&
+                        string.Equals(ci.Tag as string, want, StringComparison.OrdinalIgnoreCase))
+                    {
+                        OverlayThemeCombo.SelectedItem = ci;
+                        break;
+                    }
+                }
+                if (OverlayThemeCombo.SelectedItem == null) OverlayThemeCombo.SelectedIndex = 0;
+                UpdateOverlayThemeHint();
+            }
+            finally { _loadingOverlayTheme = false; }
+        }
+
+        private void UpdateOverlayThemeHint()
+        {
+            bool light = Kil0bitSystemMonitor.Helpers.TaskbarTheme.Read()
+                         == Kil0bitSystemMonitor.Helpers.TaskbarAppearance.Light;
+
+            OverlayThemeHint.Text = "The overlay draws straight onto the taskbar, so it needs ink "
+                + "that shows against it. Windows is currently using a "
+                + (light ? "light" : "dark") + " taskbar. Colours you have customised yourself are "
+                + "never overridden.";
+        }
+
+        private void OnOverlayThemeChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_loadingOverlayTheme) return;
+            var config = _config?.Config;
+            if (config == null) return;
+
+            if (OverlayThemeCombo.SelectedItem is System.Windows.Controls.ComboBoxItem ci &&
+                ci.Tag is string tag)
+            {
+                config.OverlayTheme = tag;
+                _config?.SaveConfig();
+                UpdateOverlayThemeHint();
+            }
         }
 
     }

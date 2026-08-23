@@ -185,6 +185,28 @@ diagnostics log below.
 
 ---
 
+## 🎨 Taskbar Colours
+
+The overlay paints directly onto the taskbar rather than onto a plate of its own, so its
+colours only work against whatever the taskbar actually is. On a light taskbar the original
+white readings measured **1.10:1** contrast — a ratio of 1.0 means the text and the background
+are the same colour — so they were effectively invisible.
+
+**Appearance → Taskbar colours** controls this:
+
+- **Match Windows** (default) follows the system light/dark setting and repaints the moment you
+  switch it
+- **Always light** / **Always dark** pin it regardless
+
+On a light taskbar the readings become dark ink (measured **16:1**) and the cyan graph hue
+deepens to a teal that carries on white. A dark taskbar is unchanged, pixel for pixel.
+
+> Any colour you have customised yourself is never overridden — only values still at their
+> shipped default follow the theme. MicaStats reads `SystemUsesLightTheme`, which is the
+> taskbar's setting; `AppsUseLightTheme` is a separate one and the two frequently disagree.
+
+---
+
 ## 🩺 Diagnostics
 
 Windows measures how long your boot took, which app delayed it, and how worn your battery is —
@@ -313,6 +335,9 @@ wrong, this file is the first place to look.
 - **Show Desktop**: Right-click and choose **Show Desktop** to minimise every window; choose it
   again to bring them all back — the same toggle as the corner of the Windows taskbar.
 - **Capture**: The right-click menu also carries Capture Region / Window / Screen / All Screens.
+  Choosing one waits for the menu to leave the screen before any pixels are taken — a menu is
+  logically closed the moment you click it, but the area underneath takes about a quarter of a
+  second to be redrawn, and capturing sooner puts the menu in your screenshot.
 - **Diagnostics…**: Opens the Diagnostics window — slowdowns, boot, battery and alerts.
 - **Record Slowdown Now**: Saves the last few minutes of per-process activity to a report. Use
   it immediately after the machine stutters, while the rolling window still holds what happened.

@@ -732,8 +732,8 @@ namespace Kil0bitSystemMonitor
             Brush vBrush = _cachedAccentBrush ?? Brushes.White;
             Brush lBrush = _cachedLabelBrush ?? Brushes.Cyan;
             bool ownPBrush = _cachedPodBrush == null;
-            Brush pBrush = _cachedPodBrush ?? new SolidBrush(Color.FromArgb(15, 255, 255, 255));
-            using var pPen = new Pen(Color.FromArgb(20, 255, 255, 255), 1);
+            Brush pBrush = _cachedPodBrush ?? new SolidBrush(ActivePalette.PodFill);
+            using var pPen = new Pen(ActivePalette.PodEdge, 1);
 
             // Section brushes: fall back to global brush when per-section color is not set
             Brush netLBrush  = _cachedNetLabelBrush    ?? lBrush;
@@ -819,14 +819,19 @@ namespace Kil0bitSystemMonitor
         }
 
         // The stacked (iStat) taskbar uses a fixed palette rather than the per-section colour
-        // settings: dim grey labels, white values, cyan graphs, red for upload. Honouring
+        // settings: dim labels, bright values, cyan graphs, red for upload. Honouring
         // arbitrary user colours here would break the single cohesive theme the mode exists
         // to provide; the classic layout keeps full colour customisation.
-        private static readonly Brush StackedLabelBrush = new SolidBrush(Color.FromArgb(0xB0, 0xA6, 0xAC, 0xB4));
-        private static readonly Brush StackedValueBrush = new SolidBrush(Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF));
-        private static readonly Brush StackedGraphBrush = new SolidBrush(Color.FromArgb(0xFF, 0x3F, 0xD2, 0xE4));
-        private static readonly Brush StackedUpBrush = new SolidBrush(Color.FromArgb(0xFF, 0xFF, 0x51, 0x47));
-        private static readonly Brush StackedTrackBrush = new SolidBrush(Color.FromArgb(0x3C, 0xFF, 0xFF, 0xFF));
+        //
+        // Which fixed palette, though, depends on the taskbar. The overlay paints directly
+        // onto it - ShowBackground is off by default - so on a light taskbar the original
+        // values were white on near-white, measuring 1.10:1. These are rebuilt from
+        // TaskbarTheme whenever the system appearance changes.
+        private Brush StackedLabelBrush = new SolidBrush(Helpers.OverlayPalette.Dark.Label);
+        private Brush StackedValueBrush = new SolidBrush(Helpers.OverlayPalette.Dark.Value);
+        private Brush StackedGraphBrush = new SolidBrush(Helpers.OverlayPalette.Dark.Graph);
+        private Brush StackedUpBrush = new SolidBrush(Helpers.OverlayPalette.Dark.GraphAlt);
+        private Brush StackedTrackBrush = new SolidBrush(Helpers.OverlayPalette.Dark.Track);
 
         /// <summary>
         /// iStat-style layout: every metric is its own module with a small dim label stacked
@@ -1005,7 +1010,7 @@ namespace Kil0bitSystemMonitor
             RenderHoverEffect(_offscreenGraphics, w, h, scale);
 
             bool ownPBrush = _cachedPodBrush == null;
-            Brush pBrush = _cachedPodBrush ?? new SolidBrush(Color.FromArgb(15, 255, 255, 255));
+            Brush pBrush = _cachedPodBrush ?? new SolidBrush(ActivePalette.PodFill);
             _moduleZones.Clear();
             float cx = (plan.Compact ? 1 : 2) * scale;
             for (int i = 0; i < plan.VisibleColumns; i++)
@@ -1202,7 +1207,7 @@ namespace Kil0bitSystemMonitor
             {
                 var prevMode = g.SmoothingMode;
                 g.SmoothingMode = SmoothingMode.None;
-                using (var pen = new Pen(Color.FromArgb(60, 255, 255, 255), 1f))
+                using (var pen = new Pen(ActivePalette.Guide, 1f))
                     g.DrawLine(pen, x, y + h - 1f, x + w, y + h - 1f);
                 g.SmoothingMode = prevMode;
                 return;
@@ -1275,7 +1280,7 @@ namespace Kil0bitSystemMonitor
                 }
             }
 
-            using (var axisPen = new Pen(Color.FromArgb(70, 255, 255, 255), 1f))
+            using (var axisPen = new Pen(ActivePalette.Guide, 1f))
             {
                 axisPen.DashStyle = DashStyle.Dash;
                 g.DrawLine(axisPen, x, axis, x + w, axis);
@@ -1375,7 +1380,7 @@ namespace Kil0bitSystemMonitor
             {
                 var prev = g.SmoothingMode;
                 g.SmoothingMode = SmoothingMode.None;
-                using (var pen = new Pen(Color.FromArgb(60, 255, 255, 255), 1f))
+                using (var pen = new Pen(ActivePalette.Guide, 1f))
                     g.DrawLine(pen, x, top + h - 1f, x + w, top + h - 1f);
                 g.SmoothingMode = prev;
                 return;
@@ -1501,12 +1506,32 @@ namespace Kil0bitSystemMonitor
             _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose();
             _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose();
             _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose();
+            var palette = ActivePalette;
+
+            // The stacked layout's fixed palette follows the taskbar wholesale.
+            StackedLabelBrush?.Dispose(); StackedValueBrush?.Dispose(); StackedGraphBrush?.Dispose();
+            StackedUpBrush?.Dispose(); StackedTrackBrush?.Dispose();
+            StackedLabelBrush = new SolidBrush(palette.Label);
+            StackedValueBrush = new SolidBrush(palette.Value);
+            StackedGraphBrush = new SolidBrush(palette.Graph);
+            StackedUpBrush = new SolidBrush(palette.GraphAlt);
+            StackedTrackBrush = new SolidBrush(palette.Track);
+
             _cachedBgBrush = new SolidBrush(HexToColor(_config.Config.BackgroundColorHex ?? "#B4141414"));
-            _cachedAccentBrush = new SolidBrush(HexToColor(_config.Config.AccentColorHex ?? "#FFFFFF"));
-            _cachedLabelBrush = new SolidBrush(HexToColor(_config.Config.LabelColorHex ?? "#00CCFF"));
-            _cachedPodBrush = new SolidBrush(HexToColor(_config.Config.PodColorHex ?? "#0FFFFFFF"));
-            _cachedHoverPen = new Pen(Color.FromArgb(20, 255, 255, 255));
-            _cachedHoverBrush = new SolidBrush(Color.FromArgb(25, 255, 255, 255));
+
+            // The classic layout keeps the user's colours. Only a value still sitting at the
+            // shipped default is re-tinted: someone who deliberately chose white for a dark
+            // taskbar has made a choice, and silently overriding it would be worse than the
+            // bug. Turning off Match Taskbar Theme restores the original behaviour entirely.
+            _cachedAccentBrush = new SolidBrush(ThemedOrCustom(
+                _config.Config.AccentColorHex, "#FFFFFF", palette.DefaultAccent));
+            _cachedLabelBrush = new SolidBrush(ThemedOrCustom(
+                _config.Config.LabelColorHex, "#00CCFF", palette.DefaultLabelAccent));
+            _cachedPodBrush = new SolidBrush(ThemedOrCustom(
+                _config.Config.PodColorHex, "#0FFFFFFF", palette.PodFill));
+
+            _cachedHoverPen = new Pen(palette.HoverEdge);
+            _cachedHoverBrush = new SolidBrush(palette.HoverFill);
             // Per-section label brushes: only create if a custom color is set
             _cachedNetLabelBrush    = string.IsNullOrEmpty(_config.Config.NetLabelColorHex)    ? null : new SolidBrush(HexToColor(_config.Config.NetLabelColorHex));
             _cachedCpuRamLabelBrush = string.IsNullOrEmpty(_config.Config.CpuRamLabelColorHex) ? null : new SolidBrush(HexToColor(_config.Config.CpuRamLabelColorHex));
@@ -1517,6 +1542,43 @@ namespace Kil0bitSystemMonitor
             _cachedCpuRamAccentBrush = string.IsNullOrEmpty(_config.Config.CpuRamAccentColorHex) ? null : new SolidBrush(HexToColor(_config.Config.CpuRamAccentColorHex));
             _cachedGpuAccentBrush    = string.IsNullOrEmpty(_config.Config.GpuAccentColorHex)    ? null : new SolidBrush(HexToColor(_config.Config.GpuAccentColorHex));
             _cachedDiskAccentBrush   = string.IsNullOrEmpty(_config.Config.DiskAccentColorHex)   ? null : new SolidBrush(HexToColor(_config.Config.DiskAccentColorHex));
+        }
+
+        /// <summary>The palette the overlay is currently drawing with.</summary>
+        private Helpers.OverlayPalette ActivePalette => ResolvePalette(_config.Config.OverlayTheme);
+
+        /// <summary>
+        /// Maps the Auto/Light/Dark setting to a palette. Anything unrecognised follows the
+        /// system, which is the safe reading of a config written by another build.
+        /// </summary>
+        internal static Helpers.OverlayPalette ResolvePalette(string? setting) =>
+            string.Equals(setting, "Light", StringComparison.OrdinalIgnoreCase) ? Helpers.OverlayPalette.Light
+            : string.Equals(setting, "Dark", StringComparison.OrdinalIgnoreCase) ? Helpers.OverlayPalette.Dark
+            : Helpers.TaskbarTheme.Palette;
+
+        /// <summary>
+        /// Returns the theme colour when <paramref name="hex"/> is still the value the app
+        /// shipped with, and the user's own colour otherwise.
+        /// </summary>
+        private Color ThemedOrCustom(string? hex, string shippedDefault, Color themed)
+        {
+            if (string.IsNullOrWhiteSpace(hex)) return themed;
+            return IsSameHex(hex, shippedDefault) ? themed : HexToColor(hex);
+        }
+
+        /// <summary>
+        /// Compares two colour strings ignoring case, a leading '#', and a fully opaque alpha
+        /// prefix - "#FFFFFF", "ffffff" and "#FFFFFFFF" all name the same colour.
+        /// </summary>
+        internal static bool IsSameHex(string? a, string? b) =>
+            string.Equals(NormalizeHex(a), NormalizeHex(b), StringComparison.OrdinalIgnoreCase);
+
+        private static string NormalizeHex(string? hex)
+        {
+            if (string.IsNullOrWhiteSpace(hex)) return "";
+            string h = hex.Trim().TrimStart('#');
+            if (h.Length == 8 && h.StartsWith("FF", StringComparison.OrdinalIgnoreCase)) h = h.Substring(2);
+            return h;
         }
 
         private float GetCachedMeasure(string t, Font f) { if (_measureGraphics == null) return 0; string k = $"{t}_{f.Name}_{f.Size}_{f.Style}"; if (!_measureCache.TryGetValue(k, out var w)) { w = _measureGraphics.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width; _measureCache[k] = w; } return w; }
@@ -1586,7 +1648,14 @@ namespace Kil0bitSystemMonitor
             if (msg == WM_EXITSIZEMOVE) { _inSizeMove = false; if (Win32Helper.GetWindowRect(hWnd, out Win32Helper.RECT r)) { _config.Config.X = r.Left; _config.Config.Y = r.Top; _config.SaveConfig(); } }
             if (msg == WM_SHOW_SETTINGS) { _dispatcher.BeginInvoke(() => App.OpenSettings(_viewModel, _config)); return IntPtr.Zero; }
             if (msg == WM_DPICHANGED) { _currentDpi = (uint)(wParam.ToInt32() & 0xFFFF); _dpiScale = _currentDpi / 96.0f; ClearCaches(); AlignToTaskbarCenter(); UpdateLayer(); return IntPtr.Zero; }
-            if (msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE) { AlignToTaskbarCenter(); EnsureOverlayOnScreen(); UpdateLayer(); return IntPtr.Zero; }
+            if (msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE)
+            {
+                // WM_SETTINGCHANGE is also how Windows announces a light/dark switch. Rebuild
+                // the brushes only when the appearance actually moved: this message arrives
+                // for a great many unrelated settings.
+                if (msg == WM_SETTINGCHANGE && Helpers.TaskbarTheme.Refresh()) UpdateCachedColors();
+                AlignToTaskbarCenter(); EnsureOverlayOnScreen(); UpdateLayer(); return IntPtr.Zero;
+            }
             if (msg == WM_MOUSEMOVE)
             {
                 if (!_trackingMouse) { TRACKMOUSEEVENT tme = new TRACKMOUSEEVENT { cbSize = (uint)Marshal.SizeOf(typeof(TRACKMOUSEEVENT)), dwFlags = TME_LEAVE, hwndTrack = hWnd }; TrackMouseEvent(ref tme); _trackingMouse = true; _isHovered = true; UpdateLayer(); }
@@ -1734,10 +1803,10 @@ namespace Kil0bitSystemMonitor
                     else if (ch == 1002) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("taskmgr") { UseShellExecute = true });
                     // Capture runs on the dispatcher: the selector is a WPF window, and this
                     // handler is inside the native menu's message loop.
-                    else if (ch == 1020) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Region, _config.Config, _dispatcher);
-                    else if (ch == 1021) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.ActiveWindow, _config.Config, _dispatcher);
-                    else if (ch == 1022) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Screen, _config.Config, _dispatcher);
-                    else if (ch == 1023) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.AllScreens, _config.Config, _dispatcher);
+                    else if (ch == 1020) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Region, _config.Config, _dispatcher, fromMenu: true);
+                    else if (ch == 1021) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.ActiveWindow, _config.Config, _dispatcher, fromMenu: true);
+                    else if (ch == 1022) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Screen, _config.Config, _dispatcher, fromMenu: true);
+                    else if (ch == 1023) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.AllScreens, _config.Config, _dispatcher, fromMenu: true);
                     else if (ch == 1040) _dispatcher.BeginInvoke(() => DiagnosticsWindow.ShowDiagnostics());
                     else if (ch == 1041) _dispatcher.BeginInvoke(() => App.RecordSlowdownNow());
                     else if (ch == 1030) ShowDesktop();

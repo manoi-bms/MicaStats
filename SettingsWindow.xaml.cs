@@ -54,6 +54,7 @@ namespace Kil0bitSystemMonitor
                 LoadHardwareDataAsync();
 
                 LoadCaptureSettings();
+                LoadUpdateSettings();
             }
             catch (Exception ex)
             {
@@ -448,6 +449,7 @@ namespace Kil0bitSystemMonitor
                 AppearanceSection.Visibility = Visibility.Collapsed;
                 AboutSection.Visibility = Visibility.Collapsed;
                 CaptureSection.Visibility = Visibility.Collapsed;
+                UpdatesSection.Visibility = Visibility.Collapsed;
 
                 switch (sectionName)
                 {
@@ -456,6 +458,7 @@ namespace Kil0bitSystemMonitor
                     case "Monitoring": MonitoringSection.Visibility = Visibility.Visible; break;
                     case "Appearance": AppearanceSection.Visibility = Visibility.Visible; break;
                     case "Capture": CaptureSection.Visibility = Visibility.Visible; break;
+                    case "Updates": UpdatesSection.Visibility = Visibility.Visible; break;
                     case "About": AboutSection.Visibility = Visibility.Visible; break;
                 }
 
@@ -641,6 +644,140 @@ namespace Kil0bitSystemMonitor
             {
                 Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("capture", "Could not open the captures folder", ex);
             }
+        }
+
+
+        // ----- Updates --------------------------------------------------------------------
+
+        private Kil0bitSystemMonitor.Services.Update.ReleaseInfo? _pendingRelease;
+        private string? _downloadedInstaller;
+        private bool _loadingUpdates;
+
+        private void LoadUpdateSettings()
+        {
+            _loadingUpdates = true;
+            try
+            {
+                AutoUpdateToggle.IsOn = _config.Config.AutoCheckUpdates;
+                UpdateHeadline.Text = "MicaStats " + Kil0bitSystemMonitor.Services.Update.UpdateService.CurrentVersionText;
+
+                // A background check may already have found something before this page opened.
+                var pending = Kil0bitSystemMonitor.Services.Update.UpdateNotifier.Pending;
+                if (pending != null) ShowAvailable(pending);
+                else UpdateStatusText.Text = "You are up to date as far as the last check could tell.";
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("update", "Could not load update settings", ex);
+            }
+            finally { _loadingUpdates = false; }
+        }
+
+        private void OnAutoUpdateToggled(object sender, RoutedEventArgs e)
+        {
+            if (_loadingUpdates) return;
+            _config.Config.AutoCheckUpdates = AutoUpdateToggle.IsOn;
+            _config.SaveConfig();
+        }
+
+        private void ShowAvailable(Kil0bitSystemMonitor.Services.Update.ReleaseInfo release)
+        {
+            _pendingRelease = release;
+            UpdateHeadline.Text = "MicaStats " + release.TagName + " is available";
+            UpdateStatusText.Text = "You have " + Kil0bitSystemMonitor.Services.Update.UpdateService.CurrentVersionText + ".";
+            UpdateActionPanel.Visibility = Visibility.Visible;
+            SkipUpdateButton.Visibility = Visibility.Visible;
+        }
+
+        private async void OnCheckUpdates(object sender, RoutedEventArgs e)
+        {
+            CheckUpdatesButton.IsEnabled = false;
+            UpdateStatusText.Text = "Checking GitHub\u2026";
+            try
+            {
+                var result = await Kil0bitSystemMonitor.Services.Update.UpdateNotifier
+                    .RunCheckAsync(_config.Config, Dispatcher, announce: false);
+
+                if (result.Error != null)
+                {
+                    UpdateStatusText.Text = result.Error;
+                }
+                else if (result.UpdateAvailable && result.Release != null)
+                {
+                    ShowAvailable(result.Release);
+                }
+                else
+                {
+                    UpdateHeadline.Text = "MicaStats " + Kil0bitSystemMonitor.Services.Update.UpdateService.CurrentVersionText;
+                    UpdateStatusText.Text = "This is the latest version.";
+                    UpdateActionPanel.Visibility = Visibility.Collapsed;
+                }
+            }
+            finally { CheckUpdatesButton.IsEnabled = true; }
+        }
+
+        /// <summary>
+        /// Downloads, verifies and launches the installer. The download is only executed when
+        /// its SHA-256 matches the checksum published with the release; UpdateService refuses
+        /// otherwise and reports why here.
+        /// </summary>
+        private async void OnInstallUpdate(object sender, RoutedEventArgs e)
+        {
+            if (_pendingRelease == null) return;
+
+            InstallUpdateButton.IsEnabled = false;
+            UpdateProgress.Visibility = Visibility.Visible;
+            UpdateProgress.Value = 0;
+
+            try
+            {
+                var progress = new Progress<double>(p => UpdateProgress.Value = p);
+                _downloadedInstaller = await Kil0bitSystemMonitor.Services.Update.UpdateService.DownloadAsync(
+                    _pendingRelease, progress, msg => UpdateStatusText.Text = msg);
+
+                if (_downloadedInstaller == null)
+                {
+                    UpdateProgress.Visibility = Visibility.Collapsed;
+                    InstallUpdateButton.IsEnabled = true;
+                    return;
+                }
+
+                UpdateStatusText.Text = "Starting the installer\u2026 approve the Windows prompt to continue.";
+                if (Kil0bitSystemMonitor.Services.Update.UpdateService.LaunchInstaller(_downloadedInstaller))
+                {
+                    Kil0bitSystemMonitor.Services.Update.UpdateNotifier.Clear();
+                }
+                else
+                {
+                    UpdateStatusText.Text = "The installer did not start. It is saved in your temp folder.";
+                    InstallUpdateButton.IsEnabled = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("update", "Install failed", ex);
+                UpdateStatusText.Text = "Update failed \u2014 see the diagnostics log.";
+                InstallUpdateButton.IsEnabled = true;
+            }
+        }
+
+        private void OnSkipUpdate(object sender, RoutedEventArgs e)
+        {
+            if (_pendingRelease == null) return;
+            Kil0bitSystemMonitor.Services.Update.UpdateNotifier.Skip(_config.Config, _pendingRelease.TagName);
+            _config.SaveConfig();
+            UpdateActionPanel.Visibility = Visibility.Collapsed;
+            UpdateStatusText.Text = "Skipped " + _pendingRelease.TagName + ". It will not be announced again.";
+        }
+
+        private void OnOpenReleases(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    Kil0bitSystemMonitor.Services.Update.UpdateService.ReleasesPage) { UseShellExecute = true });
+            }
+            catch { }
         }
 
     }

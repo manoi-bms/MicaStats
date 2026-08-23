@@ -99,6 +99,14 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * Automatically hide it during full-screen applications
 * Auto-avoid the Start button: the stacked overlay slides into free taskbar space, squeezes its sparklines to fill the remaining corridor exactly, and only then sheds content (graphs, then trailing modules behind a ⋯ marker) so the centred Windows 11 Start button, widgets button and tray never end up underneath it
 * Recovers automatically if a saved position ends up off-screen — for example in the gap between mismatched monitors, or on a display that has since been unplugged
+* Right-click for settings, capture commands, and **Show Desktop** — the same minimise-everything toggle as the taskbar's own corner
+
+### Automatic updates
+
+* Checks GitHub for a new release once a day, shortly after startup, and tells you quietly in the corner — never a modal dialog
+* **Download and install** from **Settings → Updates**, or straight from the notification
+* Every download is **verified against the SHA-256 checksum published with the release** before it is allowed to run; a file that does not match is deleted and the update refused
+* Nothing installs by itself: Windows asks for permission, and you can skip a version or turn automatic checking off entirely
 
 ### Customization and diagnostics
 
@@ -576,6 +584,14 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 * ซ่อนอัตโนมัติเมื่อมีโปรแกรมทำงานแบบเต็มจอ
 * หลบปุ่ม Start อัตโนมัติ: โอเวอร์เลย์จะเลื่อนไปยังพื้นที่ว่างบนทาสก์บาร์ก่อน แล้วบีบกราฟเส้นให้พอดีกับช่องว่างที่เหลือ จากนั้นจึงค่อยลดเนื้อหา (ซ่อนกราฟก่อน แล้วจึงซ่อนโมดูลท้าย ๆ ไว้หลังเครื่องหมาย ⋯) เพื่อไม่ให้ทับปุ่ม Start ที่อยู่กึ่งกลาง ปุ่มวิดเจ็ต และถาดระบบ
 * กู้ตำแหน่งอัตโนมัติเมื่อตำแหน่งที่บันทึกไว้ตกไปอยู่นอกจอ เช่น ช่องว่างระหว่างจอที่ขนาดไม่เท่ากัน หรือจอที่ถอดออกไปแล้ว
+* คลิกขวาเพื่อเข้าถึงการตั้งค่า คำสั่งจับภาพหน้าจอ และ **Show Desktop** ซึ่งย่อหน้าต่างทั้งหมดเพื่อดูเดสก์ท็อป (กดซ้ำเพื่อเรียกคืน) เหมือนปุ่มมุมขวาของทาสก์บาร์
+
+### การอัปเดตอัตโนมัติ
+
+* ตรวจสอบรีลีสใหม่บน GitHub วันละครั้งหลังเปิดโปรแกรม แล้วแจ้งเตือนแบบเงียบ ๆ ที่มุมจอ ไม่ใช่หน้าต่างที่บังการทำงาน
+* สั่ง **ดาวน์โหลดและติดตั้ง** ได้จาก **Settings → Updates** หรือจากการแจ้งเตือนโดยตรง
+* ทุกไฟล์ที่ดาวน์โหลดจะถูก **ตรวจสอบกับค่า SHA-256 ที่เผยแพร่มาพร้อมรีลีส** ก่อนเรียกใช้งานเสมอ หากค่าไม่ตรงกันไฟล์จะถูกลบและยกเลิกการอัปเดตทันที
+* ไม่มีการติดตั้งเองโดยพลการ: Windows จะขออนุญาตก่อน และคุณเลือกข้ามเวอร์ชันนั้น หรือปิดการตรวจสอบอัตโนมัติทั้งหมดได้
 
 ### การปรับแต่งและการตรวจสอบปัญหา
 

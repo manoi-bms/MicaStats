@@ -111,6 +111,24 @@ namespace Kil0bitSystemMonitor
                     Dispatcher.BeginInvoke(new Action(() => m_captureHotkeys?.Apply()));
             };
 
+            // Automatic update check: throttled to once a day and delayed past startup, so it
+            // never competes with launch. Nothing downloads or installs without the user asking.
+            Kil0bitSystemMonitor.Services.Update.UpdateNotifier.UpdateFound += release =>
+            {
+                UpdateToastWindow.ShowFor(release,
+                    onInstall: () =>
+                    {
+                        OpenSettings(viewModel, config);
+                        SettingsWindow?.SelectSection("Updates");
+                    },
+                    onSkip: () =>
+                    {
+                        Kil0bitSystemMonitor.Services.Update.UpdateNotifier.Skip(config.Config, release.TagName);
+                        config.SaveConfig();
+                    });
+            };
+            Kil0bitSystemMonitor.Services.Update.UpdateNotifier.ScheduleStartupCheck(config.Config, Dispatcher);
+
             string[] args = System.Environment.GetCommandLineArgs();
             bool isStartup = System.Linq.Enumerable.Contains(args, "--startup");
             if (!isStartup)

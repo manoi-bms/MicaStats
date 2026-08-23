@@ -192,6 +192,11 @@ namespace Kil0bitSystemMonitor.Models
         private int _captureDelaySeconds;
         private string _captureRedactStyle = "Pixelate";
         private bool _captureHotkeysEnabled = true;
+
+        // Updates
+        private bool _autoCheckUpdates = true;
+        private string _lastUpdateCheckUtc = "";
+        private string _skippedUpdateVersion = "";
         private string _captureHotkeyRegion = "Ctrl+Shift+1";
         private string _captureHotkeyWindow = "Ctrl+Shift+2";
         private string _captureHotkeyFullScreen = "Ctrl+Shift+3";
@@ -306,6 +311,17 @@ namespace Kil0bitSystemMonitor.Models
         public string CaptureRedactStyle { get => _captureRedactStyle; set { Set(ref _captureRedactStyle, value); } }
 
         public bool CaptureHotkeysEnabled { get => _captureHotkeysEnabled; set { Set(ref _captureHotkeysEnabled, value); } }
+
+        // ----- Updates ----------------------------------------------------------------------
+
+        /// <summary>Check GitHub for a newer release in the background, at most once a day.</summary>
+        public bool AutoCheckUpdates { get => _autoCheckUpdates; set { Set(ref _autoCheckUpdates, value); } }
+
+        /// <summary>When the last check ran, as a round-trip UTC timestamp. Empty means never.</summary>
+        public string LastUpdateCheckUtc { get => _lastUpdateCheckUtc; set { Set(ref _lastUpdateCheckUtc, value); } }
+
+        /// <summary>A version the user chose not to be reminded about again.</summary>
+        public string SkippedUpdateVersion { get => _skippedUpdateVersion; set { Set(ref _skippedUpdateVersion, value); } }
         public string CaptureHotkeyRegion { get => _captureHotkeyRegion; set { Set(ref _captureHotkeyRegion, value); } }
         public string CaptureHotkeyWindow { get => _captureHotkeyWindow; set { Set(ref _captureHotkeyWindow, value); } }
         public string CaptureHotkeyFullScreen { get => _captureHotkeyFullScreen; set { Set(ref _captureHotkeyFullScreen, value); } }

@@ -183,6 +183,30 @@ timing tables over SMBus) is omitted rather than guessed.
 comparing machines. **Data Folder** opens `%APPDATA%\MicaStats`, which also holds the
 diagnostics log below.
 
+---
+
+## ⬆️ Updates
+
+MicaStats checks GitHub for a newer release **once a day**, a short while after startup, and
+tells you with a small card in the corner of the screen. It never opens a modal dialog and never
+takes focus — you can ignore it and carry on.
+
+- **Install** from the notification, from **Settings → Updates**, or from **Update to vX.Y.Z…**
+  in the overlay's right-click menu
+- **Skip this version** stops that particular release being announced again
+- Turn the whole thing off with **Check automatically** in **Settings → Updates**; the
+  **Check now** button still works whenever you want it
+
+**Every download is verified before it runs.** MicaStats fetches the SHA-256 checksum published
+alongside the installer and compares it against the file it downloaded. If the checksum is
+missing, unreadable, or does not match, the download is deleted and the update refused — an
+updater that runs whatever arrives would be a way into your machine. Downloads are only accepted
+from `github.com`.
+
+Installing needs administrator rights, so **Windows will ask for permission**. Declining simply
+leaves your current version in place. Setup closes MicaStats and starts it again as part of the
+upgrade.
+
 ### 🧾 Diagnostics Log
 
 MicaStats appends informative events — startup identity, a one-line hardware summary, sensor
@@ -200,6 +224,9 @@ wrong, this file is the first place to look.
 - **Snap to Taskbar**: When enabled, the overlay snaps to the taskbar area. Disable this to **free-float** the overlay anywhere on your screen.
 - **Toggle Lock**: Right-click the overlay and select **Lock Position** to prevent any accidental movement.
 - **Settings**: Right-click to quickly jump into the dashboard.
+- **Show Desktop**: Right-click and choose **Show Desktop** to minimise every window; choose it
+  again to bring them all back — the same toggle as the corner of the Windows taskbar.
+- **Capture**: The right-click menu also carries Capture Region / Window / Screen / All Screens.
 
 ---
 

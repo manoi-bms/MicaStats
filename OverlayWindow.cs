@@ -533,6 +533,51 @@ namespace Kil0bitSystemMonitor
             return false;
         }
 
+        /// <summary>
+        /// Minimises everything to reveal the desktop, and restores it when invoked again —
+        /// the same toggle as the taskbar's own Show Desktop corner.
+        ///
+        /// <para>
+        /// Explorer exposes this through the Shell COM object, which is the only route that
+        /// toggles rather than just minimising. If that is unavailable the taskbar's MIN_ALL
+        /// command is used instead, which minimises but does not restore.
+        /// </para>
+        /// </summary>
+        private void ShowDesktop()
+        {
+            try
+            {
+                Type? shell = Type.GetTypeFromProgID("Shell.Application");
+                if (shell != null)
+                {
+                    object? instance = Activator.CreateInstance(shell);
+                    if (instance != null)
+                    {
+                        shell.InvokeMember("ToggleDesktop",
+                            System.Reflection.BindingFlags.InvokeMethod, null, instance, null);
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Services.DiagnosticsLog.Warn("overlay", "ToggleDesktop unavailable: " + ex.Message);
+            }
+
+            try
+            {
+                IntPtr tray = Win32Helper.FindWindow("Shell_TrayWnd", null!);
+                if (tray != IntPtr.Zero) SendMessage(tray, WM_COMMAND, (IntPtr)MIN_ALL, IntPtr.Zero);
+            }
+            catch (Exception ex)
+            {
+                Services.DiagnosticsLog.Error("overlay", "Show Desktop failed", ex);
+            }
+        }
+
+        private const uint WM_COMMAND = 0x0111;
+        private const int MIN_ALL = 419;   // the taskbar's "minimise all windows" command
+
         private void AlignToTaskbarCenter()
         {
             if (!_config.Config.StickToTaskbar) { SetWindowPos(_hWnd, IntPtr.Zero, (int)_config.Config.X, (int)_config.Config.Y, 0, 0, 0x0001 | 0x0004 | 0x0010); return; }
@@ -1625,6 +1670,10 @@ namespace Kil0bitSystemMonitor
                     AppendMenu(hMenu, 0, 1022, "Capture Screen	Ctrl+Shift+3");
                     AppendMenu(hMenu, 0, 1023, "Capture All Screens");
                     AppendMenu(hMenu, 0x0800, 0, null);
+                    AppendMenu(hMenu, 0, 1030, "Show Desktop");
+                    if (Services.Update.UpdateNotifier.PendingVersion is string pending)
+                        AppendMenu(hMenu, 0, 1031, "Update to " + pending + "\u2026");
+                    AppendMenu(hMenu, 0x0800, 0, null);
                     AppendMenu(hMenu, (_config.Config.AlwaysOnTop ? 0x0008U : 0), 1008, "Keep on Top");
                     AppendMenu(hMenu, (_config.Config.HideOnFullscreen ? 0x0008U : 0), 1009, "Hide in Fullscreen");
                     AppendMenu(hMenu, (_config.Config.LockPosition ? 0x0008U : 0), 1006, "Lock Position");
@@ -1669,6 +1718,8 @@ namespace Kil0bitSystemMonitor
                     else if (ch == 1021) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.ActiveWindow, _config.Config, _dispatcher);
                     else if (ch == 1022) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Screen, _config.Config, _dispatcher);
                     else if (ch == 1023) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.AllScreens, _config.Config, _dispatcher);
+                    else if (ch == 1030) ShowDesktop();
+                    else if (ch == 1031) _dispatcher.BeginInvoke(() => { App.OpenSettings(_viewModel, _config); App.SettingsWindow?.SelectSection("Updates"); });
                     else if (ch == 1003) _dispatcher.BeginInvoke(() => { App.OpenSettings(_viewModel, _config); App.SettingsWindow?.SelectSection("About"); });
                     else if (ch == 1004) _dispatcher.BeginInvoke(() => App.Quit());
                 }

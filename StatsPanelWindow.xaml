@@ -5,6 +5,7 @@
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:vm="clr-namespace:Kil0bitSystemMonitor.ViewModels"
     xmlns:ctrl="clr-namespace:Kil0bitSystemMonitor.Controls"
+    xmlns:hlp="clr-namespace:Kil0bitSystemMonitor.Helpers"
     Title="MicaStats"
     WindowStyle="None"
     ResizeMode="NoResize"
@@ -66,6 +67,35 @@
         <Style x:Key="SubLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="9.5" />
             <Setter Property="Foreground" Value="#6EE9EDF2" />
+        </Style>
+
+        <!--
+          Card-header icon. Segoe Fluent Icons (Windows 11's system icon font) with Segoe MDL2
+          Assets as the Windows 10 fallback; the codepoints live in Helpers/UiGlyphs so a section
+          carries the same icon here, in the hardware inspector, and anywhere added later.
+
+          Deliberately a dimmed accent rather than full cyan: the data values own the bright
+          cyan, so an icon at full strength would compete with the reading it labels.
+        -->
+        <Style x:Key="CardIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#B23FD2E4" />
+            <Setter Property="Margin" Value="0,0,7,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- Smaller variant for sub-headers inside a card (e.g. TOP MEMORY). -->
+        <Style x:Key="SubIcon" TargetType="TextBlock" BasedOn="{StaticResource CardIcon}">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+        </Style>
+
+        <Style x:Key="ButtonIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
         <Style x:Key="LegendValue" TargetType="TextBlock">
@@ -131,8 +161,17 @@
                         </Style>
                     </Border.Style>
                     <StackPanel>
-                        <TextBlock Text="{Binding CpuName}" FontSize="12.5" FontWeight="SemiBold"
-                                   Foreground="#F2FFFFFF" TextTrimming="CharacterEllipsis" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource CardIcon}" FontSize="13"
+                                       Text="{x:Static hlp:UiGlyphs.Machine}" />
+                            <TextBlock Grid.Column="1" Text="{Binding CpuName}" FontSize="12.5" FontWeight="SemiBold"
+                                       Foreground="#F2FFFFFF" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" />
+                        </Grid>
                         <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
                             <TextBlock Style="{StaticResource SubLabel}" Text="{Binding TotalRamText}" />
                             <TextBlock Style="{StaticResource SubLabel}" Text="  ·  " />
@@ -141,7 +180,12 @@
 
                         <!-- Full CPU-Z-style inspector; the panel closes itself as focus moves there. -->
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Style="{StaticResource QuickButton}" Content="Hardware" Click="OnOpenHardware" />
+                            <Button Style="{StaticResource QuickButton}" Click="OnOpenHardware">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Cpu}" />
+                                    <TextBlock Text="Hardware" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -159,7 +203,10 @@
                     </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,7">
-                            <TextBlock Style="{StaticResource CardHeader}" Text="CPU" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Cpu}" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="CPU" VerticalAlignment="Center" />
+                            </StackPanel>
                             <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
                                        Text="{Binding CpuHeaderText}" />
                         </Grid>
@@ -237,7 +284,10 @@
                     </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,9">
-                            <TextBlock Style="{StaticResource CardHeader}" Text="MEMORY" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Memory}" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="MEMORY" VerticalAlignment="Center" />
+                            </StackPanel>
                             <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
                                        Text="{Binding MemoryRingText}" />
                         </Grid>
@@ -314,8 +364,11 @@
                                     </Style.Triggers>
                                 </Style>
                             </StackPanel.Style>
-                            <TextBlock Style="{StaticResource CardHeader}" Foreground="{StaticResource DataCyan}"
-                                       Text="TOP MEMORY" Margin="0,0,0,5" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                <TextBlock Style="{StaticResource SubIcon}" Text="{x:Static hlp:UiGlyphs.Memory}" />
+                                <TextBlock Style="{StaticResource CardHeader}" Foreground="{StaticResource DataCyan}"
+                                           Text="TOP MEMORY" VerticalAlignment="Center" />
+                            </StackPanel>
                             <ItemsControl ItemsSource="{Binding MemoryTopProcesses}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -352,7 +405,10 @@
                     </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,2">
-                            <TextBlock Style="{StaticResource CardHeader}" Text="GPU" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Gpu}" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="GPU" VerticalAlignment="Center" />
+                            </StackPanel>
                             <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
                                        Text="{Binding GpuValueText}" />
                         </Grid>
@@ -427,7 +483,10 @@
                     </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,9">
-                            <TextBlock Style="{StaticResource CardHeader}" Text="NETWORK" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Network}" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="NETWORK" VerticalAlignment="Center" />
+                            </StackPanel>
                         </Grid>
 
                         <Grid Margin="0,0,0,8">
@@ -510,7 +569,10 @@
                     </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,7">
-                            <TextBlock Style="{StaticResource CardHeader}" Text="DISKS" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Disk}" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="DISKS" VerticalAlignment="Center" />
+                            </StackPanel>
                             <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
                                        Text="{Binding DiskValueText}" />
                         </Grid>
@@ -563,8 +625,11 @@
                     </Border.Style>
                     <StackPanel>
                         <Grid Margin="0,0,0,7">
-                            <TextBlock Style="{StaticResource CardHeader}" Text="PROCESSES"
-                                       Foreground="{StaticResource DataCyan}" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Processes}" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="PROCESSES"
+                                           Foreground="{StaticResource DataCyan}" VerticalAlignment="Center" />
+                            </StackPanel>
                             <TextBlock Style="{StaticResource SubLabel}" Text="CPU"
                                        HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>

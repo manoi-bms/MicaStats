@@ -75,6 +75,12 @@ cards with the detail the taskbar has no room for:
 Everything follows the iStat two-hue rule — cyan for the primary series, red for its counterpart
 (System time, Upload) — on near-black cards.
 
+Each card is badged with its own icon — a processor die for CPU, a memory module for Memory, a
+display for GPU, paired ↑/↓ arrows for Network, a drive for Disks — drawn from **Segoe Fluent
+Icons**, the Windows 11 system icon font (Segoe MDL2 Assets on Windows 10). The same glyph
+marks that section everywhere it appears, including the hardware inspector's tabs, so the eye
+can find a section without reading the label.
+
 **Or just hover**: pause over any taskbar module and its own compact dropdown opens — CPU (with
 top processes), Memory, GPU, Network or Disks — then retargets as you slide along the taskbar,
 exactly like iStat Menus. It never steals focus; clicking inside pins it as the full panel. Turn

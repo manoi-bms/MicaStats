@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Management;
 using System.Runtime.InteropServices;
+using Kil0bitSystemMonitor.Helpers;
 using Microsoft.Win32;
 
 namespace Kil0bitSystemMonitor.Services.HardwareInfo
@@ -60,12 +61,12 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             }
             catch (Exception ex) { DiagnosticsLog.Error("hardware", "CPUID read failed", ex); }
 
-            AddTab(snap, "CPU", () => BuildCpu(smbios, cpuid));
-            AddTab(snap, "MAINBOARD", () => BuildMainboard(smbios));
-            AddTab(snap, "MEMORY", () => BuildMemory(smbios));
-            AddTab(snap, "GRAPHICS", BuildGraphics);
-            AddTab(snap, "STORAGE", BuildStorage);
-            AddTab(snap, "SYSTEM", () => BuildSystem(cpuid));
+            AddTab(snap, "CPU", UiGlyphs.Cpu, () => BuildCpu(smbios, cpuid));
+            AddTab(snap, "MAINBOARD", UiGlyphs.Machine, () => BuildMainboard(smbios));
+            AddTab(snap, "MEMORY", UiGlyphs.Memory, () => BuildMemory(smbios));
+            AddTab(snap, "GRAPHICS", UiGlyphs.Gpu, BuildGraphics);
+            AddTab(snap, "STORAGE", UiGlyphs.Disk, BuildStorage);
+            AddTab(snap, "SYSTEM", UiGlyphs.System, () => BuildSystem(cpuid));
 
             sw.Stop();
             snap.GatherDuration = sw.Elapsed;
@@ -90,9 +91,9 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             return path;
         }
 
-        private static void AddTab(HardwareSnapshot snap, string name, Func<List<SpecGroup>> build)
+        private static void AddTab(HardwareSnapshot snap, string name, string icon, Func<List<SpecGroup>> build)
         {
-            var tab = new HardwareTab(name);
+            var tab = new HardwareTab(name, icon);
             try
             {
                 tab.Groups.AddRange(build());
@@ -100,7 +101,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("hardware", name + " tab failed", ex);
-                tab.Groups.Add(new SpecGroup("STATUS")
+                tab.Groups.Add(new SpecGroup("STATUS", UiGlyphs.Warning)
                     .Add("Error", "This section could not be read (" + ex.GetType().Name + ")"));
             }
             snap.Tabs.Add(tab);
@@ -116,7 +117,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
 
             string name = cpuid?.BrandString is { Length: > 0 } b ? b : regName;
 
-            var id = new SpecGroup("PROCESSOR");
+            var id = new SpecGroup("PROCESSOR", UiGlyphs.Cpu);
             id.AddAlways("Name", name);
             id.Add("Vendor", cpuid?.Vendor ?? "");
             id.Add("Socket", smbios.Processor?.SocketDesignation ?? "");
@@ -129,7 +130,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
 
             if (topo != null)
             {
-                var t = new SpecGroup("TOPOLOGY");
+                var t = new SpecGroup("TOPOLOGY", UiGlyphs.Layers);
                 string cores = topo.PhysicalCores.ToString(CultureInfo.InvariantCulture);
                 if (topo.IsHybrid)
                     cores += " (" + topo.PerformanceCores + "P + " + topo.EfficiencyCores + "E)";
@@ -141,7 +142,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
 
                 if (topo.Caches.Count > 0)
                 {
-                    var c = new SpecGroup("CACHES");
+                    var c = new SpecGroup("CACHES", UiGlyphs.Memory);
                     foreach (var cache in topo.Caches)
                     {
                         string label = cache.Level == 1 ? "L1 " + cache.Kind : "L" + cache.Level;
@@ -151,7 +152,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
                 }
             }
 
-            var clocks = new SpecGroup("CLOCKS");
+            var clocks = new SpecGroup("CLOCKS", UiGlyphs.Clock);
             clocks.Add("Base Clock", SpecFormat.Mhz(baseMhz));
             if (smbios.Processor is { } p)
             {
@@ -160,7 +161,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             }
             groups.Add(clocks);
 
-            var isa = new SpecGroup("INSTRUCTION SETS");
+            var isa = new SpecGroup("INSTRUCTION SETS", UiGlyphs.Code);
             if (cpuid != null && cpuid.Features.Count > 0)
                 isa.Add("Extensions", string.Join(", ", cpuid.Features));
             else
@@ -190,11 +191,11 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             var groups = new List<SpecGroup>();
 
             if (smbios.System is { } sys)
-                groups.Add(new SpecGroup("SYSTEM")
+                groups.Add(new SpecGroup("SYSTEM", UiGlyphs.Info)
                     .Add("Manufacturer", sys.Manufacturer)
                     .Add("Product", sys.Product));
 
-            var board = new SpecGroup("MAINBOARD");
+            var board = new SpecGroup("MAINBOARD", UiGlyphs.Machine);
             if (smbios.Baseboard is { } bb)
             {
                 board.AddAlways("Manufacturer", bb.Manufacturer);
@@ -207,7 +208,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             }
             groups.Add(board);
 
-            var bios = new SpecGroup("BIOS");
+            var bios = new SpecGroup("BIOS", UiGlyphs.Firmware);
             if (smbios.Bios is { } bi)
             {
                 bios.AddAlways("Brand", bi.Vendor);
@@ -227,7 +228,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             var groups = new List<SpecGroup>();
             var populated = smbios.MemoryDevices.Where(d => d.IsPopulated).ToList();
 
-            var general = new SpecGroup("GENERAL");
+            var general = new SpecGroup("GENERAL", UiGlyphs.Memory);
             ulong installed = populated.Aggregate(0UL, (a, d) => a + d.SizeBytes);
             ulong usable = ReadUsableRam();
 
@@ -247,7 +248,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             {
                 slot++;
                 string title = d.Locator.Length > 0 ? d.Locator.ToUpperInvariant() : "MODULE " + slot;
-                var g = new SpecGroup(title);
+                var g = new SpecGroup(title, UiGlyphs.Memory);
                 g.Add("Size", SpecFormat.Bytes(d.SizeBytes));
                 g.Add("Type", (d.TypeName + " " + d.FormFactor).Trim());
                 g.Add("Manufacturer", d.Manufacturer);
@@ -301,7 +302,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
                     string desc = (k?.GetValue("DriverDesc") as string)?.Trim() ?? "";
                     if (desc.Length == 0 || !seen.Add(desc)) continue;
 
-                    var g = new SpecGroup(desc.ToUpperInvariant());
+                    var g = new SpecGroup(desc.ToUpperInvariant(), UiGlyphs.Gpu);
                     long vram = ReadQword(k!, "HardwareInformation.qwMemorySize");
                     if (vram > 0) g.Add("Video Memory", SpecFormat.Bytes((ulong)vram));
                     g.Add("Driver Version", k!.GetValue("DriverVersion") as string ?? "");
@@ -311,7 +312,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
                 }
             }
 
-            var display = new SpecGroup("DISPLAY");
+            var display = new SpecGroup("DISPLAY", UiGlyphs.Display);
             try
             {
                 var primary = System.Windows.Forms.Screen.PrimaryScreen;
@@ -329,7 +330,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             if (display.Rows.Count > 0) groups.Add(display);
 
             if (groups.Count == 0)
-                groups.Add(new SpecGroup("GRAPHICS").AddAlways("Adapter", ""));
+                groups.Add(new SpecGroup("GRAPHICS", UiGlyphs.Gpu).AddAlways("Adapter", ""));
             return groups;
         }
 
@@ -381,7 +382,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             foreach (ManagementBaseObject d in disks.Get())
             {
                 string model = d["Model"]?.ToString()?.Trim() ?? "Disk";
-                var g = new SpecGroup(model.ToUpperInvariant());
+                var g = new SpecGroup(model.ToUpperInvariant(), UiGlyphs.Disk);
                 ulong size = d["Size"] is ulong u ? u : 0;
                 if (size > 0) g.Add("Capacity", SpecFormat.DiskBytes(size));
 
@@ -401,7 +402,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             }
 
             if (groups.Count == 0)
-                groups.Add(new SpecGroup("STORAGE").AddAlways("Disks", ""));
+                groups.Add(new SpecGroup("STORAGE", UiGlyphs.Disk).AddAlways("Disks", ""));
             return groups;
         }
 
@@ -436,7 +437,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
         private static List<SpecGroup> BuildSystem(CpuIdentity? cpuid)
         {
             var groups = new List<SpecGroup>();
-            var win = new SpecGroup("WINDOWS");
+            var win = new SpecGroup("WINDOWS", UiGlyphs.System);
             try
             {
                 using var key = Registry.LocalMachine.OpenSubKey(
@@ -458,7 +459,7 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
             win.Add("Hypervisor", cpuid?.HypervisorPresent == true ? "Present" : "");
             groups.Add(win);
 
-            var env = new SpecGroup("ENVIRONMENT");
+            var env = new SpecGroup("ENVIRONMENT", UiGlyphs.Activity);
             env.Add("Machine", Environment.MachineName);
             env.Add("Uptime", SystemInfoProvider.FormatUptime(SystemInfoProvider.Uptime));
             env.Add(".NET Runtime", Environment.Version.ToString());

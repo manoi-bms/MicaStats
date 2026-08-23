@@ -11,8 +11,17 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
     /// <summary>A titled box of rows (a CPU-Z group box).</summary>
     public sealed class SpecGroup
     {
-        public SpecGroup(string title) => Title = title;
+        public SpecGroup(string title, string? icon = null)
+        {
+            Title = title;
+            Icon = icon ?? "";
+        }
+
         public string Title { get; }
+
+        /// <summary>Icon-font glyph shown before the title, from <see cref="Helpers.UiGlyphs"/>. May be empty.</summary>
+        public string Icon { get; }
+
         public List<SpecRow> Rows { get; } = new();
 
         public SpecGroup Add(string label, string value)
@@ -32,8 +41,17 @@ namespace Kil0bitSystemMonitor.Services.HardwareInfo
     /// <summary>One tab of the hardware window (CPU, MAINBOARD, ...).</summary>
     public sealed class HardwareTab
     {
-        public HardwareTab(string name) => Name = name;
+        public HardwareTab(string name, string? icon = null)
+        {
+            Name = name;
+            Icon = icon ?? "";
+        }
+
         public string Name { get; }
+
+        /// <summary>Icon-font glyph shown on the tab, from <see cref="Helpers.UiGlyphs"/>.</summary>
+        public string Icon { get; }
+
         public List<SpecGroup> Groups { get; } = new();
     }
 

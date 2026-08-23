@@ -4,8 +4,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:hw="clr-namespace:Kil0bitSystemMonitor.Services.HardwareInfo"
+    xmlns:hlp="clr-namespace:Kil0bitSystemMonitor.Helpers"
     Title="MicaStats Hardware"
-    Width="470" Height="660" MinWidth="430" MinHeight="480"
+    Width="580" Height="660" MinWidth="560" MinHeight="480"
     WindowStartupLocation="CenterScreen"
     Background="#0E0E13"
     Foreground="#E9EDEDF2"
@@ -19,6 +20,11 @@
       The CPU-Z-style inspector: static spec tabs over a live clock strip. Unlike the stats
       panel this is a plain standalone window - no overlay ownership, normal taskbar presence -
       because it must survive the panel dismissing itself when focus moves here.
+
+      Width carries the six tab headers on ONE row. Adding icons widened each tab by roughly the
+      glyph plus its margin, which pushed the strip past the old 470 and made TabPanel wrap to a
+      second row, visually reordering the tabs. 580 sits comfortably above the ~525 the strip
+      measures, and MinWidth stays above it too so a resize cannot recreate the wrap.
     -->
 
     <Window.Resources>
@@ -41,6 +47,48 @@
         <Style x:Key="SubLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="9.5" />
             <Setter Property="Foreground" Value="#6EE9EDF2" />
+        </Style>
+
+        <!--
+          Icon styles. The glyphs are Segoe Fluent Icons (Windows 11's system icon font) with
+          Segoe MDL2 Assets as the Windows 10 fallback; codepoints live in Helpers/UiGlyphs so
+          a section keeps the same icon everywhere it appears.
+        -->
+        <Style x:Key="TabIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource DataCyan}" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- Group-box icon. Collapses itself when a group carries no glyph. -->
+        <Style x:Key="CardIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#B23FD2E4" />
+            <Setter Property="Margin" Value="0,0,7,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Icon}" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ButtonIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="StripIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#8CE9EDF2" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
         <Style x:Key="SpecLabel" TargetType="TextBlock">
@@ -104,20 +152,25 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Bg" Background="Transparent" Padding="9,5,9,6" Margin="0,0,2,0"
+                        <Border x:Name="Bg" Background="Transparent" Padding="8,5,8,6" Margin="0,0,1,0"
                                 BorderBrush="Transparent" BorderThickness="0,0,0,2">
-                            <TextBlock x:Name="HeaderText" Text="{TemplateBinding Header}"
-                                       FontSize="10.5" FontWeight="SemiBold"
-                                       FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
-                                       Foreground="{TemplateBinding Foreground}" />
+                            <!--
+                              A ContentPresenter rather than a TextBlock bound to Header: the tab's
+                              ItemTemplate supplies an icon beside the name, which a plain text
+                              binding would render as the type name instead. TextElement.Foreground
+                              carries the selection colour down to the label, while the icon keeps
+                              its own explicit accent colour.
+                            -->
+                            <ContentPresenter ContentSource="Header"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource DataCyan}" />
-                                <Setter TargetName="HeaderText" Property="Foreground" Value="#F2FFFFFF" />
+                                <Setter Property="Foreground" Value="#F2FFFFFF" />
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="HeaderText" Property="Foreground" Value="#DDEDEDF2" />
+                                <Setter Property="Foreground" Value="#DDEDEDF2" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -139,14 +192,19 @@
                     <TextBlock x:Name="LiveClockText" Text="—" FontSize="21" FontWeight="SemiBold"
                                Foreground="#F2FFFFFF"
                                FontFamily="Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI" />
-                    <TextBlock Style="{StaticResource SubLabel}" Text="CORE SPEED" Margin="0,1,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                        <TextBlock Style="{StaticResource StripIcon}" Text="{x:Static hlp:UiGlyphs.Cpu}" />
+                        <TextBlock Style="{StaticResource SubLabel}" Text="CORE SPEED" VerticalAlignment="Center" />
+                    </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="1" HorizontalAlignment="Right">
                     <TextBlock x:Name="LiveMemText" Text="—" FontSize="21" FontWeight="SemiBold"
                                Foreground="{StaticResource DataCyan}" HorizontalAlignment="Right"
                                FontFamily="Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI" />
-                    <TextBlock Style="{StaticResource SubLabel}" Text="MEMORY LOAD"
-                               HorizontalAlignment="Right" Margin="0,1,0,0" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,1,0,0">
+                        <TextBlock Style="{StaticResource StripIcon}" Text="{x:Static hlp:UiGlyphs.Memory}" />
+                        <TextBlock Style="{StaticResource SubLabel}" Text="MEMORY LOAD" VerticalAlignment="Center" />
+                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Border>
@@ -161,19 +219,40 @@
                 <TextBlock x:Name="StatusText" Style="{StaticResource SubLabel}" VerticalAlignment="Center"
                            Text="Reading hardware…" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button Style="{StaticResource QuickButton}" Content="Refresh" Click="OnRefresh" />
-                    <Button Style="{StaticResource QuickButton}" Content="Data Folder" Click="OnOpenDataFolder" />
-                    <Button Style="{StaticResource QuickButton}" Content="Save Report" Click="OnSaveReport" />
+                    <Button Style="{StaticResource QuickButton}" Click="OnRefresh">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Refresh}" />
+                            <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource QuickButton}" Click="OnOpenDataFolder">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Folder}" />
+                            <TextBlock Text="Data Folder" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource QuickButton}" Click="OnSaveReport">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Report}" />
+                            <TextBlock Text="Save Report" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>
 
         <TabControl x:Name="Tabs">
-            <TabControl.ItemContainerStyle>
-                <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
-                    <Setter Property="Header" Value="{Binding Name}" />
-                </Style>
-            </TabControl.ItemContainerStyle>
+            <!-- Header content: the tab's own icon, then its name. -->
+            <TabControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type hw:HardwareTab}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource TabIcon}" Text="{Binding Icon}" />
+                        <TextBlock Text="{Binding Name}" FontSize="10.5" FontWeight="SemiBold"
+                                   FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </DataTemplate>
+            </TabControl.ItemTemplate>
             <TabControl.ContentTemplate>
                 <DataTemplate DataType="{x:Type hw:HardwareTab}">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -182,8 +261,11 @@
                                 <DataTemplate DataType="{x:Type hw:SpecGroup}">
                                     <Border Style="{StaticResource Card}">
                                         <StackPanel>
-                                            <TextBlock Style="{StaticResource CardHeader}" Text="{Binding Title}"
-                                                       Margin="0,0,0,6" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <TextBlock Style="{StaticResource CardIcon}" Text="{Binding Icon}" />
+                                                <TextBlock Style="{StaticResource CardHeader}" Text="{Binding Title}"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
                                             <ItemsControl ItemsSource="{Binding Rows}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate DataType="{x:Type hw:SpecRow}">

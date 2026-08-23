@@ -40,6 +40,7 @@ namespace Kil0bitSystemMonitor
 
             Canvas.Load(image);
             Canvas.DocumentChanged += UpdateStatus;
+            Canvas.SelectionChanged += UpdateStatus;
             Canvas.TextRequested += BeginTextEntry;
             Canvas.RedactStyle = _settings.RedactStyle;
 
@@ -81,9 +82,16 @@ namespace Kil0bitSystemMonitor
             string size = $"{doc.Crop.Width} x {doc.Crop.Height}";
             string marks = doc.Items.Count == 1 ? "1 mark" : $"{doc.Items.Count} marks";
             string zoom = $"{Canvas.Zoom * 100:0}%";
+
+            string hint = Canvas.Selected != null
+                ? "  ·  drag to move, handles to resize, Del to remove"
+                : doc.Items.Count > 0 && Canvas.Tool == CaptureTool.Select
+                    ? "  ·  click a mark to select it"
+                    : "";
+
             StatusText.Text = _lastSavedPath != null
                 ? $"{size}  ·  {marks}  ·  {zoom}  ·  saved to {_lastSavedPath}"
-                : $"{size}  ·  {marks}  ·  {zoom}";
+                : $"{size}  ·  {marks}  ·  {zoom}{hint}";
         }
 
         // ----- Toolbar -----------------------------------------------------------------------
@@ -101,6 +109,7 @@ namespace Kil0bitSystemMonitor
                 ReferenceEquals(sender, ToolStep) ? CaptureTool.Step :
                 ReferenceEquals(sender, ToolRedact) ? CaptureTool.Redact :
                 ReferenceEquals(sender, ToolCrop) ? CaptureTool.Crop :
+                ReferenceEquals(sender, ToolSelect) ? CaptureTool.Select :
                 CaptureTool.Arrow;
         }
 
@@ -274,8 +283,26 @@ namespace Kil0bitSystemMonitor
                 return;
             }
 
+            // Editing the selected mark takes priority over tool shortcuts.
+            if (e.Key == Key.Delete || e.Key == Key.Back)
+            {
+                if (Canvas.DeleteSelected()) e.Handled = true;
+                return;
+            }
+
+            if (Canvas.Selected != null &&
+                e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+            {
+                int step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 10 : 1;
+                double dx = e.Key == Key.Left ? -step : e.Key == Key.Right ? step : 0;
+                double dy = e.Key == Key.Up ? -step : e.Key == Key.Down ? step : 0;
+                if (Canvas.NudgeSelected(dx, dy)) e.Handled = true;
+                return;
+            }
+
             switch (e.Key)
             {
+                case Key.V: ToolSelect.IsChecked = true; break;
                 case Key.A: ToolArrow.IsChecked = true; break;
                 case Key.R: ToolRect.IsChecked = true; break;
                 case Key.E: ToolEllipse.IsChecked = true; break;
@@ -287,7 +314,13 @@ namespace Kil0bitSystemMonitor
                 case Key.B: ToolRedact.IsChecked = true; break;
                 case Key.C: ToolCrop.IsChecked = true; break;
                 case Key.Enter: Canvas.ApplyPendingCrop(); break;
-                case Key.Escape: Close(); break;
+
+                // Escape steps back one level: drop the selection first, close only when
+                // nothing is selected. Closing out from under a selection loses the capture.
+                case Key.Escape:
+                    if (Canvas.Selected != null) Canvas.ClearSelection();
+                    else Close();
+                    break;
                 default: return;
             }
             e.Handled = true;

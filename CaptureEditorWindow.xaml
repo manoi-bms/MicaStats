@@ -133,8 +133,16 @@
         <!-- Tools -->
         <Border DockPanel.Dock="Top" Background="#F01A1A22" Padding="10,8">
             <WrapPanel Orientation="Horizontal">
+                <!--
+                  Select is the default tool: opening straight into a drawing tool means the
+                  first stray click leaves a mark on the capture.
+                -->
+                <RadioButton x:Name="ToolSelect" Style="{StaticResource ToolButton}" GroupName="tool"
+                             Content="&#xE8B0;" Tag="Select — move, resize or delete a mark (V)"
+                             IsChecked="True" Checked="OnToolChecked" />
+                <Rectangle Width="1" Height="24" Fill="#26FFFFFF" Margin="5,0,8,0" />
                 <RadioButton x:Name="ToolArrow" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE9AC;" Tag="Arrow (A)" IsChecked="True" Checked="OnToolChecked" />
+                             Content="&#xE9AC;" Tag="Arrow (A)" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolRect" Style="{StaticResource ToolButton}" GroupName="tool"
                              Content="&#xE739;" Tag="Rectangle (R)" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolEllipse" Style="{StaticResource ToolButton}" GroupName="tool"

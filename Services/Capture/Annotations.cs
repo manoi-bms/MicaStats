@@ -112,6 +112,28 @@ namespace Kil0bitSystemMonitor.Services.Capture
             return true;
         }
 
+        /// <summary>
+        /// Swaps one annotation for an edited copy, keeping its position in the paint order so a
+        /// moved mark does not jump in front of the ones drawn after it.
+        ///
+        /// <para>
+        /// The editor calls this once when a drag ends, not on every mouse move: one gesture must
+        /// be one undo step, or Ctrl+Z would rewind a drag pixel by pixel.
+        /// </para>
+        /// </summary>
+        public bool Replace(Annotation original, Annotation replacement)
+        {
+            if (original == null || replacement == null) return false;
+            int index = Current.Items.IndexOf(original);
+            if (index < 0) return false;
+            if (ReferenceEquals(original, replacement)) return false;
+
+            var items = new List<Annotation>(Current.Items);
+            items[index] = replacement;
+            Push(new State(items, Current.Crop));
+            return true;
+        }
+
         public bool Remove(Annotation annotation)
         {
             if (annotation == null || !Current.Items.Contains(annotation)) return false;

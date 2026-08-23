@@ -136,6 +136,10 @@ Unless you turn it off, each capture opens in an annotation editor:
   walkthroughs
 - **Redact** to hide sensitive content — **pixelate**, **blur** or a **solid block**.
   Redactions are baked into real pixels, so what is hidden on screen is hidden in the file
+- **Select (V)** — the tool the editor starts in. Click a mark to select it, **drag to move**
+  it, drag its **handles to resize** (an arrow or line gets a handle at each end), **arrow
+  keys** to nudge (Shift for 10px), **Delete** to remove it. Each drag is a single undo step,
+  and **Esc** clears the selection before it closes the window
 - **Crop**, full **undo/redo** (Ctrl+Z / Ctrl+Y), colour swatches and stroke size
 - **Copy** (Ctrl+C), **Save** (Ctrl+S), **Save as…**, or **Pin** the capture on top of every
   window — drag it, scale it with the wheel, Esc to dismiss

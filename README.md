@@ -4,7 +4,9 @@
 
 **A compact, modern system monitor designed for Windows 11.**
 
-Monitor CPU, memory, GPU, network, and disk activity through a clean taskbar overlay and a menu-style Windows 11 dashboard.
+Monitor CPU, memory, GPU, network, and disk activity through a clean taskbar overlay and a menu-style Windows 11 dashboard — with a CPU-Z-style hardware inspector and a full screen-capture and annotation suite built in.
+
+**English** · [ภาษาไทย](#thai)
 
 [Features](#features) · [Screenshots](#screenshots) · [Installation](#installation) · [Build from source](#build-from-source) · [Contributing](#contributing) · [Credits](#credits-and-attribution)
 
@@ -45,13 +47,35 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 
 ### Real-time monitoring
 
-* **CPU** — Current total processor utilization
-* **Memory** — RAM usage and memory pressure
-* **GPU** — Graphics processor load and available temperature information
-* **Network** — Real-time upload and download throughput
+* **CPU** — Current total processor utilization, with a User/System split and one ring gauge per logical processor
+* **Memory** — RAM usage, commit charge, and a Used / Free / Committed / Cached breakdown
+* **GPU** — Graphics processor load, VRAM, and available temperature information
+* **Network** — Real-time upload and download throughput, with adapter, IP address, and session totals
 * **Disk** — Activity monitoring for one or more storage devices
+* **Temperature** — CPU package temperature, read from Core Temp's shared memory or LibreHardwareMonitor/OpenHardwareMonitor when available
 
-Sensor availability may vary depending on the installed hardware, device drivers, Windows performance counters, and system configuration.
+Sensor availability may vary depending on the installed hardware, device drivers, Windows performance counters, and system configuration. Anything that cannot be read honestly shows a dash or a flat baseline rather than a misleading zero.
+
+### Hardware inspector
+
+A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six tabs — CPU, Mainboard, Memory, Graphics, Storage and System — under a live core-speed strip.
+
+* CPU identity read directly from the **CPUID instruction**: vendor, family/model/stepping, instruction sets, hybrid P/E core split, and every cache level
+* Mainboard, BIOS and per-module RAM detail parsed from the **raw SMBIOS firmware tables**, including the extended fields DDR5 speeds live in
+* Graphics adapters with driver version/date and full video memory, read from the driver registry so it is immune to the well-known 4 GB WMI truncation
+* Storage with capacity, bus (NVMe/SATA/USB), kind (SSD/HDD), firmware and health
+* **Save Report** writes the whole inspection to a timestamped text file
+
+### Screen capture and annotation
+
+* **Region, window, screen and all-screens** capture, from the overlay's right-click menu, **Settings → Capture**, or global shortcuts
+* The region picker **freezes the screen** before you select, so menus and tooltips stay open instead of closing when the picker takes focus, and the selection stays pixel-exact across monitors running different scaling
+* Windows and screens are highlighted for **one-click capture**; selection edges **snap** to their borders
+* A **magnifier** follows the pointer with a pixel grid, crosshair and the **hex colour** under the cursor — it doubles as an eyedropper
+* **Annotation editor**: arrow, rectangle, ellipse, line, pen, highlighter, text and numbered step badges
+* **Select tool** to move, resize, nudge or delete any mark after drawing it — each drag is a single undo step
+* **Redaction** (pixelate, blur or solid) baked into real pixels, so content hidden on screen is hidden in the saved file
+* Crop, undo/redo, copy as PNG **and** DIB so it pastes anywhere, save to PNG/JPEG, or **pin** a capture on top of every window
 
 ### Windows 11 interface
 
@@ -59,7 +83,8 @@ Sensor availability may vary depending on the installed hardware, device drivers
 * Fluent Design–inspired visual hierarchy
 * Mica-style surfaces and transparency
 * Rounded Windows 11–style controls
-* Clear typography for at-a-glance monitoring
+* Segoe UI Variable typography, and a Segoe Fluent Icons badge on every section
+* Ring gauges that sweep from zero when a panel opens, and panels that rise and fade in
 * Detailed and compact display modes
 * High-DPI and multi-resolution support
 
@@ -73,8 +98,9 @@ Sensor availability may vary depending on the installed hardware, device drivers
 * Keep the overlay above other windows
 * Automatically hide it during full-screen applications
 * Auto-avoid the Start button: the stacked overlay slides into free taskbar space, squeezes its sparklines to fill the remaining corridor exactly, and only then sheds content (graphs, then trailing modules behind a ⋯ marker) so the centred Windows 11 Start button, widgets button and tray never end up underneath it
+* Recovers automatically if a saved position ends up off-screen — for example in the gap between mismatched monitors, or on a display that has since been unplugged
 
-### Customization
+### Customization and diagnostics
 
 * Select which metrics are displayed
 * Choose the active network adapter
@@ -83,6 +109,37 @@ Sensor availability may vary depending on the installed hardware, device drivers
 * Customize fonts and accent colors
 * Enable automatic startup with Windows
 * Switch between compact and detailed layouts
+* Capture folder, file-name template, image format, redaction style and shortcuts
+* A plain-text **diagnostics log** at `%APPDATA%\MicaStats\logs\micastats.log` records startup, a hardware summary, sensor sources that failed, and any error — the first place to look when something behaves unexpectedly
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| **Ctrl+Shift+1** | Capture a region (or click a window / screen) |
+| **Ctrl+Shift+2** | Capture the window currently in front |
+| **Ctrl+Shift+3** | Capture the screen the pointer is on |
+
+While the region picker is open:
+
+| Key | Action |
+| --- | --- |
+| **Drag / Click** | Select a rectangle, or capture the highlighted window or screen |
+| **M** · **S** · **A** | Toggle magnifier · toggle snapping · select everything |
+| **Arrows** (Shift ×10, Ctrl resize) | Nudge the selection |
+| **Enter** · **Esc** | Accept · cancel |
+
+Inside the annotation editor:
+
+| Key | Action |
+| --- | --- |
+| **V** | Select tool — move, resize or delete a mark |
+| **A R E L P H T N B C** | Arrow, Rectangle, Ellipse, Line, Pen, Highlighter, Text, Numbered step, Redact, Crop |
+| **Arrows** / **Delete** | Nudge / remove the selected mark |
+| **Ctrl+Z** · **Ctrl+Y** | Undo · redo |
+| **Ctrl+C** · **Ctrl+S** | Copy to clipboard · save |
 
 ---
 
@@ -96,12 +153,13 @@ Compared with the original kil0bit System Monitor, MicaStats focuses on a differ
 * Faster access to individual monitoring categories
 * Cleaner separation between summary information and detailed metrics
 * A more consistent appearance across the taskbar overlay and settings dashboard
+* Additional tooling that the upstream project does not include: the hardware inspector, the screen-capture suite, and the diagnostics log
 
 The underlying monitoring functionality remains derived from the original project, while the interface and user experience are being developed independently.
 
 ---
 
-Curious where MicaStats is heading? The researched feature roadmap lives in [ROADMAP.md](ROADMAP.md).
+Curious where MicaStats is heading? The researched feature roadmap lives in [ROADMAP.md](ROADMAP.md). Full usage documentation is in [GUIDE.md](GUIDE.md).
 
 ## Screenshots
 
@@ -189,7 +247,7 @@ Pause over any taskbar module and its own compact dropdown opens, retargeting as
 > Uninstall or close an older build before installing a new version, particularly when switching from the original kil0bit System Monitor to MicaStats.
 
 > [!NOTE]
-> Community builds may display a Microsoft Defender SmartScreen warning when the executable has not been code-signed. Review the release source and checksums before running downloaded software.
+> Community builds may display a Microsoft Defender SmartScreen warning when the executable has not been code-signed. Review the release source and checksums before running downloaded software. Every release publishes a SHA-256 checksum alongside the installer.
 
 When no packaged release is available, build the application directly from source.
 
@@ -228,6 +286,12 @@ bin/Release/net8.0-windows/
 dotnet run
 ```
 
+### Run the Test Suite
+
+```powershell
+dotnet test tests/Kil0bitSystemMonitor.Tests/Kil0bitSystemMonitor.Tests.csproj
+```
+
 ### Publish a Framework-Dependent Windows Build
 
 ```powershell
@@ -252,7 +316,8 @@ The published application will be created in the `publish` directory.
 | UI library          | ModernWpfUI                                  |
 | Windows integration | Win32 APIs                                   |
 | Performance data    | Windows performance counters and system APIs |
-| Graphics            | WPF and native Windows rendering             |
+| Hardware identity   | CPUID instruction and raw SMBIOS tables      |
+| Graphics            | GDI+ for the taskbar overlay, WPF for panels |
 | Configuration       | Local application settings                   |
 
 MicaStats uses a native Windows desktop stack rather than a browser-based desktop runtime.
@@ -274,7 +339,7 @@ After launching MicaStats:
 9. Enable **Lock Position** after placing the overlay.
 10. Enable **Launch on Startup** when MicaStats should start automatically with Windows.
 
-Right-click the overlay to access settings and common overlay actions.
+Click the overlay for the full stats panel, hover a module for its own dropdown, and right-click for settings, capture commands and common overlay actions.
 
 ---
 
@@ -282,7 +347,7 @@ Right-click the overlay to access settings and common overlay actions.
 
 ### The overlay is not visible
 
-Confirm that at least one monitoring module is enabled. Also check whether the overlay is positioned outside the visible desktop area or hidden by the full-screen detection option.
+Confirm that at least one monitoring module is enabled. On a multi-monitor setup a saved position can fall in the gap between mismatched displays; MicaStats now detects this and snaps the overlay back onto the taskbar automatically, and records the recovery in the diagnostics log.
 
 ### Network speed remains at zero
 
@@ -292,17 +357,25 @@ Open the Monitoring settings and select the active Ethernet, Wi-Fi, VPN, or virt
 
 GPU metrics depend on the graphics hardware, driver implementation, and Windows performance-counter support. Update the GPU driver and restart MicaStats.
 
+### A capture shortcut does nothing
+
+Another application may already own that combination — Windows reserves several itself. The diagnostics log records which shortcut failed to register. Change or disable the shortcuts under **Settings → Capture**.
+
 ### The application does not start with Windows
 
 Disable and re-enable the startup option. Also verify that Windows has not disabled the application under **Settings → Apps → Startup**.
 
 ### Windows displays a SmartScreen warning
 
-Unsigned community applications can trigger SmartScreen. Download builds only from this repository’s official Releases page or build the source yourself.
+Unsigned community applications can trigger SmartScreen. Download builds only from this repository's official Releases page or build the source yourself.
 
 ### The overlay moves unexpectedly
 
 Place the overlay in the desired location and enable **Lock Position**.
+
+### Something else looks wrong
+
+Open `%APPDATA%\MicaStats\logs\micastats.log`. It records startup, a one-line hardware summary, any sensor source that could not be read, and every error, with timestamps.
 
 ---
 
@@ -336,7 +409,7 @@ git push origin feature/your-feature-name
 
 6. Open a pull request.
 
-Please keep pull requests focused and include screenshots for visible interface changes.
+Please keep pull requests focused, run the test suite, and include screenshots for visible interface changes.
 
 ---
 
@@ -353,6 +426,9 @@ Include:
 * Steps required to reproduce the problem
 * Expected and actual behavior
 * Relevant screenshots or logs
+
+> [!TIP]
+> The hardware inspector's **Save Report** button and the diagnostics log contain most of the above. Review both for anything private before attaching them to a public issue.
 
 For security-sensitive reports, do not publish exploit details in a public issue. Contact the maintainer privately using the contact method listed in the repository profile.
 
@@ -403,9 +479,486 @@ The `LICENSE` file must retain the original kil0bit System Monitor copyright not
 
 ---
 
+<a id="thai"></a>
+
 <div align="center">
 
-**MicaStats — Your system, at a glance.**
+# MicaStats — ภาษาไทย
+
+**โปรแกรมมอนิเตอร์ระบบขนาดกะทัดรัด ออกแบบมาสำหรับ Windows 11 โดยเฉพาะ**
+
+ดูการทำงานของ CPU, หน่วยความจำ, GPU, เครือข่าย และดิสก์ ได้จากโอเวอร์เลย์บนทาสก์บาร์และแดชบอร์ดสไตล์เมนูของ Windows 11 — พร้อมเครื่องมือตรวจสอบฮาร์ดแวร์แบบ CPU-Z และชุดจับภาพหน้าจอพร้อมเครื่องมือมาร์กอัปในตัว
+
+[English](#micastats) · **ภาษาไทย**
+
+[คุณสมบัติ](#คุณสมบัติ) · [ภาพตัวอย่าง](#ภาพตัวอย่าง) · [การติดตั้ง](#การติดตั้ง) · [คอมไพล์จากซอร์สโค้ด](#การคอมไพล์จากซอร์สโค้ด) · [ร่วมพัฒนา](#การร่วมพัฒนา) · [เครดิต](#เครดิตและการอ้างอิง)
+
+</div>
+
+---
+
+## เกี่ยวกับ MicaStats
+
+MicaStats เป็นโปรแกรมมอนิเตอร์ระบบแบบโอเพนซอร์สสำหรับ Windows 11 แสดงข้อมูลฮาร์ดแวร์และประสิทธิภาพแบบเรียลไทม์ในหน้าตาที่กะทัดรัด มองเห็นได้ตลอดเวลาโดยไม่ต้องเปิดหน้าต่างโปรแกรมเต็มจอ
+
+โปรเจกต์นี้พัฒนาต่อยอดจาก [kil0bit System Monitor](https://github.com/kil0bit-kb/kil0bit-system-monitor) โดยออกแบบหน้าตาใหม่ให้เป็นสไตล์เมนู ได้แรงบันดาลใจจากโปรแกรมมอนิเตอร์ระบบสมัยใหม่ที่นำเสนอข้อมูลอย่างกระชับ
+
+งานออกแบบปรับให้เข้ากับ Windows 11 โดยเฉพาะ ทั้งรูปแบบตัวอักษรและระยะห่างตามแนวทาง Fluent, พื้นผิวมุมโค้ง, ความโปร่งแสง และการนำเสนอแบบ Mica
+
+> [!NOTE]
+> MicaStats ดูแลรักษาแยกจากโปรเจกต์ต้นทาง หากพบปัญหาที่เกิดเฉพาะกับฟอร์กนี้ กรุณาแจ้งในรีโพนี้ ไม่ใช่กับผู้ดูแลโปรเจกต์ต้นทาง
+
+---
+
+## ทำไมถึงมี MicaStats
+
+ผมเพิ่งได้โน้ตบุ๊กเครื่องใหม่ที่ติดตั้ง Windows 11 มาให้ หลังย้ายข้อมูลจาก Windows 10 เสร็จ สิ่งที่ขาดหายไปอย่างชัดเจนจากการใช้งานประจำวันคือโปรแกรมมอนิเตอร์ระบบแบบเรียลไทม์ที่อยู่บนทาสก์บาร์
+
+ผมใช้ MacBook ด้วย และบน macOS โปรแกรมโปรดของผมคือ [iStat Menus](https://bjango.com/mac/istatmenus/) — โมดูลข้อมูลกะทัดรัดบนเมนูบาร์ แต่ละอันมีดรอปดาวน์ของตัวเองที่อัดแน่นและสวยงาม แต่บน Windows ยังไม่มีอะไรให้ความรู้สึกแบบนั้น
+
+ผมจึงใช้ [Claude Code](https://claude.com/claude-code) สร้าง UX/UI แบบนั้นขึ้นมาใหม่บน Windows ทั้งโมดูลบนทาสก์บาร์ที่วางป้ายกำกับซ้อนบนค่าตัวเลข, ดรอปดาวน์แยกตามหมวดเมื่อชี้เมาส์ค้าง, เกจวงแหวน, กราฟเครือข่ายขึ้น/ลงแบบสะท้อนกัน และชุดสีข้อมูลสองโทน (ฟ้า/แดง) ทั้งหมดถอดแบบจาก iStat Menus แล้วสร้างขึ้นใหม่ให้เป็นของ Windows 11 โดยแท้
+
+---
+
+## คุณสมบัติ
+
+### การมอนิเตอร์แบบเรียลไทม์
+
+* **CPU** — เปอร์เซ็นต์การใช้งานรวม แยกสัดส่วน User/System พร้อมเกจวงแหวนของทุกคอร์เชิงตรรกะ
+* **หน่วยความจำ** — การใช้ RAM, commit charge และรายละเอียด Used / Free / Committed / Cached
+* **GPU** — โหลดการ์ดจอ, VRAM และอุณหภูมิ (ถ้าอ่านได้)
+* **เครือข่าย** — ความเร็วอัปโหลด/ดาวน์โหลดแบบเรียลไทม์ พร้อมชื่ออะแดปเตอร์ หมายเลข IP และยอดรวมของเซสชัน
+* **ดิสก์** — ดูกิจกรรมของไดรฟ์ได้พร้อมกันหลายตัว
+* **อุณหภูมิ** — อุณหภูมิ CPU อ่านจากหน่วยความจำร่วมของ Core Temp หรือจาก LibreHardwareMonitor/OpenHardwareMonitor เมื่อมีให้ใช้
+
+เซ็นเซอร์ที่อ่านได้ขึ้นอยู่กับฮาร์ดแวร์ ไดรเวอร์ ตัวนับประสิทธิภาพของ Windows และการตั้งค่าของเครื่อง ค่าใดที่อ่านไม่ได้จะแสดงเป็นขีด (—) หรือเส้นฐานราบตามจริง ไม่แสดงเลขศูนย์ที่ทำให้เข้าใจผิด
+
+### เครื่องมือตรวจสอบฮาร์ดแวร์
+
+ปุ่ม **Hardware** บนแผงข้อมูลจะเปิดหน้าต่างตรวจสอบฮาร์ดแวร์สไตล์ CPU-Z มี 6 แท็บ — CPU, Mainboard, Memory, Graphics, Storage และ System — พร้อมแถบแสดงความเร็วสัญญาณนาฬิกาแบบสด
+
+* ข้อมูล CPU อ่านตรงจากคำสั่ง **CPUID**: ผู้ผลิต, family/model/stepping, ชุดคำสั่งที่รองรับ, การแบ่งคอร์แบบไฮบริด (P/E) และแคชทุกระดับ
+* ข้อมูลเมนบอร์ด, BIOS และแรมรายแถว อ่านจาก **ตาราง SMBIOS ของเฟิร์มแวร์โดยตรง** รวมถึงฟิลด์ส่วนขยายที่เก็บความเร็วของ DDR5
+* การ์ดจอพร้อมเวอร์ชัน/วันที่ของไดรเวอร์ และขนาด VRAM เต็มจำนวน อ่านจากรีจิสทรีของไดรเวอร์ จึงไม่ติดปัญหา WMI ที่รายงานได้ไม่เกิน 4 GB
+* ที่เก็บข้อมูลพร้อมความจุ, บัส (NVMe/SATA/USB), ชนิด (SSD/HDD), เฟิร์มแวร์ และสถานะสุขภาพ
+* ปุ่ม **Save Report** บันทึกข้อมูลทั้งหมดเป็นไฟล์ข้อความพร้อมวันเวลา
+
+### จับภาพหน้าจอและใส่คำอธิบาย
+
+* จับภาพได้ทั้งแบบ **เลือกพื้นที่, เฉพาะหน้าต่าง, ทั้งจอ และทุกจอรวมกัน** สั่งได้จากเมนูคลิกขวาบนโอเวอร์เลย์, **Settings → Capture** หรือคีย์ลัดที่ใช้ได้ทั้งระบบ
+* ตัวเลือกพื้นที่จะ **หยุดภาพหน้าจอไว้ก่อน** แล้วให้เลือกบนภาพนิ่งนั้น เมนูและทูลทิปจึงยังค้างอยู่ ไม่หายไปตอนที่ตัวเลือกได้โฟกัส และพื้นที่ที่เลือกแม่นยำระดับพิกเซลแม้จอแต่ละตัวจะตั้งสเกลไม่เท่ากัน
+* ไฮไลต์หน้าต่างและหน้าจอให้ **จับภาพได้ด้วยคลิกเดียว** พร้อมการ **สแนป** ขอบให้ตรงกับกรอบหน้าต่าง
+* **แว่นขยาย** ติดตามเมาส์ แสดงตารางพิกเซล เส้นเล็ง และ **ค่าสีแบบ hex** ใต้เคอร์เซอร์ ใช้เป็นเครื่องมือดูดสีได้ในตัว
+* **เครื่องมือมาร์กอัป**: ลูกศร, สี่เหลี่ยม, วงรี, เส้นตรง, ปากกา, ปากกาเน้นข้อความ, ข้อความ และป้ายหมายเลขลำดับขั้น
+* **เครื่องมือเลือก (Select)** สำหรับย้าย ปรับขนาด เลื่อนทีละพิกเซล หรือลบมาร์กที่วาดไปแล้ว โดยการลากหนึ่งครั้งนับเป็นการย้อนกลับหนึ่งขั้น
+* **การปิดบังข้อมูล** (โมเสก, เบลอ หรือทึบ) ถูกฝังลงในพิกเซลจริง สิ่งที่ถูกปิดบังบนจอจึงถูกปิดบังในไฟล์ที่บันทึกด้วย
+* ตัดภาพ (crop), ย้อนกลับ/ทำซ้ำ, คัดลอกเป็นทั้ง PNG **และ** DIB เพื่อให้วางได้ทุกโปรแกรม, บันทึกเป็น PNG/JPEG หรือ **ปักหมุด** ภาพให้ลอยอยู่เหนือทุกหน้าต่าง
+
+### หน้าตาแบบ Windows 11
+
+* แผงข้อมูลกะทัดรัดสไตล์เมนู
+* ลำดับชั้นการมองเห็นตามแนวทาง Fluent Design
+* พื้นผิวและความโปร่งแสงสไตล์ Mica
+* คอนโทรลมุมโค้งตามสไตล์ Windows 11
+* ตัวอักษร Segoe UI Variable และไอคอน Segoe Fluent Icons กำกับทุกหมวด
+* เกจวงแหวนกวาดจากศูนย์เมื่อเปิดแผง และแผงข้อมูลค่อย ๆ เลื่อนขึ้นพร้อมจางเข้า
+* เลือกได้ทั้งโหมดแสดงผลแบบละเอียดและแบบกะทัดรัด
+* รองรับ High-DPI และความละเอียดหน้าจอหลากหลาย
+
+### โอเวอร์เลย์บนทาสก์บาร์และเดสก์ท็อป
+
+* แสดงค่าที่เลือกไว้บริเวณทาสก์บาร์ของ Windows
+* ยึดโอเวอร์เลย์ติดกับทาสก์บาร์
+* หรือใช้เป็นแผงลอยอิสระบนเดสก์ท็อป
+* ลากย้ายไปยังตำแหน่งที่ต้องการได้
+* ล็อกตำแหน่งไม่ให้ขยับ
+* ให้อยู่เหนือหน้าต่างอื่นเสมอ
+* ซ่อนอัตโนมัติเมื่อมีโปรแกรมทำงานแบบเต็มจอ
+* หลบปุ่ม Start อัตโนมัติ: โอเวอร์เลย์จะเลื่อนไปยังพื้นที่ว่างบนทาสก์บาร์ก่อน แล้วบีบกราฟเส้นให้พอดีกับช่องว่างที่เหลือ จากนั้นจึงค่อยลดเนื้อหา (ซ่อนกราฟก่อน แล้วจึงซ่อนโมดูลท้าย ๆ ไว้หลังเครื่องหมาย ⋯) เพื่อไม่ให้ทับปุ่ม Start ที่อยู่กึ่งกลาง ปุ่มวิดเจ็ต และถาดระบบ
+* กู้ตำแหน่งอัตโนมัติเมื่อตำแหน่งที่บันทึกไว้ตกไปอยู่นอกจอ เช่น ช่องว่างระหว่างจอที่ขนาดไม่เท่ากัน หรือจอที่ถอดออกไปแล้ว
+
+### การปรับแต่งและการตรวจสอบปัญหา
+
+* เลือกว่าจะแสดงค่าใดบ้าง
+* เลือกอะแดปเตอร์เครือข่ายที่ใช้งานอยู่
+* เลือกมอนิเตอร์ดิสก์ได้หลายไดรฟ์
+* ตั้งค่าความถี่ในการรีเฟรชข้อมูล
+* ปรับแบบอักษรและสีเน้น
+* ตั้งให้เปิดอัตโนมัติพร้อม Windows
+* สลับระหว่างเลย์เอาต์แบบกะทัดรัดและแบบละเอียด
+* ตั้งค่าโฟลเดอร์เก็บภาพ, รูปแบบชื่อไฟล์, ชนิดไฟล์ภาพ, รูปแบบการปิดบังข้อมูล และคีย์ลัด
+* **ไฟล์บันทึกการทำงาน** แบบข้อความที่ `%APPDATA%\MicaStats\logs\micastats.log` บันทึกการเริ่มโปรแกรม สรุปฮาร์ดแวร์หนึ่งบรรทัด เซ็นเซอร์ที่อ่านไม่สำเร็จ และข้อผิดพลาดทั้งหมด — เป็นที่แรกที่ควรดูเมื่อโปรแกรมทำงานผิดปกติ
+
+---
+
+## คีย์ลัด
+
+| คีย์ลัด | การทำงาน |
+| --- | --- |
+| **Ctrl+Shift+1** | จับภาพเฉพาะพื้นที่ (หรือคลิกเลือกหน้าต่าง/หน้าจอ) |
+| **Ctrl+Shift+2** | จับภาพหน้าต่างที่อยู่ด้านหน้าสุด |
+| **Ctrl+Shift+3** | จับภาพหน้าจอที่เมาส์อยู่ |
+
+ขณะเปิดตัวเลือกพื้นที่:
+
+| คีย์ | การทำงาน |
+| --- | --- |
+| **ลาก / คลิก** | เลือกกรอบสี่เหลี่ยม หรือจับภาพหน้าต่าง/หน้าจอที่ถูกไฮไลต์ |
+| **M** · **S** · **A** | เปิด-ปิดแว่นขยาย · เปิด-ปิดการสแนป · เลือกทั้งหมด |
+| **ลูกศร** (Shift ×10, Ctrl ปรับขนาด) | ขยับกรอบที่เลือกทีละน้อย |
+| **Enter** · **Esc** | ยืนยัน · ยกเลิก |
+
+ในหน้าต่างมาร์กอัป:
+
+| คีย์ | การทำงาน |
+| --- | --- |
+| **V** | เครื่องมือเลือก — ย้าย ปรับขนาด หรือลบมาร์ก |
+| **A R E L P H T N B C** | ลูกศร, สี่เหลี่ยม, วงรี, เส้น, ปากกา, ปากกาเน้นข้อความ, ข้อความ, ป้ายหมายเลข, ปิดบังข้อมูล, ตัดภาพ |
+| **ลูกศร** / **Delete** | ขยับ / ลบมาร์กที่เลือกอยู่ |
+| **Ctrl+Z** · **Ctrl+Y** | ย้อนกลับ · ทำซ้ำ |
+| **Ctrl+C** · **Ctrl+S** | คัดลอกไปคลิปบอร์ด · บันทึก |
+
+---
+
+## ฟอร์กนี้เปลี่ยนอะไรบ้าง
+
+เมื่อเทียบกับ kil0bit System Monitor ต้นฉบับ MicaStats เน้นรูปแบบการนำเสนอและการโต้ตอบที่ต่างออกไป:
+
+* ออกแบบแผงข้อมูลใหม่ให้เป็นสไตล์เมนูที่กะทัดรัด
+* ปรับระยะห่าง แบบอักษร และลำดับความสำคัญของข้อมูล
+* ใช้แนวทาง Fluent และ Mica ของ Windows 11
+* เข้าถึงข้อมูลแต่ละหมวดได้เร็วขึ้น
+* แยกข้อมูลสรุปกับข้อมูลละเอียดออกจากกันชัดเจนขึ้น
+* หน้าตาสอดคล้องกันมากขึ้นระหว่างโอเวอร์เลย์บนทาสก์บาร์กับแดชบอร์ดตั้งค่า
+* เพิ่มเครื่องมือที่โปรเจกต์ต้นทางไม่มี ได้แก่ ตัวตรวจสอบฮาร์ดแวร์ ชุดจับภาพหน้าจอ และไฟล์บันทึกการทำงาน
+
+ส่วนกลไกการอ่านค่าต่าง ๆ ยังคงพัฒนาต่อจากโปรเจกต์ต้นฉบับ ขณะที่หน้าตาและประสบการณ์ใช้งานพัฒนาแยกเป็นอิสระ
+
+---
+
+อยากรู้ทิศทางต่อไปของ MicaStats? แผนพัฒนาอยู่ใน [ROADMAP.md](ROADMAP.md) และคู่มือการใช้งานฉบับเต็มอยู่ใน [GUIDE.md](GUIDE.md)
+
+## ภาพตัวอย่าง
+
+ภาพทั้งหมดด้านล่างเรนเดอร์จากโค้ดของโปรแกรมจริง พร้อมข้อมูลตัวอย่าง
+
+### โอเวอร์เลย์บนทาสก์บาร์ — โมดูลซ้อนสไตล์ iStat
+
+แต่ละค่าคือหนึ่งโมดูล: ป้ายกำกับสีจางอยู่เหนือค่าตัวหนา พร้อมกราฟแท่งย้อนหลังแบบถี่ แถบระดับขนาดเล็กบน CPU / RAM / GPU โซนเก็บข้อมูลรวมที่มีแถบแยกตามไดรฟ์ และบรรทัดเครือข่าย ↑/↓ คู่กันรอบกราฟแบบสะท้อน
+
+<p align="center">
+  <img src="Assets/preview/istat-taskbar.png" width="850" alt="โอเวอร์เลย์ MicaStats บนทาสก์บาร์พร้อมกราฟสด" />
+</p>
+
+เมื่อปิด **Live Graphs** เลย์เอาต์เดิมจะกะทัดรัดที่สุดแบบนี้:
+
+<p align="center">
+  <img src="Assets/preview/istat-taskbar-compact.png" width="500" alt="โอเวอร์เลย์ MicaStats แบบกะทัดรัด" />
+</p>
+
+### แผงข้อมูล
+
+คลิกที่โอเวอร์เลย์เพื่อเปิดดรอปดาวน์เต็มรูปแบบ: กราฟย้อนหลังของ CPU แบบซ้อน User/System, เกจวงแหวนของทุกคอร์เชิงตรรกะ, วงแหวน MEMORY และ COMMIT พร้อมกราฟย้อนหลังและรายละเอียด Used / Free / Committed / Cached, วงแหวน GPU พร้อม VRAM, กราฟเครือข่ายแบบสะท้อนพร้อมยอดรวมเซสชัน, แถวข้อมูลแยกตามไดรฟ์ และโปรเซสที่ใช้ทรัพยากรสูงสุด
+
+<p align="center">
+  <img src="Assets/preview/stats-panel.png" width="420" alt="แผงข้อมูลของ MicaStats" />
+</p>
+
+### การจับภาพหน้าจอ
+
+จับภาพได้ทั้งแบบเลือกพื้นที่ เฉพาะหน้าต่าง และทั้งจอ ด้วยคีย์ลัดที่ใช้ได้ทั้งระบบ (**Ctrl+Shift+1/2/3**) ตัวเลือกพื้นที่จะหยุดภาพหน้าจอไว้ก่อน เมนูจึงยังค้างอยู่ระหว่างที่เลือก พร้อมไฮไลต์หน้าต่างให้จับภาพด้วยคลิกเดียว สแนปเข้าขอบ และมีแว่นขยายที่แสดงตารางพิกเซลและค่าสี hex ทุกภาพที่จับจะเปิดในหน้าต่างมาร์กอัป: ลูกศร รูปทรง ปากกา ปากกาเน้นข้อความ ข้อความ ป้ายหมายเลข ตัดภาพ ย้อนกลับ/ทำซ้ำ และ **การปิดบังข้อมูล** (โมเสก / เบลอ / ทึบ) ที่ฝังลงในพิกเซลจริง สิ่งที่ถูกปิดบังบนจอจึงถูกปิดบังในไฟล์ด้วย
+
+<p align="center">
+  <img src="Assets/preview/capture-editor.png" width="640" alt="ภาพที่จับได้พร้อมมาร์กอัปและการปิดบังข้อมูล" />
+</p>
+
+### ตัวตรวจสอบฮาร์ดแวร์
+
+ปุ่ม **Hardware** บนแผงข้อมูลเปิดหน้าต่างตรวจสอบสไตล์ CPU-Z ข้อมูล CPU มาจากคำสั่ง CPUID โดยตรง (ผู้ผลิต, family/model/stepping, ชุดคำสั่ง, การแบ่งคอร์ P/E, แคชทุกระดับ) ส่วนเมนบอร์ด BIOS และแรมรายแถวมาจากตาราง SMBIOS ของเฟิร์มแวร์ การ์ดจอรายงานไดรเวอร์และ VRAM เต็มจำนวน ดิสก์แสดงบัส (NVMe/SATA) ชนิด (SSD/HDD) และสถานะสุขภาพ ทั้งหมดอยู่ใต้แถบความเร็วสัญญาณนาฬิกาแบบสด ปุ่ม **Save Report** บันทึกทุกอย่างเป็นไฟล์ข้อความ
+
+<p align="center">
+  <img src="Assets/preview/hardware.png" width="420" alt="ตัวตรวจสอบฮาร์ดแวร์ของ MicaStats" />
+</p>
+
+### ดรอปดาวน์แยกตามหมวดเมื่อชี้เมาส์ค้าง
+
+ชี้เมาส์ค้างบนโมดูลใดบนทาสก์บาร์ ดรอปดาวน์ของหมวดนั้นจะเปิดขึ้น และเปลี่ยนตามเมื่อเลื่อนเมาส์ไปโมดูลอื่น — เป็นการโต้ตอบแบบ iStat Menus บน Windows
+
+<p align="center">
+  <img src="Assets/preview/hover-cpu.png" width="300" alt="ดรอปดาวน์ CPU" />
+  <img src="Assets/preview/hover-memory.png" width="300" alt="ดรอปดาวน์หน่วยความจำ" />
+  <img src="Assets/preview/hover-network.png" width="300" alt="ดรอปดาวน์เครือข่าย" />
+</p>
+
+---
+
+## ความต้องการของระบบ
+
+### สำหรับการใช้งาน
+
+* รองรับ Windows 11 เป็นหลัก
+* Windows 10 build 19041 ขึ้นไปอาจใช้งานได้ แต่ไม่ใช่เป้าหมายหลักด้านการแสดงผล
+* ต้องมี .NET 8 Desktop Runtime หากใช้รีลีสแบบ framework-dependent
+* ต้องมีตัวนับประสิทธิภาพของ Windows และไดรเวอร์ฮาร์ดแวร์ที่รองรับ
+
+### สำหรับการคอมไพล์
+
+* Windows 10 หรือ Windows 11
+* [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+* Visual Studio 2022 พร้อมเวิร์กโหลด **.NET desktop development** หรือเครื่องมือพัฒนา .NET อื่นที่รองรับ
+* Git
+
+---
+
+## การติดตั้ง
+
+### ดาวน์โหลดรีลีส
+
+1. เปิดหน้า [Releases](https://github.com/manoi-bms/MicaStats/releases)
+2. ดาวน์โหลดตัวติดตั้งหรือแพ็กเกจแบบพกพาเวอร์ชันล่าสุด
+3. แตกไฟล์หากจำเป็น
+4. เปิดโปรแกรม MicaStats
+5. เลือกค่าที่ต้องการแสดงจากการตั้งค่า Monitoring
+
+> [!IMPORTANT]
+> ควรถอนการติดตั้งหรือปิดเวอร์ชันเก่าก่อนติดตั้งเวอร์ชันใหม่ โดยเฉพาะเมื่อย้ายจาก kil0bit System Monitor ตัวเดิมมาเป็น MicaStats
+
+> [!NOTE]
+> โปรแกรมจากชุมชนที่ยังไม่ได้เซ็นรับรองโค้ดอาจทำให้ Microsoft Defender SmartScreen แจ้งเตือน ควรตรวจสอบแหล่งที่มาและค่าตรวจสอบไฟล์ก่อนเปิดใช้งาน ทุกรีลีสจะแนบค่า SHA-256 มาพร้อมตัวติดตั้ง
+
+หากยังไม่มีรีลีสสำเร็จรูป สามารถคอมไพล์จากซอร์สโค้ดได้โดยตรง
+
+---
+
+## การคอมไพล์จากซอร์สโค้ด
+
+### โคลนรีโพซิทอรี
+
+```powershell
+git clone https://github.com/manoi-bms/MicaStats.git
+cd MicaStats
+```
+
+### ติดตั้งแพ็กเกจที่ต้องใช้
+
+```powershell
+dotnet restore
+```
+
+### คอมไพล์เวอร์ชัน Release
+
+```powershell
+dotnet build --configuration Release
+```
+
+ไฟล์ที่คอมไพล์แล้วจะอยู่ที่:
+
+```text
+bin/Release/net8.0-windows/
+```
+
+### รันจากซอร์สโค้ด
+
+```powershell
+dotnet run
+```
+
+### รันชุดทดสอบ
+
+```powershell
+dotnet test tests/Kil0bitSystemMonitor.Tests/Kil0bitSystemMonitor.Tests.csproj
+```
+
+### สร้างไฟล์เผยแพร่แบบ framework-dependent
+
+```powershell
+dotnet publish `
+  --configuration Release `
+  --runtime win-x64 `
+  --self-contained false `
+  --output ./publish
+```
+
+ผลลัพธ์จะอยู่ในโฟลเดอร์ `publish`
+
+---
+
+## เทคโนโลยีที่ใช้
+
+| ส่วนประกอบ | เทคโนโลยี |
+| --- | --- |
+| ภาษา | C# |
+| รันไทม์ | .NET 8 |
+| เฟรมเวิร์กเดสก์ท็อป | Windows Presentation Foundation |
+| ไลบรารี UI | ModernWpfUI |
+| การเชื่อมต่อกับ Windows | Win32 API |
+| ข้อมูลประสิทธิภาพ | ตัวนับประสิทธิภาพและ API ของ Windows |
+| ข้อมูลฮาร์ดแวร์ | คำสั่ง CPUID และตาราง SMBIOS โดยตรง |
+| การเรนเดอร์ | GDI+ สำหรับโอเวอร์เลย์บนทาสก์บาร์ และ WPF สำหรับแผงข้อมูล |
+| การตั้งค่า | เก็บไว้ในเครื่องผู้ใช้ |
+
+MicaStats ใช้เทคโนโลยีเดสก์ท็อปของ Windows โดยตรง ไม่ได้ใช้รันไทม์ที่ทำงานบนเบราว์เซอร์
+
+---
+
+## การใช้งานเบื้องต้น
+
+หลังเปิดโปรแกรม MicaStats:
+
+1. เปิดแดชบอร์ดการตั้งค่า
+2. ไปที่ **Monitoring**
+3. เปิดใช้โมดูล CPU, หน่วยความจำ, GPU, เครือข่าย หรือดิสก์ ตามต้องการ
+4. หากค่าเครือข่ายเป็นศูนย์ ให้เลือกอะแดปเตอร์เครือข่ายให้ถูกต้อง
+5. ตั้งค่าความถี่ในการรีเฟรช
+6. เลือกการแสดงผลแบบกะทัดรัดหรือแบบละเอียด
+7. เปิด **Snap to Taskbar** หากต้องการให้ยึดติดกับทาสก์บาร์
+8. ปิด **Snap to Taskbar** หากต้องการวางโอเวอร์เลย์อิสระบนเดสก์ท็อป
+9. เปิด **Lock Position** หลังจัดตำแหน่งเรียบร้อยแล้ว
+10. เปิด **Launch on Startup** หากต้องการให้เริ่มพร้อม Windows
+
+คลิกที่โอเวอร์เลย์เพื่อเปิดแผงข้อมูลเต็ม ชี้เมาส์ค้างบนโมดูลเพื่อดูดรอปดาวน์เฉพาะหมวด และคลิกขวาเพื่อเข้าถึงการตั้งค่า คำสั่งจับภาพหน้าจอ และคำสั่งอื่น ๆ
+
+---
+
+## การแก้ปัญหา
+
+### มองไม่เห็นโอเวอร์เลย์
+
+ตรวจสอบว่าเปิดใช้งานโมดูลอย่างน้อยหนึ่งรายการแล้ว ในเครื่องที่ใช้หลายจอ ตำแหน่งที่บันทึกไว้อาจตกไปอยู่ในช่องว่างระหว่างจอที่ขนาดไม่เท่ากัน ปัจจุบัน MicaStats จะตรวจพบและดึงโอเวอร์เลย์กลับมาบนทาสก์บาร์ให้อัตโนมัติ พร้อมบันทึกไว้ในไฟล์บันทึกการทำงาน
+
+### ความเร็วเครือข่ายเป็นศูนย์ตลอด
+
+เปิดการตั้งค่า Monitoring แล้วเลือกอะแดปเตอร์ Ethernet, Wi-Fi, VPN หรือเครือข่ายเสมือนที่ใช้งานอยู่จริง
+
+### ไม่มีข้อมูล GPU
+
+ข้อมูล GPU ขึ้นอยู่กับฮาร์ดแวร์ ไดรเวอร์ และการรองรับตัวนับประสิทธิภาพของ Windows ลองอัปเดตไดรเวอร์การ์ดจอแล้วเปิด MicaStats ใหม่
+
+### กดคีย์ลัดจับภาพแล้วไม่มีอะไรเกิดขึ้น
+
+คีย์ลัดนั้นอาจถูกโปรแกรมอื่นจองไว้แล้ว (Windows เองก็จองไว้หลายชุด) ไฟล์บันทึกการทำงานจะระบุว่าคีย์ลัดใดลงทะเบียนไม่สำเร็จ สามารถเปลี่ยนหรือปิดคีย์ลัดได้ที่ **Settings → Capture**
+
+### โปรแกรมไม่เปิดพร้อม Windows
+
+ลองปิดแล้วเปิดตัวเลือกเริ่มพร้อมระบบใหม่ และตรวจสอบว่า Windows ไม่ได้ปิดโปรแกรมไว้ที่ **การตั้งค่า → แอป → แอปเริ่มต้น**
+
+### Windows ขึ้นเตือน SmartScreen
+
+โปรแกรมจากชุมชนที่ไม่ได้เซ็นรับรองโค้ดมักทำให้ SmartScreen แจ้งเตือน ควรดาวน์โหลดจากหน้า Releases ของรีโพนี้เท่านั้น หรือคอมไพล์เองจากซอร์สโค้ด
+
+### โอเวอร์เลย์ขยับเองโดยไม่ตั้งใจ
+
+จัดวางโอเวอร์เลย์ให้อยู่ในตำแหน่งที่ต้องการ แล้วเปิด **Lock Position**
+
+### มีอาการผิดปกติอื่น ๆ
+
+เปิดไฟล์ `%APPDATA%\MicaStats\logs\micastats.log` ซึ่งบันทึกการเริ่มโปรแกรม สรุปฮาร์ดแวร์หนึ่งบรรทัด เซ็นเซอร์ที่อ่านไม่ได้ และข้อผิดพลาดทั้งหมดพร้อมเวลากำกับ
+
+---
+
+## การร่วมพัฒนา
+
+ยินดีรับการร่วมพัฒนาจากทุกคน
+
+ก่อนเริ่มแก้ไขที่มีขอบเขตกว้าง กรุณาเปิด issue เพื่ออธิบายแนวคิดและยืนยันว่าสอดคล้องกับทิศทางของโปรเจกต์
+
+### ขั้นตอนการพัฒนา
+
+1. ฟอร์กรีโพนี้
+2. สร้างเบรนช์สำหรับฟีเจอร์:
+
+```bash
+git checkout -b feature/your-feature-name
+```
+
+3. แก้ไขและทดสอบการเปลี่ยนแปลง
+4. คอมมิตพร้อมคำอธิบายที่ชัดเจน:
+
+```bash
+git commit -m "Add: description of the change"
+```
+
+5. พุชเบรนช์:
+
+```bash
+git push origin feature/your-feature-name
+```
+
+6. เปิด pull request
+
+กรุณาทำ pull request ให้มีขอบเขตชัดเจน รันชุดทดสอบก่อนส่ง และแนบภาพหน้าจอหากมีการเปลี่ยนแปลงที่เห็นได้บนหน้าตาโปรแกรม
+
+---
+
+## การรายงานข้อบกพร่อง
+
+แจ้งข้อบกพร่องได้ที่ [GitHub issue tracker](https://github.com/manoi-bms/MicaStats/issues)
+
+กรุณาระบุ:
+
+* เวอร์ชันและหมายเลขบิลด์ของ Windows
+* เวอร์ชันหรือ commit hash ของ MicaStats
+* รุ่นของ CPU และ GPU
+* สเกลการแสดงผลและความละเอียดหน้าจอ
+* ขั้นตอนที่ทำให้เกิดปัญหาซ้ำได้
+* ผลลัพธ์ที่คาดหวังและผลลัพธ์ที่เกิดขึ้นจริง
+* ภาพหน้าจอหรือไฟล์บันทึกที่เกี่ยวข้อง
+
+> [!TIP]
+> ปุ่ม **Save Report** ในตัวตรวจสอบฮาร์ดแวร์ และไฟล์บันทึกการทำงาน มีข้อมูลข้างต้นเกือบทั้งหมดอยู่แล้ว กรุณาตรวจดูว่าไม่มีข้อมูลส่วนตัวก่อนแนบไปกับ issue สาธารณะ
+
+สำหรับปัญหาด้านความปลอดภัย กรุณาอย่าเปิดเผยรายละเอียดการโจมตีใน issue สาธารณะ ให้ติดต่อผู้ดูแลเป็นการส่วนตัวตามช่องทางที่ระบุไว้ในโปรไฟล์ของรีโพ
+
+---
+
+## เครดิตและการอ้างอิง
+
+MicaStats เป็นงานที่พัฒนาต่อยอดจาก:
+
+**[kil0bit System Monitor](https://github.com/kil0bit-kb/kil0bit-system-monitor)**
+สร้างโดย **KB – kil0bit**
+
+ส่วนของต้นฉบับ:
+
+```text
+Copyright (c) 2026 KB - kil0bit
+```
+
+ส่วนที่แก้ไขเพิ่มเติมโดย MicaStats:
+
+```text
+Copyright (c) 2026 Chaiyaporn Suratemeekul (manoi-bms)
+```
+
+MicaStats สร้างและดูแลโดย **Chaiyaporn Suratemeekul** ([@manoi-bms](https://github.com/manoi-bms)) โดย UX/UI สไตล์ iStat Menus พัฒนาร่วมกับ [Claude Code](https://claude.com/claude-code)
+
+โปรเจกต์ต้นฉบับเผยแพร่ภายใต้สัญญาอนุญาต MIT และ MicaStats ยังคงประกาศลิขสิทธิ์และสัญญาอนุญาตเดิมไว้ตามที่สัญญาอนุญาตกำหนด
+
+ผู้พัฒนาต้นทางไม่มีส่วนรับผิดชอบต่อการแก้ไข การเผยแพร่ การสนับสนุน หรือข้อบกพร่องที่เกิดจากฟอร์กนี้
+
+---
+
+## ประกาศความเป็นอิสระของโปรเจกต์
+
+MicaStats เป็นโปรเจกต์โอเพนซอร์สอิสระ
+
+ไม่มีความเกี่ยวข้องกับหรือได้รับการรับรองจาก Bjango, iStat Menus, Apple, Microsoft หรือผู้ดูแลโปรเจกต์ kil0bit System Monitor ต้นฉบับ ชื่อผลิตภัณฑ์และชื่อบริษัทที่กล่าวถึงใช้เพื่อระบุแพลตฟอร์มหรือโปรแกรมที่กำลังพูดถึงเท่านั้น
+
+MicaStats ใช้ชื่อ ไอคอน ภาพหน้าจอ ทรัพยากรภาพ และแบรนด์ของตนเอง
+
+---
+
+## สัญญาอนุญาต
+
+โปรเจกต์นี้เผยแพร่ภายใต้ [สัญญาอนุญาต MIT](LICENSE)
+
+ไฟล์ `LICENSE` ต้องคงประกาศลิขสิทธิ์ของ kil0bit System Monitor ต้นฉบับไว้ และสามารถเพิ่มประกาศลิขสิทธิ์ของ MicaStats แยกต่างหากได้โดยไม่ลบประกาศเดิม
+
+---
+
+<div align="center">
+
+**MicaStats — Your system, at a glance. · ดูสถานะเครื่องได้ในพริบตา**
 
 [Releases](https://github.com/manoi-bms/MicaStats/releases) ·
 [Issues](https://github.com/manoi-bms/MicaStats/issues) ·

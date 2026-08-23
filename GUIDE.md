@@ -189,7 +189,11 @@ Open the **Settings Window** to customize your experience:
 ## ❓ Troubleshooting
 
 **Q: The overlay is missing!**  
-A: Go to **Monitoring** settings and ensure at least one sensor is toggled **ON**.
+A: Go to **Monitoring** settings and ensure at least one sensor is toggled **ON**. On a
+multi-monitor setup the overlay can also end up off-screen if its saved position falls in the
+gap between mismatched displays — MicaStats now detects this and snaps the overlay back onto
+the taskbar automatically at startup (and whenever your displays change); the recovery is
+recorded in the diagnostics log.
 
 **Q: Why doesn't the app start with Windows?**  
 A: Ensure "Launch on Windows Startup" is enabled in **General** settings. This registers the app in your user registry for a seamless boot experience.

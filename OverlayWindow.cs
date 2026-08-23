@@ -24,6 +24,8 @@ namespace Kil0bitSystemMonitor
         private readonly MetricsHistory _history = null!;
         private readonly System.Windows.Threading.Dispatcher _dispatcher = null!;
         private readonly System.Threading.Timer _zOrderTimer = null!;
+        private System.Windows.Threading.DispatcherTimer? _startupRecoveryTimer;
+        private int _startupRecoveryTicks;
 
         private bool _isHovered = false;
         private bool _trackingMouse = false;
@@ -193,6 +195,21 @@ namespace Kil0bitSystemMonitor
                 ShowWindow(_hWnd, 5);
                 UpdateCachedColors();
                 UpdateLayer();
+
+                // A persisted position can land off every monitor (dead space between
+                // mismatched displays, or a since-unplugged screen). Recover immediately, then
+                // retry shortly after: with LaunchOnStartup the shell taskbar is often not yet
+                // findable at login, so the first attempt can no-op until Explorer is ready.
+                EnsureOverlayOnScreen();
+                _startupRecoveryTimer = new System.Windows.Threading.DispatcherTimer(
+                    TimeSpan.FromMilliseconds(2500), System.Windows.Threading.DispatcherPriority.Background,
+                    (s, e) =>
+                    {
+                        AlignToTaskbarCenter();
+                        EnsureOverlayOnScreen();
+                        if (++_startupRecoveryTicks >= 4) { _startupRecoveryTimer?.Stop(); _startupRecoveryTimer = null; }
+                    }, _dispatcher);
+                _startupRecoveryTimer.Start();
 
                 // MetricsHistory has already marshalled to the dispatcher and appended the sample,
                 // so this runs on the UI thread and the history is current.
@@ -522,12 +539,51 @@ namespace Kil0bitSystemMonitor
             IntPtr taskbar = Win32Helper.FindWindow("Shell_TrayWnd", null!);
             if (taskbar != IntPtr.Zero && Win32Helper.GetWindowRect(taskbar, out Win32Helper.RECT tb))
             {
-                int h = tb.Bottom - tb.Top;
                 int oh = (int)((_config.Config.ShowPods ? 36 : 32) * _dpiScale * (float)_config.Config.ScaleFactor);
-                int cy = tb.Top + (h - oh) / 2;
-                SetWindowPos(_hWnd, IntPtr.Zero, (int)_config.Config.X, cy, 0, 0, 0x0001 | 0x0004 | 0x0010);
+                int ow = Win32Helper.GetWindowRect(_hWnd, out Win32Helper.RECT self) ? Math.Max(20, self.Right - self.Left) : 300;
+                // Clamp X into the taskbar's monitor too: a saved X can survive a monitor
+                // rearrangement and sit off-screen just as a stale Y can.
+                var (x, cy) = OverlayPlacement.SnapToTaskbar(
+                    new OverlayPlacement.Rect(tb.Left, tb.Top, tb.Right, tb.Bottom), ow, oh, (int)_config.Config.X);
+                SetWindowPos(_hWnd, IntPtr.Zero, x, cy, 0, 0, 0x0001 | 0x0004 | 0x0010);
+                _config.Config.X = x;
                 _config.Config.Y = cy;
             }
+        }
+
+        /// <summary>
+        /// Rescues the overlay when its persisted position lands on no monitor at all — the
+        /// dead space between mismatched displays, or a screen that has since been unplugged.
+        /// Cheap enough to call defensively (one MonitorFromWindow probe) and a no-op whenever
+        /// the window already intersects a screen.
+        ///
+        /// <para>
+        /// This is the durable half of the "overlay missing from the taskbar" fix: at login the
+        /// shell taskbar is often not yet findable, so <see cref="AlignToTaskbarCenter"/> cannot
+        /// correct a stale off-screen Y; the startup retry below re-runs both once the shell is
+        /// up. Returns true when it actually moved the window.
+        /// </para>
+        /// </summary>
+        private bool EnsureOverlayOnScreen()
+        {
+            if (_hWnd == IntPtr.Zero) return false;
+            // MONITOR_DEFAULTTONULL: null when the window rect intersects no monitor.
+            if (MonitorFromWindow(_hWnd, 0) != IntPtr.Zero) return false;
+
+            IntPtr taskbar = Win32Helper.FindWindow("Shell_TrayWnd", null!);
+            if (taskbar == IntPtr.Zero || !Win32Helper.GetWindowRect(taskbar, out Win32Helper.RECT tb))
+                return false; // shell not ready yet — the retry timer will try again
+
+            int oh = (int)((_config.Config.ShowPods ? 36 : 32) * _dpiScale * (float)_config.Config.ScaleFactor);
+            int ow = Win32Helper.GetWindowRect(_hWnd, out Win32Helper.RECT self) ? Math.Max(20, self.Right - self.Left) : 300;
+            var (x, y) = OverlayPlacement.SnapToTaskbar(
+                new OverlayPlacement.Rect(tb.Left, tb.Top, tb.Right, tb.Bottom), ow, oh, (int)_config.Config.X);
+            SetWindowPos(_hWnd, IntPtr.Zero, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010);
+            _config.Config.X = x;
+            _config.Config.Y = y;
+            _config.SaveConfig();
+            try { DiagnosticsLog.Warn("overlay", $"Recovered off-screen overlay to ({x},{y}); taskbar=({tb.Left},{tb.Top})-({tb.Right},{tb.Bottom})"); } catch { }
+            return true;
         }
 
         /// <summary>
@@ -1451,7 +1507,7 @@ namespace Kil0bitSystemMonitor
 
         public void Dispose()
         {
-            try { if (_onHistoryUpdated != null) _history.Updated -= _onHistoryUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
+            try { if (_onHistoryUpdated != null) _history.Updated -= _onHistoryUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _startupRecoveryTimer?.Stop(); _startupRecoveryTimer = null; _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
         }
 
         private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -1470,7 +1526,7 @@ namespace Kil0bitSystemMonitor
             if (msg == WM_EXITSIZEMOVE) { _inSizeMove = false; if (Win32Helper.GetWindowRect(hWnd, out Win32Helper.RECT r)) { _config.Config.X = r.Left; _config.Config.Y = r.Top; _config.SaveConfig(); } }
             if (msg == WM_SHOW_SETTINGS) { _dispatcher.BeginInvoke(() => App.OpenSettings(_viewModel, _config)); return IntPtr.Zero; }
             if (msg == WM_DPICHANGED) { _currentDpi = (uint)(wParam.ToInt32() & 0xFFFF); _dpiScale = _currentDpi / 96.0f; ClearCaches(); AlignToTaskbarCenter(); UpdateLayer(); return IntPtr.Zero; }
-            if (msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE) { AlignToTaskbarCenter(); UpdateLayer(); return IntPtr.Zero; }
+            if (msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE) { AlignToTaskbarCenter(); EnsureOverlayOnScreen(); UpdateLayer(); return IntPtr.Zero; }
             if (msg == WM_MOUSEMOVE)
             {
                 if (!_trackingMouse) { TRACKMOUSEEVENT tme = new TRACKMOUSEEVENT { cbSize = (uint)Marshal.SizeOf(typeof(TRACKMOUSEEVENT)), dwFlags = TME_LEAVE, hwndTrack = hWnd }; TrackMouseEvent(ref tme); _trackingMouse = true; _isHovered = true; UpdateLayer(); }

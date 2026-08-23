@@ -180,6 +180,22 @@ namespace Kil0bitSystemMonitor.Models
         private bool _hoverPanels = true;
         private bool _avoidStartMenu = true;
 
+        // Screen capture
+        private string _captureFolder = "";
+        private string _captureNameTemplate = "MicaStats_{yyyy}-{MM}-{dd}_{HH}-{mm}-{ss}";
+        private string _captureFormat = "Png";
+        private int _captureJpegQuality = 92;
+        private bool _captureIncludeCursor;
+        private bool _captureCopyToClipboard = true;
+        private bool _captureAutoSave = true;
+        private bool _captureOpenEditor = true;
+        private int _captureDelaySeconds;
+        private string _captureRedactStyle = "Pixelate";
+        private bool _captureHotkeysEnabled = true;
+        private string _captureHotkeyRegion = "Ctrl+Shift+1";
+        private string _captureHotkeyWindow = "Ctrl+Shift+2";
+        private string _captureHotkeyFullScreen = "Ctrl+Shift+3";
+
         // Per-section label colors (null = use global LabelColorHex)
         private string? _netLabelColorHex = null;
         private string? _cpuRamLabelColorHex = null;
@@ -259,6 +275,40 @@ namespace Kil0bitSystemMonitor.Models
         /// then trailing modules, and everything returns once the space is back.
         /// </summary>
         public bool AvoidStartMenu { get => _avoidStartMenu; set { Set(ref _avoidStartMenu, value); } }
+
+        // ----- Screen capture ---------------------------------------------------------------
+
+        /// <summary>Where captures are saved. Empty means Pictures\MicaStats.</summary>
+        public string CaptureFolder { get => _captureFolder; set { Set(ref _captureFolder, value); } }
+
+        /// <summary>File-name template; see CaptureFileNamer for the tokens.</summary>
+        public string CaptureNameTemplate { get => _captureNameTemplate; set { Set(ref _captureNameTemplate, value); } }
+
+        /// <summary>"Png" or "Jpeg". Stored as text so the config file stays readable.</summary>
+        public string CaptureFormat { get => _captureFormat; set { Set(ref _captureFormat, value); } }
+
+        public int CaptureJpegQuality { get => _captureJpegQuality; set { Set(ref _captureJpegQuality, value); } }
+
+        /// <summary>Composite the mouse pointer into the capture.</summary>
+        public bool CaptureIncludeCursor { get => _captureIncludeCursor; set { Set(ref _captureIncludeCursor, value); } }
+
+        public bool CaptureCopyToClipboard { get => _captureCopyToClipboard; set { Set(ref _captureCopyToClipboard, value); } }
+
+        public bool CaptureAutoSave { get => _captureAutoSave; set { Set(ref _captureAutoSave, value); } }
+
+        /// <summary>Open the annotation editor after a capture instead of finishing silently.</summary>
+        public bool CaptureOpenEditor { get => _captureOpenEditor; set { Set(ref _captureOpenEditor, value); } }
+
+        /// <summary>Seconds to wait before capturing, for catching menus and hover states.</summary>
+        public int CaptureDelaySeconds { get => _captureDelaySeconds; set { Set(ref _captureDelaySeconds, value); } }
+
+        /// <summary>"Pixelate", "Blur" or "Solid".</summary>
+        public string CaptureRedactStyle { get => _captureRedactStyle; set { Set(ref _captureRedactStyle, value); } }
+
+        public bool CaptureHotkeysEnabled { get => _captureHotkeysEnabled; set { Set(ref _captureHotkeysEnabled, value); } }
+        public string CaptureHotkeyRegion { get => _captureHotkeyRegion; set { Set(ref _captureHotkeyRegion, value); } }
+        public string CaptureHotkeyWindow { get => _captureHotkeyWindow; set { Set(ref _captureHotkeyWindow, value); } }
+        public string CaptureHotkeyFullScreen { get => _captureHotkeyFullScreen; set { Set(ref _captureHotkeyFullScreen, value); } }
 
         // Per-section label colors (null/empty = inherit global LabelColorHex)
         public string? NetLabelColorHex { get => _netLabelColorHex; set { Set(ref _netLabelColorHex, value); } }

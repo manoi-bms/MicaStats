@@ -52,6 +52,8 @@ namespace Kil0bitSystemMonitor
                 
                 // Load heavy hardware lists in background to keep UI snappy
                 LoadHardwareDataAsync();
+
+                LoadCaptureSettings();
             }
             catch (Exception ex)
             {
@@ -445,6 +447,7 @@ namespace Kil0bitSystemMonitor
                 MonitoringSection.Visibility = Visibility.Collapsed;
                 AppearanceSection.Visibility = Visibility.Collapsed;
                 AboutSection.Visibility = Visibility.Collapsed;
+                CaptureSection.Visibility = Visibility.Collapsed;
 
                 switch (sectionName)
                 {
@@ -452,6 +455,7 @@ namespace Kil0bitSystemMonitor
                     case "General": GeneralSection.Visibility = Visibility.Visible; break;
                     case "Monitoring": MonitoringSection.Visibility = Visibility.Visible; break;
                     case "Appearance": AppearanceSection.Visibility = Visibility.Visible; break;
+                    case "Capture": CaptureSection.Visibility = Visibility.Visible; break;
                     case "About": AboutSection.Visibility = Visibility.Visible; break;
                 }
 
@@ -476,5 +480,168 @@ namespace Kil0bitSystemMonitor
         {
             App.Quit();
         }
+
+        // ----- Screen capture -------------------------------------------------------------
+
+        /// <summary>
+        /// Guards the capture handlers while the controls are being populated: assigning
+        /// IsOn / SelectedIndex raises the same events the user does, which would write the
+        /// defaults straight back over the saved configuration.
+        /// </summary>
+        private bool _loadingCapture;
+
+        private void LoadCaptureSettings()
+        {
+            _loadingCapture = true;
+            try
+            {
+                var cfg = _config.Config;
+                CaptureOpenEditorToggle.IsOn = cfg.CaptureOpenEditor;
+                CaptureClipboardToggle.IsOn = cfg.CaptureCopyToClipboard;
+                CaptureAutoSaveToggle.IsOn = cfg.CaptureAutoSave;
+                CaptureCursorToggle.IsOn = cfg.CaptureIncludeCursor;
+                CaptureHotkeysToggle.IsOn = cfg.CaptureHotkeysEnabled;
+
+                CaptureDelayBox.SelectedIndex = cfg.CaptureDelaySeconds switch
+                {
+                    3 => 1,
+                    5 => 2,
+                    10 => 3,
+                    _ => 0,
+                };
+                CaptureFormatBox.SelectedIndex =
+                    string.Equals(cfg.CaptureFormat, "Jpeg", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                CaptureRedactBox.SelectedIndex = cfg.CaptureRedactStyle switch
+                {
+                    "Blur" => 1,
+                    "Solid" => 2,
+                    _ => 0,
+                };
+                CaptureFolderBox.Text = string.IsNullOrWhiteSpace(cfg.CaptureFolder)
+                    ? Kil0bitSystemMonitor.Services.Capture.CaptureFileNamer.DefaultFolder
+                    : cfg.CaptureFolder;
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("capture", "Could not load capture settings", ex);
+            }
+            finally { _loadingCapture = false; }
+        }
+
+        private void OnCaptureSettingToggled(object sender, RoutedEventArgs e)
+        {
+            if (_loadingCapture) return;
+            var cfg = _config.Config;
+            cfg.CaptureOpenEditor = CaptureOpenEditorToggle.IsOn;
+            cfg.CaptureCopyToClipboard = CaptureClipboardToggle.IsOn;
+            cfg.CaptureAutoSave = CaptureAutoSaveToggle.IsOn;
+            cfg.CaptureIncludeCursor = CaptureCursorToggle.IsOn;
+            cfg.CaptureHotkeysEnabled = CaptureHotkeysToggle.IsOn;
+            _config.SaveConfig();
+        }
+
+        private void OnCaptureDelayChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingCapture) return;
+            _config.Config.CaptureDelaySeconds = CaptureDelayBox.SelectedIndex switch
+            {
+                1 => 3,
+                2 => 5,
+                3 => 10,
+                _ => 0,
+            };
+            _config.SaveConfig();
+        }
+
+        private void OnCaptureFormatChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingCapture) return;
+            _config.Config.CaptureFormat = CaptureFormatBox.SelectedIndex == 1 ? "Jpeg" : "Png";
+            _config.SaveConfig();
+        }
+
+        private void OnCaptureRedactChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingCapture) return;
+            _config.Config.CaptureRedactStyle = CaptureRedactBox.SelectedIndex switch
+            {
+                1 => "Blur",
+                2 => "Solid",
+                _ => "Pixelate",
+            };
+            _config.SaveConfig();
+        }
+
+        private void OnCaptureFolderChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loadingCapture) return;
+            _config.Config.CaptureFolder = CaptureFolderBox.Text?.Trim() ?? string.Empty;
+            _config.SaveConfig();
+        }
+
+        private void OnBrowseCaptureFolder(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                using var dialog = new System.Windows.Forms.FolderBrowserDialog
+                {
+                    Description = "Where should MicaStats save captures?",
+                    UseDescriptionForTitle = true,
+                    SelectedPath = CaptureFolderBox.Text,
+                };
+                if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+
+                CaptureFolderBox.Text = dialog.SelectedPath;
+                _config.Config.CaptureFolder = dialog.SelectedPath;
+                _config.SaveConfig();
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("capture", "Folder picker failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// Starts a capture from the settings window. The window is minimised first and restored
+        /// afterwards: otherwise the settings window itself covers whatever the user wanted to
+        /// photograph, and would sit in the middle of the frozen frame.
+        /// </summary>
+        private void StartCapture(Kil0bitSystemMonitor.Services.Capture.CaptureMode mode)
+        {
+            var config = _config.Config;
+            WindowState = WindowState.Minimized;
+
+            Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                // Let the minimise animation finish before freezing the screen.
+                await System.Threading.Tasks.Task.Delay(320);
+                Kil0bitSystemMonitor.Services.Capture.CaptureService.Run(mode, config);
+                WindowState = WindowState.Normal;
+                Activate();
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        private void OnCaptureRegion(object sender, RoutedEventArgs e) =>
+            StartCapture(Kil0bitSystemMonitor.Services.Capture.CaptureMode.Region);
+
+        private void OnCaptureWindow(object sender, RoutedEventArgs e) =>
+            StartCapture(Kil0bitSystemMonitor.Services.Capture.CaptureMode.ActiveWindow);
+
+        private void OnOpenCaptureFolder(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string folder = string.IsNullOrWhiteSpace(_config.Config.CaptureFolder)
+                    ? Kil0bitSystemMonitor.Services.Capture.CaptureFileNamer.DefaultFolder
+                    : _config.Config.CaptureFolder;
+                System.IO.Directory.CreateDirectory(folder);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("capture", "Could not open the captures folder", ex);
+            }
+        }
+
     }
 }

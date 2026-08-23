@@ -103,6 +103,50 @@ the panel stays available from the right-click menu as **Show Stats Panel**.
 
 ---
 
+## 📸 Screen Capture
+
+Right-click the overlay (or open **Settings → Capture**) for **Capture Region**, **Capture
+Window**, **Capture Screen** and **Capture All Screens**. The shortcuts work anywhere in
+Windows:
+
+| Shortcut | Captures |
+| --- | --- |
+| **Ctrl+Shift+1** | Region — pick a rectangle, window or screen |
+| **Ctrl+Shift+2** | The window currently in front |
+| **Ctrl+Shift+3** | The screen the pointer is on |
+
+### The region picker
+
+Choosing a region **freezes the screen first** and lets you select on that still image, so
+menus and tooltips stay open instead of vanishing when the picker takes focus, and the
+selection is exact even across monitors running different scaling.
+
+- **Drag** for a rectangle, or **click** a window or screen the picker highlights for you
+- A **magnifier** follows the pointer with a pixel grid, crosshair and the **hex colour**
+  under the cursor — it doubles as an eyedropper
+- Edges **snap** to window and monitor borders; hold nothing and it just works
+- **Arrow keys** nudge (Shift for 10px, Ctrl to resize), **M** magnifier, **S** snapping,
+  **A** everything, **Enter** accept, **Esc** or right-click cancel
+
+### The editor
+
+Unless you turn it off, each capture opens in an annotation editor:
+
+- **Arrow, rectangle, ellipse, line, pen, highlighter, text** and **numbered steps** for
+  walkthroughs
+- **Redact** to hide sensitive content — **pixelate**, **blur** or a **solid block**.
+  Redactions are baked into real pixels, so what is hidden on screen is hidden in the file
+- **Crop**, full **undo/redo** (Ctrl+Z / Ctrl+Y), colour swatches and stroke size
+- **Copy** (Ctrl+C), **Save** (Ctrl+S), **Save as…**, or **Pin** the capture on top of every
+  window — drag it, scale it with the wheel, Esc to dismiss
+
+Captures are copied to the clipboard as both PNG and DIB so they paste into anything, and are
+saved to **Pictures\MicaStats** with a timestamped name. Format, folder, naming, cursor
+inclusion, redaction style, a capture **delay** (3/5/10s, for catching menus) and the shortcuts
+are all in **Settings → Capture**.
+
+---
+
 ## 🔩 Hardware Inspector
 
 The **Hardware** button at the top of the stats panel opens a CPU-Z-style inspector with six tabs:

@@ -54,6 +54,11 @@
                         <ui:SymbolIcon Symbol="Edit" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Capture" Tag="Capture">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:FontIcon Glyph="&#xE722;" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
                 <ui:NavigationViewItem Content="About" Tag="About">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Help" />
@@ -773,6 +778,178 @@
                     </StackPanel>
 
                     <!-- About Section -->
+                    <!-- Screen capture -->
+                    <StackPanel x:Name="CaptureSection" Visibility="Collapsed">
+                        <TextBlock Text="Capture" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="Region, window and screen capture with an annotation editor. Shortcuts work anywhere in Windows." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <Button Content="Capture region now" Click="OnCaptureRegion" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="Capture window" Click="OnCaptureWindow" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="Open folder" Click="OnOpenCaptureFolder" Padding="14,7"/>
+                        </StackPanel>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE7A8;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Open the editor after capturing" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Mark up, redact and crop before saving. Turn off to copy or save straight away." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureOpenEditorToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE8C8;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Copy to clipboard" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Every capture is placed on the clipboard as PNG and DIB, so it pastes anywhere." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureClipboardToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE74E;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Save automatically" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Write each capture into the captures folder without asking." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureAutoSaveToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE962;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Include the mouse pointer" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Composite the cursor into the image, positioned by its true hotspot." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureCursorToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE916;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Delay before capturing" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Seconds to wait, for catching menus and hover states that close when clicked." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ComboBox Grid.Column="2" x:Name="CaptureDelayBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnCaptureDelayChanged">
+                                    <ComboBoxItem Content="None"/>
+                                    <ComboBoxItem Content="3 seconds"/>
+                                    <ComboBoxItem Content="5 seconds"/>
+                                    <ComboBoxItem Content="10 seconds"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xEB9F;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Image format" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="PNG keeps every pixel exact; JPEG makes smaller files." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ComboBox Grid.Column="2" x:Name="CaptureFormatBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnCaptureFormatChanged">
+                                    <ComboBoxItem Content="PNG"/>
+                                    <ComboBoxItem Content="JPEG"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xED1A;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Redaction style" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="How the redact tool hides sensitive content by default." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ComboBox Grid.Column="2" x:Name="CaptureRedactBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnCaptureRedactChanged">
+                                    <ComboBoxItem Content="Pixelate"/>
+                                    <ComboBoxItem Content="Blur"/>
+                                    <ComboBoxItem Content="Solid"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE765;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Keyboard shortcuts" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Ctrl+Shift+1 region, Ctrl+Shift+2 window, Ctrl+Shift+3 screen. A shortcut another application already owns is reported in the diagnostics log." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureHotkeysToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xED25;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Captures folder" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Where saved captures are written." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBox x:Name="CaptureFolderBox" Width="250" VerticalAlignment="Center" Margin="0,0,8,0" LostFocus="OnCaptureFolderChanged"/>
+                                    <Button Content="Browse" Click="OnBrowseCaptureFolder" Padding="12,6"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                    </StackPanel>
+
                     <StackPanel x:Name="AboutSection" Visibility="Collapsed">
                         <TextBlock Text="About" Foreground="#00CCFF" FontSize="20" Margin="0,0,0,16"/>
                         

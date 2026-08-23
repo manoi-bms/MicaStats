@@ -129,6 +129,14 @@ Click the overlay for the full dropdown: stacked User/System CPU history, one ri
   <img src="Assets/preview/stats-panel.png" width="420" alt="MicaStats stats panel" />
 </p>
 
+### Screen Capture
+
+Region, window and screen capture with global shortcuts (**Ctrl+Shift+1/2/3**). The region picker freezes the screen so menus stay open while you select, highlights windows for one-click capture, snaps to edges, and carries a magnifier with a pixel grid and hex-colour eyedropper. Every capture opens in an annotation editor: arrows, shapes, pen, highlighter, text, numbered steps, crop, undo/redo — and **redaction** (pixelate / blur / solid) baked into real pixels, so what is hidden on screen is hidden in the file.
+
+<p align="center">
+  <img src="Assets/preview/capture-editor.png" width="640" alt="MicaStats capture with annotations and redaction" />
+</p>
+
 ### Hardware Inspector
 
 The **Hardware** button on the stats panel opens a CPU-Z-style inspector. CPU identity comes straight from the CPUID instruction (vendor, family/model/stepping, instruction sets, hybrid P/E core split, per-level caches); mainboard, BIOS and per-module RAM detail come from the raw SMBIOS firmware tables; graphics adapters report driver and full VRAM; disks show bus (NVMe/SATA), kind (SSD/HDD) and health — under a live core-speed strip. **Save Report** writes it all to a text file.

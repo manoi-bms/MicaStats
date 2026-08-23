@@ -23,6 +23,7 @@ namespace Kil0bitSystemMonitor
         private Kil0bitSystemMonitor.Services.ConfigService? m_config;
         private Kil0bitSystemMonitor.Services.MetricsHistory? m_history;
         private static System.Threading.Mutex? s_mutex;
+        private Kil0bitSystemMonitor.Services.Capture.CaptureHotkeys? m_captureHotkeys;
         public static SettingsWindow? SettingsWindow { get; private set; }
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -99,6 +100,16 @@ namespace Kil0bitSystemMonitor
             Kil0bitSystemMonitor.Helpers.Win32Helper.SetAppIcon(dummyHWnd, iconPath);
             
             m_overlay = new OverlayWindow(viewModel, config, m_telemetry, m_history);
+
+            // System-wide capture shortcuts. Re-applied whenever the user edits them, so a new
+            // combination takes effect without a restart.
+            m_captureHotkeys = new Kil0bitSystemMonitor.Services.Capture.CaptureHotkeys(Dispatcher, () => m_config?.Config);
+            m_captureHotkeys.Apply();
+            config.Config.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName != null && e.PropertyName.StartsWith("CaptureHotkey", StringComparison.Ordinal))
+                    Dispatcher.BeginInvoke(new Action(() => m_captureHotkeys?.Apply()));
+            };
 
             string[] args = System.Environment.GetCommandLineArgs();
             bool isStartup = System.Linq.Enumerable.Contains(args, "--startup");
@@ -231,6 +242,7 @@ namespace Kil0bitSystemMonitor
         {
             try
             {
+                m_captureHotkeys?.Dispose();
                 m_overlay?.Dispose();
                 m_history?.Dispose();
                 m_telemetry?.Dispose();

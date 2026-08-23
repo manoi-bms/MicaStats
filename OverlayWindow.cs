@@ -1620,6 +1620,11 @@ namespace Kil0bitSystemMonitor
                     AppendMenu(hMenu, 0, 1001, "Settings");
                     AppendMenu(hMenu, 0, 1002, "Task Manager");
                     AppendMenu(hMenu, 0x0800, 0, null);
+                    AppendMenu(hMenu, 0, 1020, "Capture Region	Ctrl+Shift+1");
+                    AppendMenu(hMenu, 0, 1021, "Capture Window	Ctrl+Shift+2");
+                    AppendMenu(hMenu, 0, 1022, "Capture Screen	Ctrl+Shift+3");
+                    AppendMenu(hMenu, 0, 1023, "Capture All Screens");
+                    AppendMenu(hMenu, 0x0800, 0, null);
                     AppendMenu(hMenu, (_config.Config.AlwaysOnTop ? 0x0008U : 0), 1008, "Keep on Top");
                     AppendMenu(hMenu, (_config.Config.HideOnFullscreen ? 0x0008U : 0), 1009, "Hide in Fullscreen");
                     AppendMenu(hMenu, (_config.Config.LockPosition ? 0x0008U : 0), 1006, "Lock Position");
@@ -1658,6 +1663,12 @@ namespace Kil0bitSystemMonitor
                     else if (ch == 1008) { _config.Config.AlwaysOnTop = !_config.Config.AlwaysOnTop; _config.SaveConfig(); }
                     else if (ch == 1009) { _config.Config.HideOnFullscreen = !_config.Config.HideOnFullscreen; _config.SaveConfig(); }
                     else if (ch == 1002) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("taskmgr") { UseShellExecute = true });
+                    // Capture runs on the dispatcher: the selector is a WPF window, and this
+                    // handler is inside the native menu's message loop.
+                    else if (ch == 1020) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Region, _config.Config, _dispatcher);
+                    else if (ch == 1021) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.ActiveWindow, _config.Config, _dispatcher);
+                    else if (ch == 1022) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Screen, _config.Config, _dispatcher);
+                    else if (ch == 1023) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.AllScreens, _config.Config, _dispatcher);
                     else if (ch == 1003) _dispatcher.BeginInvoke(() => { App.OpenSettings(_viewModel, _config); App.SettingsWindow?.SelectSection("About"); });
                     else if (ch == 1004) _dispatcher.BeginInvoke(() => App.Quit());
                 }

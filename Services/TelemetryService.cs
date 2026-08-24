@@ -42,7 +42,19 @@ namespace Kil0bitSystemMonitor.Services
         private string _netIpAddress = "";
         private long _netBaseUp = -1, _netBaseDown = -1;
 
-        private readonly CpuTemperatureProvider _cpuTempProvider = new();
+        // Constructor order is preference order for the CPU die reading: Core Temp first
+        // because it is the most precise, then the other shared-memory publishers, then WMI.
+        // The zone and the adapters come last and never supply a die reading at all.
+        private readonly Sensors.SensorRegistry _sensors = new(new Sensors.ISensorSource[]
+        {
+            new Sensors.Publishers.CoreTempSource(),
+            new Sensors.Publishers.HwInfoSource(),
+            new Sensors.Publishers.AfterburnerSource(),
+            new Sensors.Publishers.AidaSource(),
+            new Sensors.Publishers.HardwareMonitorWmiSource(),
+            new Sensors.ThermalZoneSource(),
+            new Sensors.AdapterPerfSource(),
+        });
         private PerformanceCounterCategory? _gpuMemCategory;
         private DateTime _lastVramRead = DateTime.MinValue;
         private ulong _gpuVramUsed;
@@ -600,10 +612,14 @@ namespace Kil0bitSystemMonitor.Services
             metrics.DiskPercent = totalSpaceSize > 0 ? (1.0f - (float)totalFreeSpace / totalSpaceSize) * 100f : 0;
             metrics.DiskUsage = Math.Min(100f, maxActivity);
 
-            // Temperature. The CPU value comes from Core Temp / a hardware-monitor app when
-            // one is running (matching those tools exactly); -1 otherwise.
-            metrics.GpuTemperature = GetGpuTemperature();
-            metrics.CpuTemperature = _cpuTempProvider.Read();
+            // Temperature. One snapshot per tick, like the GPU Engine counters: every source
+            // is polled once and the readings are shared by the panel, the taskbar and the
+            // alerts. The CPU value comes only from a publisher (Core Temp, HWiNFO,
+            // Afterburner, AIDA64, LHM/OHM) and is -1 otherwise — the thermal zone and the
+            // GPUs also report Celsius, and neither tracks the die.
+            metrics.Sensors = _sensors.Snapshot();
+            metrics.CpuTemperature = (float)_sensors.CpuDieTemperature;
+            metrics.GpuTemperature = GetGpuTemperature(metrics.Sensors);
             metrics.GpuVramUsedBytes = ReadGpuVramUsed();
             FillBattery(metrics);
 
@@ -960,13 +976,13 @@ namespace Kil0bitSystemMonitor.Services
         private float _lastGpuTemp = -1;
         private DateTime _lastGpuTempTime = DateTime.MinValue;
 
-        private float GetGpuTemperature()
+        private float GetGpuTemperature(System.Collections.Generic.IReadOnlyList<Sensors.SensorReading> sensors)
         {
             try
             {
                 // Cache the result for 2 seconds
                 if ((DateTime.Now - _lastGpuTempTime).TotalSeconds < 2) return _lastGpuTemp;
-                
+
                 // Method 0: Cached SMI (Ultra-fast, uses already running process)
                 if (_isNvidiaSelected && _nvidiaTempValue > 0)
                 {
@@ -977,46 +993,21 @@ namespace Kil0bitSystemMonitor.Services
 
                 float temp = -1;
 
-                // Method 0.5: D3DKMT (Universal, Non-Admin, Works for AMD/NVIDIA/Intel)
-                if (_selectedGpuLuid != null && _selectedGpuLuid.Contains("_"))
+                // Method 0.5: the display kernel, via this tick's sensor snapshot. Universal
+                // and unelevated. This used to be an inline D3DKMT call with query type 35
+                // and a ~96-byte struct — both wrong, so it failed on every machine and fell
+                // through to nvidia-smi below, leaving AMD-only machines with no GPU
+                // temperature at all. AdapterPerfSource now does it with the measured type
+                // and layout, and reports every adapter rather than only the selected one.
+                //
+                // Note this does not retire the nvidia-smi reader: that subprocess also
+                // supplies NVIDIA utilization, which this block has no equivalent for. What
+                // changes is that GPU temperature no longer depends on it.
+                foreach (var reading in sensors)
                 {
-                    try
-                    {
-                        var parts = _selectedGpuLuid.Split('_');
-                        string lowStr = parts[0].Replace("0x", "");
-                        string highStr = parts[1].Replace("0x", "");
-                        
-                        var openLuid = new D3DKMT_OPENADAPTERFROMLUID();
-                        openLuid.AdapterLuid.LowPart = uint.Parse(lowStr, System.Globalization.NumberStyles.HexNumber);
-                        openLuid.AdapterLuid.HighPart = int.Parse(highStr, System.Globalization.NumberStyles.HexNumber);
-
-                        int openResult = D3DKMTOpenAdapterFromLuid(ref openLuid);
-                        if (openResult == 0)
-                        {
-                            var perfData = new D3DKMT_ADAPTER_PERFDATA();
-                            int structSize = Marshal.SizeOf(perfData);
-                            IntPtr pPerfData = Marshal.AllocHGlobal(structSize);
-                            Marshal.StructureToPtr(perfData, pPerfData, false);
-
-                            var queryInfo = new D3DKMT_QUERYADAPTERINFO();
-                            queryInfo.hAdapter = openLuid.hAdapter;
-                            queryInfo.Type = KMTQUERYADAPTERINFOTYPE.KMTQAITYPE_ADAPTERPERFDATA;
-                            queryInfo.pPrivateDriverData = pPerfData;
-                            queryInfo.PrivateDriverDataSize = (uint)structSize;
-
-                            if (D3DKMTQueryAdapterInfo(ref queryInfo) == 0)
-                            {
-                                var resultData = Marshal.PtrToStructure<D3DKMT_ADAPTER_PERFDATA>(pPerfData);
-                                if (resultData.Temperature > 0)
-                                    temp = resultData.Temperature / 10f; // It's in deci-Celsius
-                            }
-
-                            Marshal.FreeHGlobal(pPerfData);
-                            var closeAdapter = new D3DKMT_CLOSEADAPTER { hAdapter = openLuid.hAdapter };
-                            D3DKMTCloseAdapter(ref closeAdapter);
-                        }
-                    }
-                    catch { }
+                    if (reading.Category != Sensors.SensorCategory.Temperature) continue;
+                    if (!reading.Id.StartsWith("gpu.", StringComparison.Ordinal)) continue;
+                    if (reading.Value > temp) temp = (float)reading.Value;
                 }
 
                 if (temp > 0)
@@ -1211,67 +1202,11 @@ namespace Kil0bitSystemMonitor.Services
         }
 
 
-        // --- D3DKMT P/Invokes for Temperature ---
-        [StructLayout(LayoutKind.Sequential)]
-        private struct LUID
-        {
-            public uint LowPart;
-            public int HighPart;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct D3DKMT_OPENADAPTERFROMLUID
-        {
-            public LUID AdapterLuid;
-            public uint hAdapter;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct D3DKMT_CLOSEADAPTER
-        {
-            public uint hAdapter;
-        }
-
-        private enum KMTQUERYADAPTERINFOTYPE
-        {
-            KMTQAITYPE_ADAPTERPERFDATA = 35
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct D3DKMT_QUERYADAPTERINFO
-        {
-            public uint hAdapter;
-            public KMTQUERYADAPTERINFOTYPE Type;
-            public IntPtr pPrivateDriverData;
-            public uint PrivateDriverDataSize;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct D3DKMT_ADAPTER_PERFDATA
-        {
-            public uint ThermalThrottling;
-            public ulong CurrentFrequency;
-            public ulong MaxFrequency;
-            public ulong MaxFrequencyOC;
-            public ulong MemoryFrequency;
-            public ulong MemoryFrequencyOC;
-            public uint FanSpeed;
-            public uint Temperature; // Deci-Celsius
-            public uint Voltage;
-            public uint MemoryUsage;
-            public uint MaxMemoryUsage;
-            public ulong CoreClock;
-            public ulong MemoryClock;
-        }
-
-        [DllImport("gdi32.dll")]
-        private static extern int D3DKMTOpenAdapterFromLuid(ref D3DKMT_OPENADAPTERFROMLUID pData);
-
-        [DllImport("gdi32.dll")]
-        private static extern int D3DKMTQueryAdapterInfo(ref D3DKMT_QUERYADAPTERINFO pData);
-
-        [DllImport("gdi32.dll")]
-        private static extern int D3DKMTCloseAdapter(ref D3DKMT_CLOSEADAPTER pData);
+        // The D3DKMT interop that used to live here has moved to Services/Sensors/
+        // AdapterPerfData.cs, with the query type and struct layout corrected — 62 rather
+        // than 35, and a 64-byte block with Temperature at offset 56 rather than the
+        // ~96-byte layout declared here. Both were wrong, so nothing this file ever asked
+        // the display kernel succeeded.
 
         public void Dispose()
         {

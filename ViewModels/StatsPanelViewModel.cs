@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
+using Kil0bitSystemMonitor.Services.Sensors;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services;
 
@@ -52,6 +55,41 @@ namespace Kil0bitSystemMonitor.ViewModels
         }
 
         /// <summary>"62% used · 234 GB free".</summary>
+        public string Detail
+        {
+            get => _detail;
+            set { if (_detail != value) { _detail = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Detail))); } }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
+
+    /// <summary>
+    /// One line on the SENSORS card.
+    ///
+    /// <para>
+    /// Mirrors <see cref="DiskRow"/> rather than using the view model's own <c>Set</c> helper,
+    /// which is a private member of <see cref="StatsPanelViewModel"/> and returns void.
+    /// </para>
+    /// </summary>
+    public sealed class SensorRow : INotifyPropertyChanged
+    {
+        private string _value = "—";
+        private string _detail = "";
+
+        public SensorRow(string label) => Label = label;
+
+        /// <summary>What the reading is, e.g. "System (TZ01)".</summary>
+        public string Label { get; }
+
+        /// <summary>The formatted reading, or an em dash when unavailable.</summary>
+        public string Value
+        {
+            get => _value;
+            set { if (_value != value) { _value = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Value))); } }
+        }
+
+        /// <summary>Tooltip: provenance, or what would populate an absent reading.</summary>
         public string Detail
         {
             get => _detail;
@@ -138,6 +176,7 @@ namespace Kil0bitSystemMonitor.ViewModels
                 OnPropertyChanged(nameof(ShowNetworkCard));
                 OnPropertyChanged(nameof(ShowDisksCard));
                 OnPropertyChanged(nameof(ShowProcessesCard));
+                OnPropertyChanged(nameof(ShowSensorsCard));
                 OnPropertyChanged(nameof(ShowBatteryCard));
             }
         }
@@ -151,6 +190,15 @@ namespace Kil0bitSystemMonitor.ViewModels
 
         /// <summary>The process list is CPU-ranked, so it accompanies the CPU view and the full panel.</summary>
         public bool ShowProcessesCard => _filter is PanelSection.All or PanelSection.Cpu;
+
+        /// <summary>
+        /// Sensors accompany both the CPU and GPU views, because the taskbar's TMP module
+        /// belongs to whichever of them is actually supplying its reading — see
+        /// <c>OverlayWindow</c>, where the module's panel section follows the CPU when a die
+        /// temperature exists and the GPU when it does not. Hovering that module should reach
+        /// this card either way.
+        /// </summary>
+        public bool ShowSensorsCard => _filter is PanelSection.All or PanelSection.Cpu or PanelSection.Gpu;
 
         /// <summary>
         /// The battery card, shown only on a machine that has one. A desktop must not be told
@@ -351,6 +399,110 @@ namespace Kil0bitSystemMonitor.ViewModels
         /// <summary>Highest memory consumers, for the Memory card's mini list.</summary>
         public ObservableCollection<ProcessUsage> MemoryTopProcesses { get; } = new();
 
+        /// <summary>Rows of the SENSORS card, rebuilt when the set of readings changes.</summary>
+        public ObservableCollection<SensorRow> SensorRows { get; } = new();
+
+        /// <summary>
+        /// Rebuilds the SENSORS card. The CPU die row is always present even when nothing can
+        /// supply it — that absence is the single most common state and the thing users ask
+        /// about, so it gets a row and an explanation rather than being omitted.
+        /// </summary>
+        private void UpdateSensors(SystemMetrics m)
+        {
+            var rows = new List<(string Label, string Value, string Detail)>
+            {
+                BuildDieRow(m),
+            };
+
+            foreach (var r in m.Sensors)
+            {
+                if (r.IsCpuDie) continue;                       // already the row above
+                if (r.Category == SensorCategory.Throttle) continue;   // summarised below
+
+                rows.Add((r.Label, FormatSensorValue(r.Value, r.Unit), "Reported by " + r.Source));
+            }
+
+            // One summary line rather than a row per flag: "what is being limited" is a single
+            // question, and firmware often raises several flags for one cause.
+            var throttles = m.Sensors.Where(r => r.Category == SensorCategory.Throttle)
+                                     .Select(r => r.Label)
+                                     .Distinct()
+                                     .ToList();
+            rows.Add(("Throttling",
+                      throttles.Count == 0 ? "none" : string.Join(", ", throttles),
+                      throttles.Count == 0
+                          ? "Nothing is limiting the processor or GPUs right now"
+                          : "The firmware is currently limiting performance"));
+
+            // Rebuild only when the shape changes; otherwise update in place so WPF is not
+            // asked to re-create every row four times a second.
+            bool sameShape = SensorRows.Count == rows.Count;
+            if (sameShape)
+            {
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    if (SensorRows[i].Label == rows[i].Label) continue;
+                    sameShape = false;
+                    break;
+                }
+            }
+
+            if (!sameShape)
+            {
+                SensorRows.Clear();
+                foreach (var row in rows) SensorRows.Add(new SensorRow(row.Label));
+            }
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                SensorRows[i].Value = rows[i].Value;
+                SensorRows[i].Detail = rows[i].Detail;
+            }
+        }
+
+        private static (string, string, string) BuildDieRow(SystemMetrics m)
+        {
+            if (m.CpuTemperature > 0)
+            {
+                var die = m.Sensors.FirstOrDefault(r => r.IsCpuDie);
+                return ("CPU die",
+                        FormatSensorValue(m.CpuTemperature, "°C"),
+                        die != null ? "Reported by " + die.Source : "");
+            }
+
+            return ("CPU die", "—",
+                    "The CPU die sensor needs a kernel driver, which MicaStats does not install. "
+                    + "Run Core Temp, HWiNFO, MSI Afterburner, AIDA64 or LibreHardwareMonitor "
+                    + "and this fills in automatically.");
+        }
+
+        /// <summary>
+        /// Formats a reading for the card. A missing value is an em dash, never 0 — the whole
+        /// point of the card is that "no source" and "cold" must not look the same.
+        /// </summary>
+        public static string FormatSensorValue(double value, string unit)
+        {
+            if (value < 0) return "—";
+            string number = value.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            return unit == "RPM" ? number + " RPM" : number + unit;
+        }
+
+        /// <summary>
+        /// The CPU card header. An absent temperature shows an em dash rather than vanishing:
+        /// the old behaviour silently dropped the suffix, so the panel could not distinguish
+        /// "no source installed" from "this app does not report temperatures".
+        /// </summary>
+        public static string BuildCpuHeader(int usagePercent, float ghz, double dieCelsius)
+        {
+            var invariant = System.Globalization.CultureInfo.InvariantCulture;
+            string header = usagePercent.ToString(invariant) + "%";
+            if (ghz > 0) header += " · " + ghz.ToString("F2", invariant) + " GHz";
+            header += " · " + (dieCelsius > 0
+                ? ((int)dieCelsius).ToString(invariant) + "°"
+                : "—");
+            return header;
+        }
+
         public bool HasProcesses => TopProcesses.Count > 0;
         public bool HasMemoryProcesses => MemoryTopProcesses.Count > 0;
         public bool HasCores => Cores.Count > 0;
@@ -434,10 +586,8 @@ namespace Kil0bitSystemMonitor.ViewModels
 
             // CPU
             CpuValueText = $"{(int)m.CpuUsage}%";
-            string header = $"{(int)m.CpuUsage}%";
-            if (m.CpuFrequencyGhz > 0) header += $" · {m.CpuFrequencyGhz:F2} GHz";
-            if (m.CpuTemperature > 0) header += $" · {(int)m.CpuTemperature}°";
-            CpuHeaderText = header;
+            CpuHeaderText = BuildCpuHeader((int)m.CpuUsage, m.CpuFrequencyGhz, m.CpuTemperature);
+            UpdateSensors(m);
             bool split = _history.CpuSystem.Availability == Availability.Value;
             HasCpuSplit = split;
             if (split)

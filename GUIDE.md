@@ -399,6 +399,29 @@ A: This happens because the app is a local, independent release. Click **"More I
 **Q: My network speed shows 0 KB/s.**  
 A: In **Monitoring** settings, select the correct active Network Adapter from the dropdown menu.
 
+**Q: The CPU temperature shows a dash.**  
+A: That means no source can supply it, and it is the expected state on a clean machine. The
+CPU die sensors (AMD Tctl, Intel DTS) are reachable only from kernel mode, so every tool that
+shows them installs a kernel driver. MicaStats does not — it runs unelevated and installs
+nothing — so it reads what another tool has already published.
+
+Run any one of **Core Temp**, **HWiNFO**, **MSI Afterburner**, **AIDA64**,
+**LibreHardwareMonitor** or **OpenHardwareMonitor** and the reading fills in on its own within
+a few seconds; there is nothing to configure in MicaStats. Two of them need a setting of their
+own: HWiNFO requires *Shared Memory Support* to be enabled, and on current free builds that is
+time-limited per session, so the reading can stop after a while and return when HWiNFO is
+restarted. AIDA64 requires shared memory to be switched on in its preferences.
+
+The **SENSORS** card shows everything that *is* readable without any of that — the ACPI
+thermal zone, each GPU's temperature and power draw, and whether the firmware is limiting
+performance. Hover any row for its source.
+
+**Q: Why is the "System" temperature different from my CPU temperature?**  
+A: Because it is not the CPU. It is the ACPI thermal zone, which sits downstream of the fan
+control loop and reports how the cooling system is responding. Under a sustained load it can
+even fall while the processor heats up, as the fans ramp. It is shown because it is real and
+it is what the cooling system reacts to — not as a stand-in for the die.
+
 ---
 
 ## 🌐 Community & Support

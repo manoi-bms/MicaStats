@@ -1180,7 +1180,11 @@ namespace Kil0bitSystemMonitor
             {
                 // CPU package first (that is what a taskbar temperature means to people, and it
                 // matches Core Temp when it is running), GPU sensor as the fallback. The hover
-                // dropdown follows the source.
+                // dropdown follows the source, which is how the substitution stays honest:
+                // one number in the strip cannot say which sensor it came from, but the panel
+                // it opens can. The SENSORS card is visible from both the CPU and GPU views and
+                // names the provenance of every reading, so a GPU number shown here is never
+                // more than one hover away from being identified as one.
                 //
                 // Deliberately LAST: column order is drop priority under Start-menu avoidance,
                 // and temperature is the strip's most duplicated reading (the CPU hover header

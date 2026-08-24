@@ -52,9 +52,16 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 * **GPU** — Graphics processor load, VRAM, and available temperature information
 * **Network** — Real-time upload and download throughput, with adapter, IP address, and session totals
 * **Disk** — Activity monitoring for one or more storage devices
-* **Temperature** — CPU package temperature, read from Core Temp's shared memory or LibreHardwareMonitor/OpenHardwareMonitor when available
+* **Temperature** — CPU package temperature, read from Core Temp, HWiNFO, MSI Afterburner, AIDA64, LibreHardwareMonitor or OpenHardwareMonitor when one of them is running
+* **Sensors** — Every thermal, fan, power and throttle reading MicaStats can obtain: the ACPI thermal zone, each GPU's temperature and power draw, and whether the firmware is currently limiting performance
 
 Sensor availability may vary depending on the installed hardware, device drivers, Windows performance counters, and system configuration. Anything that cannot be read honestly shows a dash or a flat baseline rather than a misleading zero.
+
+#### A note on CPU temperature
+
+The CPU die sensors — AMD's Tctl and Intel's DTS — are only reachable from kernel mode. Every tool that displays them installs a kernel driver to get there. MicaStats deliberately does not: it runs without administrator rights and installs no driver, so it reads what one of the tools above has already published. If none is running, the CPU die row shows a dash.
+
+MicaStats will not substitute a different sensor for it. The ACPI thermal zone is shown separately and labelled *System*, because measurement showed it moving in the opposite direction to the processor under sustained load — it sits downstream of the fan control loop and reports that loop's response rather than the silicon's state. Presenting it as a CPU temperature would be worse than presenting nothing.
 
 ### Hardware inspector
 
@@ -574,9 +581,16 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 * **GPU** — โหลดการ์ดจอ, VRAM และอุณหภูมิ (ถ้าอ่านได้)
 * **เครือข่าย** — ความเร็วอัปโหลด/ดาวน์โหลดแบบเรียลไทม์ พร้อมชื่ออะแดปเตอร์ หมายเลข IP และยอดรวมของเซสชัน
 * **ดิสก์** — ดูกิจกรรมของไดรฟ์ได้พร้อมกันหลายตัว
-* **อุณหภูมิ** — อุณหภูมิ CPU อ่านจากหน่วยความจำร่วมของ Core Temp หรือจาก LibreHardwareMonitor/OpenHardwareMonitor เมื่อมีให้ใช้
+* **อุณหภูมิ** — อุณหภูมิ CPU อ่านจาก Core Temp, HWiNFO, MSI Afterburner, AIDA64, LibreHardwareMonitor หรือ OpenHardwareMonitor ตัวใดตัวหนึ่งที่กำลังทำงานอยู่
+* **เซ็นเซอร์** — ทุกค่าที่ MicaStats อ่านได้ทั้งอุณหภูมิ พัดลม กำลังไฟ และสถานะการลดความเร็ว ได้แก่ โซนความร้อน ACPI, อุณหภูมิและกำลังไฟของการ์ดจอแต่ละตัว และเฟิร์มแวร์กำลังจำกัดประสิทธิภาพอยู่หรือไม่
 
 เซ็นเซอร์ที่อ่านได้ขึ้นอยู่กับฮาร์ดแวร์ ไดรเวอร์ ตัวนับประสิทธิภาพของ Windows และการตั้งค่าของเครื่อง ค่าใดที่อ่านไม่ได้จะแสดงเป็นขีด (—) หรือเส้นฐานราบตามจริง ไม่แสดงเลขศูนย์ที่ทำให้เข้าใจผิด
+
+#### หมายเหตุเรื่องอุณหภูมิ CPU
+
+เซ็นเซอร์อุณหภูมิบนไดของ CPU ทั้ง Tctl ของ AMD และ DTS ของ Intel อ่านได้จากโหมดเคอร์เนลเท่านั้น เครื่องมือทุกตัวที่แสดงค่านี้จึงต้องติดตั้งไดรเวอร์เคอร์เนล MicaStats เลือกที่จะไม่ทำเช่นนั้น เพราะทำงานโดยไม่ต้องใช้สิทธิ์ผู้ดูแลระบบและไม่ติดตั้งไดรเวอร์ใด ๆ จึงอ่านค่าที่เครื่องมือข้างต้นเผยแพร่ไว้แล้ว หากไม่มีตัวใดทำงานอยู่ แถว CPU die จะแสดงเป็นขีด (—)
+
+MicaStats จะไม่นำเซ็นเซอร์ตัวอื่นมาแทน โซนความร้อน ACPI จะแสดงแยกไว้และระบุว่าเป็น *System* เพราะจากการวัดพบว่าค่านี้เคลื่อนไปในทิศทางตรงข้ามกับตัวประมวลผลเมื่อรับภาระต่อเนื่อง ค่านี้อยู่ถัดจากวงควบคุมพัดลมและรายงานการตอบสนองของพัดลม ไม่ใช่สภาพของตัวชิป การนำมาแสดงเป็นอุณหภูมิ CPU จึงแย่กว่าการไม่แสดงอะไรเลย
 
 ### เครื่องมือตรวจสอบฮาร์ดแวร์
 

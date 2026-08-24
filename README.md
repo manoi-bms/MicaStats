@@ -54,8 +54,19 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 * **Disk** — Activity monitoring for one or more storage devices
 * **Temperature** — CPU package temperature, read from Core Temp, HWiNFO, MSI Afterburner, AIDA64, LibreHardwareMonitor or OpenHardwareMonitor when one of them is running
 * **Sensors** — Every thermal, fan, power and throttle reading MicaStats can obtain, shown beside the load that produced it: the die temperature and ACPI thermal zone in the CPU card, and every adapter's temperature and power draw in the GPU card, each with whether the firmware is currently limiting it
+* **Processes** — A searchable, sortable list of every running process with live CPU, memory and disk figures, and an End task that says what actually happened
 
 Sensor availability may vary depending on the installed hardware, device drivers, Windows performance counters, and system configuration. Anything that cannot be read honestly shows a dash or a flat baseline rather than a misleading zero.
+
+#### The process list
+
+Open it from **Processes** on the CPU card. It exists because Windows Task Manager is often unusable exactly when it is needed — slow to open, showing a frozen or empty list, or making the stutter worse once it is up.
+
+MicaStats has an advantage there: it is already running, and it already reads every process on the system through a single kernel call every two seconds. The window performs no sampling of its own and makes no per-process queries, so it opens from data already in memory and stays responsive on a machine that cannot open Task Manager at all. On a workstation running around 1,300 processes that difference is the whole feature.
+
+**End task** terminates immediately rather than asking a window to close politely, which is why it works on applications that have stopped responding — and it always reports the outcome, so a kill that did nothing never looks like one that worked. MicaStats runs without administrator rights, so ending a process that has more of them offers *Retry as administrator*: that asks for consent once, ends that single process, and exits. MicaStats itself never holds those rights.
+
+It will not end `csrss.exe`, `wininit.exe`, `services.exe`, `smss.exe`, `lsass.exe` or `winlogon.exe`. Terminating any of them stops Windows instantly, so this refuses rather than asking you to confirm.
 
 #### A note on CPU temperature
 
@@ -583,8 +594,19 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 * **ดิสก์** — ดูกิจกรรมของไดรฟ์ได้พร้อมกันหลายตัว
 * **อุณหภูมิ** — อุณหภูมิ CPU อ่านจาก Core Temp, HWiNFO, MSI Afterburner, AIDA64, LibreHardwareMonitor หรือ OpenHardwareMonitor ตัวใดตัวหนึ่งที่กำลังทำงานอยู่
 * **เซ็นเซอร์** — ทุกค่าที่ MicaStats อ่านได้ทั้งอุณหภูมิ พัดลม กำลังไฟ และสถานะการลดความเร็ว แสดงไว้ข้างภาระงานที่ทำให้เกิดค่านั้น โดยอุณหภูมิไดของ CPU และโซนความร้อน ACPI อยู่ในการ์ด CPU ส่วนอุณหภูมิและกำลังไฟของการ์ดจอทุกตัวอยู่ในการ์ด GPU พร้อมระบุว่าเฟิร์มแวร์กำลังจำกัดประสิทธิภาพอยู่หรือไม่
+* **โปรเซส** — รายการโปรเซสที่กำลังทำงานทั้งหมด ค้นหาและเรียงลำดับได้ พร้อมค่า CPU หน่วยความจำ และดิสก์แบบสด และปุ่ม End task ที่บอกผลลัพธ์จริงเสมอ
 
 เซ็นเซอร์ที่อ่านได้ขึ้นอยู่กับฮาร์ดแวร์ ไดรเวอร์ ตัวนับประสิทธิภาพของ Windows และการตั้งค่าของเครื่อง ค่าใดที่อ่านไม่ได้จะแสดงเป็นขีด (—) หรือเส้นฐานราบตามจริง ไม่แสดงเลขศูนย์ที่ทำให้เข้าใจผิด
+
+#### รายการโปรเซส
+
+เปิดได้จากปุ่ม **Processes** บนการ์ด CPU มีขึ้นเพราะ Task Manager ของ Windows มักใช้งานไม่ได้ในจังหวะที่ต้องใช้พอดี ทั้งเปิดช้า แสดงรายการค้างหรือว่างเปล่า หรือทำให้เครื่องกระตุกหนักขึ้นหลังเปิด
+
+MicaStats ได้เปรียบตรงที่ทำงานอยู่ก่อนแล้ว และอ่านข้อมูลของทุกโปรเซสผ่านการเรียกเคอร์เนลครั้งเดียวทุกสองวินาทีอยู่แล้ว หน้าต่างนี้จึงไม่เก็บข้อมูลเพิ่มเองและไม่สอบถามข้อมูลรายโปรเซส เปิดจากข้อมูลที่มีอยู่ในหน่วยความจำและยังตอบสนองได้บนเครื่องที่เปิด Task Manager ไม่ขึ้นเลย บนเครื่องที่มีโปรเซสราว 1,300 ตัว ความต่างตรงนี้คือหัวใจของฟีเจอร์
+
+**End task** สั่งปิดทันทีแทนการขอให้หน้าต่างปิดตัวเองอย่างสุภาพ จึงใช้ได้กับโปรแกรมที่ค้างไปแล้ว และจะรายงานผลลัพธ์เสมอ การสั่งปิดที่ไม่เกิดอะไรขึ้นจะไม่มีทางดูเหมือนสำเร็จ MicaStats ทำงานโดยไม่ใช้สิทธิ์ผู้ดูแลระบบ หากโปรเซสเป้าหมายมีสิทธิ์สูงกว่าจะมีปุ่ม *Retry as administrator* ซึ่งขอความยินยอมหนึ่งครั้ง ปิดโปรเซสนั้นตัวเดียว แล้วจบการทำงาน ตัว MicaStats เองไม่เคยถือสิทธิ์นั้นไว้
+
+จะไม่ปิด `csrss.exe`, `wininit.exe`, `services.exe`, `smss.exe`, `lsass.exe` และ `winlogon.exe` เพราะการปิดตัวใดตัวหนึ่งทำให้ Windows หยุดทำงานทันที จึงปฏิเสธไปเลยแทนการถามยืนยัน
 
 #### หมายเหตุเรื่องอุณหภูมิ CPU
 

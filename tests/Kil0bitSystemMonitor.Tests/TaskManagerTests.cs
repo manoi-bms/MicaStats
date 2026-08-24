@@ -40,5 +40,38 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.NotNull(sampler.AllProcesses);
             Assert.Empty(sampler.AllProcesses);
         }
+
+        // ------------------------------------------------------- critical process guard
+
+        /// <summary>
+        /// Terminating any of these stops Windows immediately — a bugcheck, not an error
+        /// dialog. The match has to be exact in both directions: a near-miss that fails to
+        /// match kills the machine, and a near-miss that matches wrongly blocks a legitimate
+        /// kill of an unrelated program that happens to be named similarly.
+        /// </summary>
+        [Theory]
+        [InlineData("csrss.exe", true)]
+        [InlineData("wininit.exe", true)]
+        [InlineData("services.exe", true)]
+        [InlineData("smss.exe", true)]
+        [InlineData("lsass.exe", true)]
+        [InlineData("winlogon.exe", true)]
+        [InlineData("CSRSS.EXE", true)]        // the kernel reports whatever case it likes
+        [InlineData("Csrss.exe", true)]
+        [InlineData("csrss.exe.bak", false)]   // not the real one
+        [InlineData("mycsrss.exe", false)]
+        [InlineData("csrss", false)]           // no extension is not the image name
+        [InlineData("chrome.exe", false)]
+        [InlineData("", false)]
+        public void Critical_processes_are_identified_exactly(string name, bool critical)
+        {
+            Assert.Equal(critical, ProcessControl.IsCriticalProcess(name));
+        }
+
+        [Fact]
+        public void A_null_process_name_is_not_critical_and_does_not_throw()
+        {
+            Assert.False(ProcessControl.IsCriticalProcess(null!));
+        }
     }
 }

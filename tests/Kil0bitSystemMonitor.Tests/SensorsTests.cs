@@ -70,5 +70,41 @@ namespace Kil0bitSystemMonitor.Tests
                     Assert.InRange(r.Value, 1.0, 150.0);
             }
         }
+
+        [Fact]
+        public void Deci_kelvin_converts_to_celsius()
+        {
+            // 3432 dK was the live reading when this was measured: 343.2K = 70.05C.
+            Assert.Equal(70.05, ThermalZoneSource.DeciKelvinToCelsius(3432), 2);
+            Assert.Equal(0.0, ThermalZoneSource.DeciKelvinToCelsius(2731.5), 1);
+        }
+
+        /// <summary>
+        /// The zone reads like a CPU temperature and is not one. Under two load ramps from
+        /// different thermal starting points it rose 64°C to 71°C from cold with the fans
+        /// idle, then fell 72°C to 69°C from warm with the fans already running — the same
+        /// 24-thread load, opposite directions, because it sits downstream of the fan control
+        /// loop. Anything that lets it reach the CPU readout is a bug.
+        /// </summary>
+        [Fact]
+        public void The_zone_never_claims_to_be_the_cpu_die()
+        {
+            foreach (var r in new ThermalZoneSource().Read()) Assert.False(r.IsCpuDie);
+        }
+
+        /// <summary>
+        /// The test above passes vacuously if Read() swallows an exception and returns
+        /// nothing, which is exactly what a mistyped counter name would do. On a machine that
+        /// has a zone, insist a reading actually comes out.
+        /// </summary>
+        [Fact]
+        public void A_machine_with_a_thermal_zone_actually_produces_a_reading()
+        {
+            if (!System.Diagnostics.PerformanceCounterCategory.Exists("Thermal Zone Information"))
+                return;   // no zone on this machine — nothing to prove
+
+            var readings = new ThermalZoneSource().Read();
+            Assert.Contains(readings, r => r.Category == SensorCategory.Temperature);
+        }
     }
 }

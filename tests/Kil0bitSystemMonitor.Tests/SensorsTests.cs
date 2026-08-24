@@ -35,5 +35,40 @@ namespace Kil0bitSystemMonitor.Tests
                                       71.0, "°C", "Core Temp", IsCpuDie: true);
             Assert.True(r.IsCpuDie);
         }
+
+        /// <summary>
+        /// These two assertions are why the shipped D3DKMT path failed silently for so long.
+        /// The kernel validates PrivateDriverDataSize, and a wrong size is rejected with the
+        /// same STATUS_INVALID_PARAMETER as a wrong query type — so a layout that merely looks
+        /// plausible is indistinguishable from a wrong constant. Both were wrong at once.
+        /// </summary>
+        [Fact]
+        public void The_adapter_perf_block_matches_the_measured_layout()
+        {
+            Assert.Equal(64, Marshal.SizeOf<D3DKMT_ADAPTER_PERFDATA>());
+            Assert.Equal(56, Marshal.OffsetOf<D3DKMT_ADAPTER_PERFDATA>(
+                nameof(D3DKMT_ADAPTER_PERFDATA.Temperature)).ToInt32());
+            Assert.Equal(48, Marshal.OffsetOf<D3DKMT_ADAPTER_PERFDATA>(
+                nameof(D3DKMT_ADAPTER_PERFDATA.FanRPM)).ToInt32());
+            Assert.Equal(62, AdapterPerfData.QueryTypePerfData);
+        }
+
+        /// <summary>
+        /// Runs on whatever hardware is present, including none. The contract is that the
+        /// source never throws and never invents a reading — a driver that fills only some
+        /// fields must not produce a confident 0°C.
+        /// </summary>
+        [Fact]
+        public void The_adapter_source_never_throws_and_reports_only_plausible_temperatures()
+        {
+            var readings = new AdapterPerfSource().Read();
+
+            foreach (var r in readings)
+            {
+                Assert.False(r.IsCpuDie);
+                if (r.Category == SensorCategory.Temperature)
+                    Assert.InRange(r.Value, 1.0, 150.0);
+            }
+        }
     }
 }

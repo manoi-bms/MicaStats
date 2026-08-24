@@ -150,5 +150,83 @@ namespace Kil0bitSystemMonitor.Tests
             BitConverter.GetBytes(9999u).CopyTo(block, 1536);
             Assert.Equal(-1, CoreTempSource.DecodeHottest(block), 1);
         }
+
+        // ------------------------------------------------------------------ HWiNFO
+
+        /// <summary>Builds a synthetic block, so the decoder is testable with HWiNFO absent.</summary>
+        private static byte[] HwInfoBlock(params (uint type, string label, double value)[] items)
+        {
+            const int headerSize = 48, elementSize = 320;
+            var block = new byte[headerSize + elementSize * items.Length];
+
+            BitConverter.GetBytes(0x53695748u).CopyTo(block, 0);
+            BitConverter.GetBytes((uint)headerSize).CopyTo(block, 36);   // offset of readings
+            BitConverter.GetBytes((uint)elementSize).CopyTo(block, 40);  // stride
+            BitConverter.GetBytes((uint)items.Length).CopyTo(block, 44);
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                int at = headerSize + i * elementSize;
+                BitConverter.GetBytes(items[i].type).CopyTo(block, at);
+                System.Text.Encoding.ASCII.GetBytes(items[i].label).CopyTo(block, at + 12);
+                BitConverter.GetBytes(items[i].value).CopyTo(block, at + 288);
+            }
+            return block;
+        }
+
+        [Fact]
+        public void Hwinfo_block_picks_the_hottest_cpu_temperature()
+        {
+            var block = HwInfoBlock(
+                (1u, "CPU Package", 71.0),
+                (1u, "CPU Core Max", 78.5),
+                (1u, "GPU Temperature", 91.0),   // hotter, but not the CPU
+                (3u, "CPU Fan", 2400.0));        // a fan, not a temperature
+
+            Assert.Equal(78.5, HwInfoSource.DecodeCpuTemperature(block), 1);
+        }
+
+        [Fact]
+        public void Hwinfo_block_with_a_wrong_signature_is_refused()
+        {
+            var block = HwInfoBlock((1u, "CPU Package", 71.0));
+            BitConverter.GetBytes(0xDEADBEEFu).CopyTo(block, 0);
+
+            Assert.Equal(-1, HwInfoSource.DecodeCpuTemperature(block), 1);
+        }
+
+        [Fact]
+        public void Hwinfo_block_with_no_cpu_temperature_returns_unavailable()
+        {
+            Assert.Equal(-1, HwInfoSource.DecodeCpuTemperature(
+                HwInfoBlock((1u, "GPU Temperature", 91.0))), 1);
+        }
+
+        /// <summary>
+        /// The header declares its own stride, and HWiNFO documents reading it rather than
+        /// assuming the element size. A revision that grows the element must not shift every
+        /// field read after the first.
+        /// </summary>
+        [Fact]
+        public void Hwinfo_decoder_honours_a_larger_stride_declared_by_the_header()
+        {
+            const int headerSize = 48, elementSize = 384;   // wider than today's 320
+            var block = new byte[headerSize + elementSize * 2];
+
+            BitConverter.GetBytes(0x53695748u).CopyTo(block, 0);
+            BitConverter.GetBytes((uint)headerSize).CopyTo(block, 36);
+            BitConverter.GetBytes((uint)elementSize).CopyTo(block, 40);
+            BitConverter.GetBytes(2u).CopyTo(block, 44);
+
+            foreach (var (i, label, value) in new[] { (0, "CPU Package", 55.0), (1, "CPU Core Max", 81.0) })
+            {
+                int at = headerSize + i * elementSize;
+                BitConverter.GetBytes(1u).CopyTo(block, at);
+                System.Text.Encoding.ASCII.GetBytes(label).CopyTo(block, at + 12);
+                BitConverter.GetBytes(value).CopyTo(block, at + 288);
+            }
+
+            Assert.Equal(81.0, HwInfoSource.DecodeCpuTemperature(block), 1);
+        }
     }
 }

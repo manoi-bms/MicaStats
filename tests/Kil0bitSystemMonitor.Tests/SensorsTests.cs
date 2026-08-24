@@ -228,5 +228,84 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(81.0, HwInfoSource.DecodeCpuTemperature(block), 1);
         }
+
+        // ------------------------------------------------------------- MSI Afterburner
+
+        private static byte[] AfterburnerBlock(params (string name, float value)[] items)
+        {
+            const int headerSize = 32, entrySize = 1324;
+            var block = new byte[headerSize + entrySize * items.Length];
+
+            BitConverter.GetBytes(0x4D48414Du).CopyTo(block, 0);
+            BitConverter.GetBytes((uint)headerSize).CopyTo(block, 8);
+            BitConverter.GetBytes((uint)items.Length).CopyTo(block, 12);
+            BitConverter.GetBytes((uint)entrySize).CopyTo(block, 16);
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                int at = headerSize + i * entrySize;
+                System.Text.Encoding.ASCII.GetBytes(items[i].name).CopyTo(block, at);
+                BitConverter.GetBytes(items[i].value).CopyTo(block, at + 552);
+            }
+            return block;
+        }
+
+        [Fact]
+        public void Afterburner_block_picks_the_hottest_cpu_temperature()
+        {
+            var block = AfterburnerBlock(
+                ("CPU temperature", 64f),
+                ("CPU1 temperature", 72f),
+                ("GPU temperature", 88f),
+                ("CPU usage", 41f));
+
+            Assert.Equal(72.0, AfterburnerSource.DecodeCpuTemperature(block), 1);
+        }
+
+        [Fact]
+        public void Afterburner_block_with_a_wrong_signature_is_refused()
+        {
+            var block = AfterburnerBlock(("CPU temperature", 64f));
+            BitConverter.GetBytes(0u).CopyTo(block, 0);
+
+            Assert.Equal(-1, AfterburnerSource.DecodeCpuTemperature(block), 1);
+        }
+
+        // --------------------------------------------------------------------- AIDA64
+
+        [Fact]
+        public void Aida_fragment_picks_the_hottest_cpu_temperature()
+        {
+            const string xml =
+                "<temp><id>TCPU</id><label>CPU</label><value>66</value></temp>" +
+                "<temp><id>TCPUPKG</id><label>CPU Package</label><value>71</value></temp>" +
+                "<temp><id>TGPU1</id><label>GPU Diode</label><value>84</value></temp>";
+
+            Assert.Equal(71.0, AidaSource.DecodeCpuTemperature(xml), 1);
+        }
+
+        [Fact]
+        public void Aida_fragment_that_is_malformed_returns_unavailable()
+        {
+            Assert.Equal(-1, AidaSource.DecodeCpuTemperature("<temp><label>CPU"), 1);
+        }
+
+        [Fact]
+        public void Aida_fragment_with_no_cpu_temperature_returns_unavailable()
+        {
+            Assert.Equal(-1, AidaSource.DecodeCpuTemperature(
+                "<temp><id>TGPU1</id><label>GPU Diode</label><value>84</value></temp>"), 1);
+        }
+
+        /// <summary>
+        /// AIDA64 writes decimals with whatever separator its locale uses, and this machine
+        /// runs a Thai locale. Parsing must be invariant or a comma becomes a parse failure.
+        /// </summary>
+        [Fact]
+        public void Aida_fragment_parses_a_decimal_invariantly()
+        {
+            Assert.Equal(71.5, AidaSource.DecodeCpuTemperature(
+                "<temp><id>TCPU</id><label>CPU</label><value>71.5</value></temp>"), 1);
+        }
     }
 }

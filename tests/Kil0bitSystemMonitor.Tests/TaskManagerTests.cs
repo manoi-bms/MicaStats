@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Kil0bitSystemMonitor.Services;
+using Kil0bitSystemMonitor.ViewModels;
 using Xunit;
 
 namespace Kil0bitSystemMonitor.Tests
@@ -132,6 +133,124 @@ namespace Kil0bitSystemMonitor.Tests
         public void Null_arguments_are_refused_without_throwing()
         {
             Assert.False(KillArguments.TryParse(null!, out _, out _));
+        }
+
+        // ---------------------------------------------------------------- presentation
+
+        private static ProcessUsage P(string name, int pid, float cpu, long ram, long disk = 0) =>
+            new(name, pid, cpu, ram) { DiskReadBytesPerSec = disk };
+
+        [Fact]
+        public void Filtering_matches_a_name_case_insensitively()
+        {
+            var all = new[] { P("chrome.exe", 1, 5, 100), P("Code.exe", 2, 3, 200), P("dwm.exe", 3, 1, 50) };
+
+            var hit = TaskManagerViewModel.Filter(all, "CHROME");
+
+            Assert.Single(hit);
+            Assert.Equal(1, hit[0].Pid);
+        }
+
+        /// <summary>
+        /// Typing a number searches the pid, because someone who knows the pid usually knows
+        /// only the pid. Exact rather than substring: searching 42 must not bury the answer
+        /// under 420, 1042 and 4231.
+        /// </summary>
+        [Fact]
+        public void Filtering_by_a_number_matches_the_pid_exactly()
+        {
+            var all = new[] { P("a.exe", 42, 0, 0), P("b.exe", 420, 0, 0), P("c.exe", 1042, 0, 0) };
+
+            var hit = TaskManagerViewModel.Filter(all, "42");
+
+            Assert.Single(hit);
+            Assert.Equal(42, hit[0].Pid);
+        }
+
+        [Fact]
+        public void An_empty_filter_keeps_everything()
+        {
+            var all = new[] { P("a.exe", 1, 0, 0), P("b.exe", 2, 0, 0) };
+
+            Assert.Equal(2, TaskManagerViewModel.Filter(all, "").Count);
+            Assert.Equal(2, TaskManagerViewModel.Filter(all, "   ").Count);
+            Assert.Equal(2, TaskManagerViewModel.Filter(all, null!).Count);
+        }
+
+        [Fact]
+        public void Sorting_orders_by_the_chosen_column_in_both_directions()
+        {
+            var rows = new List<ProcessUsage>
+            {
+                P("b.exe", 2, 5f, 300, 10),
+                P("a.exe", 1, 9f, 100, 30),
+                P("c.exe", 3, 1f, 200, 20),
+            };
+
+            TaskManagerViewModel.Sort(rows, ProcessSortColumn.Cpu, descending: true);
+            Assert.Equal(new[] { 1, 2, 3 }, rows.Select(r => r.Pid));
+
+            TaskManagerViewModel.Sort(rows, ProcessSortColumn.Memory, descending: true);
+            Assert.Equal(new[] { 2, 3, 1 }, rows.Select(r => r.Pid));
+
+            TaskManagerViewModel.Sort(rows, ProcessSortColumn.Disk, descending: true);
+            Assert.Equal(new[] { 1, 3, 2 }, rows.Select(r => r.Pid));
+
+            TaskManagerViewModel.Sort(rows, ProcessSortColumn.Name, descending: false);
+            Assert.Equal(new[] { 1, 2, 3 }, rows.Select(r => r.Pid));
+
+            TaskManagerViewModel.Sort(rows, ProcessSortColumn.Pid, descending: true);
+            Assert.Equal(new[] { 3, 2, 1 }, rows.Select(r => r.Pid));
+        }
+
+        /// <summary>
+        /// Rows with equal values must not swap places between ticks. A list that reshuffles
+        /// under the cursor is unusable at exactly the moment this window gets opened, so the
+        /// ordering has to be total rather than merely correct.
+        /// </summary>
+        [Fact]
+        public void Ties_are_broken_by_pid_so_the_order_is_stable()
+        {
+            var rows = new List<ProcessUsage> { P("z.exe", 9, 0f, 0), P("a.exe", 3, 0f, 0), P("m.exe", 7, 0f, 0) };
+
+            TaskManagerViewModel.Sort(rows, ProcessSortColumn.Cpu, descending: true);
+            var first = rows.Select(r => r.Pid).ToArray();
+
+            TaskManagerViewModel.Sort(rows, ProcessSortColumn.Cpu, descending: true);
+
+            Assert.Equal(first, rows.Select(r => r.Pid));
+            Assert.Equal(new[] { 3, 7, 9 }, first);
+        }
+
+        /// <summary>
+        /// Before the second sample there is no CPU delta. Showing 0.0% would be a lie that
+        /// looks exactly like the frozen list this window replaces.
+        /// </summary>
+        [Fact]
+        public void Cpu_reads_as_a_dash_until_a_delta_exists()
+        {
+            var row = P("chrome.exe", 1, 0f, 100);
+
+            Assert.Equal("—", TaskManagerViewModel.CpuTextFor(row, hasCpuData: false));
+            Assert.Equal("0.0%", TaskManagerViewModel.CpuTextFor(row, hasCpuData: true));
+        }
+
+        /// <summary>
+        /// Thai locale renders 24.1 as "24,1". The column is a fixed format and must not
+        /// follow the ambient culture.
+        /// </summary>
+        [Fact]
+        public void Cpu_text_formats_invariantly_regardless_of_locale()
+        {
+            var previous = System.Threading.Thread.CurrentThread.CurrentCulture;
+            try
+            {
+                System.Threading.Thread.CurrentThread.CurrentCulture =
+                    new System.Globalization.CultureInfo("th-TH");
+
+                Assert.Equal("24.1%", TaskManagerViewModel.CpuTextFor(P("a.exe", 1, 24.1f, 0), true));
+            }
+            finally { System.Threading.Thread.CurrentThread.CurrentCulture = previous; }
         }
     }
 }

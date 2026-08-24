@@ -407,5 +407,23 @@ namespace Kil0bitSystemMonitor.Tests
             empty.Snapshot();
             Assert.Equal(-1, empty.CpuDieTemperature, 1);
         }
+
+        [Fact]
+        public void Metrics_carry_an_empty_sensor_list_by_default()
+        {
+            var m = new Kil0bitSystemMonitor.Models.SystemMetrics();
+            Assert.NotNull(m.Sensors);
+            Assert.Empty(m.Sensors);
+        }
+
+        /// <summary>
+        /// The metrics default must be an absent CPU temperature, not a cold one. A 0 here
+        /// would read as a working sensor on an ice-cold CPU.
+        /// </summary>
+        [Fact]
+        public void Metrics_default_the_cpu_temperature_to_unavailable()
+        {
+            Assert.Equal(-1f, new Kil0bitSystemMonitor.Models.SystemMetrics().CpuTemperature);
+        }
     }
 }

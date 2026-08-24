@@ -107,6 +107,15 @@ namespace Kil0bitSystemMonitor.Models
         /// </summary>
         public float CpuTemperature { get; set; } = -1f;
 
+        /// <summary>
+        /// Every reading the sensor registry produced this tick — thermal zones, per-adapter
+        /// GPU temperature, fan, power and throttle state. Empty when no source is available,
+        /// which is the normal state on a machine with no monitoring tool installed and no
+        /// thermal zone, and is why the panel must render absence deliberately.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<Services.Sensors.SensorReading> Sensors { get; set; }
+            = System.Array.Empty<Services.Sensors.SensorReading>();
+
         /// <summary>Effective CPU clock in GHz (base clock x performance ratio), or 0 if unknown.</summary>
         public float CpuFrequencyGhz { get; set; }
 

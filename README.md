@@ -53,7 +53,7 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 * **Network** — Real-time upload and download throughput, with adapter, IP address, and session totals
 * **Disk** — Activity monitoring for one or more storage devices
 * **Temperature** — CPU package temperature, read from Core Temp, HWiNFO, MSI Afterburner, AIDA64, LibreHardwareMonitor or OpenHardwareMonitor when one of them is running
-* **Sensors** — Every thermal, fan, power and throttle reading MicaStats can obtain: the ACPI thermal zone, each GPU's temperature and power draw, and whether the firmware is currently limiting performance
+* **Sensors** — Every thermal, fan, power and throttle reading MicaStats can obtain, shown beside the load that produced it: the die temperature and ACPI thermal zone in the CPU card, and every adapter's temperature and power draw in the GPU card, each with whether the firmware is currently limiting it
 
 Sensor availability may vary depending on the installed hardware, device drivers, Windows performance counters, and system configuration. Anything that cannot be read honestly shows a dash or a flat baseline rather than a misleading zero.
 
@@ -582,7 +582,7 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 * **เครือข่าย** — ความเร็วอัปโหลด/ดาวน์โหลดแบบเรียลไทม์ พร้อมชื่ออะแดปเตอร์ หมายเลข IP และยอดรวมของเซสชัน
 * **ดิสก์** — ดูกิจกรรมของไดรฟ์ได้พร้อมกันหลายตัว
 * **อุณหภูมิ** — อุณหภูมิ CPU อ่านจาก Core Temp, HWiNFO, MSI Afterburner, AIDA64, LibreHardwareMonitor หรือ OpenHardwareMonitor ตัวใดตัวหนึ่งที่กำลังทำงานอยู่
-* **เซ็นเซอร์** — ทุกค่าที่ MicaStats อ่านได้ทั้งอุณหภูมิ พัดลม กำลังไฟ และสถานะการลดความเร็ว ได้แก่ โซนความร้อน ACPI, อุณหภูมิและกำลังไฟของการ์ดจอแต่ละตัว และเฟิร์มแวร์กำลังจำกัดประสิทธิภาพอยู่หรือไม่
+* **เซ็นเซอร์** — ทุกค่าที่ MicaStats อ่านได้ทั้งอุณหภูมิ พัดลม กำลังไฟ และสถานะการลดความเร็ว แสดงไว้ข้างภาระงานที่ทำให้เกิดค่านั้น โดยอุณหภูมิไดของ CPU และโซนความร้อน ACPI อยู่ในการ์ด CPU ส่วนอุณหภูมิและกำลังไฟของการ์ดจอทุกตัวอยู่ในการ์ด GPU พร้อมระบุว่าเฟิร์มแวร์กำลังจำกัดประสิทธิภาพอยู่หรือไม่
 
 เซ็นเซอร์ที่อ่านได้ขึ้นอยู่กับฮาร์ดแวร์ ไดรเวอร์ ตัวนับประสิทธิภาพของ Windows และการตั้งค่าของเครื่อง ค่าใดที่อ่านไม่ได้จะแสดงเป็นขีด (—) หรือเส้นฐานราบตามจริง ไม่แสดงเลขศูนย์ที่ทำให้เข้าใจผิด
 

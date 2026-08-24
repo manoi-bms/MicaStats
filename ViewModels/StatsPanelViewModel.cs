@@ -176,7 +176,6 @@ namespace Kil0bitSystemMonitor.ViewModels
                 OnPropertyChanged(nameof(ShowNetworkCard));
                 OnPropertyChanged(nameof(ShowDisksCard));
                 OnPropertyChanged(nameof(ShowProcessesCard));
-                OnPropertyChanged(nameof(ShowSensorsCard));
                 OnPropertyChanged(nameof(ShowBatteryCard));
             }
         }
@@ -191,14 +190,14 @@ namespace Kil0bitSystemMonitor.ViewModels
         /// <summary>The process list is CPU-ranked, so it accompanies the CPU view and the full panel.</summary>
         public bool ShowProcessesCard => _filter is PanelSection.All or PanelSection.Cpu;
 
+        private bool _hasGpuSensors;
+
         /// <summary>
-        /// Sensors accompany both the CPU and GPU views, because the taskbar's TMP module
-        /// belongs to whichever of them is actually supplying its reading — see
-        /// <c>OverlayWindow</c>, where the module's panel section follows the CPU when a die
-        /// temperature exists and the GPU when it does not. Hovering that module should reach
-        /// this card either way.
+        /// Whether any adapter reported at all. The CPU sensor block is always shown, because
+        /// an absent die reading is the thing worth explaining; the GPU block is not, because
+        /// a machine whose driver answers nothing has nothing to explain there.
         /// </summary>
-        public bool ShowSensorsCard => _filter is PanelSection.All or PanelSection.Cpu or PanelSection.Gpu;
+        public bool HasGpuSensors { get => _hasGpuSensors; private set => Set(ref _hasGpuSensors, value); }
 
         /// <summary>
         /// The battery card, shown only on a machine that has one. A desktop must not be told
@@ -399,49 +398,93 @@ namespace Kil0bitSystemMonitor.ViewModels
         /// <summary>Highest memory consumers, for the Memory card's mini list.</summary>
         public ObservableCollection<ProcessUsage> MemoryTopProcesses { get; } = new();
 
-        /// <summary>Rows of the SENSORS card, rebuilt when the set of readings changes.</summary>
-        public ObservableCollection<SensorRow> SensorRows { get; } = new();
+        /// <summary>
+        /// Sensor rows belonging to the processor — the die temperature, the ACPI zone, and
+        /// any firmware limiting. Shown inside the CPU card, next to its usage summary, rather
+        /// than in a card of their own: a temperature is only meaningful beside the load that
+        /// produced it.
+        /// </summary>
+        public ObservableCollection<SensorRow> CpuSensorRows { get; } = new();
+
+        /// <summary>Sensor rows belonging to the graphics adapters. Shown inside the GPU card.</summary>
+        public ObservableCollection<SensorRow> GpuSensorRows { get; } = new();
 
         /// <summary>
-        /// Rebuilds the SENSORS card. The CPU die row is always present even when nothing can
-        /// supply it — that absence is the single most common state and the thing users ask
+        /// Splits the tick's readings between the CPU card and the GPU card, so each sits next
+        /// to the load that produced it.
+        ///
+        /// <para>
+        /// A reading belongs to the GPU card when its id names an adapter, and to the CPU card
+        /// otherwise — which puts the die temperature, the ACPI zone and any firmware limiting
+        /// of the processor together in one place. The CPU die row is always present even when
+        /// nothing can supply it: that absence is the most common state and the thing users ask
         /// about, so it gets a row and an explanation rather than being omitted.
+        /// </para>
         /// </summary>
         private void UpdateSensors(SystemMetrics m)
         {
-            var rows = new List<(string Label, string Value, string Detail)>
-            {
-                BuildDieRow(m),
-            };
+            var cpu = new List<(string Label, string Value, string Detail)> { BuildDieRow(m) };
+            var gpu = new List<(string Label, string Value, string Detail)>();
 
             foreach (var r in m.Sensors)
             {
-                if (r.IsCpuDie) continue;                       // already the row above
-                if (r.Category == SensorCategory.Throttle) continue;   // summarised below
+                if (r.IsCpuDie) continue;                              // already the row above
+                if (r.Category == SensorCategory.Throttle) continue;   // summarised per card
 
-                rows.Add((r.Label, FormatSensorValue(r.Value, r.Unit), "Reported by " + r.Source));
+                var row = (r.Label, FormatSensorValue(r.Value, r.Unit), "Reported by " + r.Source);
+                if (IsAdapterReading(r)) gpu.Add(row); else cpu.Add(row);
             }
 
-            // One summary line rather than a row per flag: "what is being limited" is a single
-            // question, and firmware often raises several flags for one cause.
-            var throttles = m.Sensors.Where(r => r.Category == SensorCategory.Throttle)
-                                     .Select(r => r.Label)
-                                     .Distinct()
-                                     .ToList();
-            rows.Add(("Throttling",
-                      throttles.Count == 0 ? "none" : string.Join(", ", throttles),
-                      throttles.Count == 0
-                          ? "Nothing is limiting the processor or GPUs right now"
-                          : "The firmware is currently limiting performance"));
+            // One summary line per card rather than a row per flag: "what is being limited" is
+            // a single question, and firmware often raises several flags for one cause.
+            AddThrottleSummary(cpu, m, adapters: false);
+            AddThrottleSummary(gpu, m, adapters: true);
 
-            // Rebuild only when the shape changes; otherwise update in place so WPF is not
-            // asked to re-create every row four times a second.
-            bool sameShape = SensorRows.Count == rows.Count;
+            Sync(CpuSensorRows, cpu);
+            Sync(GpuSensorRows, gpu);
+            HasGpuSensors = gpu.Count > 0;
+        }
+
+        /// <summary>
+        /// Which card a reading belongs to. Adapter readings are identified by their id prefix
+        /// rather than by their label, because labels are vendor strings and change between
+        /// driver versions while the prefix is a contract every source honours.
+        /// </summary>
+        public static bool IsAdapterReading(SensorReading r) =>
+            r.Id.StartsWith("gpu.", StringComparison.Ordinal);
+
+        private static void AddThrottleSummary(
+            List<(string Label, string Value, string Detail)> rows, SystemMetrics m, bool adapters)
+        {
+            var labels = m.Sensors
+                .Where(r => r.Category == SensorCategory.Throttle && IsAdapterReading(r) == adapters)
+                .Select(r => r.Label)
+                .Distinct()
+                .ToList();
+
+            // Nothing to say about adapters that reported nothing at all.
+            if (labels.Count == 0 && adapters && rows.Count == 0) return;
+
+            rows.Add(("Throttling",
+                      labels.Count == 0 ? "none" : string.Join(", ", labels),
+                      labels.Count == 0
+                          ? "Nothing is limiting this right now"
+                          : "The firmware is currently limiting performance"));
+        }
+
+        /// <summary>
+        /// Rebuilds a collection only when its shape changes; otherwise updates in place, so
+        /// WPF is not asked to re-create every row four times a second.
+        /// </summary>
+        private static void Sync(
+            ObservableCollection<SensorRow> target, List<(string Label, string Value, string Detail)> rows)
+        {
+            bool sameShape = target.Count == rows.Count;
             if (sameShape)
             {
                 for (int i = 0; i < rows.Count; i++)
                 {
-                    if (SensorRows[i].Label == rows[i].Label) continue;
+                    if (target[i].Label == rows[i].Label) continue;
                     sameShape = false;
                     break;
                 }
@@ -449,14 +492,14 @@ namespace Kil0bitSystemMonitor.ViewModels
 
             if (!sameShape)
             {
-                SensorRows.Clear();
-                foreach (var row in rows) SensorRows.Add(new SensorRow(row.Label));
+                target.Clear();
+                foreach (var row in rows) target.Add(new SensorRow(row.Label));
             }
 
             for (int i = 0; i < rows.Count; i++)
             {
-                SensorRows[i].Value = rows[i].Value;
-                SensorRows[i].Detail = rows[i].Detail;
+                target[i].Value = rows[i].Value;
+                target[i].Detail = rows[i].Detail;
             }
         }
 

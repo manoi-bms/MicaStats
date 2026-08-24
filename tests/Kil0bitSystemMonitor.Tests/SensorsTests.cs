@@ -481,6 +481,40 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         /// <summary>
+        /// Readings are routed by id prefix, so a temperature sits beside the load that
+        /// produced it rather than in a shared list. Getting this wrong would put a GPU
+        /// temperature under the processor, which is the confusion the whole feature avoids.
+        /// </summary>
+        [Theory]
+        [InlineData("gpu.AMD Radeon 890M.temp", true)]
+        [InlineData("gpu.NVIDIA RTX PRO 1000.power", true)]
+        [InlineData("gpu.AMD Radeon 890M.pthrottle", true)]
+        [InlineData("zone.TZ01", false)]
+        [InlineData("zone.TZ01.passive", false)]
+        [InlineData("cpu.die", false)]
+        public void Readings_are_routed_to_the_card_that_owns_them(string id, bool belongsToGpu)
+        {
+            var reading = new SensorReading(id, "label", SensorCategory.Temperature, 50, "°C", "test");
+            Assert.Equal(belongsToGpu, StatsPanelViewModel.IsAdapterReading(reading));
+        }
+
+        /// <summary>
+        /// Routing keys off the id, never the label. A GPU whose vendor string happens to
+        /// contain "CPU" — or an APU reading labelled with the processor's own name — must
+        /// still land on the GPU card.
+        /// </summary>
+        [Fact]
+        public void Routing_ignores_the_label_which_is_a_vendor_string()
+        {
+            var oddlyNamed = new SensorReading(
+                "gpu.AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M.temp",
+                "AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M",
+                SensorCategory.Temperature, 46, "°C", "Display kernel");
+
+            Assert.True(StatsPanelViewModel.IsAdapterReading(oddlyNamed));
+        }
+
+        /// <summary>
         /// Thai locale renders 3.42 as "3,42" and the year as 2569 under the default calendar.
         /// The header is a fixed format, so it must not follow the ambient culture.
         /// </summary>

@@ -412,9 +412,10 @@ own: HWiNFO requires *Shared Memory Support* to be enabled, and on current free 
 time-limited per session, so the reading can stop after a while and return when HWiNFO is
 restarted. AIDA64 requires shared memory to be switched on in its preferences.
 
-The **SENSORS** card shows everything that *is* readable without any of that — the ACPI
-thermal zone, each GPU's temperature and power draw, and whether the firmware is limiting
-performance. Hover any row for its source.
+A **SENSORS** block inside the CPU card shows everything that *is* readable without any of
+that — the ACPI thermal zone and whether the firmware is limiting the processor. The GPU card
+carries its own, listing every adapter's temperature and power draw. Each reading sits beside
+the load that produced it; hover any row for its source.
 
 **Q: Why is the "System" temperature different from my CPU temperature?**  
 A: Because it is not the CPU. It is the ACPI thermal zone, which sits downstream of the fan

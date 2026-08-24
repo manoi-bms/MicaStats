@@ -270,6 +270,33 @@
                                        Text="{Binding UptimeText}" />
                         </Grid>
 
+                        <!-- Processor sensors, beside the load that produced them. -->
+                        <StackPanel Margin="0,9,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                <TextBlock Style="{StaticResource SubIcon}" Text="{x:Static hlp:UiGlyphs.Temperature}" />
+                                <TextBlock Style="{StaticResource CardHeader}" Foreground="{StaticResource DataCyan}"
+                                           Text="SENSORS" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding CpuSensorRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:SensorRow}">
+                                        <Grid Margin="0,0,0,3" ToolTip="{Binding Detail}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="10.5"
+                                                       Foreground="#CFEDEDF2" TextTrimming="CharacterEllipsis"
+                                                       Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="10.5"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource DataCyan}"
+                                                       TextAlignment="Right" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
                         <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
                             <Button Style="{StaticResource QuickButton}" Content="Task Manager" Tag="taskmgr" Click="OnQuickAction" />
                             <Button Style="{StaticResource QuickButton}" Content="Resource Monitor" Tag="resmon" Click="OnQuickAction" />
@@ -503,6 +530,44 @@
                                        Text="{Binding GpuVramText}" />
                         </Grid>
 
+                        <!-- Every adapter's sensors, not just the selected one: a machine with
+                             both an integrated and a discrete GPU has two temperatures worth
+                             seeing, and the ring above can only show one. -->
+                        <StackPanel Margin="0,0,0,7">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasGpuSensors}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                <TextBlock Style="{StaticResource SubIcon}" Text="{x:Static hlp:UiGlyphs.Temperature}" />
+                                <TextBlock Style="{StaticResource CardHeader}" Foreground="{StaticResource DataCyan}"
+                                           Text="SENSORS" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding GpuSensorRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:SensorRow}">
+                                        <Grid Margin="0,0,0,3" ToolTip="{Binding Detail}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="10.5"
+                                                       Foreground="#CFEDEDF2" TextTrimming="CharacterEllipsis"
+                                                       Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="10.5"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource DataCyan}"
+                                                       TextAlignment="Right" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
                         <Grid>
                             <ctrl:HistoryBarGraph Height="40" Mode="Bars" Max="100"
                                                   Series="{Binding GpuSeries}"
@@ -665,48 +730,6 @@
                             <Button Style="{StaticResource QuickButton}" Content="Disk Management" Tag="diskmgmt.msc" Click="OnQuickAction" />
                             <Button Style="{StaticResource QuickButton}" Content="Storage Settings" Tag="ms-settings:storagesense" Click="OnQuickAction" />
                         </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- Sensors card. Always visible, including when every reading is unavailable:
-                     that state is the common one and is exactly what users ask about, so it
-                     has to be shown deliberately rather than hidden. -->
-                <Border Margin="0">
-                    <Border.Style>
-                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
-                            <Setter Property="Margin" Value="0" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding ShowSensorsCard}" Value="False">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
-                            <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Temperature}" />
-                            <TextBlock Style="{StaticResource CardHeader}" Text="SENSORS"
-                                       Foreground="{StaticResource DataCyan}" VerticalAlignment="Center" />
-                        </StackPanel>
-
-                        <ItemsControl ItemsSource="{Binding SensorRows}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type vm:SensorRow}">
-                                    <Grid Margin="0,0,0,4" ToolTip="{Binding Detail}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="10.5"
-                                                   Foreground="#CFEDEDF2" TextTrimming="CharacterEllipsis"
-                                                   Margin="0,0,10,0" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="10.5"
-                                                   FontWeight="SemiBold" Foreground="{StaticResource DataCyan}"
-                                                   TextAlignment="Right" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
                     </StackPanel>
                 </Border>
 

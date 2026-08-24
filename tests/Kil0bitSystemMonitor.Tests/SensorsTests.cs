@@ -307,5 +307,105 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(71.5, AidaSource.DecodeCpuTemperature(
                 "<temp><id>TCPU</id><label>CPU</label><value>71.5</value></temp>"), 1);
         }
+
+        // ------------------------------------------------------------------- registry
+
+        private sealed class FakeSource : ISensorSource
+        {
+            private readonly SensorReading[] _readings;
+
+            public FakeSource(string name, params SensorReading[] readings)
+            { Name = name; _readings = readings; }
+
+            public string Name { get; }
+            public bool IsAvailable => true;
+            public int ReadCount { get; private set; }
+            public bool ShouldThrow { get; set; }
+
+            public IReadOnlyList<SensorReading> Read()
+            {
+                ReadCount++;
+                if (ShouldThrow) throw new InvalidOperationException("source is broken");
+                return _readings;
+            }
+        }
+
+        /// <summary>
+        /// The load-bearing test of the whole feature. Both of these report Temperature and
+        /// neither is the die: the zone follows the fan loop, and the GPU has its own diode.
+        /// Selection is on IsCpuDie precisely so that adding a new Temperature source can
+        /// never accidentally start populating the CPU readout.
+        /// </summary>
+        [Fact]
+        public void A_zone_reading_is_never_selected_as_the_cpu_die_temperature()
+        {
+            var zone = new FakeSource("ACPI",
+                new SensorReading("zone.TZ01", "System", SensorCategory.Temperature, 69.0, "°C", "ACPI"));
+            var gpu = new FakeSource("Display kernel",
+                new SensorReading("gpu.temp", "Radeon", SensorCategory.Temperature, 49.0, "°C", "D3DKMT"));
+
+            var registry = new SensorRegistry(new ISensorSource[] { zone, gpu });
+            registry.Snapshot();
+
+            Assert.Equal(-1, registry.CpuDieTemperature, 1);
+        }
+
+        [Fact]
+        public void The_first_publisher_in_order_wins()
+        {
+            var first = new FakeSource("Core Temp",
+                new SensorReading("cpu.die", "CPU die", SensorCategory.Temperature, 71.0, "°C", "Core Temp", true));
+            var second = new FakeSource("HWiNFO",
+                new SensorReading("cpu.die", "CPU die", SensorCategory.Temperature, 68.0, "°C", "HWiNFO", true));
+
+            var registry = new SensorRegistry(new ISensorSource[] { first, second });
+            registry.Snapshot();
+
+            Assert.Equal(71.0, registry.CpuDieTemperature, 1);
+        }
+
+        [Fact]
+        public void A_throwing_source_does_not_stop_the_others()
+        {
+            var broken = new FakeSource("broken") { ShouldThrow = true };
+            var good = new FakeSource("Core Temp",
+                new SensorReading("cpu.die", "CPU die", SensorCategory.Temperature, 71.0, "°C", "Core Temp", true));
+
+            var registry = new SensorRegistry(new ISensorSource[] { broken, good });
+            var readings = registry.Snapshot();
+
+            Assert.Single(readings);
+            Assert.Equal(71.0, registry.CpuDieTemperature, 1);
+        }
+
+        [Fact]
+        public void A_throwing_source_is_not_probed_again_until_its_backoff_expires()
+        {
+            var broken = new FakeSource("broken") { ShouldThrow = true };
+            var registry = new SensorRegistry(new ISensorSource[] { broken });
+
+            for (int i = 0; i < 10; i++) registry.Snapshot();
+
+            Assert.Equal(1, broken.ReadCount);
+        }
+
+        /// <summary>
+        /// A publisher that stops answering must clear the reading rather than leave the last
+        /// number on screen: a stale temperature is worse than a dash, because it looks live.
+        /// </summary>
+        [Fact]
+        public void A_publisher_that_stops_answering_clears_the_die_temperature()
+        {
+            var publisher = new FakeSource("Core Temp",
+                new SensorReading("cpu.die", "CPU die", SensorCategory.Temperature, 71.0, "°C", "Core Temp", true));
+            var registry = new SensorRegistry(new ISensorSource[] { publisher });
+
+            registry.Snapshot();
+            Assert.Equal(71.0, registry.CpuDieTemperature, 1);
+
+            var empty = new SensorRegistry(new ISensorSource[] { new FakeSource("Core Temp") });
+            empty.Snapshot();
+            Assert.Equal(-1, empty.CpuDieTemperature, 1);
+        }
     }
 }

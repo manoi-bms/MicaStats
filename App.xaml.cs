@@ -59,8 +59,57 @@ namespace Kil0bitSystemMonitor
 
         private const uint WM_SHOW_SETTINGS = 0x0501; // Must match OverlayWindow.WM_SHOW_SETTINGS
 
+        /// <summary>
+        /// The image name for a pid, for the critical-process guard in the elevated path.
+        ///
+        /// <para>
+        /// The guard is applied again here rather than trusted to have been applied by the
+        /// caller: this instance received two integers from a command line and must not assume
+        /// anything about who wrote them. An unreadable process yields an empty name, which
+        /// cannot match the guard's list and so is never mistaken for a safe one.
+        /// </para>
+        ///
+        /// <para>
+        /// Using <see cref="System.Diagnostics.Process"/> here is fine and is not the
+        /// per-row query the process list forbids: one process, once, in a short-lived
+        /// instance with no UI to keep responsive.
+        /// </para>
+        /// </summary>
+        private static string ResolveNameFor(int pid)
+        {
+            try
+            {
+                using var p = System.Diagnostics.Process.GetProcessById(pid);
+                return p.ProcessName + ".exe";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
         protected override void OnStartup(StartupEventArgs e)
         {
+            // The elevated one-shot, deliberately the very first thing that happens.
+            //
+            // This runs with administrator rights, so it does exactly one thing and leaves:
+            // parse, verify identity, terminate, exit. No config, no update check, no window,
+            // no tray icon — an elevated instance that initialises the application is an
+            // elevated instance doing far more than the user consented to.
+            //
+            // It must also precede the single-instance mutex below: MicaStats is by definition
+            // already running when it asks for this, so the mutex would exit before the kill.
+            if (Kil0bitSystemMonitor.Services.KillArguments.TryParse(e.Args, out int killPid, out long killCreated))
+            {
+                var killResult = Kil0bitSystemMonitor.Services.ProcessControl.TryEndTask(
+                    killPid, killCreated, ResolveNameFor(killPid), out _);
+
+                // The exit code is how the unelevated parent learns what happened.
+                System.Environment.Exit(
+                    killResult == Kil0bitSystemMonitor.Services.EndTaskResult.Terminated ? 0 : 1);
+                return;
+            }
+
             base.OnStartup(e);
 
             // Robust single-instance check using Mutex
@@ -81,6 +130,7 @@ namespace Kil0bitSystemMonitor
             }
 
             if (m_overlay != null) return;
+
             
             var config = new Kil0bitSystemMonitor.Services.ConfigService();
             m_config = config;

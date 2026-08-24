@@ -417,6 +417,28 @@ that — the ACPI thermal zone and whether the firmware is limiting the processo
 carries its own, listing every adapter's temperature and power draw. Each reading sits beside
 the load that produced it; hover any row for its source.
 
+**Q: End task says access denied.**  
+A: MicaStats runs without administrator rights, so it cannot end a process that has more of
+them. When that happens a **Retry as administrator** button appears: it asks for consent once,
+ends that single process, and exits. MicaStats itself never keeps those rights — the consent
+covers one termination, not the session.
+
+If it still fails when elevated, Windows is protecting the process. Anti-malware services and
+some system components are marked protected and cannot be ended by anything at all.
+
+**Q: Why will it not end csrss.exe?**  
+A: Because that stops Windows. `csrss.exe`, `wininit.exe`, `services.exe`, `smss.exe`,
+`lsass.exe` and `winlogon.exe` are load-bearing — terminating any of them produces an immediate
+stop error, not a recoverable failure. Windows Task Manager asks you to confirm; MicaStats
+refuses outright, because a confirmation dialog is one mis-click away from a blue screen and
+this list is re-sorting itself while you read it.
+
+**Q: The CPU column shows dashes when I first open the process list.**  
+A: CPU share is the difference between two samples, so it does not exist until the second one
+arrives — about two seconds. A dash is shown rather than 0.0%, because a screen full of zeroes
+would be indistinguishable from the frozen list this window exists to replace. If the stats
+panel is already open the list is fully populated the moment it appears.
+
 **Q: Why is the "System" temperature different from my CPU temperature?**  
 A: Because it is not the CPU. It is the ACPI thermal zone, which sits downstream of the fan
 control loop and reports how the cooling system is responding. Under a sustained load it can

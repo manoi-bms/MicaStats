@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Kil0bitSystemMonitor.Services.Sensors;
 using Kil0bitSystemMonitor.Services.Sensors.Publishers;
+using Kil0bitSystemMonitor.ViewModels;
 using Xunit;
 
 namespace Kil0bitSystemMonitor.Tests
@@ -70,6 +71,28 @@ namespace Kil0bitSystemMonitor.Tests
                 if (r.Category == SensorCategory.Temperature)
                     Assert.InRange(r.Value, 1.0, 150.0);
             }
+        }
+
+        /// <summary>
+        /// Registry names are written for Device Manager, not for a 372px card. Trimming has
+        /// to be conservative: the model number is the part that identifies the adapter, so it
+        /// must survive, and a name made entirely of boilerplate must not become empty.
+        /// </summary>
+        [Fact]
+        public void Adapter_names_lose_vendor_boilerplate_but_keep_the_model()
+        {
+            Assert.Equal("AMD Radeon 890M",
+                AdapterPerfSource.ShortAdapterName("AMD Radeon(TM) 890M Graphics"));
+            Assert.Equal("NVIDIA RTX PRO 1000 Blackwell",
+                AdapterPerfSource.ShortAdapterName("NVIDIA RTX PRO 1000 Blackwell Generation Laptop GPU"));
+            Assert.Equal("Intel Iris Xe",
+                AdapterPerfSource.ShortAdapterName("Intel(R) Iris Xe Graphics"));
+
+            // Nothing to trim, and nothing to lose.
+            Assert.Equal("Basic Display Adapter",
+                AdapterPerfSource.ShortAdapterName("Basic Display Adapter"));
+            Assert.Equal("Graphics", AdapterPerfSource.ShortAdapterName("Graphics"));
+            Assert.Equal("", AdapterPerfSource.ShortAdapterName(""));
         }
 
         [Fact]
@@ -424,6 +447,54 @@ namespace Kil0bitSystemMonitor.Tests
         public void Metrics_default_the_cpu_temperature_to_unavailable()
         {
             Assert.Equal(-1f, new Kil0bitSystemMonitor.Models.SystemMetrics().CpuTemperature);
+        }
+
+        // ------------------------------------------------------------------ presentation
+
+        [Fact]
+        public void An_absent_reading_renders_as_an_em_dash_not_a_zero()
+        {
+            Assert.Equal("—", StatsPanelViewModel.FormatSensorValue(-1, "°C"));
+            Assert.Equal("71°C", StatsPanelViewModel.FormatSensorValue(71.0, "°C"));
+            Assert.Equal("2400 RPM", StatsPanelViewModel.FormatSensorValue(2400, "RPM"));
+        }
+
+        /// <summary>
+        /// The original complaint: with no publisher the temperature suffix simply vanished,
+        /// so the header gave no hint the reading existed at all. It now says so.
+        /// </summary>
+        [Fact]
+        public void The_cpu_header_states_the_temperature_is_unavailable_rather_than_omitting_it()
+        {
+            Assert.Equal("31% · 3.42 GHz · —", StatsPanelViewModel.BuildCpuHeader(31, 3.42f, -1));
+            Assert.Equal("31% · 3.42 GHz · 71°", StatsPanelViewModel.BuildCpuHeader(31, 3.42f, 71));
+        }
+
+        /// <summary>
+        /// The frequency is optional but the temperature slot is not: a machine that cannot
+        /// report its clock must still show whether it can report its temperature.
+        /// </summary>
+        [Fact]
+        public void The_cpu_header_keeps_the_temperature_slot_when_the_clock_is_unknown()
+        {
+            Assert.Equal("31% · —", StatsPanelViewModel.BuildCpuHeader(31, 0f, -1));
+        }
+
+        /// <summary>
+        /// Thai locale renders 3.42 as "3,42" and the year as 2569 under the default calendar.
+        /// The header is a fixed format, so it must not follow the ambient culture.
+        /// </summary>
+        [Fact]
+        public void The_cpu_header_formats_invariantly_regardless_of_locale()
+        {
+            var previous = System.Threading.Thread.CurrentThread.CurrentCulture;
+            try
+            {
+                System.Threading.Thread.CurrentThread.CurrentCulture =
+                    new System.Globalization.CultureInfo("th-TH");
+                Assert.Equal("31% · 3.42 GHz · 71°", StatsPanelViewModel.BuildCpuHeader(31, 3.42f, 71));
+            }
+            finally { System.Threading.Thread.CurrentThread.CurrentCulture = previous; }
         }
     }
 }

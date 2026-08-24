@@ -32,6 +32,27 @@ namespace Kil0bitSystemMonitor.Services.Sensors
 
         public bool IsAvailable { get; private set; } = true;
 
+        /// <summary>
+        /// Trims vendor boilerplate so a row fits the card. The registry names are written for
+        /// Device Manager, not for a 372px-wide panel: "AMD Radeon(TM) 890M Graphics" becomes
+        /// "AMD Radeon 890M", and "NVIDIA RTX PRO 1000 Blackwell Generation Laptop GPU"
+        /// becomes "NVIDIA RTX PRO 1000 Blackwell".
+        /// </summary>
+        public static string ShortAdapterName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "";
+
+            string s = name;
+            foreach (string noise in new[] { "(TM)", "(tm)", "(R)", "(r)", " Generation", " Laptop GPU", " Graphics" })
+                s = s.Replace(noise, "", StringComparison.OrdinalIgnoreCase);
+
+            // Removing an infix leaves a double space behind.
+            while (s.Contains("  ", StringComparison.Ordinal)) s = s.Replace("  ", " ", StringComparison.Ordinal);
+            s = s.Trim();
+
+            return s.Length > 0 ? s : name.Trim();
+        }
+
         public IReadOnlyList<SensorReading> Read()
         {
             var readings = new List<SensorReading>();
@@ -39,8 +60,9 @@ namespace Kil0bitSystemMonitor.Services.Sensors
             {
                 if (!_enumerated) { Enumerate(); _enumerated = true; }
 
-                foreach (var (luid, name) in _adapters)
+                foreach (var (luid, full) in _adapters)
                 {
+                    string name = ShortAdapterName(full);
                     if (!TryReadPerf(luid, out var pd)) continue;
 
                     string id = "gpu." + name;

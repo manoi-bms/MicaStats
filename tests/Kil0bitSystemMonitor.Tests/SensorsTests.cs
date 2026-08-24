@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Kil0bitSystemMonitor.Services.Sensors;
+using Kil0bitSystemMonitor.Services.Sensors.Publishers;
 using Xunit;
 
 namespace Kil0bitSystemMonitor.Tests
@@ -105,6 +106,49 @@ namespace Kil0bitSystemMonitor.Tests
 
             var readings = new ThermalZoneSource().Read();
             Assert.Contains(readings, r => r.Category == SensorCategory.Temperature);
+        }
+
+        // ---------------------------------------------------------------- Core Temp
+        //
+        // Decoding is separated from acquisition so the block can be exercised from a
+        // synthetic array. Core Temp is not installed here, and a decoder that can only be
+        // tested on a machine that happens to run the tool is a decoder that never gets
+        // tested at all.
+
+        [Fact]
+        public void Core_temp_block_decodes_the_hottest_core()
+        {
+            var block = new byte[2686];
+            BitConverter.GetBytes(4u).CopyTo(block, 1536);   // uiCoreCnt
+            BitConverter.GetBytes(1u).CopyTo(block, 1540);   // uiCpuCnt
+            BitConverter.GetBytes(61.0f).CopyTo(block, 1544);
+            BitConverter.GetBytes(74.5f).CopyTo(block, 1548);
+            BitConverter.GetBytes(58.0f).CopyTo(block, 1552);
+            BitConverter.GetBytes(66.0f).CopyTo(block, 1556);
+
+            Assert.Equal(74.5, CoreTempSource.DecodeHottest(block), 1);
+        }
+
+        [Fact]
+        public void Core_temp_block_handles_delta_to_tjmax()
+        {
+            var block = new byte[2686];
+            BitConverter.GetBytes(2u).CopyTo(block, 1536);
+            BitConverter.GetBytes(1u).CopyTo(block, 1540);
+            BitConverter.GetBytes(100u).CopyTo(block, 1024);  // TjMax = 100C
+            BitConverter.GetBytes(40.0f).CopyTo(block, 1544); // 40 below TjMax = 60C
+            BitConverter.GetBytes(25.0f).CopyTo(block, 1548); // 25 below TjMax = 75C
+            block[2685] = 1;                                  // ucDeltaToTjMax
+
+            Assert.Equal(75.0, CoreTempSource.DecodeHottest(block), 1);
+        }
+
+        [Fact]
+        public void Core_temp_block_rejects_an_implausible_core_count()
+        {
+            var block = new byte[2686];
+            BitConverter.GetBytes(9999u).CopyTo(block, 1536);
+            Assert.Equal(-1, CoreTempSource.DecodeHottest(block), 1);
         }
     }
 }

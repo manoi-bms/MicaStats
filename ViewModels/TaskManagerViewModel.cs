@@ -134,6 +134,7 @@ namespace Kil0bitSystemMonitor.ViewModels
         private bool _sortDescending = true;
         private int _count;
         private string _emptyMessage = "";
+        private string _message = "";
 
         public TaskManagerViewModel(ProcessSampler sampler)
         {
@@ -162,7 +163,7 @@ namespace Kil0bitSystemMonitor.ViewModels
         public int Count
         {
             get => _count;
-            private set { if (_count != value) { _count = value; OnPropertyChanged(); } }
+            private set { if (_count != value) { _count = value; OnPropertyChanged(); OnPropertyChanged(nameof(Footer)); } }
         }
 
         /// <summary>
@@ -173,6 +174,27 @@ namespace Kil0bitSystemMonitor.ViewModels
         {
             get => _emptyMessage;
             private set { if (_emptyMessage != value) { _emptyMessage = value; OnPropertyChanged(); } }
+        }
+
+        /// <summary>
+        /// The outcome of the last End task, or empty. Held here rather than written straight
+        /// onto a label so it survives the two-second refresh: a result the user cannot finish
+        /// reading is barely better than the silence this window exists to replace.
+        /// </summary>
+        public string Message
+        {
+            get => _message;
+            set { if (_message != value) { _message = value; OnPropertyChanged(); OnPropertyChanged(nameof(Footer)); } }
+        }
+
+        /// <summary>One line: the last result if there is one, then the count.</summary>
+        public string Footer
+        {
+            get
+            {
+                string count = _count.ToString(CultureInfo.InvariantCulture) + " processes";
+                return string.IsNullOrEmpty(_message) ? count : _message + "   ·   " + count;
+            }
         }
 
         /// <summary>Sets the sort column, flipping direction when the same column is chosen twice.</summary>

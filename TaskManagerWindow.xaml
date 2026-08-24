@@ -1,0 +1,205 @@
+<Window
+    x:Class="Kil0bitSystemMonitor.TaskManagerWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.modernwpf.com/2019"
+    xmlns:vm="clr-namespace:Kil0bitSystemMonitor.ViewModels"
+    Title="MicaStats Processes"
+    Width="640" Height="700" MinWidth="520" MinHeight="420"
+    WindowStartupLocation="CenterScreen"
+    Background="#0E0E13"
+    Foreground="#E9EDEDF2"
+    FontFamily="Segoe UI Variable Text, Segoe UI"
+    ui:ThemeManager.RequestedTheme="Dark"
+    UseLayoutRounding="True"
+    SnapsToDevicePixels="True"
+    TextOptions.TextFormattingMode="Display">
+
+    <!--
+      A process list that stays usable on a machine too busy to open Task Manager.
+
+      It performs no sampling of its own: every column comes from the snapshot ProcessSampler
+      already produces every two seconds from a single NtQuerySystemInformation call. There are
+      no per-row queries anywhere in this window, which is the difference between it and the
+      tool it replaces - Task Manager enriches each row individually, and those queries block
+      precisely when the system is starved.
+
+      Virtualization is not decoration. With several hundred processes a non-virtualized
+      ListView builds one visual tree per row and costs more than the problem being diagnosed.
+    -->
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="DataCyan" Color="#3FD2E4" />
+        <SolidColorBrush x:Key="RowInk" Color="#CFEDEDF2" />
+        <SolidColorBrush x:Key="Muted" Color="#88EDEDF2" />
+
+        <Style x:Key="ColumnText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{StaticResource RowInk}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="NumberText" TargetType="TextBlock" BasedOn="{StaticResource ColumnText}">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource DataCyan}" />
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+        </Style>
+
+        <Style x:Key="ActionButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#EDEDF2" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,0,7,0" />
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="#1FFFFFFF" CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#3AFFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#14FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bg" Property="Background" Value="#12FFFFFF" />
+                                <Setter Property="Foreground" Value="#66EDEDF2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <!-- Fixed rather than Auto. With Auto the star-sized list above took the space
+                 first and the footer was laid out half outside the window; a definite height
+                 is allocated before the star row gets its remainder. -->
+            <RowDefinition Height="42" />
+        </Grid.RowDefinitions>
+
+        <!-- Search. The count lives in the footer, where there is room for it to grow to four
+             digits without crowding the box - this machine runs about 1,400 processes. -->
+        <TextBox Grid.Row="0" x:Name="SearchBox" Margin="0,0,0,10"
+                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=120}"
+                 FontSize="12" Padding="8,5" Background="#1A1A22" Foreground="#EDEDF2"
+                 BorderBrush="#33FFFFFF" BorderThickness="1"
+                 ui:ControlHelper.PlaceholderText="Search by name or PID" />
+
+        <!-- The list -->
+        <Grid Grid.Row="1">
+            <ListView x:Name="ProcessList"
+                      ItemsSource="{Binding Rows}"
+                      Background="#141419" BorderBrush="#22FFFFFF" BorderThickness="1"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      VirtualizingPanel.ScrollUnit="Pixel"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      SelectionChanged="OnSelectionChanged">
+                <ListView.View>
+                    <GridView AllowsColumnReorder="False">
+                        <!-- Widths total 516, comfortably inside the client area once the
+                             margins, the list border and a vertical scrollbar are taken out.
+                             Overflowing produces a horizontal scrollbar, and a process list
+                             that scrolls sideways is a process list nobody can read. -->
+                        <GridViewColumn Header="Name" Width="210">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProcessRow}">
+                                    <TextBlock Style="{StaticResource ColumnText}" Text="{Binding Name}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="PID" Width="62">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProcessRow}">
+                                    <TextBlock Style="{StaticResource NumberText}" Text="{Binding Pid}"
+                                               Foreground="{StaticResource RowInk}" FontWeight="Normal" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="CPU" Width="72">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProcessRow}">
+                                    <TextBlock Style="{StaticResource NumberText}" Text="{Binding Cpu}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Memory" Width="86">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProcessRow}">
+                                    <TextBlock Style="{StaticResource NumberText}" Text="{Binding Memory}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Disk" Width="86">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProcessRow}">
+                                    <TextBlock Style="{StaticResource NumberText}" Text="{Binding Disk}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+
+            <!--
+              An empty list must never be how this window reports a problem: that is one of the
+              four symptoms it exists to replace, so the reason is always stated.
+            -->
+            <TextBlock Text="{Binding EmptyMessage}" IsHitTestVisible="False"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="11.5" Foreground="{StaticResource Muted}"
+                       TextWrapping="Wrap" MaxWidth="320" TextAlignment="Center">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding EmptyMessage}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Grid>
+
+        <!--
+          Actions and result on one row. The result shared a row with the buttons rather than
+          sitting under them because a second Auto row here rendered nothing: the star-sized
+          list above claims whatever the footer does not demand at measure time, and a status
+          line that is empty until something happens demands almost nothing.
+
+          The text is star-sized with trimming, so a four-digit count and a long kill message
+          degrade to an ellipsis instead of losing their last characters off the edge.
+        -->
+        <Grid Grid.Row="2" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button x:Name="EndTaskButton" Style="{StaticResource ActionButton}"
+                        Content="End task" IsEnabled="False" Click="OnEndTask" />
+                <Button x:Name="RetryElevated" Style="{StaticResource ActionButton}"
+                        Content="Retry as administrator" Visibility="Collapsed"
+                        Click="OnRetryElevated" />
+            </StackPanel>
+
+            <TextBlock Grid.Column="1" Text="{Binding Footer}" Margin="6,0,2,0"
+                       VerticalAlignment="Center" TextAlignment="Right"
+                       TextTrimming="CharacterEllipsis"
+                       FontSize="11" Foreground="#D0EDEDF2" />
+        </Grid>
+    </Grid>
+</Window>

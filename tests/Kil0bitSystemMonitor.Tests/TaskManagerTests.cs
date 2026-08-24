@@ -252,5 +252,36 @@ namespace Kil0bitSystemMonitor.Tests
             }
             finally { System.Threading.Thread.CurrentThread.CurrentCulture = previous; }
         }
+
+        /// <summary>
+        /// Virtualization is the difference between this window and the one it replaces. With
+        /// several hundred processes a non-virtualized ListView builds one visual tree per row
+        /// and costs more than the problem being diagnosed — which is one of the four reported
+        /// symptoms. Asserted against the markup because it cannot be asserted at runtime
+        /// without showing the window.
+        /// </summary>
+        [Fact]
+        public void The_process_list_is_virtualized_and_recycling()
+        {
+            string xaml = System.IO.File.ReadAllText(
+                System.IO.Path.Combine(RepoRoot(), "TaskManagerWindow.xaml"));
+
+            Assert.Contains("VirtualizingPanel.IsVirtualizing=\"True\"", xaml);
+            Assert.Contains("VirtualizingPanel.VirtualizationMode=\"Recycling\"", xaml);
+        }
+
+        /// <summary>Walks up from the test binaries to the project that owns them.</summary>
+        private static string RepoRoot()
+        {
+            var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+            while (dir != null && !System.IO.File.Exists(
+                       System.IO.Path.Combine(dir.FullName, "Kil0bitSystemMonitor.csproj")))
+            {
+                dir = dir.Parent;
+            }
+
+            Assert.NotNull(dir);
+            return dir!.FullName;
+        }
     }
 }

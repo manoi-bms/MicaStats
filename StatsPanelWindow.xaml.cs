@@ -212,6 +212,27 @@ namespace Kil0bitSystemMonitor
         /// (taskmgr, resmon, ncpa.cpl, ms-settings: URIs...). ShellExecute resolves all of
         /// them; a missing tool fails silently rather than taking the panel down.
         /// </summary>
+        /// <summary>
+        /// Opens MicaStats' own process list.
+        ///
+        /// <para>
+        /// The panel dismisses itself when focus leaves it, so the window is shown before this
+        /// returns and owns its own lifetime from then on — like the hardware inspector, and
+        /// unlike anything that tried to live inside the dropdown.
+        /// </para>
+        /// </summary>
+        private void OnOpenProcesses(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                TaskManagerWindow.ShowOrActivate(App.SharedProcessSampler);
+            }
+            catch (Exception)
+            {
+                // A quick action must never take the panel down with it.
+            }
+        }
+
         private void OnQuickAction(object sender, RoutedEventArgs e)
         {
             if ((sender as FrameworkElement)?.Tag is not string command || command.Length == 0) return;

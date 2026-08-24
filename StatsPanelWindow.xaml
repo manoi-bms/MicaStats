@@ -277,7 +277,7 @@
                                 <TextBlock Style="{StaticResource CardHeader}" Foreground="{StaticResource DataCyan}"
                                            Text="SENSORS" VerticalAlignment="Center" />
                             </StackPanel>
-                            <ItemsControl ItemsSource="{Binding CpuSensorRows}">
+                            <ItemsControl ItemsSource="{Binding CpuSensorRows}" x:Name="CpuSensorList">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type vm:SensorRow}">
                                         <Grid Margin="0,0,0,3" ToolTip="{Binding Detail}">
@@ -298,6 +298,10 @@
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                            <!-- MicaStats' own list first: it opens instantly from a snapshot
+                                 already in memory, which is the whole point when the machine is
+                                 too busy for the Windows one. That stays reachable beside it. -->
+                            <Button Style="{StaticResource QuickButton}" Content="Processes" Click="OnOpenProcesses" />
                             <Button Style="{StaticResource QuickButton}" Content="Task Manager" Tag="taskmgr" Click="OnQuickAction" />
                             <Button Style="{StaticResource QuickButton}" Content="Resource Monitor" Tag="resmon" Click="OnQuickAction" />
                         </StackPanel>

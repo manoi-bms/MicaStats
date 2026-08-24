@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Update;
 
 using Brushes = System.Windows.Media.Brushes;
@@ -110,13 +111,13 @@ namespace Kil0bitSystemMonitor
             });
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            buttons.Children.Add(MakeButton("Install", primary: true, () =>
+            buttons.Children.Add(ToastButton.Create("Install", Color.FromRgb(0x3F, 0xD2, 0xE4), primary: true, Color.FromRgb(0x06, 0x22, 0x2A), () =>
             {
                 InstallRequested?.Invoke();
                 Close();
             }));
-            buttons.Children.Add(MakeButton("Later", primary: false, Close));
-            buttons.Children.Add(MakeButton("Skip this version", primary: false, () =>
+            buttons.Children.Add(ToastButton.Create("Later", Color.FromRgb(0x3F, 0xD2, 0xE4), primary: false, Color.FromRgb(0x06, 0x22, 0x2A), Close));
+            buttons.Children.Add(ToastButton.Create("Skip this version", Color.FromRgb(0x3F, 0xD2, 0xE4), primary: false, Color.FromRgb(0x06, 0x22, 0x2A), () =>
             {
                 SkipRequested?.Invoke();
                 Close();
@@ -140,27 +141,6 @@ namespace Kil0bitSystemMonitor
             };
         }
 
-        private static Button MakeButton(string text, bool primary, Action onClick)
-        {
-            var button = new Button
-            {
-                Content = text,
-                FontSize = 11,
-                Margin = new Thickness(0, 0, 6, 0),
-                Padding = new Thickness(primary ? 14 : 10, 5, primary ? 14 : 10, 5),
-                Cursor = System.Windows.Input.Cursors.Hand,
-                Foreground = primary
-                    ? new SolidColorBrush(Color.FromRgb(0x06, 0x22, 0x2A))
-                    : new SolidColorBrush(Color.FromArgb(0xCF, 0xED, 0xED, 0xF2)),
-                Background = primary
-                    ? new SolidColorBrush(Color.FromRgb(0x3F, 0xD2, 0xE4))
-                    : new SolidColorBrush(Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)),
-                BorderThickness = new Thickness(0),
-                FontWeight = primary ? FontWeights.SemiBold : FontWeights.Normal,
-            };
-            button.Click += (s, e) => onClick();
-            return button;
-        }
 
         /// <summary>Bottom-right of the working area, clear of the taskbar.</summary>
         private void PositionInCorner()

@@ -151,12 +151,12 @@ namespace Kil0bitSystemMonitor
             });
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            buttons.Children.Add(MakeButton("Show me", primary: true, () =>
+            buttons.Children.Add(ToastButton.Create("Show me", Amber, primary: true, Color.FromRgb(0x2A, 0x18, 0x06), () =>
             {
                 OpenRequested?.Invoke();
                 Close();
             }));
-            buttons.Children.Add(MakeButton("Dismiss", primary: false, Close));
+            buttons.Children.Add(ToastButton.Create("Dismiss", Amber, primary: false, Color.FromRgb(0x2A, 0x18, 0x06), Close));
             stack.Children.Add(buttons);
 
             return new Border
@@ -176,27 +176,6 @@ namespace Kil0bitSystemMonitor
             };
         }
 
-        private static Button MakeButton(string text, bool primary, Action onClick)
-        {
-            var button = new Button
-            {
-                Content = text,
-                FontSize = 11,
-                Margin = new Thickness(0, 0, 6, 0),
-                Padding = new Thickness(primary ? 14 : 10, 5, primary ? 14 : 10, 5),
-                Cursor = System.Windows.Input.Cursors.Hand,
-                Foreground = primary
-                    ? new SolidColorBrush(Color.FromRgb(0x2A, 0x18, 0x06))
-                    : new SolidColorBrush(Color.FromArgb(0xCF, 0xED, 0xED, 0xF2)),
-                Background = primary
-                    ? new SolidColorBrush(Amber)
-                    : new SolidColorBrush(Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)),
-                BorderThickness = new Thickness(0),
-                FontWeight = primary ? FontWeights.SemiBold : FontWeights.Normal,
-            };
-            button.Click += (s, e) => onClick();
-            return button;
-        }
 
         /// <summary>
         /// Lays the open notices up from the bottom-right corner. Re-run whenever one appears

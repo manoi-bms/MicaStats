@@ -73,5 +73,65 @@ namespace Kil0bitSystemMonitor.Tests
         {
             Assert.False(ProcessControl.IsCriticalProcess(null!));
         }
+
+        // ----------------------------------------------------------- elevated arguments
+
+        /// <summary>
+        /// This parser is the whole input surface of the only code path that runs with
+        /// administrator rights, so it is tested against malformed and hostile input rather
+        /// than only the happy case. Anything it does not fully understand must be refused.
+        /// </summary>
+        [Fact]
+        public void Kill_arguments_parse_a_well_formed_request()
+        {
+            Assert.True(KillArguments.TryParse(
+                new[] { "--kill", "8420", "133000000000000000" }, out int pid, out long created));
+
+            Assert.Equal(8420, pid);
+            Assert.Equal(133_000_000_000_000_000L, created);
+        }
+
+        // Each case is cast to object so xUnit passes the array as a single argument rather
+        // than splatting its elements across the parameter list.
+        [Theory]
+        [InlineData((object)new string[0])]                                // nothing
+        [InlineData((object)new[] { "--kill" })]                           // no pid
+        [InlineData((object)new[] { "--kill", "8420" })]                   // no creation time
+        [InlineData((object)new[] { "--kill", "abc", "133" })]             // pid not a number
+        [InlineData((object)new[] { "--kill", "8420", "abc" })]            // time not a number
+        [InlineData((object)new[] { "--kill", "-1", "133" })]              // negative pid
+        [InlineData((object)new[] { "--kill", "0", "133" })]               // the idle process
+        [InlineData((object)new[] { "--kill", "8420", "-5" })]             // negative time
+        [InlineData((object)new[] { "--kill", "99999999999", "133" })]     // pid beyond int
+        [InlineData((object)new[] { "--settings", "8420", "133" })]        // a different switch
+        [InlineData((object)new[] { "--kill", "8420", "133", "extra" })]   // trailing junk
+        [InlineData((object)new[] { "--kill", " 8420", "133" })]           // padded
+        [InlineData((object)new[] { "--kill", "+8420", "133" })]           // signed
+        [InlineData((object)new[] { "--kill", "8,420", "133" })]           // grouped
+        [InlineData((object)new[] { "--KILL", "8420", "133" })]            // case-sensitive
+        public void Malformed_kill_arguments_are_refused(string[] args)
+        {
+            Assert.False(KillArguments.TryParse(args, out _, out _));
+        }
+
+        /// <summary>A refused parse must not leave a usable pid behind for a careless caller.</summary>
+        [Fact]
+        public void A_refused_parse_yields_no_pid()
+        {
+            KillArguments.TryParse(new[] { "--kill", "abc", "def" }, out int pid, out long created);
+
+            Assert.Equal(0, pid);
+            Assert.Equal(0, created);
+        }
+
+        /// <summary>
+        /// A null argument array is what a host that passes nothing looks like. It must be a
+        /// refusal, not a crash inside an elevated process.
+        /// </summary>
+        [Fact]
+        public void Null_arguments_are_refused_without_throwing()
+        {
+            Assert.False(KillArguments.TryParse(null!, out _, out _));
+        }
     }
 }

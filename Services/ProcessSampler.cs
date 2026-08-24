@@ -13,6 +13,13 @@ namespace Kil0bitSystemMonitor.Services
         /// <summary>Bytes written to disk per second over the last interval.</summary>
         public long DiskWriteBytesPerSec { get; init; }
 
+        /// <summary>
+        /// Process creation time as a FILETIME. Together with the pid this identifies a
+        /// specific process rather than a slot: pids are recycled, and a termination confirmed
+        /// through a UAC prompt can land seconds after the pid was chosen.
+        /// </summary>
+        public long CreateTime { get; init; }
+
         /// <summary>Combined disk traffic per second — how a process is ranked as a disk hog.</summary>
         public long DiskBytesPerSec => DiskReadBytesPerSec + DiskWriteBytesPerSec;
 
@@ -124,6 +131,27 @@ namespace Kil0bitSystemMonitor.Services
         /// <summary>Most recent ranking by disk traffic. Never null.</summary>
         public IReadOnlyList<ProcessUsage> TopByDisk { get; private set; } = Array.Empty<ProcessUsage>();
 
+        /// <summary>
+        /// Every process from the most recent sample, ordered by CPU share descending.
+        ///
+        /// <para>
+        /// The same objects as the rankings above, from the same pass. The full list was always
+        /// being built and then discarded by <c>Trim</c>; publishing it costs one array per
+        /// sample and no additional syscall, which is what lets a process list open on a
+        /// machine too busy to open Task Manager.
+        /// </para>
+        /// </summary>
+        public IReadOnlyList<ProcessUsage> AllProcesses { get; private set; } = Array.Empty<ProcessUsage>();
+
+        /// <summary>
+        /// False until a second sample has landed. CPU share is a delta between samples, so it
+        /// cannot exist before then — callers must render a dash rather than zero, because a
+        /// grid of zeroes is indistinguishable from the frozen list this replaces.
+        /// </summary>
+        public bool HasCpuData => System.Threading.Volatile.Read(ref _sampleCount) >= 2;
+
+        private int _sampleCount;
+
         /// <summary>Raised on a background thread after each sample.</summary>
         public event Action? Updated;
 
@@ -179,6 +207,12 @@ namespace Kil0bitSystemMonitor.Services
                         TopByCpu = Array.Empty<ProcessUsage>();
                         TopByRam = Array.Empty<ProcessUsage>();
                         TopByDisk = Array.Empty<ProcessUsage>();
+
+                        // The deltas go with the baseline. Without this reset a restarted
+                        // sampler would claim to have CPU data one sample before it does, and
+                        // report a whole column of zeroes as though they were measurements.
+                        AllProcesses = Array.Empty<ProcessUsage>();
+                        System.Threading.Volatile.Write(ref _sampleCount, 0);
                     }
                 }
             }
@@ -252,6 +286,7 @@ namespace Kil0bitSystemMonitor.Services
                             {
                                 DiskReadBytesPerSec = readRate,
                                 DiskWriteBytesPerSec = writeRate,
+                                CreateTime = createTime,
                             };
                             byCpu.Add(usage);
                             byRam.Add(usage);
@@ -277,6 +312,11 @@ namespace Kil0bitSystemMonitor.Services
                     byCpu.Sort((a, b) => b.CpuPercent.CompareTo(a.CpuPercent));
                     byRam.Sort((a, b) => b.WorkingSet.CompareTo(a.WorkingSet));
                     byDisk.Sort((a, b) => b.DiskBytesPerSec.CompareTo(a.DiskBytesPerSec));
+
+                    // Captured before Trim, which reduces the list to the top few. This is the
+                    // whole list the task manager shows, and it was already computed.
+                    AllProcesses = byCpu.ToArray();
+                    System.Threading.Interlocked.Increment(ref _sampleCount);
 
                     TopByCpu = Trim(byCpu);
                     TopByRam = Trim(byRam);

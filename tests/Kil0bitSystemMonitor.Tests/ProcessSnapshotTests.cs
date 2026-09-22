@@ -1,0 +1,65 @@
+using System;
+using System.Linq;
+using Kil0bitSystemMonitor.Services;
+using Xunit;
+
+namespace Kil0bitSystemMonitor.Tests
+{
+    /// <summary>
+    /// The watchdog runs when no window is open, so it cannot ride the sampler's lease-driven
+    /// timer. These exercise the one-shot pass it uses instead, against the only process whose
+    /// identity the test already knows: itself.
+    /// </summary>
+    public class ProcessSnapshotTests
+    {
+        [Fact]
+        public void A_one_shot_snapshot_finds_the_current_process()
+        {
+            var snapshot = ProcessSampler.SnapshotOnce();
+            int self = Environment.ProcessId;
+
+            Assert.NotEmpty(snapshot);
+            Assert.Contains(snapshot, p => p.Pid == self);
+        }
+
+        [Fact]
+        public void The_current_process_carries_its_real_parent_pid()
+        {
+            var snapshot = ProcessSampler.SnapshotOnce();
+            var me = snapshot.First(p => p.Pid == Environment.ProcessId);
+
+            // The test host was started by something, and a parent pid of zero would mean the
+            // offset is wrong rather than that the process has no parent.
+            Assert.True(me.ParentPid > 0);
+        }
+
+        [Fact]
+        public void The_current_process_reports_cumulative_cpu_and_a_creation_time()
+        {
+            var snapshot = ProcessSampler.SnapshotOnce();
+            var me = snapshot.First(p => p.Pid == Environment.ProcessId);
+
+            // Running this test costs CPU, so the total cannot be zero, and the creation time
+            // must not be wilder than the process is old.
+            Assert.True(me.CpuSeconds > 0);
+            Assert.True(me.CreateTime > 0);
+
+            DateTime started = DateTime.FromFileTime(me.CreateTime);
+            Assert.True(started <= DateTime.Now);
+            Assert.True(started > DateTime.Now.AddDays(-1));
+        }
+
+        [Fact]
+        public void A_one_shot_snapshot_does_not_start_the_sampler()
+        {
+            // Taking a Retain() lease would run full two-second sampling all day to serve a
+            // check that runs once a minute.
+            using var sampler = new ProcessSampler();
+
+            ProcessSampler.SnapshotOnce();
+
+            Assert.False(sampler.Enabled);
+            Assert.Empty(sampler.AllProcesses);
+        }
+    }
+}

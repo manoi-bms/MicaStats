@@ -55,6 +55,7 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 * **Temperature** — CPU package temperature, read from Core Temp, HWiNFO, MSI Afterburner, AIDA64, LibreHardwareMonitor or OpenHardwareMonitor when one of them is running
 * **Sensors** — Every thermal, fan, power and throttle reading MicaStats can obtain, shown beside the load that produced it: the die temperature and ACPI thermal zone in the CPU card, and every adapter's temperature and power draw in the GPU card, each with whether the firmware is currently limiting it
 * **Processes** — A searchable, sortable list of every running process with live CPU, memory and disk figures, and an End task that says what actually happened
+* **Runaway searches** — Notices when a whole-drive file search has been left running with no parent to receive its output, and offers to end it. Never ends anything on its own
 
 Sensor availability may vary depending on the installed hardware, device drivers, Windows performance counters, and system configuration. Anything that cannot be read honestly shows a dash or a flat baseline rather than a misleading zero.
 
@@ -73,6 +74,47 @@ It will not end `csrss.exe`, `wininit.exe`, `services.exe`, `smss.exe`, `lsass.e
 The CPU die sensors — AMD's Tctl and Intel's DTS — are only reachable from kernel mode. Every tool that displays them installs a kernel driver to get there. MicaStats deliberately does not: it runs without administrator rights and installs no driver, so it reads what one of the tools above has already published. If none is running, the CPU die row shows a dash.
 
 MicaStats will not substitute a different sensor for it. The ACPI thermal zone is shown separately and labelled *System*, because measurement showed it moving in the opposite direction to the processor under sustained load — it sits downstream of the fan control loop and reports that loop's response rather than the silicon's state. Presenting it as a CPU temperature would be worse than presenting nothing.
+
+### Runaway search watchdog
+
+Agentic coding tools run shell commands through Git Bash. When one of them starts a
+whole-filesystem search and the launching shell is then killed — a cancelled background task, a
+subagent that finished — the `find` child is not reaped. It keeps scanning at full speed with
+nowhere to send its output. Under Git Bash `/` is the whole drive and the walk includes `/proc`,
+every mount and any dead network path, so it can run effectively forever. Two such processes were
+found on one machine having consumed 2258 and 2115 seconds of CPU between them.
+
+Once a minute MicaStats looks for processes where **all** of these hold, and flags nothing that
+misses any one of them:
+
+1. The full image path is on the allowlist — by default anything ending `\Git\usr\bin\find.exe`.
+   `C:\Windows\System32\find.exe` is a different Microsoft tool that shares the name, and the
+   match is on path rather than name so it can never be touched.
+2. The scan is rooted at a whole filesystem (`/`, `C:\`, `/c/`) with no `-maxdepth`.
+3. It has burned more than 120 seconds of CPU.
+4. It is more than 5 minutes old.
+5. Its parent has exited, or the parent is not a shell it recognises.
+
+Rules 3 and 4 exist so a search you started on purpose is never killed mid-flight. Rule 5 is the
+real signal: an orphan has nothing receiving its output, so it can only waste the processor.
+
+When one is found you get a quiet corner card naming it and what it has cost. **Nothing is ended
+until you click End them.** The kill is then verified rather than assumed — a process wedged in
+kernel I/O reports a successful termination and keeps running — and escalated once to
+`taskkill /F /T` if the first attempt did not take. A process that survives both is logged and
+left alone, never retried in a loop.
+
+Every decision, including the ones that keep a process, is written to
+`%APPDATA%\MicaStats\logs\micastats.log` with the full command line and the parent's image path.
+
+Thresholds and both lists live in `%APPDATA%\MicaStats\config.json` as `OrphanCpuSecondsThreshold`,
+`OrphanGraceMinutes`, `OrphanBinaryAllowlist` and `OrphanExpectedParents`. The feature itself is
+switched on and off from Settings → Diagnostics.
+
+> [!NOTE]
+> This treats a symptom. The cause is a tool that does not reap its children, and the fix belongs
+> in that tool. The parent image path in the log is there so you can identify which tool is
+> leaking and report it upstream; the watchdog only stops the burning in the meantime.
 
 ### Hardware inspector
 

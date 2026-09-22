@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Kil0bitSystemMonitor.Services;
+using Kil0bitSystemMonitor.Services.Watchdog;
 using Xunit;
 
 namespace Kil0bitSystemMonitor.Tests
@@ -64,6 +65,28 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains(snapshot, p => p.Pid == Environment.ProcessId);
             Assert.False(sampler.Enabled);
             Assert.Empty(sampler.AllProcesses);
+        }
+
+        [Fact]
+        public void The_current_process_reports_its_own_image_path_and_command_line()
+        {
+            bool ok = ProcessDetails.TryRead(Environment.ProcessId, out string image, out string commandLine);
+
+            Assert.True(ok);
+            Assert.Equal(Environment.ProcessPath, image, ignoreCase: true);
+            Assert.False(string.IsNullOrWhiteSpace(commandLine));
+        }
+
+        [Fact]
+        public void A_pid_that_does_not_exist_is_reported_as_unreadable_rather_than_throwing()
+        {
+            // A process can exit between the snapshot and the enrichment; that is ordinary, not
+            // an error, and the watchdog runs unattended.
+            bool ok = ProcessDetails.TryRead(-1, out string image, out string commandLine);
+
+            Assert.False(ok);
+            Assert.Equal("", image);
+            Assert.Equal("", commandLine);
         }
     }
 }

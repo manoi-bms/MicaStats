@@ -50,14 +50,18 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
-        public void A_one_shot_snapshot_does_not_start_the_sampler()
+        public void A_one_shot_snapshot_works_while_the_sampler_is_idle()
         {
-            // Taking a Retain() lease would run full two-second sampling all day to serve a
-            // check that runs once a minute.
+            // The watchdog runs when no window is open, so nothing holds a Retain() lease.
+            // Taking one would run full two-second sampling all day to serve a check that
+            // happens once a minute — so the one-shot must not need the sampler at all.
             using var sampler = new ProcessSampler();
+            Assert.False(sampler.Enabled);
 
-            ProcessSampler.SnapshotOnce();
+            var snapshot = ProcessSampler.SnapshotOnce();
 
+            Assert.NotEmpty(snapshot);
+            Assert.Contains(snapshot, p => p.Pid == Environment.ProcessId);
             Assert.False(sampler.Enabled);
             Assert.Empty(sampler.AllProcesses);
         }

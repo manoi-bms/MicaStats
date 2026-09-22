@@ -384,6 +384,11 @@ namespace Kil0bitSystemMonitor.Services
                 // Grow past what the kernel asked for: more processes may appear before the retry.
                 int target = Math.Max(bufferSize * 2, (int)needed + (64 * 1024));
                 Marshal.FreeHGlobal(buffer);
+
+                // Zeroed before the allocation that can throw: if AllocHGlobal throws
+                // OutOfMemoryException on the line below, `buffer` must not still hold the
+                // pointer just freed above, or a caller's finally block frees it a second time.
+                buffer = IntPtr.Zero;
                 bufferSize = target;
                 buffer = Marshal.AllocHGlobal(bufferSize);
             }

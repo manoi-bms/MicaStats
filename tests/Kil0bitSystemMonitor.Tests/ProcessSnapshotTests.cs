@@ -81,8 +81,11 @@ namespace Kil0bitSystemMonitor.Tests
         public void A_pid_that_does_not_exist_is_reported_as_unreadable_rather_than_throwing()
         {
             // A process can exit between the snapshot and the enrichment; that is ordinary, not
-            // an error, and the watchdog runs unattended.
-            bool ok = ProcessDetails.TryRead(-1, out string image, out string commandLine);
+            // an error, and the watchdog runs unattended. Windows pids are multiples of 4 and
+            // stay well below int.MaxValue, so this value is syntactically valid (positive, past
+            // the pid <= 0 guard) but cannot belong to a live process — it reaches OpenProcess
+            // and exercises the handle == IntPtr.Zero branch, not the cheap early return.
+            bool ok = ProcessDetails.TryRead(int.MaxValue - 3, out string image, out string commandLine);
 
             Assert.False(ok);
             Assert.Equal("", image);

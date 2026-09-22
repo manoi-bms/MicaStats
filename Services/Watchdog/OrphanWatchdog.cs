@@ -6,6 +6,12 @@ using System.IO;
 namespace Kil0bitSystemMonitor.Services.Watchdog
 {
     /// <summary>One flagged process, as the toast and the kill path need it.</summary>
+    /// <param name="CpuSeconds">
+    /// The total at the moment this was flagged, not a live figure to render as-is — a
+    /// reference point captured before any kill was attempted. It no longer decides whether a
+    /// kill took (<see cref="ProcessControl.HasExited(int, long)"/> asks the kernel directly
+    /// for that), but the log still wants to know how far along the process already was.
+    /// </param>
     public sealed record OrphanFinding(
         ProcessIdentity Identity, string Name, string CommandLine, double CpuSeconds, string Reason);
 
@@ -146,10 +152,17 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
                     findings.Add(new OrphanFinding(
                         identity, candidates[i].Name, record.CommandLine,
                         record.CpuSeconds, verdict.Reason));
-                    _ledger.MarkAlerted(identity);
                 }
 
-                if (findings.Count > 0) Found?.Invoke(findings);
+                if (findings.Count > 0)
+                {
+                    // Marked alerted only after the subscriber has actually seen the batch, so
+                    // a subscriber that throws does not leave the ledger believing the user was
+                    // told about an orphan they never saw — the outer catch below logs the
+                    // failure and the next scan will alert on it again.
+                    Found?.Invoke(findings);
+                    foreach (var finding in findings) _ledger.MarkAlerted(finding.Identity);
+                }
             }
             catch (Exception ex)
             {
@@ -177,10 +190,9 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
                 }
                 catch (Exception ex)
                 {
-                    // This runs on the dispatcher thread, from the toast's click handler. An
-                    // exception escaping here is unhandled on the UI thread and takes the whole
-                    // app down, at the exact moment the user asked it to clean something up.
-                    // Count it as survived and move on to the rest of the batch.
+                    // Scoped to one finding, not the whole loop, so a process that blows up
+                    // does not abandon the rest of the batch — and logged rather than left to
+                    // propagate, since the caller may be running this on any thread.
                     survived++;
                     DiagnosticsLog.Error(Area, "Ending pid "
                         + finding.Identity.Pid.ToString(CultureInfo.InvariantCulture) + " failed", ex);
@@ -191,8 +203,8 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
                 return ended == 1 ? "Ended it." : "Ended all " + Count(ended) + ".";
             if (ended == 0)
                 return survived == 1
-                    ? "It survived both attempts. Windows is holding it in a kernel call."
-                    : "All " + Count(survived) + " survived both attempts.";
+                    ? "It did not end; the log says why."
+                    : "None of the " + Count(survived) + " ended; the log says why.";
 
             return "Ended " + Count(ended) + "; " + Count(survived) + " survived.";
         }
@@ -218,10 +230,13 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             var result = ProcessControl.TryEndTask(
                 finding.Identity.Pid, finding.Identity.CreateTime, finding.Name, out string message);
 
-            if (result == EndTaskResult.Terminated || result == EndTaskResult.AlreadyExited)
+            // Recycled is the same good news as AlreadyExited: the PID this finding named now
+            // belongs to someone else, so the process that was flagged is already gone.
+            if (result == EndTaskResult.Terminated || result == EndTaskResult.AlreadyExited
+                || result == EndTaskResult.Recycled)
             {
                 System.Threading.Thread.Sleep(VerifyDelayMs);
-                if (!StillBurning(finding, out double cpuNow))
+                if (!StillRunning(finding, out double cpuNow))
                 {
                     Log(finding, "KILLED", message);
                     return true;
@@ -247,7 +262,7 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             TreeKill(finding.Identity.Pid);
             System.Threading.Thread.Sleep(VerifyDelayMs);
 
-            if (!StillBurning(finding, out _))
+            if (!StillRunning(finding, out _))
             {
                 Log(finding, "KILLED", "taskkill /F /T succeeded where terminate did not");
                 return true;
@@ -259,26 +274,38 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         }
 
         /// <summary>
-        /// Whether this exact process is still present and still consuming processor time.
+        /// Whether this exact process is still running, per the kernel rather than inferred
+        /// from CPU movement.
         ///
         /// <para>
-        /// Identity, not PID: the number is recycled, and after a successful kill it can belong
-        /// to something else within seconds. Reporting that as a survival would escalate a tree
-        /// kill against an innocent process.
+        /// A process that is alive but has, for the moment, stopped accumulating CPU is not
+        /// the same as a dead one — comparing CPU totals would report it killed, log it as
+        /// such, and (because the alert is already marked sent) never surface it again.
+        /// Presence in a fresh snapshot is not the answer either: a terminated process lingers
+        /// as a zombie for as long as any handle to it stays open, so being listed proves
+        /// nothing. <see cref="ProcessControl.HasExited(int, long)"/> asks the process handle
+        /// directly, and also treats a recycled PID as the original being gone.
         /// </para>
         /// </summary>
-        private static bool StillBurning(OrphanFinding finding, out double cpuSeconds)
+        /// <param name="cpuSeconds">
+        /// The current CPU total, for the SURVIVED log line only. "Still climbing" is useful
+        /// colour there even though it no longer decides the verdict; it is 0 when the process
+        /// is not running or could not be found in the snapshot.
+        /// </param>
+        private static bool StillRunning(OrphanFinding finding, out double cpuSeconds)
         {
             cpuSeconds = 0;
+            if (ProcessControl.HasExited(finding.Identity.Pid, finding.Identity.CreateTime))
+                return false;
+
             foreach (var process in ProcessSampler.SnapshotOnce())
             {
                 if (process.Pid != finding.Identity.Pid) continue;
                 if (process.CreateTime != finding.Identity.CreateTime) continue;
-
                 cpuSeconds = process.CpuSeconds;
-                return cpuSeconds > finding.CpuSeconds;
+                break;
             }
-            return false;
+            return true;
         }
 
         private static void TreeKill(int pid)
@@ -367,6 +394,15 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         private static string Count(int n) =>
             n.ToString(CultureInfo.InvariantCulture) + (n == 1 ? " process" : " processes");
 
+        /// <summary>
+        /// Stops future scans and releases the timer.
+        ///
+        /// <para>
+        /// Does not wait for a scan already running on the timer thread — disposing a
+        /// <see cref="System.Threading.Timer"/> does not block on a callback in progress, so
+        /// that pass simply finishes on its own after this returns.
+        /// </para>
+        /// </summary>
         public void Dispose()
         {
             if (_disposed) return;

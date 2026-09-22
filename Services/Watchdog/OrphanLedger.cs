@@ -22,9 +22,21 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
     /// Pure state with no process API, so the two guarantees that matter — never nag, and never
     /// loop forever on one PID — are tested rather than hoped for.
     /// </para>
+    ///
+    /// <para>
+    /// Safe for concurrent use: every public method takes an internal lock. The watchdog scans
+    /// on a timer thread every 60 seconds, and a kill started from a click can hold the caller's
+    /// thread for several seconds per finding while it terminates, waits, and re-reads — a scan
+    /// landing in the middle of a kill is a routine overlap, not an edge case, and unsynchronized
+    /// writes to a <see cref="Dictionary{TKey,TValue}"/> from two threads can corrupt it or spin
+    /// forever inside a lookup after a resize. Locking here, rather than around each call site,
+    /// means a future caller cannot forget it, and keeps the lock's scope to the bookkeeping
+    /// itself rather than spanning the multi-second kill work around it.
+    /// </para>
     /// </summary>
     public sealed class OrphanLedger
     {
+        private readonly object _gate = new();
         private readonly Dictionary<ProcessIdentity, string> _lastLogged = new();
         private readonly HashSet<ProcessIdentity> _alerted = new();
         private readonly HashSet<ProcessIdentity> _unkillable = new();
@@ -39,12 +51,15 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         /// </summary>
         public bool ShouldLog(ProcessIdentity identity, string reason)
         {
-            if (_lastLogged.TryGetValue(identity, out string? previous) &&
-                string.Equals(previous, reason, StringComparison.Ordinal))
-                return false;
+            lock (_gate)
+            {
+                if (_lastLogged.TryGetValue(identity, out string? previous) &&
+                    string.Equals(previous, reason, StringComparison.Ordinal))
+                    return false;
 
-            _lastLogged[identity] = reason;
-            return true;
+                _lastLogged[identity] = reason;
+                return true;
+            }
         }
 
         /// <summary>
@@ -52,20 +67,34 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         /// forever for one that survived both kill attempts — nagging about a process the user
         /// cannot end is noise.
         /// </summary>
-        public bool ShouldAlert(ProcessIdentity identity) =>
-            !_alerted.Contains(identity) && !_unkillable.Contains(identity);
+        public bool ShouldAlert(ProcessIdentity identity)
+        {
+            lock (_gate)
+            {
+                return !_alerted.Contains(identity) && !_unkillable.Contains(identity);
+            }
+        }
 
         /// <summary>Records that the user has been told about this process.</summary>
-        public void MarkAlerted(ProcessIdentity identity) => _alerted.Add(identity);
+        public void MarkAlerted(ProcessIdentity identity)
+        {
+            lock (_gate) { _alerted.Add(identity); }
+        }
 
         /// <summary>
         /// Records that this process survived a terminate and a tree kill. It is never tried
         /// again and never reported again.
         /// </summary>
-        public void MarkUnkillable(ProcessIdentity identity) => _unkillable.Add(identity);
+        public void MarkUnkillable(ProcessIdentity identity)
+        {
+            lock (_gate) { _unkillable.Add(identity); }
+        }
 
         /// <summary>Whether this process has already been given up on.</summary>
-        public bool IsUnkillable(ProcessIdentity identity) => _unkillable.Contains(identity);
+        public bool IsUnkillable(ProcessIdentity identity)
+        {
+            lock (_gate) { return _unkillable.Contains(identity); }
+        }
 
         /// <summary>
         /// Drops bookkeeping for processes no longer present.
@@ -80,9 +109,12 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             if (alive == null) return;
             var live = alive as HashSet<ProcessIdentity> ?? new HashSet<ProcessIdentity>(alive);
 
-            Remove(_lastLogged.Keys, live, key => _lastLogged.Remove(key));
-            Remove(_alerted, live, key => _alerted.Remove(key));
-            Remove(_unkillable, live, key => _unkillable.Remove(key));
+            lock (_gate)
+            {
+                Remove(_lastLogged.Keys, live, key => _lastLogged.Remove(key));
+                Remove(_alerted, live, key => _alerted.Remove(key));
+                Remove(_unkillable, live, key => _unkillable.Remove(key));
+            }
         }
 
         /// <summary>

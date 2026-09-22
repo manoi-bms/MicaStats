@@ -308,5 +308,99 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(exists);
             Assert.Equal("", parentImage);
         }
+
+        // ------------------------------------------------------- the ledger
+
+        private static readonly ProcessIdentity Orphan = new ProcessIdentity(50192, 133_000_000_000_000_000L);
+
+        [Fact]
+        public void The_same_verdict_for_the_same_process_is_logged_once()
+        {
+            // A legitimately long search would otherwise write sixty identical lines an hour.
+            var ledger = new OrphanLedger();
+
+            Assert.True(ledger.ShouldLog(Orphan, "bounded by -maxdepth"));
+            Assert.False(ledger.ShouldLog(Orphan, "bounded by -maxdepth"));
+        }
+
+        [Fact]
+        public void A_changed_verdict_for_the_same_process_is_logged_again()
+        {
+            var ledger = new OrphanLedger();
+            ledger.ShouldLog(Orphan, "42s CPU is under the 120s threshold");
+
+            Assert.True(ledger.ShouldLog(Orphan, "parent 33960 has exited"));
+        }
+
+        [Fact]
+        public void A_recycled_pid_is_a_different_identity_and_is_logged_again()
+        {
+            var ledger = new OrphanLedger();
+            ledger.ShouldLog(Orphan, "parent 33960 has exited");
+
+            var newcomer = new ProcessIdentity(Orphan.Pid, Orphan.CreateTime + 1);
+            Assert.True(ledger.ShouldLog(newcomer, "parent 33960 has exited"));
+        }
+
+        [Fact]
+        public void A_process_is_alerted_on_once()
+        {
+            var ledger = new OrphanLedger();
+
+            Assert.True(ledger.ShouldAlert(Orphan));
+            ledger.MarkAlerted(Orphan);
+            Assert.False(ledger.ShouldAlert(Orphan));
+        }
+
+        [Fact]
+        public void A_process_that_survived_both_kill_attempts_is_never_alerted_on_again()
+        {
+            // Nagging about a process that cannot be ended is noise the user can do nothing
+            // about.
+            var ledger = new OrphanLedger();
+            ledger.MarkUnkillable(Orphan);
+
+            Assert.True(ledger.IsUnkillable(Orphan));
+            Assert.False(ledger.ShouldAlert(Orphan));
+        }
+
+        [Fact]
+        public void Pruning_forgets_processes_that_are_gone()
+        {
+            var ledger = new OrphanLedger();
+            ledger.MarkAlerted(Orphan);
+            ledger.ShouldLog(Orphan, "parent 33960 has exited");
+
+            ledger.Prune(Array.Empty<ProcessIdentity>());
+
+            // Forgotten entirely, so the bookkeeping cannot grow without bound across days of
+            // uptime.
+            Assert.True(ledger.ShouldAlert(Orphan));
+            Assert.True(ledger.ShouldLog(Orphan, "parent 33960 has exited"));
+        }
+
+        [Fact]
+        public void Pruning_keeps_processes_that_are_still_alive()
+        {
+            var ledger = new OrphanLedger();
+            ledger.MarkAlerted(Orphan);
+
+            ledger.Prune(new[] { Orphan });
+
+            Assert.False(ledger.ShouldAlert(Orphan));
+        }
+
+        [Fact]
+        public void An_unkillable_process_is_forgotten_only_once_it_is_actually_gone()
+        {
+            var ledger = new OrphanLedger();
+            ledger.MarkUnkillable(Orphan);
+
+            ledger.Prune(new[] { Orphan });
+            Assert.True(ledger.IsUnkillable(Orphan));
+
+            ledger.Prune(Array.Empty<ProcessIdentity>());
+            Assert.False(ledger.IsUnkillable(Orphan));
+        }
     }
 }

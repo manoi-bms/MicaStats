@@ -267,8 +267,22 @@ namespace Kil0bitSystemMonitor
 
                             System.Threading.Tasks.Task.Run(() =>
                             {
-                                string outcome = watchdog.EndAll(toEnd);
-                                Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("watchdog", outcome);
+                                // The whole body, not just EndAll's own per-finding try/catch:
+                                // IsUnkillable runs before that guard starts and the log call
+                                // runs after it ends, and this task is never awaited, so
+                                // anything escaping here becomes an unobserved exception —
+                                // silent on .NET 8, and the user who clicked would get no log
+                                // line and no explanation at all.
+                                try
+                                {
+                                    string outcome = watchdog.EndAll(toEnd);
+                                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("watchdog", outcome);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Error(
+                                        "watchdog", "Ending the flagged processes failed", ex);
+                                }
                             });
                         })));
 

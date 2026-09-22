@@ -37,13 +37,17 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         public static OrphanScanOptions Defaults { get; } = new();
 
         /// <summary>
-        /// The user's settings, with an empty list falling back to the shipped default rather
-        /// than to nothing.
+        /// The user's settings, with an empty or all-blank list falling back to the shipped
+        /// default rather than to nothing.
         ///
         /// <para>
         /// An empty binary allowlist would silently switch the feature off; an empty parent list
         /// would silently make every live parent unrecognised and put deliberate searches in
-        /// range. Neither is a thing anyone means by clearing a list in a config file.
+        /// range. Neither is a thing anyone means by clearing a list in a config file — and
+        /// neither is <c>[""]</c>: both consumers skip blank entries, so a list of nothing but
+        /// blanks is functionally the same empty list wearing a disguise. Entries that are
+        /// merely blank are dropped rather than causing the whole list to be discarded, so a
+        /// stray <c>""</c> next to a real entry does not throw the real one away too.
         /// </para>
         /// </summary>
         public static OrphanScanOptions FromConfig(Kil0bitSystemMonitor.Models.AppConfig config)
@@ -54,13 +58,25 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             {
                 CpuSecondsThreshold = config.OrphanCpuSecondsThreshold,
                 Grace = TimeSpan.FromMinutes(config.OrphanGraceMinutes),
-                BinarySuffixes = config.OrphanBinaryAllowlist is { Length: > 0 } binaries
+                BinarySuffixes = NonBlank(config.OrphanBinaryAllowlist) is { Count: > 0 } binaries
                     ? binaries
                     : Defaults.BinarySuffixes,
-                ExpectedParents = config.OrphanExpectedParents is { Length: > 0 } parents
+                ExpectedParents = NonBlank(config.OrphanExpectedParents) is { Count: > 0 } parents
                     ? parents
                     : Defaults.ExpectedParents,
             };
+        }
+
+        /// <summary>The non-blank entries of <paramref name="values"/>, or an empty list.</summary>
+        private static List<string> NonBlank(string[]? values)
+        {
+            var result = new List<string>();
+            if (values == null) return result;
+
+            foreach (string value in values)
+                if (!string.IsNullOrWhiteSpace(value)) result.Add(value);
+
+            return result;
         }
     }
 }

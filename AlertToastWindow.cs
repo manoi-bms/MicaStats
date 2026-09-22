@@ -33,14 +33,8 @@ namespace Kil0bitSystemMonitor
     /// </summary>
     public sealed class AlertToastWindow : Window
     {
-        /// <summary>Every notice currently on screen, newest last.</summary>
-        private static readonly List<AlertToastWindow> Open = new();
-
         /// <summary>Beyond this the corner becomes a wall of cards; the log has the rest.</summary>
         private const int MaxOnScreen = 3;
-
-        private const double CardMargin = 18;
-        private const double CardGap = 8;
 
         /// <summary>Amber rather than the app's cyan: this is a warning, not information.</summary>
         private static readonly Color Amber = Color.FromRgb(0xE8, 0xA5, 0x3C);
@@ -64,7 +58,7 @@ namespace Kil0bitSystemMonitor
 
             Content = BuildCard(alert);
 
-            Loaded += (s, e) => { RestackAll(); PlayEntrance(); };
+            Loaded += (s, e) => { ToastStack.Restack(); ToastStack.PlayEntrance(this); };
 
             // Longer than the update notice: this one reports a condition worth reading, and
             // the user may be away from the keyboard when it appears.
@@ -74,24 +68,15 @@ namespace Kil0bitSystemMonitor
 
             MouseEnter += (s, e) => _dismiss.Stop();
             MouseLeave += (s, e) => _dismiss.Start();
-            Closed += (s, e) => { _dismiss.Stop(); Open.Remove(this); RestackAll(); };
+            Closed += (s, e) => { _dismiss.Stop(); ToastStack.Remove(this); };
         }
 
         /// <summary>Shows a notice for one breached rule.</summary>
         public static AlertToastWindow ShowFor(AlertEvent alert, Action onOpen)
         {
-            // Drop the oldest rather than the newest: the most recent problem is the one the
-            // user has not seen yet.
-            while (Open.Count >= MaxOnScreen)
-            {
-                var oldest = Open[0];
-                try { oldest.Close(); } catch { }
-                Open.Remove(oldest);
-            }
-
             var toast = new AlertToastWindow(alert);
             toast.OpenRequested += onOpen;
-            Open.Add(toast);
+            ToastStack.Add(toast, MaxOnScreen);
             toast.Show();
             return toast;
         }
@@ -99,11 +84,7 @@ namespace Kil0bitSystemMonitor
         /// <summary>Closes every notice, e.g. when alerts are switched off.</summary>
         public static void CloseAll()
         {
-            for (int i = Open.Count - 1; i >= 0; i--)
-            {
-                try { Open[i].Close(); } catch { }
-            }
-            Open.Clear();
+            ToastStack.CloseAll<AlertToastWindow>();
         }
 
         private UIElement BuildCard(AlertEvent alert)
@@ -174,36 +155,6 @@ namespace Kil0bitSystemMonitor
                     Color = Colors.Black,
                 },
             };
-        }
-
-
-        /// <summary>
-        /// Lays the open notices up from the bottom-right corner. Re-run whenever one appears
-        /// or closes, so a gap never opens in the middle of the stack.
-        /// </summary>
-        private static void RestackAll()
-        {
-            var work = SystemParameters.WorkArea;
-            double bottom = work.Bottom - CardMargin;
-
-            for (int i = Open.Count - 1; i >= 0; i--)
-            {
-                var toast = Open[i];
-                if (!toast.IsLoaded) continue;
-
-                toast.Left = work.Right - toast.ActualWidth - CardMargin;
-                toast.Top = bottom - toast.ActualHeight;
-                bottom -= toast.ActualHeight + CardGap;
-            }
-        }
-
-        private void PlayEntrance()
-        {
-            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            BeginAnimation(OpacityProperty,
-                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { EasingFunction = ease });
-            BeginAnimation(TopProperty,
-                new DoubleAnimation(Top + 16, Top, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
         }
     }
 }

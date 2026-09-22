@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Kil0bitSystemMonitor;
 using Kil0bitSystemMonitor.Services.Watchdog;
 using Xunit;
 
@@ -401,6 +402,46 @@ namespace Kil0bitSystemMonitor.Tests
 
             ledger.Prune(Array.Empty<ProcessIdentity>());
             Assert.False(ledger.IsUnkillable(Orphan));
+        }
+
+        // ------------------------------------------------------- the notice
+
+        [Fact]
+        public void One_finding_reads_as_a_single_process_with_its_cost_in_minutes()
+        {
+            var findings = new[]
+            {
+                new OrphanFinding(Orphan, "find.exe", "find / -name x", 2258, "parent 33960 has exited"),
+            };
+
+            Assert.Equal("An orphaned find.exe, 38 minutes of CPU burned",
+                OrphanToastWindow.Headline(findings));
+        }
+
+        [Fact]
+        public void Two_findings_read_as_a_count_and_a_combined_cost()
+        {
+            var findings = new[]
+            {
+                new OrphanFinding(Orphan, "find.exe", "find / -name x", 2258, "parent 33960 has exited"),
+                new OrphanFinding(new ProcessIdentity(12264, 1), "find.exe", "find / -iname y", 2115,
+                    "parent 21452 has exited"),
+            };
+
+            Assert.Equal("2 orphaned searches, 73 minutes of CPU burned",
+                OrphanToastWindow.Headline(findings));
+        }
+
+        [Fact]
+        public void A_short_burn_is_reported_in_seconds_rather_than_zero_minutes()
+        {
+            var findings = new[]
+            {
+                new OrphanFinding(Orphan, "find.exe", "find / -name x", 95, "parent 33960 has exited"),
+            };
+
+            Assert.Equal("An orphaned find.exe, 95 seconds of CPU burned",
+                OrphanToastWindow.Headline(findings));
         }
     }
 }

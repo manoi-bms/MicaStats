@@ -249,5 +249,64 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.True(verdict.Kill);
         }
+
+        // ------------------------------------------------------- parent resolution
+
+        private static Dictionary<int, ParentState.SnapshotEntry> Snapshot(
+            params ParentState.SnapshotEntry[] entries)
+        {
+            var map = new Dictionary<int, ParentState.SnapshotEntry>();
+            foreach (var entry in entries) map[entry.Pid] = entry;
+            return map;
+        }
+
+        [Fact]
+        public void A_parent_absent_from_the_snapshot_does_not_exist()
+        {
+            bool exists = ParentState.Resolve(
+                33960, Now.AddHours(-2), Snapshot(), out string parentImage);
+
+            Assert.False(exists);
+            Assert.Equal("", parentImage);
+        }
+
+        [Fact]
+        public void A_parent_older_than_its_child_exists()
+        {
+            var bash = new ParentState.SnapshotEntry(
+                33960, Now.AddHours(-3), @"C:\Program Files\Git\usr\bin\bash.exe");
+
+            bool exists = ParentState.Resolve(
+                33960, Now.AddHours(-2), Snapshot(bash), out string parentImage);
+
+            Assert.True(exists);
+            Assert.Equal(@"C:\Program Files\Git\usr\bin\bash.exe", parentImage);
+        }
+
+        [Fact]
+        public void A_parent_younger_than_its_child_is_a_recycled_pid_and_does_not_exist()
+        {
+            // The real parent exited and Windows handed 33960 to something else. Asking only
+            // whether the PID is present finds the newcomer and wrongly reports a live parent,
+            // which keeps an orphan alive forever.
+            var newcomer = new ParentState.SnapshotEntry(
+                33960, Now.AddMinutes(-5), @"C:\Windows\notepad.exe");
+
+            bool exists = ParentState.Resolve(
+                33960, Now.AddHours(-2), Snapshot(newcomer), out string parentImage);
+
+            Assert.False(exists);
+            Assert.Equal("", parentImage);
+        }
+
+        [Fact]
+        public void A_parent_pid_of_zero_does_not_exist()
+        {
+            bool exists = ParentState.Resolve(
+                0, Now.AddHours(-2), Snapshot(), out string parentImage);
+
+            Assert.False(exists);
+            Assert.Equal("", parentImage);
+        }
     }
 }

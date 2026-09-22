@@ -230,10 +230,19 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             var result = ProcessControl.TryEndTask(
                 finding.Identity.Pid, finding.Identity.CreateTime, finding.Name, out string message);
 
-            // Recycled is the same good news as AlreadyExited: the PID this finding named now
-            // belongs to someone else, so the process that was flagged is already gone.
-            if (result == EndTaskResult.Terminated || result == EndTaskResult.AlreadyExited
-                || result == EndTaskResult.Recycled)
+            // TryEndTask already proved this, by comparing creation times before it touched
+            // anything: the PID now belongs to a different process, so the one that was
+            // flagged is gone. Taken as-is rather than re-verified — StillRunning would open a
+            // fresh handle to that PID and, if the identity check inside it ever failed to line
+            // up the same way, a forced tree kill could land on the innocent process now
+            // wearing that number, which is the one outcome this whole design exists to avoid.
+            if (result == EndTaskResult.Recycled)
+            {
+                Log(finding, "KILLED", message);
+                return true;
+            }
+
+            if (result == EndTaskResult.Terminated || result == EndTaskResult.AlreadyExited)
             {
                 System.Threading.Thread.Sleep(VerifyDelayMs);
                 if (!StillRunning(finding, out double cpuNow))
@@ -243,8 +252,8 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
                 }
 
                 Log(finding, "SURVIVED",
-                    "terminate reported " + result + " but CPU is still climbing ("
-                    + cpuNow.ToString("0", CultureInfo.InvariantCulture) + "s); escalating");
+                    "terminate reported " + result + " but the process is still running ("
+                    + cpuNow.ToString("0", CultureInfo.InvariantCulture) + "s CPU); escalating");
             }
             else if (result == EndTaskResult.AccessDenied)
             {

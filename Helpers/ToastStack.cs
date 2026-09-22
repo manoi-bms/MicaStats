@@ -20,6 +20,14 @@ namespace Kil0bitSystemMonitor.Helpers
     /// Trimming is per type: a burst of alerts must not evict a notice of a different kind that
     /// the user has not answered yet.
     /// </para>
+    ///
+    /// <para>
+    /// Dispatcher-affine: every method here must be called from the UI thread. <see cref="Open"/>
+    /// is a plain <see cref="List{T}"/> with no lock, and each entry is a live WPF
+    /// <see cref="Window"/> — touching either from a background thread can corrupt the list or
+    /// throw a cross-thread exception. A caller reached from a timer or another non-UI thread
+    /// must marshal onto the dispatcher before calling in.
+    /// </para>
     /// </summary>
     public static class ToastStack
     {

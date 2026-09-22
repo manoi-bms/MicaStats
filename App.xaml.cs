@@ -40,6 +40,9 @@ namespace Kil0bitSystemMonitor
         /// </summary>
         public static Kil0bitSystemMonitor.Services.ProcessSampler SharedProcessSampler { get; } = new();
 
+        /// <summary>The runaway-search watchdog, or null before diagnostics have started.</summary>
+        public static Kil0bitSystemMonitor.Services.Watchdog.OrphanWatchdog? Watchdog { get; private set; }
+
         /// <summary>The config service, for windows that are not handed one.</summary>
         public static Kil0bitSystemMonitor.Services.ConfigService? ConfigService { get; private set; }
 
@@ -246,6 +249,29 @@ namespace Kil0bitSystemMonitor
                 s_alerts.Raised += alert =>
                     AlertToastWindow.ShowFor(alert, () => DiagnosticsWindow.ShowDiagnostics(3));
 
+                // The watchdog reports; it never ends anything by itself. The click that does
+                // is on the card. Found is raised on a timer thread, so the card is built on
+                // the dispatcher.
+                Watchdog = new Kil0bitSystemMonitor.Services.Watchdog.OrphanWatchdog();
+                Watchdog.Found += findings =>
+                    Dispatcher.BeginInvoke(new Action(() =>
+                        OrphanToastWindow.ShowFor(findings, toEnd =>
+                        {
+                            // Ending sleeps and re-reads the process list twice per finding, up
+                            // to about nine seconds each. On the dispatcher that would freeze
+                            // the window while the user waits to hear whether their click
+                            // worked, so it runs off it. The outcome goes to the log; the card
+                            // has already closed itself by then.
+                            var watchdog = Watchdog;
+                            if (watchdog == null) return;
+
+                            System.Threading.Tasks.Task.Run(() =>
+                            {
+                                string outcome = watchdog.EndAll(toEnd);
+                                Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("watchdog", outcome);
+                            });
+                        })));
+
                 ApplyDiagnosticsSettings();
 
                 // Battery wear needs a powercfg spawn, so it is resolved in the background
@@ -257,7 +283,9 @@ namespace Kil0bitSystemMonitor
                 {
                     if (e.PropertyName == null) return;
                     if (e.PropertyName.StartsWith("Slowdown", StringComparison.Ordinal) ||
-                        e.PropertyName.StartsWith("Alert", StringComparison.Ordinal))
+                        e.PropertyName.StartsWith("Alert", StringComparison.Ordinal) ||
+                        e.PropertyName.StartsWith("Orphan", StringComparison.Ordinal) ||
+                        e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.WatchOrphanedSearches))
                     {
                         Dispatcher.BeginInvoke(new Action(ApplyDiagnosticsSettings));
                     }
@@ -301,6 +329,15 @@ namespace Kil0bitSystemMonitor
 
                     if (config.AlertsEnabled) s_alerts.Start();
                     else { s_alerts.Stop(); AlertToastWindow.CloseAll(); }
+                }
+
+                if (Watchdog != null)
+                {
+                    Watchdog.Options =
+                        Kil0bitSystemMonitor.Services.Watchdog.OrphanScanOptions.FromConfig(config);
+
+                    Watchdog.Enabled = config.WatchOrphanedSearches;
+                    if (!config.WatchOrphanedSearches) OrphanToastWindow.CloseAll();
                 }
             }
             catch (Exception ex)
@@ -455,6 +492,10 @@ namespace Kil0bitSystemMonitor
             try
             {
                 m_captureHotkeys?.Dispose();
+                // The watchdog owns nothing else here — its scans are a static kernel snapshot,
+                // not a lease on m_history or SharedProcessSampler — so stopping it first just
+                // silences its timer earliest; it does not have to precede anything below it.
+                Watchdog?.Dispose();
                 // Before the history: the alert monitor is subscribed to it, and the recorder
                 // holds a lease on the shared sampler.
                 s_alerts?.Dispose();

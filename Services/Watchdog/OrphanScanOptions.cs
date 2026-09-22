@@ -35,5 +35,32 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
 
         /// <summary>The shipped defaults, as described in the README.</summary>
         public static OrphanScanOptions Defaults { get; } = new();
+
+        /// <summary>
+        /// The user's settings, with an empty list falling back to the shipped default rather
+        /// than to nothing.
+        ///
+        /// <para>
+        /// An empty binary allowlist would silently switch the feature off; an empty parent list
+        /// would silently make every live parent unrecognised and put deliberate searches in
+        /// range. Neither is a thing anyone means by clearing a list in a config file.
+        /// </para>
+        /// </summary>
+        public static OrphanScanOptions FromConfig(Kil0bitSystemMonitor.Models.AppConfig config)
+        {
+            if (config == null) return Defaults;
+
+            return new OrphanScanOptions
+            {
+                CpuSecondsThreshold = config.OrphanCpuSecondsThreshold,
+                Grace = TimeSpan.FromMinutes(config.OrphanGraceMinutes),
+                BinarySuffixes = config.OrphanBinaryAllowlist is { Length: > 0 } binaries
+                    ? binaries
+                    : Defaults.BinarySuffixes,
+                ExpectedParents = config.OrphanExpectedParents is { Length: > 0 } parents
+                    ? parents
+                    : Defaults.ExpectedParents,
+            };
+        }
     }
 }

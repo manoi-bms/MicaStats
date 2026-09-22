@@ -170,7 +170,21 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             foreach (var finding in findings)
             {
                 if (_ledger.IsUnkillable(finding.Identity)) { survived++; continue; }
-                if (EndOne(finding)) ended++; else survived++;
+
+                try
+                {
+                    if (EndOne(finding)) ended++; else survived++;
+                }
+                catch (Exception ex)
+                {
+                    // This runs on the dispatcher thread, from the toast's click handler. An
+                    // exception escaping here is unhandled on the UI thread and takes the whole
+                    // app down, at the exact moment the user asked it to clean something up.
+                    // Count it as survived and move on to the rest of the batch.
+                    survived++;
+                    DiagnosticsLog.Error(Area, "Ending pid "
+                        + finding.Identity.Pid.ToString(CultureInfo.InvariantCulture) + " failed", ex);
+                }
             }
 
             if (survived == 0)

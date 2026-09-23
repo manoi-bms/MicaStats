@@ -34,8 +34,18 @@ namespace Kil0bitSystemMonitor
     /// </summary>
     public sealed class OrphanToastWindow : Window
     {
-        /// <summary>One card at a time: every finding from a scan is reported on it.</summary>
-        private const int MaxOnScreen = 1;
+        /// <summary>
+        /// Three, matching <see cref="AlertToastWindow"/>, and deliberately not one.
+        ///
+        /// <para>
+        /// Each card carries its own findings, and those are marked alerted once it is shown, so
+        /// the watchdog never raises them again. A later scan that finds a new orphan must
+        /// therefore not evict an unanswered card: its End them button is the only way left to
+        /// end those processes for the life of the app. Scans are a minute apart, so three leaves
+        /// room for that while still capping how much of the corner the cards can take.
+        /// </para>
+        /// </summary>
+        private const int MaxOnScreen = 3;
 
         /// <summary>Amber, matching the alert card: this is a warning, not information.</summary>
         private static readonly Color Amber = Color.FromRgb(0xE8, 0xA5, 0x3C);

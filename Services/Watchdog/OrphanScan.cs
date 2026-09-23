@@ -39,7 +39,14 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
                 return new OrphanVerdict(record.Pid, false,
                     "image is not an allowlisted search binary");
 
-            // 2 — unbounded scan. Only a shallow -maxdepth is a bound; a deep one falls through.
+            // 2 — unbounded scan. Checked only on a command line that was actually read:
+            // ProcessDetails can resolve the image and still come back with no command line,
+            // and "no path argument is not a filesystem root" would then assert a fact about a
+            // command line nobody saw. Kept, with the reason saying what really happened.
+            if (string.IsNullOrWhiteSpace(record.CommandLine))
+                return new OrphanVerdict(record.Pid, false, "command line unreadable");
+
+            // Only a shallow -maxdepth is a bound; a deep one falls through.
             if (!SearchCommandLine.IsUnbounded(record.CommandLine, options.TrustedMaxDepth))
             {
                 int? depth = SearchCommandLine.MaxDepth(record.CommandLine);

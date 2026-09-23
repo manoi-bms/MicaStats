@@ -56,8 +56,30 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         /// <summary>Thresholds and allowlists. Replaced wholesale when settings change.</summary>
         public OrphanScanOptions Options { get; set; } = OrphanScanOptions.Defaults;
 
-        /// <summary>Raised on a background thread with processes worth reporting.</summary>
+        /// <summary>
+        /// Raised on a background thread with processes worth reporting. The subscriber must
+        /// call <see cref="MarkShown"/> once the user can actually see them; until it does,
+        /// every scan raises them again.
+        /// </summary>
         public event Action<IReadOnlyList<OrphanFinding>>? Found;
+
+        /// <summary>
+        /// Records that these findings are now in front of the user, so later scans stop
+        /// raising them.
+        ///
+        /// <para>
+        /// The subscriber calls this, not the scan, because only the subscriber knows when the
+        /// card exists: <see cref="Found"/> is raised on a timer thread and the card is built
+        /// later on the dispatcher. Marking any earlier, a card that failed to appear would
+        /// leave the ledger believing the user had been told, and the only way to end those
+        /// processes would never be offered. Safe from any thread; the ledger locks.
+        /// </para>
+        /// </summary>
+        public void MarkShown(IReadOnlyList<OrphanFinding> findings)
+        {
+            if (findings == null) return;
+            foreach (var finding in findings) _ledger.MarkAlerted(finding.Identity);
+        }
 
         /// <summary>
         /// Whether to scan. Switching off stops the timer; the ledger is kept, so switching on
@@ -165,15 +187,11 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
                         record.CpuSeconds, verdict.Reason));
                 }
 
-                if (findings.Count > 0)
-                {
-                    // Marked alerted only after the subscriber has actually seen the batch, so
-                    // a subscriber that throws does not leave the ledger believing the user was
-                    // told about an orphan they never saw — the outer catch below logs the
-                    // failure and the next scan will alert on it again.
-                    Found?.Invoke(findings);
-                    foreach (var finding in findings) _ledger.MarkAlerted(finding.Identity);
-                }
+                // Not marked alerted here. The subscriber hands the batch to the dispatcher and
+                // returns at once, so at this point no card exists yet; marking now would let a
+                // card that failed to appear silence these findings for good. The subscriber
+                // calls MarkShown once the card is actually on screen.
+                if (findings.Count > 0) Found?.Invoke(findings);
             }
             catch (Exception ex)
             {
@@ -306,26 +324,38 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         /// nothing. <see cref="ProcessControl.HasExited(int, long)"/> asks the process handle
         /// directly, and also treats a recycled PID as the original being gone.
         /// </para>
+        ///
+        /// <para>
+        /// Both must agree before this says "still running": the exact <c>(pid, createTime)</c>
+        /// identity is present in a fresh snapshot, and the handle has not exited. The snapshot
+        /// is the identity check. <see cref="ProcessControl.HasExited(int, long)"/> answers false
+        /// when it cannot tell, and a "yes" that rests on that alone would send
+        /// <c>taskkill /F /T</c> at a PID nobody re-confirmed and then close the identity out as
+        /// unkillable on an unknown. Absent from the snapshot means gone, whatever the handle
+        /// said.
+        /// </para>
         /// </summary>
         /// <param name="cpuSeconds">
         /// The current CPU total, for the SURVIVED log line only. "Still climbing" is useful
         /// colour there even though it no longer decides the verdict; it is 0 when the process
-        /// is not running or could not be found in the snapshot.
+        /// is not in the snapshot.
         /// </param>
         private static bool StillRunning(OrphanFinding finding, out double cpuSeconds)
         {
             cpuSeconds = 0;
-            if (ProcessControl.HasExited(finding.Identity.Pid, finding.Identity.CreateTime))
-                return false;
+            bool present = false;
 
             foreach (var process in ProcessSampler.SnapshotOnce())
             {
                 if (process.Pid != finding.Identity.Pid) continue;
                 if (process.CreateTime != finding.Identity.CreateTime) continue;
                 cpuSeconds = process.CpuSeconds;
+                present = true;
                 break;
             }
-            return true;
+
+            if (!present) return false;
+            return !ProcessControl.HasExited(finding.Identity.Pid, finding.Identity.CreateTime);
         }
 
         private static void TreeKill(int pid)

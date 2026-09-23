@@ -251,40 +251,24 @@ namespace Kil0bitSystemMonitor
 
                 // The watchdog reports; it never ends anything by itself. The click that does
                 // is on the card. Found is raised on a timer thread, so the card is built on
-                // the dispatcher.
+                // the dispatcher — and only once ShowFor has returned are the findings marked
+                // shown. If building the card throws, they stay unmarked and the next scan
+                // offers them again rather than the user never hearing of them.
                 Watchdog = new Kil0bitSystemMonitor.Services.Watchdog.OrphanWatchdog();
                 Watchdog.Found += findings =>
                     Dispatcher.BeginInvoke(new Action(() =>
-                        OrphanToastWindow.ShowFor(findings, toEnd =>
+                    {
+                        try
                         {
-                            // Ending sleeps and re-reads the process list twice per finding, up
-                            // to about nine seconds each. On the dispatcher that would freeze
-                            // the window while the user waits to hear whether their click
-                            // worked, so it runs off it. The outcome goes to the log; the card
-                            // has already closed itself by then.
-                            var watchdog = Watchdog;
-                            if (watchdog == null) return;
-
-                            System.Threading.Tasks.Task.Run(() =>
-                            {
-                                // The whole body, not just EndAll's own per-finding try/catch:
-                                // IsUnkillable runs before that guard starts and the log call
-                                // runs after it ends, and this task is never awaited, so
-                                // anything escaping here becomes an unobserved exception —
-                                // silent on .NET 8, and the user who clicked would get no log
-                                // line and no explanation at all.
-                                try
-                                {
-                                    string outcome = watchdog.EndAll(toEnd);
-                                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("watchdog", outcome);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Error(
-                                        "watchdog", "Ending the flagged processes failed", ex);
-                                }
-                            });
-                        })));
+                            ShowOrphanCard(findings);
+                            Watchdog?.MarkShown(findings);
+                        }
+                        catch (Exception ex)
+                        {
+                            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error(
+                                "watchdog", "Showing the runaway search card failed", ex);
+                        }
+                    }));
 
                 ApplyDiagnosticsSettings();
 
@@ -309,6 +293,44 @@ namespace Kil0bitSystemMonitor
             {
                 Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("diagnostics", "Startup failed", ex);
             }
+        }
+
+        /// <summary>
+        /// Puts up the runaway search card, wiring its End them button to the watchdog. Must be
+        /// called on the dispatcher; throws if the card cannot be built, which the caller relies
+        /// on to leave the findings unmarked.
+        /// </summary>
+        private void ShowOrphanCard(
+            System.Collections.Generic.IReadOnlyList<Kil0bitSystemMonitor.Services.Watchdog.OrphanFinding> findings)
+        {
+            OrphanToastWindow.ShowFor(findings, toEnd =>
+            {
+                // Ending sleeps and re-reads the process list twice per finding, up to about
+                // nine seconds each. On the dispatcher that would freeze the window while the
+                // user waits to hear whether their click worked, so it runs off it. The outcome
+                // goes to the log; the card has already closed itself by then.
+                var watchdog = Watchdog;
+                if (watchdog == null) return;
+
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    // The whole body, not just EndAll's own per-finding try/catch: IsUnkillable
+                    // runs before that guard starts and the log call runs after it ends, and this
+                    // task is never awaited, so anything escaping here becomes an unobserved
+                    // exception — silent on .NET 8, and the user who clicked would get no log
+                    // line and no explanation at all.
+                    try
+                    {
+                        string outcome = watchdog.EndAll(toEnd);
+                        Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("watchdog", outcome);
+                    }
+                    catch (Exception ex)
+                    {
+                        Kil0bitSystemMonitor.Services.DiagnosticsLog.Error(
+                            "watchdog", "Ending the flagged processes failed", ex);
+                    }
+                });
+            });
         }
 
         /// <summary>

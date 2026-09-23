@@ -257,6 +257,100 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_scan_at_exactly_the_cpu_threshold_is_kept()
+        {
+            // Rule 3 is "exceeds", not "reaches". A <= flipped to < would kill this.
+            var verdict = OrphanScan.DecideOne(Killable(cpuSeconds: 120), OrphanScanOptions.Defaults, Now);
+
+            Assert.False(verdict.Kill);
+            Assert.Contains("120s threshold", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_scan_just_past_the_cpu_threshold_is_killed()
+        {
+            var verdict = OrphanScan.DecideOne(Killable(cpuSeconds: 120.5), OrphanScanOptions.Defaults, Now);
+
+            Assert.True(verdict.Kill);
+        }
+
+        [Fact]
+        public void A_scan_at_exactly_the_grace_period_is_kept()
+        {
+            // Rule 4 is "older than", not "as old as". A <= flipped to < would kill this.
+            var verdict = OrphanScan.DecideOne(
+                Killable(age: TimeSpan.FromMinutes(5)), OrphanScanOptions.Defaults, Now);
+
+            Assert.False(verdict.Kill);
+            Assert.Contains("grace period", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_scan_just_past_the_grace_period_is_killed()
+        {
+            var verdict = OrphanScan.DecideOne(
+                Killable(age: TimeSpan.FromMinutes(5).Add(TimeSpan.FromSeconds(1))),
+                OrphanScanOptions.Defaults, Now);
+
+            Assert.True(verdict.Kill);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void An_unreadable_command_line_is_kept_with_a_reason_that_says_so(string commandLine)
+        {
+            // ProcessDetails can read the image and not the command line. The keep must not
+            // claim the scan had "no path argument", which nobody saw.
+            var verdict = OrphanScan.DecideOne(
+                Killable(commandLine: commandLine, cpuSeconds: 5000), OrphanScanOptions.Defaults, Now);
+
+            Assert.False(verdict.Kill);
+            Assert.Equal("command line unreadable", verdict.Reason);
+        }
+
+        [Fact]
+        public void A_command_line_naming_no_path_is_still_kept_as_bounded()
+        {
+            var verdict = OrphanScan.DecideOne(
+                Killable(commandLine: "\"" + GitFind + "\" -name x.pas"), OrphanScanOptions.Defaults, Now);
+
+            Assert.False(verdict.Kill);
+            Assert.Equal("bounded: no path argument is not a filesystem root", verdict.Reason);
+        }
+
+        [Fact]
+        public void The_allowlist_ignores_case()
+        {
+            Assert.True(OrphanScan.IsAllowlisted(
+                @"C:\Program Files\git\USR\bin\FIND.EXE", OrphanScanOptions.Defaults.BinarySuffixes));
+        }
+
+        [Fact]
+        public void The_allowlist_accepts_forward_slashes_in_the_image_path()
+        {
+            Assert.True(OrphanScan.IsAllowlisted(
+                "C:/Program Files/Git/usr/bin/find.exe", OrphanScanOptions.Defaults.BinarySuffixes));
+        }
+
+        [Fact]
+        public void The_allowlist_accepts_forward_slashes_in_a_configured_suffix()
+        {
+            Assert.True(OrphanScan.IsAllowlisted(GitFind, new[] { "/Git/usr/bin/find.exe" }));
+        }
+
+        [Fact]
+        public void A_live_shell_parent_is_recognised_whatever_its_case()
+        {
+            var verdict = OrphanScan.DecideOne(
+                Killable(parentExists: true, parentImagePath: @"C:\Program Files\Git\usr\bin\BASH.EXE"),
+                OrphanScanOptions.Defaults, Now);
+
+            Assert.False(verdict.Kill);
+            Assert.Contains("live shell", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void An_orphan_burning_cpu_is_killed_and_the_reason_says_the_parent_exited()
         {
             var verdict = OrphanScan.DecideOne(Killable(), OrphanScanOptions.Defaults, Now);

@@ -56,6 +56,12 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         /// process that exits between the snapshot and this call. The watchdog runs unattended
         /// and a candidate that vanished needs no verdict.
         /// </para>
+        ///
+        /// <para>
+        /// Success means the image path was read. The command line can still come back empty
+        /// when only that second query failed; <see cref="OrphanScan"/> keeps such a process
+        /// with its own reason rather than guessing what the command line said.
+        /// </para>
         /// </summary>
         public static bool TryRead(int pid, out string imagePath, out string commandLine)
         {

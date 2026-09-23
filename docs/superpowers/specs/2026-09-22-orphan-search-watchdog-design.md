@@ -113,11 +113,17 @@ Data flow, once per 60 seconds:
    (`QueryFullProcessImageName`) and the command line
    (`NtQueryInformationProcess` / `ProcessCommandLineInformation`, available since Windows 8.1
    and permitted with `PROCESS_QUERY_LIMITED_INFORMATION`).
-4. Resolve `parentExists` against the same snapshot, via `ParentState.Resolve`.
+4. Resolve `parentExists` against the same snapshot, via `ParentState.Resolve`. The snapshot
+   carries only the parent's bare image name, so for a live parent of a candidate the full image
+   path is read as well, and accepted only when its file name matches the snapshot name (a PID
+   recycled between the snapshot and the read would otherwise be blamed). The ledger remembers
+   that path per candidate identity, so it can still be named once the parent has exited.
 5. Call `OrphanScan.Decide`.
 6. Log candidate verdicts.
 7. If any verdict is a kill, and the set contains an identity not already alerted or recorded
-   unkillable, raise one toast.
+   unkillable, raise one toast. The identities are marked alerted by the subscriber once the card
+   is actually on screen, not by the scan, so a card that fails to appear is offered again next
+   minute.
 
 Nothing in the application calls `Decide` with live process objects, so the decision stays
 testable with synthetic records.
@@ -134,8 +140,15 @@ produces the keep reason.
 2. **Unbounded scan.** The command line is tokenised respecting quotes; the executable token is
    dropped; leading `-H`, `-L` and `-P` are skipped; the first remaining non-flag argument is
    the scan root. The scan is unbounded when that root is `/`, or a bare drive root written as
-   `C:/`, `C:\`, `C:` or `/c/` for any drive letter — **and** the command line contains no
-   `-maxdepth` anywhere.
+   `C:/`, `C:\`, `C:` or `/c/` for any drive letter — **and** the command line has no
+   `-maxdepth`, or its value is greater than `OrphanTrustedMaxDepth` (default 3), or its value
+   cannot be read as a plain non-negative integer. Under Git Bash `/` mounts every drive, so
+   `find / -maxdepth 6` still walks every drive five levels deep: a real orphan with exactly
+   `"C:\Program Files\Git\usr\bin\find.exe" / -name madExcept.pas -maxdepth 6` burned more than
+   5400 seconds of CPU with a dead parent, and was kept while any `-maxdepth` counted as a
+   bound. A depth that is not trusted only falls through to rules 3 to 5, which still protect
+   a deliberate search. A candidate whose command line could not be read is kept with the
+   reason `command line unreadable` rather than judged on text nobody saw.
 3. **CPU.** `cpuSeconds` exceeds `OrphanCpuSecondsThreshold`, default 120.
 4. **Age.** `now - startTime` exceeds `OrphanGraceMinutes`, default 5.
 5. **Parent.** Either `parentExists` is false, or the parent's image file name is outside
@@ -186,6 +199,7 @@ Flat properties on `AppConfig`, so they serialise into the existing
 | `WatchOrphanedSearches` | `true` | Master switch; the one Settings checkbox |
 | `OrphanCpuSecondsThreshold` | `120` | Rule 3 |
 | `OrphanGraceMinutes` | `5` | Rule 4 |
+| `OrphanTrustedMaxDepth` | `3` | Rule 2; clamped to 0..32 |
 | `OrphanBinaryAllowlist` | `["\\Git\\usr\\bin\\find.exe"]` | Rule 1 |
 | `OrphanExpectedParents` | `["bash.exe","sh.exe","pwsh.exe","cmd.exe"]` | Rule 5 |
 
@@ -203,14 +217,23 @@ Per flagged `(pid, createTime)` identity, when the user clicks *End them*:
 1. `ProcessControl.TryEndTask(pid, createTime, name)`. It verifies the identity against the live
    process before terminating.
 2. Wait two seconds. Re-read the snapshot for that exact identity.
-3. Still present **and** `cpuSeconds` has increased: the process is wedged in kernel I/O rather
-   than protected. Escalate to `taskkill /F /T /PID <pid>` with no visible window.
-4. Wait two seconds and re-read once more. Still present: log the identity as `UNKILLABLE`,
-   record it, and never retry or alert on it again.
+3. Still running — the exact `(pid, createTime)` identity is present in the fresh snapshot
+   **and** `ProcessControl.HasExited(pid, createTime)` says it has not exited: the process is
+   wedged in kernel I/O rather than protected. Escalate to `taskkill /F /T /PID <pid>` with no
+   visible window. Presence alone is not enough, because a terminated process stays listed
+   while any handle to it is open; absence is decisive, because an identity missing from the
+   snapshot is gone whatever an inconclusive handle query said.
+4. Wait two seconds and check once more the same way. Still running: log the identity as
+   `UNKILLABLE`, record it, and never retry or alert on it again.
 
-`TryEndTask` returning `AccessDenied` takes a different branch. That is a privilege failure, not
-a wedged process, and `taskkill` would fail the same way — it uses the existing elevated
-one-shot path (`--kill <pid> <createTime>` under UAC, parsed by `KillArguments`).
+`TryEndTask` returning `AccessDenied` takes a different branch: it is logged as `ACCESS-DENIED`
+and the attempt ends there. It is a privilege failure, not a wedged process, and `taskkill`
+would fail the same way. It does **not** route to the elevated one-shot `--kill` path, although
+an earlier draft of this document said it would. The children this watchdog exists for are
+leaked by a tool the user runs, so they run as the same user and an unelevated terminate
+reaches them; a process that refuses is not the case being solved. And a UAC prompt raised from
+a background thread, some seconds after a click on a card that has already closed, is its own
+problem — a consent dialog nobody can connect to what they did.
 
 Two attempts, then the ledger closes the identity out. There is no third try and no loop.
 
@@ -223,8 +246,13 @@ output. A keep is written **once per identity per distinct reason**, so a legiti
 long-running search logs one line rather than sixty an hour, while a verdict that changes is
 always recorded.
 
-A kill line carries timestamp, pid, parentPid, the parent's image path when still resolvable,
-cpuSeconds, age, the full command line, the verdict and the reason.
+A kill line carries timestamp, pid, parentPid, the parent's image, cpuSeconds, age, the full
+command line, the verdict and the reason.
+
+The parent is named by its full path whenever any scan saw it alive, and that path is remembered
+per candidate identity, so a later line written after the parent has exited reads
+`parentImage=(gone, was C:\...\bash.exe)`. A parent that exited before the first scan ever saw
+it cannot be identified, and the line says `parentImage=(gone, never seen)` rather than guessing.
 
 The parent image path is the point of the log, not decoration: it names the tool that leaked the
 child, which is the only route to fixing the cause rather than the symptom.
@@ -262,7 +290,9 @@ convention rather than the source specification's Pester.
 Additional cases the source specification does not list but the implementation requires:
 
 8. Quoted executable path with spaces is tokenised correctly.
-9. `-maxdepth` appearing after other predicates still bounds the scan.
+9. `-maxdepth` appearing after other predicates still bounds the scan, but only at or below
+   the trusted depth; the observed `-maxdepth 6` orphan is killed, and a `-maxdepth` with no
+   readable number is not trusted.
 10. A drive root spelled `C:\`, `C:/`, `C:` and `/c/` is each recognised as unbounded.
 11. A non-root first argument, such as `C:\src`, is bounded.
 

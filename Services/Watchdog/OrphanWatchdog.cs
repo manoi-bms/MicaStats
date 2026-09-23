@@ -274,7 +274,17 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             if (result == EndTaskResult.Terminated || result == EndTaskResult.AlreadyExited)
             {
                 System.Threading.Thread.Sleep(VerifyDelayMs);
-                if (!StillRunning(finding, out double cpuNow))
+                bool? stillRunning = StillRunning(finding, out double cpuNow);
+
+                if (stillRunning == null)
+                {
+                    Log(finding, "UNVERIFIED",
+                        "terminate reported " + result + ", but the process list could not be "
+                        + "read to confirm the kill");
+                    return false;
+                }
+
+                if (!stillRunning.Value)
                 {
                     Log(finding, "KILLED", message);
                     return true;
@@ -286,8 +296,13 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             }
             else if (result == EndTaskResult.AccessDenied)
             {
-                // A privilege failure, not a wedged process. taskkill would fail identically;
-                // the elevated one-shot path is the only thing that can help.
+                // A privilege failure, not a wedged process, and taskkill would fail the same
+                // way — so this deliberately logs and stops rather than escalating further. The
+                // children this watchdog exists for are leaked by a tool the user runs, so they
+                // run as the same user and an unelevated terminate reaches them; a process that
+                // refuses is not the case being solved. Raising a UAC prompt from a background
+                // thread, seconds after a click on a card that may already be gone, is its own
+                // problem — a consent dialog nobody can connect to what they did.
                 Log(finding, "ACCESS-DENIED", message);
                 return false;
             }
@@ -300,7 +315,17 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             TreeKill(finding.Identity.Pid);
             System.Threading.Thread.Sleep(VerifyDelayMs);
 
-            if (!StillRunning(finding, out _))
+            bool? stillRunningAfterTreeKill = StillRunning(finding, out _);
+
+            if (stillRunningAfterTreeKill == null)
+            {
+                Log(finding, "UNVERIFIED",
+                    "taskkill /F /T ran, but the process list could not be read to confirm the "
+                    + "kill");
+                return false;
+            }
+
+            if (!stillRunningAfterTreeKill.Value)
             {
                 Log(finding, "KILLED", "taskkill /F /T succeeded where terminate did not");
                 return true;
@@ -313,7 +338,7 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
 
         /// <summary>
         /// Whether this exact process is still running, per the kernel rather than inferred
-        /// from CPU movement.
+        /// from CPU movement — or <c>null</c> when a fresh snapshot cannot say.
         ///
         /// <para>
         /// A process that is alive but has, for the moment, stopped accumulating CPU is not
@@ -331,8 +356,17 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         /// is the identity check. <see cref="ProcessControl.HasExited(int, long)"/> answers false
         /// when it cannot tell, and a "yes" that rests on that alone would send
         /// <c>taskkill /F /T</c> at a PID nobody re-confirmed and then close the identity out as
-        /// unkillable on an unknown. Absent from the snapshot means gone, whatever the handle
-        /// said.
+        /// unkillable on an unknown. Absent from a snapshot that is itself non-empty means gone,
+        /// whatever the handle said.
+        /// </para>
+        ///
+        /// <para>
+        /// An empty snapshot is a third case, not a synonym for "gone": <see
+        /// cref="ProcessSampler.SnapshotOnce"/> returns an empty list both when nothing is
+        /// running, which never happens on a live system, and when the kernel query itself
+        /// failed. Returning <c>false</c> here on an empty snapshot would let a failed
+        /// verification read as a confirmed kill, so that case is reported as unknown instead
+        /// and left for the caller to treat as "could not tell" rather than "ended".
         /// </para>
         /// </summary>
         /// <param name="cpuSeconds">
@@ -340,12 +374,15 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         /// colour there even though it no longer decides the verdict; it is 0 when the process
         /// is not in the snapshot.
         /// </param>
-        private static bool StillRunning(OrphanFinding finding, out double cpuSeconds)
+        private static bool? StillRunning(OrphanFinding finding, out double cpuSeconds)
         {
             cpuSeconds = 0;
-            bool present = false;
 
-            foreach (var process in ProcessSampler.SnapshotOnce())
+            IReadOnlyList<ProcessSampler.RawProcess> snapshot = ProcessSampler.SnapshotOnce();
+            if (snapshot.Count == 0) return null;
+
+            bool present = false;
+            foreach (var process in snapshot)
             {
                 if (process.Pid != finding.Identity.Pid) continue;
                 if (process.CreateTime != finding.Identity.CreateTime) continue;

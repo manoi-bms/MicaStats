@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Threading;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Watchdog;
 
@@ -31,6 +30,15 @@ namespace Kil0bitSystemMonitor
     /// irreversible action on a card that stole focus mid-keystroke would be pressed by
     /// accident.
     /// </para>
+    ///
+    /// <para>
+    /// There is no auto-dismiss. By the time this is on screen the watchdog has already called
+    /// <c>MarkShown</c> for its findings, and <c>OrphanLedger.ShouldAlert</c> never admits those
+    /// identities again — so a card that closed itself would take its finding down with it for
+    /// the life of the app, and orphans typically burn while the user is away, which is exactly
+    /// when nobody is there to notice a card disappear. It stays until End them or Dismiss is
+    /// clicked.
+    /// </para>
     /// </summary>
     public sealed class OrphanToastWindow : Window
     {
@@ -50,7 +58,6 @@ namespace Kil0bitSystemMonitor
         /// <summary>Amber, matching the alert card: this is a warning, not information.</summary>
         private static readonly Color Amber = Color.FromRgb(0xE8, 0xA5, 0x3C);
 
-        private readonly DispatcherTimer _dismiss;
         private readonly IReadOnlyList<OrphanFinding> _findings;
 
         private OrphanToastWindow(IReadOnlyList<OrphanFinding> findings,
@@ -72,15 +79,9 @@ namespace Kil0bitSystemMonitor
 
             Loaded += (s, e) => { ToastStack.Restack(); ToastStack.PlayEntrance(this); };
 
-            // Longer than the alert card. This one asks for a decision, and the machine it
-            // appears on is by definition busy.
-            _dismiss = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-            _dismiss.Tick += (s, e) => Close();
-            _dismiss.Start();
-
-            MouseEnter += (s, e) => _dismiss.Stop();
-            MouseLeave += (s, e) => _dismiss.Start();
-            Closed += (s, e) => { _dismiss.Stop(); ToastStack.Remove(this); };
+            // No timer here — see the class remarks on why this card must wait for a click
+            // rather than dismiss itself.
+            Closed += (s, e) => ToastStack.Remove(this);
         }
 
         /// <summary>Shows one card for a set of findings.</summary>

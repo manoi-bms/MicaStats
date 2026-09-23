@@ -2,7 +2,6 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Update;
@@ -29,7 +28,13 @@ namespace Kil0bitSystemMonitor
     /// </summary>
     public sealed class UpdateToastWindow : Window
     {
-        private static UpdateToastWindow? _open;
+        /// <summary>
+        /// One: a newer notice about the same release replaces the old one rather than stacking
+        /// beside it. Held on <see cref="ToastStack"/> like every other card, so it takes its
+        /// place in the corner instead of landing on top of an alert.
+        /// </summary>
+        private const int MaxOnScreen = 1;
+
         private readonly DispatcherTimer _dismiss;
 
         /// <summary>Raised when the user chooses to install; the host opens the Updates page.</summary>
@@ -52,7 +57,7 @@ namespace Kil0bitSystemMonitor
 
             Content = BuildCard(release);
 
-            Loaded += (s, e) => { PositionInCorner(); PlayEntrance(); };
+            Loaded += (s, e) => { ToastStack.Restack(); ToastStack.PlayEntrance(this); };
 
             _dismiss = new DispatcherTimer { Interval = TimeSpan.FromSeconds(18) };
             _dismiss.Tick += (s, e) => Close();
@@ -61,18 +66,16 @@ namespace Kil0bitSystemMonitor
             // Keep it on screen while the pointer is over it.
             MouseEnter += (s, e) => _dismiss.Stop();
             MouseLeave += (s, e) => _dismiss.Start();
-            Closed += (s, e) => { _dismiss.Stop(); if (ReferenceEquals(_open, this)) _open = null; };
+            Closed += (s, e) => { _dismiss.Stop(); ToastStack.Remove(this); };
         }
 
         /// <summary>Shows the notification, replacing any already on screen.</summary>
         public static UpdateToastWindow ShowFor(ReleaseInfo release, Action onInstall, Action onSkip)
         {
-            try { _open?.Close(); } catch { }
-
             var toast = new UpdateToastWindow(release);
-            _open = toast;
             toast.InstallRequested += onInstall;
             toast.SkipRequested += onSkip;
+            ToastStack.Add(toast, MaxOnScreen);
             toast.Show();
             return toast;
         }
@@ -139,24 +142,6 @@ namespace Kil0bitSystemMonitor
                     Color = Colors.Black,
                 },
             };
-        }
-
-
-        /// <summary>Bottom-right of the working area, clear of the taskbar.</summary>
-        private void PositionInCorner()
-        {
-            var work = SystemParameters.WorkArea;
-            Left = work.Right - ActualWidth - 18;
-            Top = work.Bottom - ActualHeight - 18;
-        }
-
-        private void PlayEntrance()
-        {
-            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            BeginAnimation(OpacityProperty,
-                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { EasingFunction = ease });
-            BeginAnimation(TopProperty,
-                new DoubleAnimation(Top + 16, Top, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
         }
     }
 }

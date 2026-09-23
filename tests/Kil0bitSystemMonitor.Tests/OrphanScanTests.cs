@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Kil0bitSystemMonitor;
 using Kil0bitSystemMonitor.Services.Watchdog;
 using Xunit;
 

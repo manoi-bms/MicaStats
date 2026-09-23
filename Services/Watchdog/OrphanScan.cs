@@ -39,11 +39,12 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
                 return new OrphanVerdict(record.Pid, false,
                     "image is not an allowlisted search binary");
 
-            // 2 — unbounded scan.
-            if (!SearchCommandLine.IsUnbounded(record.CommandLine))
+            // 2 — unbounded scan. Only a shallow -maxdepth is a bound; a deep one falls through.
+            if (!SearchCommandLine.IsUnbounded(record.CommandLine, options.TrustedMaxDepth))
             {
-                string reason = SearchCommandLine.HasMaxDepth(record.CommandLine)
-                    ? "bounded by -maxdepth"
+                int? depth = SearchCommandLine.MaxDepth(record.CommandLine);
+                string reason = depth is int trusted && trusted <= options.TrustedMaxDepth
+                    ? "bounded by -maxdepth " + trusted.ToString(CultureInfo.InvariantCulture)
                     : "bounded: " + (SearchCommandLine.ScanRoot(record.CommandLine) ?? "no path argument")
                       + " is not a filesystem root";
                 return new OrphanVerdict(record.Pid, false, reason);

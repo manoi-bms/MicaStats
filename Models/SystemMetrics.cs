@@ -255,6 +255,7 @@ namespace Kil0bitSystemMonitor.Models
         private bool _watchOrphanedSearches = true;
         private int _orphanCpuSecondsThreshold = 120;
         private int _orphanGraceMinutes = 5;
+        private int _orphanTrustedMaxDepth = 3;
         private string[] _orphanBinaryAllowlist = new[] { @"\Git\usr\bin\find.exe" };
         private string[] _orphanExpectedParents = new[] { "bash.exe", "sh.exe", "pwsh.exe", "cmd.exe" };
         private string _captureHotkeyRegion = "Ctrl+Shift+1";
@@ -474,6 +475,17 @@ namespace Kil0bitSystemMonitor.Models
         {
             get => _orphanGraceMinutes;
             set { Set(ref _orphanGraceMinutes, Math.Clamp(value, 1, 1440)); }
+        }
+
+        /// <summary>
+        /// Rule 2. The deepest <c>-maxdepth</c> trusted as a bound on a whole-drive scan. Kept
+        /// small because under Git Bash <c>/</c> is every drive at once; clamped to 0..32 so a
+        /// hand-edited config cannot make every depth look shallow.
+        /// </summary>
+        public int OrphanTrustedMaxDepth
+        {
+            get => _orphanTrustedMaxDepth;
+            set { Set(ref _orphanTrustedMaxDepth, Math.Clamp(value, 0, 32)); }
         }
 
         /// <summary>

@@ -84,23 +84,68 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(SearchCommandLine.HasMaxDepth("find.exe / -name x.pas"));
         }
 
+        [Theory]
+        [InlineData("find.exe / -maxdepth 3 -name x", 3)]
+        [InlineData("find.exe / -name x -maxdepth 0", 0)]
+        [InlineData("find.exe / -MAXDEPTH 12", 12)]
+        [InlineData("find.exe / -maxdepth 2 -maxdepth 9", 9)]   // find obeys the last one
+        public void Maxdepth_reads_the_number_that_follows_it(string commandLine, int expected)
+        {
+            Assert.Equal(expected, SearchCommandLine.MaxDepth(commandLine));
+        }
+
+        [Theory]
+        [InlineData("find.exe / -name x")]            // absent
+        [InlineData("find.exe / -name x -maxdepth")]  // no argument at all
+        [InlineData("find.exe / -maxdepth -name x")]  // the next token is the expression
+        [InlineData("find.exe / -maxdepth -1")]       // a sign is not a depth
+        [InlineData("find.exe / -maxdepth 1,000")]    // nor is a thousands separator
+        [InlineData("find.exe / -maxdepth three")]
+        [InlineData("find.exe / -maxdepth 9 -maxdepth x")]   // the last one is unreadable
+        public void Maxdepth_is_null_when_absent_or_unreadable(string commandLine)
+        {
+            Assert.Null(SearchCommandLine.MaxDepth(commandLine));
+        }
+
         [Fact]
         public void A_root_scan_without_maxdepth_is_unbounded()
         {
             Assert.True(SearchCommandLine.IsUnbounded(
-                "\"" + GitFind + "\" / -iname cxEdit.pas -not -path */proc/*"));
+                "\"" + GitFind + "\" / -iname cxEdit.pas -not -path */proc/*", 3));
+        }
+
+        [Theory]
+        [InlineData(2)]
+        [InlineData(3)]
+        public void A_root_scan_with_a_shallow_maxdepth_is_bounded(int depth)
+        {
+            Assert.False(SearchCommandLine.IsUnbounded(
+                "\"" + GitFind + "\" / -maxdepth " + depth + " -name x.pas", 3));
         }
 
         [Fact]
-        public void A_root_scan_with_maxdepth_is_bounded()
+        public void A_root_scan_with_a_maxdepth_past_the_trusted_depth_is_unbounded()
         {
-            Assert.False(SearchCommandLine.IsUnbounded("\"" + GitFind + "\" / -maxdepth 3 -name x.pas"));
+            // Under Git Bash / is every drive, so depth 4 from there is not a small walk.
+            Assert.True(SearchCommandLine.IsUnbounded("\"" + GitFind + "\" / -maxdepth 4 -name x.pas", 3));
+        }
+
+        [Fact]
+        public void A_maxdepth_with_no_number_is_not_trusted()
+        {
+            Assert.True(SearchCommandLine.IsUnbounded("\"" + GitFind + "\" / -name x.pas -maxdepth", 3));
         }
 
         [Fact]
         public void A_scan_that_starts_below_a_root_is_bounded()
         {
-            Assert.False(SearchCommandLine.IsUnbounded("\"" + GitFind + "\" C:\\src -name x.pas"));
+            Assert.False(SearchCommandLine.IsUnbounded("\"" + GitFind + "\" C:\\src -name x.pas", 3));
+        }
+
+        [Fact]
+        public void A_scan_below_a_root_is_bounded_however_deep_its_maxdepth()
+        {
+            Assert.False(SearchCommandLine.IsUnbounded("\"" + GitFind + "\" C:\\src -maxdepth 20 -name x", 3));
         }
 
         // ------------------------------------------------------- the five rules
@@ -138,15 +183,53 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains("not an allowlisted search binary", verdict.Reason, StringComparison.Ordinal);
         }
 
-        [Fact]
-        public void A_bounded_scan_is_kept_however_much_cpu_it_has_burned()
+        [Theory]
+        [InlineData(2)]
+        [InlineData(3)]
+        public void A_shallow_bounded_scan_is_kept_however_much_cpu_it_has_burned(int depth)
         {
             var verdict = OrphanScan.DecideOne(
-                Killable(commandLine: "\"" + GitFind + "\" / -maxdepth 3 -name x.pas", cpuSeconds: 5000),
+                Killable(commandLine: "\"" + GitFind + "\" / -maxdepth " + depth + " -name x.pas",
+                         cpuSeconds: 5000),
                 OrphanScanOptions.Defaults, Now);
 
             Assert.False(verdict.Kill);
-            Assert.Contains("bounded", verdict.Reason, StringComparison.Ordinal);
+            Assert.Equal("bounded by -maxdepth " + depth, verdict.Reason);
+        }
+
+        [Fact]
+        public void The_observed_depth_6_orphan_is_killed_rather_than_trusted_as_bounded()
+        {
+            // The real command from the reported machine: 5400+ s of CPU, parent gone, and kept
+            // under the old rule because it said -maxdepth at all.
+            var verdict = OrphanScan.DecideOne(
+                Killable(commandLine: "\"" + GitFind + "\" / -name madExcept.pas -maxdepth 6",
+                         cpuSeconds: 5400),
+                OrphanScanOptions.Defaults, Now);
+
+            Assert.True(verdict.Kill);
+            Assert.Contains("parent 33960 has exited", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_maxdepth_with_no_number_falls_through_to_the_later_rules()
+        {
+            var verdict = OrphanScan.DecideOne(
+                Killable(commandLine: "\"" + GitFind + "\" / -name x.pas -maxdepth"),
+                OrphanScanOptions.Defaults, Now);
+
+            Assert.True(verdict.Kill);
+        }
+
+        [Fact]
+        public void The_trusted_depth_comes_from_the_options()
+        {
+            var verdict = OrphanScan.DecideOne(
+                Killable(commandLine: "\"" + GitFind + "\" / -name madExcept.pas -maxdepth 6"),
+                new OrphanScanOptions { TrustedMaxDepth = 6 }, Now);
+
+            Assert.False(verdict.Kill);
+            Assert.Equal("bounded by -maxdepth 6", verdict.Reason);
         }
 
         [Fact]
@@ -249,6 +332,28 @@ namespace Kil0bitSystemMonitor.Tests
                 Killable(cpuSeconds: 10, age: TimeSpan.FromSeconds(30)), strict, Now);
 
             Assert.True(verdict.Kill);
+        }
+
+        [Fact]
+        public void The_trusted_depth_defaults_to_3_and_is_carried_from_the_config()
+        {
+            Assert.Equal(3, OrphanScanOptions.Defaults.TrustedMaxDepth);
+            Assert.Equal(3, new Kil0bitSystemMonitor.Models.AppConfig().OrphanTrustedMaxDepth);
+
+            var config = new Kil0bitSystemMonitor.Models.AppConfig { OrphanTrustedMaxDepth = 5 };
+            Assert.Equal(5, OrphanScanOptions.FromConfig(config).TrustedMaxDepth);
+        }
+
+        [Theory]
+        [InlineData(-4, 0)]
+        [InlineData(0, 0)]
+        [InlineData(32, 32)]
+        [InlineData(500, 32)]
+        public void The_configured_trusted_depth_is_clamped(int written, int expected)
+        {
+            var config = new Kil0bitSystemMonitor.Models.AppConfig { OrphanTrustedMaxDepth = written };
+
+            Assert.Equal(expected, config.OrphanTrustedMaxDepth);
         }
 
         // ------------------------------------------------------- parent resolution

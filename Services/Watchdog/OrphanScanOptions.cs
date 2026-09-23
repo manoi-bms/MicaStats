@@ -21,6 +21,20 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         public TimeSpan Grace { get; init; } = TimeSpan.FromMinutes(5);
 
         /// <summary>
+        /// Rule 2. The deepest <c>-maxdepth</c> that still counts as a bounded scan.
+        ///
+        /// <para>
+        /// Not "any depth at all", because under Git Bash <c>/</c> mounts every drive: a depth of
+        /// 6 from there is every drive five levels down, which on a real machine ran for more
+        /// than 5400 seconds of CPU with nothing reading the output. A depth this shallow
+        /// finishes in seconds from any root; deeper ones fall through to rules 3 to 5 like an
+        /// unbounded scan, so a deliberate deep search is still protected by its age, its CPU
+        /// and its live shell.
+        /// </para>
+        /// </summary>
+        public int TrustedMaxDepth { get; init; } = 3;
+
+        /// <summary>
         /// Rule 1. Image-path suffixes, matched case-insensitively after slashes are normalised.
         /// A suffix rather than a name so <c>C:\Windows\System32\find.exe</c> cannot match.
         /// </summary>
@@ -58,6 +72,7 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             {
                 CpuSecondsThreshold = config.OrphanCpuSecondsThreshold,
                 Grace = TimeSpan.FromMinutes(config.OrphanGraceMinutes),
+                TrustedMaxDepth = config.OrphanTrustedMaxDepth,
                 BinarySuffixes = NonBlank(config.OrphanBinaryAllowlist) is { Count: > 0 } binaries
                     ? binaries
                     : Defaults.BinarySuffixes,

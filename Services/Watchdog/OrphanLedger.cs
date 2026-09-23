@@ -40,6 +40,48 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         private readonly Dictionary<ProcessIdentity, string> _lastLogged = new();
         private readonly HashSet<ProcessIdentity> _alerted = new();
         private readonly HashSet<ProcessIdentity> _unkillable = new();
+        private readonly Dictionary<ProcessIdentity, string> _parentImage = new();
+
+        /// <summary>
+        /// The parent as the log should name it, remembering the name while the parent is alive
+        /// so it can still be named after the parent exits.
+        ///
+        /// <para>
+        /// The kill branch that matters most is the one where the parent has already gone — and
+        /// by then it can no longer be asked what it was. The parent image is the one clue to
+        /// which tool leaked the child, so it is captured every scan the parent is seen alive and
+        /// recalled once it is not. A parent that exited before any scan saw it cannot be named
+        /// at all, and the log says so rather than guessing.
+        /// </para>
+        /// </summary>
+        /// <param name="identity">The candidate process, not its parent.</param>
+        /// <param name="parentExists">Whether this scan found the parent alive.</param>
+        /// <param name="parentImagePath">
+        /// The parent image as read this scan: a full path when it could be read, otherwise the
+        /// bare name. Ignored when the parent is gone.
+        /// </param>
+        /// <returns>
+        /// The live parent image; <c>(gone, was …)</c> with the last one seen; or
+        /// <c>(gone, never seen)</c>.
+        /// </returns>
+        public string DescribeParent(ProcessIdentity identity, bool parentExists, string parentImagePath)
+        {
+            lock (_gate)
+            {
+                if (parentExists)
+                {
+                    if (string.IsNullOrEmpty(parentImagePath))
+                        return _parentImage.TryGetValue(identity, out string? known) ? known : "(unreadable)";
+
+                    _parentImage[identity] = parentImagePath;
+                    return parentImagePath;
+                }
+
+                return _parentImage.TryGetValue(identity, out string? last)
+                    ? "(gone, was " + last + ")"
+                    : "(gone, never seen)";
+            }
+        }
 
         /// <summary>
         /// Whether this verdict is worth a log line, recording it as said when it is.
@@ -100,7 +142,7 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         /// Drops bookkeeping for processes no longer present.
         ///
         /// <para>
-        /// MicaStats runs for weeks. Without this the three collections accumulate an entry per
+        /// MicaStats runs for weeks. Without this the four collections accumulate an entry per
         /// search anyone has ever run.
         /// </para>
         /// </summary>
@@ -112,6 +154,7 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
             lock (_gate)
             {
                 Remove(_lastLogged.Keys, live, key => _lastLogged.Remove(key));
+                Remove(_parentImage.Keys, live, key => _parentImage.Remove(key));
                 Remove(_alerted, live, key => _alerted.Remove(key));
                 Remove(_unkillable, live, key => _unkillable.Remove(key));
             }

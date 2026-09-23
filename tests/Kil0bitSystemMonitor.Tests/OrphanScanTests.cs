@@ -509,6 +509,68 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(ledger.IsUnkillable(Orphan));
         }
 
+        private const string Bash = @"C:\Program Files\Git\usr\bin\bash.exe";
+
+        [Fact]
+        public void A_live_parent_is_named_by_the_path_it_was_read_with()
+        {
+            var ledger = new OrphanLedger();
+
+            Assert.Equal(Bash, ledger.DescribeParent(Orphan, true, Bash));
+        }
+
+        [Fact]
+        public void A_parent_seen_alive_is_still_named_after_it_exits()
+        {
+            // The dominant kill branch is the one where the parent has already gone; without
+            // the memory, the one clue to which tool leaked the child would read "(gone)".
+            var ledger = new OrphanLedger();
+            ledger.DescribeParent(Orphan, true, Bash);
+
+            Assert.Equal("(gone, was " + Bash + ")", ledger.DescribeParent(Orphan, false, ""));
+        }
+
+        [Fact]
+        public void The_most_recent_live_parent_path_is_the_one_remembered()
+        {
+            var ledger = new OrphanLedger();
+            ledger.DescribeParent(Orphan, true, "bash.exe");
+            ledger.DescribeParent(Orphan, true, Bash);
+
+            Assert.Equal("(gone, was " + Bash + ")", ledger.DescribeParent(Orphan, false, ""));
+        }
+
+        [Fact]
+        public void A_parent_that_exited_before_any_scan_saw_it_is_never_seen()
+        {
+            var ledger = new OrphanLedger();
+
+            Assert.Equal("(gone, never seen)", ledger.DescribeParent(Orphan, false, ""));
+        }
+
+        [Fact]
+        public void A_remembered_parent_belongs_to_one_identity_not_to_a_recycled_pid()
+        {
+            var ledger = new OrphanLedger();
+            ledger.DescribeParent(Orphan, true, Bash);
+
+            var newcomer = new ProcessIdentity(Orphan.Pid, Orphan.CreateTime + 1);
+            Assert.Equal("(gone, never seen)", ledger.DescribeParent(newcomer, false, ""));
+        }
+
+        [Fact]
+        public void Pruning_forgets_the_remembered_parent_of_a_process_that_is_gone()
+        {
+            var ledger = new OrphanLedger();
+            ledger.DescribeParent(Orphan, true, Bash);
+
+            ledger.Prune(new[] { Orphan });
+            Assert.Equal("(gone, was " + Bash + ")", ledger.DescribeParent(Orphan, false, ""));
+
+            ledger.Prune(Array.Empty<ProcessIdentity>());
+            Assert.Equal("(gone, never seen)", ledger.DescribeParent(Orphan, false, ""));
+        }
+
         // ------------------------------------------------------- the notice
 
         [Fact]

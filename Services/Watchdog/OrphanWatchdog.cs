@@ -128,6 +128,11 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
                     bool parentExists = ParentState.Resolve(
                         process.ParentPid, started, byPid, out string parentImage);
 
+                    // The snapshot only carries the bare image name. The full path is what
+                    // tells one bash.exe from another, so it is read here — for candidates
+                    // only, which on a normal machine means never.
+                    if (parentExists) parentImage = FullParentPath(process.ParentPid, parentImage);
+
                     candidates.Add(process);
                     records.Add(new ProcessRecord(
                         process.Pid, process.ParentPid, imagePath, commandLine,
@@ -146,7 +151,13 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
                     ProcessRecord record = records[i];
                     var identity = new ProcessIdentity(record.Pid, candidates[i].CreateTime);
 
-                    if (_ledger.ShouldLog(identity, verdict.Reason)) Write(record, verdict);
+                    // Every scan, not only when a line is written: the parent has to be seen
+                    // alive to be remembered, and the line that needs the memory is the later
+                    // one written after it has gone.
+                    string parentLabel = _ledger.DescribeParent(
+                        identity, record.ParentExists, record.ParentImagePath);
+
+                    if (_ledger.ShouldLog(identity, verdict.Reason)) Write(record, verdict, parentLabel);
                     if (!verdict.Kill || !_ledger.ShouldAlert(identity)) continue;
 
                     findings.Add(new OrphanFinding(
@@ -340,20 +351,48 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
         }
 
         /// <summary>
+        /// The live parent full image path, or <paramref name="bareName"/> when it cannot be
+        /// read.
+        ///
+        /// <para>
+        /// The path is only accepted when its file name matches the name the snapshot saw. The
+        /// handle is opened by PID after the snapshot was taken, and a parent that exited in
+        /// between could have handed its number to something else; a mismatched name means the
+        /// path belongs to that newcomer, and naming it would blame the wrong tool — and rule 5
+        /// reads this name too.
+        /// </para>
+        /// </summary>
+        private static string FullParentPath(int parentPid, string bareName)
+        {
+            if (!ProcessDetails.TryRead(parentPid, out string fullPath, out _)) return bareName;
+
+            string fileName;
+            try { fileName = Path.GetFileName(fullPath); }
+            catch { return bareName; }
+
+            return bareName.Length == 0 ||
+                   string.Equals(fileName, bareName, StringComparison.OrdinalIgnoreCase)
+                ? fullPath
+                : bareName;
+        }
+
+        /// <summary>
         /// One line per decision.
         ///
         /// <para>
         /// The parent image path is the point of this log rather than decoration: it names the
         /// tool that leaked the child. The watchdog only stops the burning; the leak is fixed
-        /// upstream, by whoever owns that image.
+        /// upstream, by whoever owns that image. <paramref name="parentLabel"/> comes from
+        /// <see cref="OrphanLedger.DescribeParent"/>, so a parent that has since exited is still
+        /// named if any earlier scan saw it alive.
         /// </para>
         /// </summary>
-        private static void Write(ProcessRecord record, OrphanVerdict verdict)
+        private static void Write(ProcessRecord record, OrphanVerdict verdict, string parentLabel)
         {
             string line =
                 "pid=" + record.Pid.ToString(CultureInfo.InvariantCulture) +
                 " parent=" + record.ParentPid.ToString(CultureInfo.InvariantCulture) +
-                " parentImage=" + (record.ParentImagePath.Length == 0 ? "(gone)" : record.ParentImagePath) +
+                " parentImage=" + parentLabel +
                 " cpu=" + record.CpuSeconds.ToString("0", CultureInfo.InvariantCulture) + "s" +
                 " age=" + ((long)(DateTime.Now - record.StartTime).TotalSeconds)
                     .ToString(CultureInfo.InvariantCulture) + "s" +

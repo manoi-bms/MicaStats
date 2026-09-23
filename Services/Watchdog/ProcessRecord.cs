@@ -17,9 +17,10 @@ namespace Kil0bitSystemMonitor.Services.Watchdog
     /// rejects a recycled parent PID — an unrelated newcomer wearing the dead parent number.
     /// </param>
     /// <param name="ParentImagePath">
-    /// The parent's image path, or an empty string when the parent is gone or unreadable. Also
-    /// written to the log on every kill: it names the tool that leaked the child, which is the
-    /// only route to fixing the cause rather than the symptom.
+    /// The live parent's full image path, falling back to its bare image name when the path
+    /// cannot be read; an empty string when the parent is gone. Also written to the log on every
+    /// kill: it names the tool that leaked the child, which is the only route to fixing the
+    /// cause rather than the symptom.
     /// </param>
     public sealed record ProcessRecord(
         int Pid,

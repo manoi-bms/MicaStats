@@ -416,5 +416,44 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Ended 3 · 0 need administrator · 1 survived · 1 failed",
                 new BulkEndResult(3, 0, 1, 1).Describe());
         }
+
+        // ------------------------------------------------------- account and elevation
+
+        [Fact]
+        public void The_current_process_reports_the_current_user()
+        {
+            bool ok = ProcessAccountReader.TryRead(Environment.ProcessId, out var account, out _);
+
+            Assert.True(ok);
+            Assert.Equal(System.Security.Principal.WindowsIdentity.GetCurrent().Name, account.User,
+                ignoreCase: true);
+        }
+
+        [Fact]
+        public void The_current_process_reports_its_real_elevation()
+        {
+            // Under UAC a member of Administrators is in the role only when elevated, so the
+            // principal check agrees with the token exactly when the reader is right.
+            bool ok = ProcessAccountReader.TryRead(Environment.ProcessId, out var account, out _);
+            var principal = new System.Security.Principal.WindowsPrincipal(
+                System.Security.Principal.WindowsIdentity.GetCurrent());
+
+            Assert.True(ok);
+            Assert.Equal(principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator),
+                account.Elevated);
+        }
+
+        [Fact]
+        public void A_process_that_is_not_running_is_reported_with_a_reason_not_an_exception()
+        {
+            // Windows PIDs are multiples of 4 and stay far below int.MaxValue for the life of a
+            // boot, so this reaches OpenProcess and fails there.
+            bool ok = ProcessAccountReader.TryRead(int.MaxValue - 3, out var account, out string reason);
+
+            Assert.False(ok);
+            Assert.Equal("", account.User);
+            Assert.Null(account.Elevated);
+            Assert.Equal("Process has exited", reason);
+        }
     }
 }

@@ -116,6 +116,11 @@ namespace Kil0bitSystemMonitor
                 // up again by identity and reselects it, without disturbing scroll position.
                 Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
                 {
+                    // Input priority sits between this restore and the Normal-priority rebuild
+                    // that scheduled it, so a click on a different row can land in the gap. Bail
+                    // out if the state has already moved on rather than overriding it.
+                    if (_selected != lost || ProcessList.SelectedItem != null) return;
+
                     ProcessRow? restored = null;
                     foreach (var candidate in _model.Rows)
                     {

@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.ViewModels;
 
@@ -38,6 +39,15 @@ namespace Kil0bitSystemMonitor
         /// <summary>The last kill that was refused for lack of privilege, for the retry button.</summary>
         private (int Pid, long CreateTime, string Name)? _pendingElevation;
 
+        /// <summary>
+        /// The identity of the row shown in the detail pane, independent of which
+        /// <see cref="ProcessRow"/> instance represents it. <see cref="TaskManagerViewModel.Refresh"/>
+        /// rebuilds <c>Rows</c> — replacing every instance — whenever the process set or its sort
+        /// order changes, which on a busy, CPU-sorted machine is most two-second ticks; identity
+        /// is what lets the same selection survive that rebuild.
+        /// </summary>
+        private (int Pid, long CreateTime)? _selected;
+
         private TaskManagerWindow(ProcessSampler sampler)
         {
             InitializeComponent();
@@ -69,16 +79,74 @@ namespace Kil0bitSystemMonitor
             return s_open;
         }
 
+        /// <summary>
+        /// Keeps the detail pane attached to a process by identity, not by the <see cref="ProcessRow"/>
+        /// instance the ListView happens to hold — a rebuild replaces every instance and drops the
+        /// selection, and without this the pane would revert to its prompt every couple of seconds.
+        /// </summary>
         private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            EndTaskButton.IsEnabled = ProcessList.SelectedItem is ProcessRow;
+            if (ProcessList.SelectedItem is ProcessRow row)
+            {
+                bool sameProcess = _selected is { } current
+                                    && current.Pid == row.Pid && current.CreateTime == row.CreateTime;
 
-            // A new selection invalidates the previous refusal.
+                EndTaskButton.IsEnabled = true;
+
+                // The rebuild's own restore (below) reselecting the same process, not a genuine
+                // new selection — reloading here would flash "Reading…" and reopen a handle on
+                // every refresh tick, and the pending elevation is still about this same process.
+                if (sameProcess) return;
+
+                // A new selection invalidates the previous refusal.
+                _pendingElevation = null;
+                RetryElevated.Visibility = Visibility.Collapsed;
+
+                _selected = (row.Pid, row.CreateTime);
+                Detail.Load(row);
+                return;
+            }
+
+            if (_selected is { } lost)
+            {
+                // The selection just vanished because Rows was rebuilt, not because the user
+                // deselected anything. Clearing the pane synchronously would make it flicker back
+                // to the prompt on most ticks, so the restore waits one dispatcher pass — past the
+                // Add() calls that are still ahead in this same rebuild — then looks the process
+                // up again by identity and reselects it, without disturbing scroll position.
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                {
+                    ProcessRow? restored = null;
+                    foreach (var candidate in _model.Rows)
+                    {
+                        if (candidate.Pid == lost.Pid && candidate.CreateTime == lost.CreateTime)
+                        {
+                            restored = candidate;
+                            break;
+                        }
+                    }
+
+                    if (restored != null)
+                    {
+                        ProcessList.SelectedItem = restored;   // no ScrollIntoView: keep the scroll position
+                    }
+                    else
+                    {
+                        // Gone for good — exited, or filtered out since the search text changed.
+                        _selected = null;
+                        _pendingElevation = null;
+                        RetryElevated.Visibility = Visibility.Collapsed;
+                        EndTaskButton.IsEnabled = false;
+                        Detail.Clear();
+                    }
+                }));
+                return;
+            }
+
+            EndTaskButton.IsEnabled = false;
             _pendingElevation = null;
             RetryElevated.Visibility = Visibility.Collapsed;
-
-            if (ProcessList.SelectedItem is ProcessRow row) Detail.Load(row);
-            else Detail.Clear();
+            Detail.Clear();
         }
 
         /// <summary>

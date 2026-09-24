@@ -112,10 +112,12 @@
                       GridViewColumnHeader.Click="OnHeaderClick">
                 <ListView.View>
                     <GridView AllowsColumnReorder="False">
-                        <!-- Widths total 776, inside the client area at the 840 minimum width
+                        <!-- Widths total 760, inside the client area at the 840 minimum width
                              once the margins, the list border and a vertical scrollbar are taken
                              out. Overflowing produces a horizontal scrollbar, and a process list
-                             that scrolls sideways is a process list nobody can read.
+                             that scrolls sideways is a process list nobody can read. Kept a little
+                             short of the full budget so ModernWPF's item padding cannot clip the
+                             last column, Handles, with horizontal scrolling disabled.
                              Header text is also the sort key: TaskManagerViewModel.ColumnFor maps
                              it, and a test pins every mapping. Rename both together. -->
                         <GridViewColumn Header="Name" Width="170">
@@ -133,7 +135,7 @@
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
-                        <GridViewColumn Header="Parent" Width="150">
+                        <GridViewColumn Header="Parent" Width="134">
                             <GridViewColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type vm:ProcessRow}">
                                     <TextBlock Style="{StaticResource ColumnText}" Text="{Binding Parent}"
@@ -235,13 +237,18 @@
                            TextTrimming="CharacterEllipsis" />
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Path" FontSize="11" Foreground="{StaticResource Muted}" />
+                <!-- MinHeight="0": ModernWPF's default TextBox style sets TextControlThemeMinHeight
+                     to 32, which Padding="0" and BorderThickness="0" do not override, and which
+                     clips the Account row below in the pane's fixed 112px height. -->
                 <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ImagePath, Mode=OneWay}" IsReadOnly="True"
                          Background="Transparent" BorderThickness="0" Padding="0" FontSize="11"
+                         MinHeight="0" VerticalContentAlignment="Center"
                          Foreground="{StaticResource RowInk}" />
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Command line" FontSize="11" Foreground="{StaticResource Muted}" />
                 <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding CommandLine, Mode=OneWay}" IsReadOnly="True"
                          Background="Transparent" BorderThickness="0" Padding="0" FontSize="11"
+                         MinHeight="0" VerticalContentAlignment="Center"
                          Foreground="{StaticResource RowInk}" />
 
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Account" FontSize="11" Foreground="{StaticResource Muted}" />

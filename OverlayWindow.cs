@@ -1756,6 +1756,7 @@ namespace Kil0bitSystemMonitor
                     // seconds later it will not.
                     AppendMenu(hMenu, 0, 1041, "Record Slowdown Now");
                     AppendMenu(hMenu, 0, 1001, "Settings");
+                    AppendMenu(hMenu, 0, 1011, "Processes");
                     AppendMenu(hMenu, 0, 1002, "Task Manager");
                     AppendMenu(hMenu, 0x0800, 0, null);
                     AppendMenu(hMenu, 0, 1020, "Capture Region	Ctrl+Shift+1");
@@ -1804,6 +1805,9 @@ namespace Kil0bitSystemMonitor
                     else if (ch == 1007) { _config.Config.StickToTaskbar = !_config.Config.StickToTaskbar; _config.SaveConfig(); }
                     else if (ch == 1008) { _config.Config.AlwaysOnTop = !_config.Config.AlwaysOnTop; _config.SaveConfig(); }
                     else if (ch == 1009) { _config.Config.HideOnFullscreen = !_config.Config.HideOnFullscreen; _config.SaveConfig(); }
+                    // MicaStats' own list, from the snapshot it already holds. Task Manager stays
+                    // beside it for its other tabs, and for when MicaStats itself is the problem.
+                    else if (ch == 1011) _dispatcher.BeginInvoke(() => TaskManagerWindow.ShowOrActivate(App.SharedProcessSampler));
                     else if (ch == 1002) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("taskmgr") { UseShellExecute = true });
                     // Capture runs on the dispatcher: the selector is a WPF window, and this
                     // handler is inside the native menu's message loop.

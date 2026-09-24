@@ -10,7 +10,10 @@ using Kil0bitSystemMonitor.Services;
 namespace Kil0bitSystemMonitor.ViewModels
 {
     /// <summary>Which column the process list is ordered by.</summary>
-    public enum ProcessSortColumn { Name, Pid, Cpu, Memory, Disk }
+    public enum ProcessSortColumn { Name, Pid, Parent, Cpu, Memory, Disk, Uptime, Threads, Handles }
+
+    /// <summary>What the filtered rows cost between them, for the footer.</summary>
+    public readonly record struct ProcessTotals(int Count, float Cpu, long Memory, long Disk);
 
     /// <summary>
     /// One line in the process list.
@@ -31,6 +34,10 @@ namespace Kil0bitSystemMonitor.ViewModels
         private string _cpu = "—";
         private string _memory = "";
         private string _disk = "";
+        private string _parent = "";
+        private string _uptime = "";
+        private string _threads = "";
+        private string _handles = "";
 
         public ProcessRow(string name, int pid, long createTime)
         {
@@ -59,6 +66,34 @@ namespace Kil0bitSystemMonitor.ViewModels
         {
             get => _disk;
             set { if (_disk != value) { _disk = value; Raise(nameof(Disk)); } }
+        }
+
+        /// <summary>Parent name and PID, <c>(gone)</c> for an orphan. Mutable: a parent can exit.</summary>
+        public string Parent
+        {
+            get => _parent;
+            set { if (_parent != value) { _parent = value; Raise(nameof(Parent)); } }
+        }
+
+        /// <summary>How long the process has run, rendered from the creation time already in the snapshot.</summary>
+        public string Uptime
+        {
+            get => _uptime;
+            set { if (_uptime != value) { _uptime = value; Raise(nameof(Uptime)); } }
+        }
+
+        /// <summary>Thread count, read from the same kernel buffer as everything else rather than a per-row query.</summary>
+        public string Threads
+        {
+            get => _threads;
+            set { if (_threads != value) { _threads = value; Raise(nameof(Threads)); } }
+        }
+
+        /// <summary>Open handle count, read from the same kernel buffer as everything else rather than a per-row query.</summary>
+        public string Handles
+        {
+            get => _handles;
+            set { if (_handles != value) { _handles = value; Raise(nameof(Handles)); } }
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -90,7 +125,12 @@ namespace Kil0bitSystemMonitor.ViewModels
             if (int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out int pid))
                 return all.Where(p => p.Pid == pid).ToList();
 
-            return all.Where(p => p.Name.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+            // The parent name is searched too, so typing "bash" shows everything a bash started
+            // — which is how a family of leaked children is found and then ended together.
+            return all.Where(p =>
+                    p.Name.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    p.ParentName.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToList();
         }
 
         /// <summary>
@@ -104,9 +144,14 @@ namespace Kil0bitSystemMonitor.ViewModels
             {
                 ProcessSortColumn.Name => (a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase),
                 ProcessSortColumn.Pid => (a, b) => a.Pid.CompareTo(b.Pid),
+                ProcessSortColumn.Parent => (a, b) => string.Compare(a.ParentName, b.ParentName, StringComparison.OrdinalIgnoreCase),
                 ProcessSortColumn.Cpu => (a, b) => a.CpuPercent.CompareTo(b.CpuPercent),
                 ProcessSortColumn.Memory => (a, b) => a.WorkingSet.CompareTo(b.WorkingSet),
                 ProcessSortColumn.Disk => (a, b) => a.DiskBytesPerSec.CompareTo(b.DiskBytesPerSec),
+                // Longer uptime is an OLDER creation time, so the comparison is reversed.
+                ProcessSortColumn.Uptime => (a, b) => b.CreateTime.CompareTo(a.CreateTime),
+                ProcessSortColumn.Threads => (a, b) => a.Threads.CompareTo(b.Threads),
+                ProcessSortColumn.Handles => (a, b) => a.Handles.CompareTo(b.Handles),
                 _ => (a, b) => 0,
             };
 
@@ -116,6 +161,135 @@ namespace Kil0bitSystemMonitor.ViewModels
                 if (descending) c = -c;
                 return c != 0 ? c : a.Pid.CompareTo(b.Pid);
             });
+        }
+
+        /// <summary>
+        /// The sort column a header text stands for, or null. Kept beside <see cref="Sort"/> so
+        /// renaming a header in the XAML cannot silently disconnect it from its column without
+        /// failing a test.
+        /// </summary>
+        public static ProcessSortColumn? ColumnFor(string? header) => header switch
+        {
+            "Name" => ProcessSortColumn.Name,
+            "PID" => ProcessSortColumn.Pid,
+            "Parent" => ProcessSortColumn.Parent,
+            "CPU" => ProcessSortColumn.Cpu,
+            "Memory" => ProcessSortColumn.Memory,
+            "Disk" => ProcessSortColumn.Disk,
+            "Uptime" => ProcessSortColumn.Uptime,
+            "Threads" => ProcessSortColumn.Threads,
+            "Handles" => ProcessSortColumn.Handles,
+            _ => null,
+        };
+
+        /// <summary>What a set of rows costs between them.</summary>
+        public static ProcessTotals Totals(IReadOnlyList<ProcessUsage> rows)
+        {
+            if (rows == null || rows.Count == 0) return new ProcessTotals(0, 0f, 0L, 0L);
+
+            float cpu = 0f;
+            long memory = 0, disk = 0;
+            foreach (var r in rows)
+            {
+                cpu += r.CpuPercent;
+                memory += r.WorkingSet;
+                disk += r.DiskBytesPerSec;
+            }
+            return new ProcessTotals(rows.Count, cpu, memory, disk);
+        }
+
+        /// <summary>
+        /// The footer's summary, e.g. "37 processes · 4.2% CPU · 1.8 GB · 12 MB/s". Tells you what
+        /// a filtered group is costing before you decide to end it.
+        /// </summary>
+        public static string FormatTotals(ProcessTotals t)
+        {
+            string count = t.Count.ToString(CultureInfo.InvariantCulture)
+                           + (t.Count == 1 ? " process" : " processes");
+            string cpu = t.Cpu.ToString("F1", CultureInfo.InvariantCulture) + "% CPU";
+            string disk = t.Disk > 0 ? ProcessUsage.FormatRate(t.Disk) : "0 B/s";
+            return count + " · " + cpu + " · " + ProcessUsage.FormatBytes(t.Memory) + " · " + disk;
+        }
+
+        /// <summary>
+        /// How long a process has run, at the one scale that matters: seconds, then minutes,
+        /// then hours and minutes, then days and hours. A clock that moved backwards reads as 0s
+        /// rather than a negative age.
+        /// </summary>
+        public static string FormatUptime(TimeSpan uptime)
+        {
+            if (uptime < TimeSpan.Zero) uptime = TimeSpan.Zero;
+            var inv = CultureInfo.InvariantCulture;
+
+            if (uptime.TotalMinutes < 1) return ((int)uptime.TotalSeconds).ToString(inv) + "s";
+            if (uptime.TotalHours < 1) return ((int)uptime.TotalMinutes).ToString(inv) + "m";
+            if (uptime.TotalDays < 1)
+                return ((int)uptime.TotalHours).ToString(inv) + "h " + uptime.Minutes.ToString("00", inv) + "m";
+            return ((int)uptime.TotalDays).ToString(inv) + "d " + uptime.Hours.ToString(inv) + "h";
+        }
+
+        /// <summary>The Parent column: "bash.exe (1234)", <c>(gone)</c>, or empty.</summary>
+        public static string ParentText(ProcessUsage row)
+        {
+            if (string.IsNullOrEmpty(row.ParentName)) return "";
+            if (row.ParentName == ProcessTree.Gone) return ProcessTree.Gone;
+            return row.ParentName + " (" + row.ParentPid.ToString(CultureInfo.InvariantCulture) + ")";
+        }
+
+        /// <summary>
+        /// Makes <paramref name="rows"/> hold exactly <paramref name="ordered"/>, in that order,
+        /// reusing every existing row whose process is still there.
+        ///
+        /// <para>
+        /// A WPF selection holds row objects, and clearing the collection drops it. Moving an
+        /// existing object and updating its properties in place does not — so a selection of one
+        /// row or many, and the scroll position, survive every refresh. Identity is
+        /// (pid, creation time): a PID reused by a different process gets a new row, never the
+        /// old one, so a selection can never slide onto an unrelated process.
+        /// </para>
+        /// </summary>
+        public static void SyncRows(ObservableCollection<ProcessRow> rows, IReadOnlyList<ProcessUsage> ordered)
+        {
+            var wanted = new HashSet<(int, long)>();
+            foreach (var p in ordered) wanted.Add((p.Pid, p.CreateTime));
+
+            // Drop what is gone, back to front so the indices ahead stay valid.
+            for (int i = rows.Count - 1; i >= 0; i--)
+            {
+                if (!wanted.Contains((rows[i].Pid, rows[i].CreateTime))) rows.RemoveAt(i);
+            }
+
+            var existing = new Dictionary<(int, long), ProcessRow>(rows.Count);
+            foreach (var r in rows) existing[(r.Pid, r.CreateTime)] = r;
+
+            // Everything before i is final, so a reused row is always found at or after i.
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                var p = ordered[i];
+                if (i < rows.Count && rows[i].Pid == p.Pid && rows[i].CreateTime == p.CreateTime) continue;
+
+                if (existing.TryGetValue((p.Pid, p.CreateTime), out var row))
+                    rows.Move(rows.IndexOf(row), i);
+                else
+                    rows.Insert(i, new ProcessRow(p.Name, p.Pid, p.CreateTime));
+            }
+        }
+
+        /// <summary>
+        /// The processes behind a set of selected rows, in list order, matched by identity.
+        /// A selected row whose process is no longer in <paramref name="source"/> is left out.
+        /// </summary>
+        public static IReadOnlyList<ProcessUsage> Matching(IReadOnlyList<ProcessUsage> source, IEnumerable<ProcessRow> selected)
+        {
+            var ids = new HashSet<(int, long)>();
+            foreach (var r in selected) ids.Add((r.Pid, r.CreateTime));
+
+            var result = new List<ProcessUsage>();
+            foreach (var p in source)
+            {
+                if (ids.Contains((p.Pid, p.CreateTime))) result.Add(p);
+            }
+            return result;
         }
 
         /// <summary>
@@ -132,9 +306,13 @@ namespace Kil0bitSystemMonitor.ViewModels
         private string _searchText = "";
         private ProcessSortColumn _sortColumn = ProcessSortColumn.Cpu;
         private bool _sortDescending = true;
+        private bool _ending;
         private int _count;
         private string _emptyMessage = "";
         private string _message = "";
+        private string _totals = "0 processes";
+        private IReadOnlyList<ProcessUsage> _filtered = Array.Empty<ProcessUsage>();
+        private IReadOnlyList<ProcessUsage> _snapshot = Array.Empty<ProcessUsage>();
 
         public TaskManagerViewModel(ProcessSampler sampler)
         {
@@ -156,14 +334,71 @@ namespace Kil0bitSystemMonitor.ViewModels
         public string SearchText
         {
             get => _searchText;
-            set { if (_searchText != value) { _searchText = value; OnPropertyChanged(); Refresh(); } }
+            set
+            {
+                if (_searchText == value) return;
+                _searchText = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanEndAllFiltered));
+                Refresh();
+            }
         }
 
-        /// <summary>Row count after filtering, for the header.</summary>
+        /// <summary>
+        /// The rows the filter currently matches, as data rather than as display rows. What
+        /// End all filtered plans against.
+        /// </summary>
+        public IReadOnlyList<ProcessUsage> Filtered => _filtered;
+
+        /// <summary>The full snapshot the list was built from, for walking parent chains.</summary>
+        public IReadOnlyList<ProcessUsage> Snapshot => _snapshot;
+
+        /// <summary>
+        /// End all filtered is offered only while a filter is typed and matches something, and
+        /// while no batch from a previous click is still running. With no filter, "all filtered"
+        /// is every process on the machine, and the button is simply not available rather than
+        /// asking; while a batch runs, a second click would plan against rows that are already
+        /// mid-termination.
+        ///
+        /// <para>
+        /// The no-filter rule applies to this button only. A multi-row selection — including
+        /// Ctrl+A across every row — can target any number of processes through End task, and is
+        /// protected the same way End all filtered is: the same <see cref="BulkEndPlan"/>
+        /// exclusions, the same preview, and the same typed count.
+        /// </para>
+        /// </summary>
+        public bool CanEndAllFiltered => !_ending && !string.IsNullOrWhiteSpace(_searchText) && _count > 0;
+
+        /// <summary>
+        /// Set for the duration of a bulk end so <see cref="CanEndAllFiltered"/> — and the button
+        /// bound to it — goes false without the window ever assigning the button's IsEnabled
+        /// directly, which would replace the binding with a local value for the rest of the
+        /// window's life.
+        /// </summary>
+        public bool Ending
+        {
+            get => _ending;
+            set
+            {
+                if (_ending == value) return;
+                _ending = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanEndAllFiltered));
+            }
+        }
+
+        /// <summary>Row count after filtering.</summary>
         public int Count
         {
             get => _count;
-            private set { if (_count != value) { _count = value; OnPropertyChanged(); OnPropertyChanged(nameof(Footer)); } }
+            private set
+            {
+                if (_count == value) return;
+                _count = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Footer));
+                OnPropertyChanged(nameof(CanEndAllFiltered));
+            }
         }
 
         /// <summary>
@@ -187,15 +422,8 @@ namespace Kil0bitSystemMonitor.ViewModels
             set { if (_message != value) { _message = value; OnPropertyChanged(); OnPropertyChanged(nameof(Footer)); } }
         }
 
-        /// <summary>One line: the last result if there is one, then the count.</summary>
-        public string Footer
-        {
-            get
-            {
-                string count = _count.ToString(CultureInfo.InvariantCulture) + " processes";
-                return string.IsNullOrEmpty(_message) ? count : _message + "   ·   " + count;
-            }
-        }
+        /// <summary>One line: the last result if there is one, then what the filtered rows cost.</summary>
+        public string Footer => string.IsNullOrEmpty(_message) ? _totals : _message + "   ·   " + _totals;
 
         /// <summary>Sets the sort column, flipping direction when the same column is chosen twice.</summary>
         public void SortBy(ProcessSortColumn column)
@@ -212,35 +440,30 @@ namespace Kil0bitSystemMonitor.ViewModels
             var snapshot = _sampler.AllProcesses;
             var rows = Filter(snapshot, _searchText).ToList();
             Sort(rows, _sortColumn, _sortDescending);
+            _snapshot = snapshot;
+            _filtered = rows;
 
-            // Rebuild only when the set of processes changes; otherwise update in place, so a
-            // selection and a scroll position survive a tick. Rebuilding every two seconds
-            // would move the row out from under the cursor at the moment it is being read.
-            bool sameSet = Rows.Count == rows.Count;
-            if (sameSet)
-            {
-                for (int i = 0; i < rows.Count; i++)
-                {
-                    if (Rows[i].Pid == rows[i].Pid && Rows[i].CreateTime == rows[i].CreateTime) continue;
-                    sameSet = false;
-                    break;
-                }
-            }
-
-            if (!sameSet)
-            {
-                Rows.Clear();
-                foreach (var p in rows) Rows.Add(new ProcessRow(p.Name, p.Pid, p.CreateTime));
-            }
+            // Synchronised in place rather than rebuilt: rows are reused and moved, never
+            // replaced, so a selection of any size and the scroll position survive every tick.
+            SyncRows(Rows, rows);
 
             bool hasCpu = _sampler.HasCpuData;
+            var now = DateTime.UtcNow;
+            var inv = CultureInfo.InvariantCulture;
             for (int i = 0; i < rows.Count; i++)
             {
-                Rows[i].Cpu = CpuTextFor(rows[i], hasCpu);
-                Rows[i].Memory = rows[i].WorkingSetText;
-                Rows[i].Disk = rows[i].DiskBytesPerSec > 0 ? rows[i].DiskText : "—";
+                var p = rows[i];
+                Rows[i].Cpu = CpuTextFor(p, hasCpu);
+                Rows[i].Memory = p.WorkingSetText;
+                Rows[i].Disk = p.DiskBytesPerSec > 0 ? p.DiskText : "—";
+                Rows[i].Parent = ParentText(p);
+                Rows[i].Uptime = p.CreateTime > 0 ? FormatUptime(now - DateTime.FromFileTimeUtc(p.CreateTime)) : "";
+                Rows[i].Threads = p.Threads.ToString(inv);
+                Rows[i].Handles = p.Handles.ToString(inv);
             }
 
+            _totals = FormatTotals(Totals(rows));
+            OnPropertyChanged(nameof(Footer));
             Count = rows.Count;
             EmptyMessage = rows.Count > 0
                 ? ""

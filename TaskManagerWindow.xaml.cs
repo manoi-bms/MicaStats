@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Kil0bitSystemMonitor.Services;
@@ -31,6 +33,9 @@ namespace Kil0bitSystemMonitor
         private static TaskManagerWindow? s_open;
 
         private readonly TaskManagerViewModel _model;
+
+        /// <summary>The detail pane's state, bound from the XAML.</summary>
+        public ProcessDetailViewModel Detail { get; } = new();
 
         /// <summary>The last kill that was refused for lack of privilege, for the retry button.</summary>
         private (int Pid, long CreateTime, string Name)? _pendingElevation;
@@ -66,18 +71,105 @@ namespace Kil0bitSystemMonitor
             return s_open;
         }
 
+        /// <summary>
+        /// The list is synchronised in place, so this fires only when the user changes the
+        /// selection or a selected process exits — never merely because a refresh happened.
+        /// </summary>
         private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            EndTaskButton.IsEnabled = ProcessList.SelectedItem is ProcessRow;
+            int count = ProcessList.SelectedItems.Count;
 
-            // A new selection invalidates the previous refusal.
+            EndTaskButton.IsEnabled = count > 0;
+            EndTaskButton.Content = count > 1
+                ? "End " + count.ToString(CultureInfo.InvariantCulture) + " tasks"
+                : "End task";
+
+            // A different selection invalidates the previous refusal.
             _pendingElevation = null;
             RetryElevated.Visibility = Visibility.Collapsed;
+
+            if (count == 1 && ProcessList.SelectedItem is ProcessRow row) Detail.Load(row);
+            else if (count > 1) Detail.ShowMany(count);
+            else Detail.Clear();
+        }
+
+        /// <summary>
+        /// Sorts by the clicked column, flipping direction on a second click. The header text is
+        /// the key, mapped by <see cref="TaskManagerViewModel.ColumnFor"/>.
+        /// </summary>
+        private void OnHeaderClick(object sender, RoutedEventArgs e)
+        {
+            if (e.OriginalSource is not GridViewColumnHeader header || header.Column == null) return;
+            if (TaskManagerViewModel.ColumnFor(header.Column.Header as string) is { } column)
+                _model.SortBy(column);
+        }
+
+        /// <summary>End all filtered: everything the search currently matches.</summary>
+        private void OnEndAllFiltered(object sender, RoutedEventArgs e)
+        {
+            if (!_model.CanEndAllFiltered) return;
+            ConfirmAndEnd(_model.Filtered);
+        }
+
+        /// <summary>
+        /// Plans against the given processes, asks for typed confirmation, then ends the set off
+        /// the UI thread and reports the outcome in the footer. Shared by End all filtered and by
+        /// End task on a multi-row selection, so both go through the same exclusions, preview and
+        /// verified kill.
+        /// </summary>
+        private void ConfirmAndEnd(IReadOnlyList<ProcessUsage> candidates)
+        {
+            // One batch at a time: a second confirm while one is running would race it.
+            if (_model.Ending)
+            {
+                _model.Message = "Still ending the previous batch; try again when it finishes.";
+                return;
+            }
+
+            var ancestors = BulkEndPlan.AncestorsOf(Environment.ProcessId, _model.Snapshot);
+            var plan = BulkEndPlan.Build(candidates, Environment.ProcessId, ancestors);
+
+            var dialog = new BulkEndDialog(plan) { Owner = this };
+            if (dialog.ShowDialog() != true || plan.ToEnd.Count == 0) return;
+
+            // Ending is folded into CanEndAllFiltered rather than assigning EndAllButton.IsEnabled
+            // directly, so the XAML binding stays live for the rest of the window's life.
+            _model.Ending = true;
+            _model.Message = "Ending " + plan.ToEnd.Count.ToString(CultureInfo.InvariantCulture) + "…";
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string outcome;
+                try { outcome = BulkEnd.Run(plan.ToEnd).Describe(); }
+                catch (Exception ex)
+                {
+                    outcome = "Ending the processes failed; the log has the detail.";
+                    DiagnosticsLog.Error("processes", "Ending selected or filtered processes failed", ex);
+                }
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    _model.Message = outcome;
+                    _model.Ending = false;
+                    _model.Refresh();
+                }));
+            });
         }
 
         private void OnEndTask(object sender, RoutedEventArgs e)
         {
-            if (ProcessList.SelectedItem is not ProcessRow row) return;
+            var selected = ProcessList.SelectedItems.OfType<ProcessRow>().ToList();
+            if (selected.Count == 0) return;
+
+            // Several rows: the same exclusions, preview and typed confirmation as End all
+            // filtered. One row keeps the immediate End task, with its elevation retry.
+            if (selected.Count > 1)
+            {
+                ConfirmAndEnd(TaskManagerViewModel.Matching(_model.Filtered, selected));
+                return;
+            }
+
+            var row = selected[0];
 
             var result = ProcessControl.TryEndTask(row.Pid, row.CreateTime, row.Name, out string message);
             _model.Message = message;

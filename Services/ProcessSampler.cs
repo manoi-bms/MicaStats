@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.InteropServices;
 
 namespace Kil0bitSystemMonitor.Services
@@ -20,13 +21,39 @@ namespace Kil0bitSystemMonitor.Services
         /// </summary>
         public long CreateTime { get; init; }
 
+        /// <summary>
+        /// The PID of the process that created this one, as the kernel recorded it. Not proof
+        /// the parent is alive: the number may since have been reused. Resolve it through
+        /// <see cref="ProcessTree.WithParentNames"/>, which applies the recycled-PID rule.
+        /// </summary>
+        public int ParentPid { get; init; }
+
+        /// <summary>
+        /// The parent's image name, <see cref="ProcessTree.Gone"/> when the parent has exited or
+        /// its PID was reused, or empty when the process never had one. Filled only on
+        /// <see cref="ProcessSampler.AllProcesses"/>.
+        /// </summary>
+        public string ParentName { get; init; } = "";
+
+        /// <summary>Thread count, from the same kernel buffer as everything else here.</summary>
+        public int Threads { get; init; }
+
+        /// <summary>Open handle count, from the same kernel buffer as everything else here.</summary>
+        public int Handles { get; init; }
+
         /// <summary>Combined disk traffic per second — how a process is ranked as a disk hog.</summary>
         public long DiskBytesPerSec => DiskReadBytesPerSec + DiskWriteBytesPerSec;
 
         /// <summary>Working set rendered for display, e.g. "412 MB".</summary>
-        public string WorkingSetText => WorkingSet >= 1024L * 1024 * 1024
-            ? $"{WorkingSet / 1024d / 1024d / 1024d:F1} GB"
-            : $"{WorkingSet / 1024d / 1024d:F0} MB";
+        public string WorkingSetText => FormatBytes(WorkingSet);
+
+        /// <summary>
+        /// A byte count in the largest unit that keeps the number readable, e.g. "412 MB" or
+        /// "1.8 GB". Shared by a row's memory and the footer's total, so the two always agree.
+        /// </summary>
+        public static string FormatBytes(long bytes) => bytes >= 1024L * 1024 * 1024
+            ? (bytes / 1024d / 1024d / 1024d).ToString("F1", CultureInfo.InvariantCulture) + " GB"
+            : (bytes / 1024d / 1024d).ToString("F0", CultureInfo.InvariantCulture) + " MB";
 
         /// <summary>CPU share rendered for display.</summary>
         public string CpuText => $"{CpuPercent:F1}%";
@@ -79,6 +106,12 @@ namespace Kil0bitSystemMonitor.Services
         // because the project does not enable unsafe blocks, so a fixed-buffer struct would not
         // compile.
         private const int OffNextEntry = 0x00;
+
+        // NumberOfThreads and HandleCount, in the same buffer. Two more reads per process and no
+        // additional syscall — which is how the process window can show them without querying
+        // each process, the thing that makes Task Manager slow on a busy machine.
+        private const int OffNumberOfThreads = 0x04;
+        private const int OffHandleCount = 0x60;
         private const int OffCycleTime = 0x18;
         private const int OffCreateTime = 0x20;
         private const int OffUserTime = 0x28;
@@ -292,6 +325,9 @@ namespace Kil0bitSystemMonitor.Services
                                 DiskReadBytesPerSec = readRate,
                                 DiskWriteBytesPerSec = writeRate,
                                 CreateTime = createTime,
+                                ParentPid = (int)Marshal.ReadIntPtr(entry, OffParentProcessId).ToInt64(),
+                                Threads = Marshal.ReadInt32(entry, OffNumberOfThreads),
+                                Handles = Marshal.ReadInt32(entry, OffHandleCount),
                             };
                             byCpu.Add(usage);
                             byRam.Add(usage);
@@ -320,7 +356,9 @@ namespace Kil0bitSystemMonitor.Services
 
                     // Captured before Trim, which reduces the list to the top few. This is the
                     // whole list the task manager shows, and it was already computed.
-                    AllProcesses = byCpu.ToArray();
+                    // Parent names need the whole snapshot, so they are resolved after the walk.
+                    // Only the full list carries them: the top-five rankings never show a parent.
+                    AllProcesses = ProcessTree.WithParentNames(byCpu);
                     System.Threading.Interlocked.Increment(ref _sampleCount);
 
                     TopByCpu = Trim(byCpu);

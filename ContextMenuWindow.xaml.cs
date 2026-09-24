@@ -42,6 +42,13 @@ namespace Kil0bitSystemMonitor
                 this.Close();
             };
 
+            var processesItem = new MenuItem { Header = "Processes" };
+            processesItem.Click += (s, e) =>
+            {
+                TaskManagerWindow.ShowOrActivate(App.SharedProcessSampler);
+                this.Close();
+            };
+
             var taskMgrItem = new MenuItem { Header = "Task Manager" };
             taskMgrItem.Click += (s, e) =>
             {
@@ -60,6 +67,7 @@ namespace Kil0bitSystemMonitor
             exitItem.Click += (s, e) => App.Quit();
 
             menu.Items.Add(settingsItem);
+            menu.Items.Add(processesItem);
             menu.Items.Add(taskMgrItem);
             menu.Items.Add(new Separator());
             menu.Items.Add(aboutItem);

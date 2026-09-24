@@ -61,11 +61,17 @@ Sensor availability may vary depending on the installed hardware, device drivers
 
 #### The process list
 
-Open it from **Processes** on the CPU card. It exists because Windows Task Manager is often unusable exactly when it is needed — slow to open, showing a frozen or empty list, or making the stutter worse once it is up.
+Open it from **Processes** in the overlay's right-click menu, or from **Processes** on the CPU card. It exists because Windows Task Manager is often unusable exactly when it is needed — slow to open, showing a frozen or empty list, or making the stutter worse once it is up.
 
-MicaStats has an advantage there: it is already running, and it already reads every process on the system through a single kernel call every two seconds. The window performs no sampling of its own and makes no per-process queries, so it opens from data already in memory and stays responsive on a machine that cannot open Task Manager at all. On a workstation running around 1,300 processes that difference is the whole feature.
+MicaStats has an advantage there: it is already running, and it already reads every process on the system through a single kernel call every two seconds. The list performs no sampling of its own and makes no per-process queries, so it opens from data already in memory and stays responsive on a machine that cannot open Task Manager at all. On a workstation running around 1,300 processes that difference is the whole feature. The same snapshot supplies each process's parent, uptime, thread count and handle count, so those columns cost nothing either. A process whose parent has exited shows its parent as `(gone)` — which is how an orphan announces itself. Click any column header to sort by it, and click it again to reverse the order. The search box also matches a process's parent, so typing `bash` lists everything a bash started.
+
+Selecting a row fills a pane beneath the list with that one process's full path, command line, account and whether it is elevated. Those need the process opened, so they are read for the selected row only, in the background, and never for the list. With several rows selected, none of them is read. The footer shows what everything the search matches is costing between them — count, CPU, memory and disk.
 
 **End task** terminates immediately rather than asking a window to close politely, which is why it works on applications that have stopped responding — and it always reports the outcome, so a kill that did nothing never looks like one that worked. MicaStats runs without administrator rights, so ending a process that has more of them offers *Retry as administrator*: that asks for consent once, ends that single process, and exits. MicaStats itself never holds those rights.
+
+**End all filtered** ends everything the search currently matches, and is available only while something is typed in the search box — with no filter it would mean every process on the machine. It first shows exactly what will end and what it will not: core Windows processes, MicaStats itself, and anything MicaStats is running inside are listed as refused, with the reason. You confirm by typing the number of processes that will end. Each one is then checked with Windows to confirm it actually exited, and the footer reports how many ended, how many need administrator rights, and how many survived. It never ends a process's children unless the search matched them too.
+
+Selecting several rows (Ctrl-click or Shift-click) works the same way: **End task** becomes *End N tasks* and goes through the same preview and confirmation. Selections survive the two-second refresh, so a selection stays put while you read it.
 
 It will not end `csrss.exe`, `wininit.exe`, `services.exe`, `smss.exe`, `lsass.exe` or `winlogon.exe`. Terminating any of them stops Windows instantly, so this refuses rather than asking you to confirm.
 
@@ -649,11 +655,17 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 
 #### รายการโปรเซส
 
-เปิดได้จากปุ่ม **Processes** บนการ์ด CPU มีขึ้นเพราะ Task Manager ของ Windows มักใช้งานไม่ได้ในจังหวะที่ต้องใช้พอดี ทั้งเปิดช้า แสดงรายการค้างหรือว่างเปล่า หรือทำให้เครื่องกระตุกหนักขึ้นหลังเปิด
+เปิดได้จากเมนู **Processes** เมื่อคลิกขวาที่โอเวอร์เลย์ หรือจากปุ่ม **Processes** บนการ์ด CPU มีขึ้นเพราะ Task Manager ของ Windows มักใช้งานไม่ได้ในจังหวะที่ต้องใช้พอดี ทั้งเปิดช้า แสดงรายการค้างหรือว่างเปล่า หรือทำให้เครื่องกระตุกหนักขึ้นหลังเปิด
 
-MicaStats ได้เปรียบตรงที่ทำงานอยู่ก่อนแล้ว และอ่านข้อมูลของทุกโปรเซสผ่านการเรียกเคอร์เนลครั้งเดียวทุกสองวินาทีอยู่แล้ว หน้าต่างนี้จึงไม่เก็บข้อมูลเพิ่มเองและไม่สอบถามข้อมูลรายโปรเซส เปิดจากข้อมูลที่มีอยู่ในหน่วยความจำและยังตอบสนองได้บนเครื่องที่เปิด Task Manager ไม่ขึ้นเลย บนเครื่องที่มีโปรเซสราว 1,300 ตัว ความต่างตรงนี้คือหัวใจของฟีเจอร์
+MicaStats ได้เปรียบตรงที่ทำงานอยู่ก่อนแล้ว และอ่านข้อมูลของทุกโปรเซสผ่านการเรียกเคอร์เนลครั้งเดียวทุกสองวินาทีอยู่แล้ว รายการนี้จึงไม่เก็บข้อมูลเพิ่มเองและไม่สอบถามข้อมูลรายโปรเซส เปิดจากข้อมูลที่มีอยู่ในหน่วยความจำและยังตอบสนองได้บนเครื่องที่เปิด Task Manager ไม่ขึ้นเลย บนเครื่องที่มีโปรเซสราว 1,300 ตัว ความต่างตรงนี้คือหัวใจของฟีเจอร์ ข้อมูลชุดเดียวกันนี้ยังให้โปรเซสแม่ ระยะเวลาที่ทำงาน จำนวนเธรด และจำนวนแฮนเดิลของแต่ละโปรเซส คอลัมน์เหล่านี้จึงไม่มีต้นทุนเพิ่ม โปรเซสที่โปรเซสแม่ปิดไปแล้วจะแสดงโปรเซสแม่เป็น `(gone)` ซึ่งเป็นสัญญาณของโปรเซสกำพร้า คลิกหัวคอลัมน์ใดก็ได้เพื่อเรียงตามคอลัมน์นั้น และคลิกซ้ำเพื่อกลับลำดับ ช่องค้นหายังค้นจากชื่อโปรเซสแม่ได้ด้วย เช่น พิมพ์ `bash` จะแสดงทุกโปรเซสที่ bash เป็นผู้เรียกขึ้นมา
+
+เมื่อเลือกแถว จะมีแผงด้านล่างรายการแสดงพาธเต็ม คำสั่งที่ใช้เรียก บัญชีผู้ใช้ และสถานะการยกระดับสิทธิ์ของโปรเซสนั้น ข้อมูลเหล่านี้ต้องเปิดโปรเซสเพื่ออ่าน จึงอ่านเฉพาะแถวที่เลือกเท่านั้น ในเบื้องหลัง และไม่อ่านสำหรับทั้งรายการ เมื่อเลือกหลายแถว จะไม่อ่านข้อมูลของแถวใดเลย ส่วนแถบด้านล่างแสดงต้นทุนรวมของทุกโปรเซสที่ตรงกับคำค้น ทั้งจำนวน CPU หน่วยความจำ และดิสก์
 
 **End task** สั่งปิดทันทีแทนการขอให้หน้าต่างปิดตัวเองอย่างสุภาพ จึงใช้ได้กับโปรแกรมที่ค้างไปแล้ว และจะรายงานผลลัพธ์เสมอ การสั่งปิดที่ไม่เกิดอะไรขึ้นจะไม่มีทางดูเหมือนสำเร็จ MicaStats ทำงานโดยไม่ใช้สิทธิ์ผู้ดูแลระบบ หากโปรเซสเป้าหมายมีสิทธิ์สูงกว่าจะมีปุ่ม *Retry as administrator* ซึ่งขอความยินยอมหนึ่งครั้ง ปิดโปรเซสนั้นตัวเดียว แล้วจบการทำงาน ตัว MicaStats เองไม่เคยถือสิทธิ์นั้นไว้
+
+**End all filtered** ปิดทุกโปรเซสที่ตรงกับคำค้นในขณะนั้น และใช้ได้เฉพาะเมื่อพิมพ์คำค้นไว้แล้วเท่านั้น เพราะถ้าไม่มีคำค้นจะหมายถึงทุกโปรเซสในเครื่อง ก่อนปิดจะแสดงรายการที่จะถูกปิดและรายการที่จะไม่ถูกปิดให้เห็นชัดเจน ได้แก่ โปรเซสหลักของ Windows ตัว MicaStats เอง และโปรเซสที่ MicaStats ทำงานอยู่ภายใน โดยระบุเหตุผลกำกับ ผู้ใช้ยืนยันด้วยการพิมพ์จำนวนโปรเซสที่จะถูกปิด จากนั้นจะตรวจสอบกับ Windows ทีละตัวว่าปิดไปจริงหรือไม่ แล้วรายงานที่แถบด้านล่างว่าปิดได้กี่ตัว ต้องใช้สิทธิ์ผู้ดูแลระบบกี่ตัว และรอดกี่ตัว จะไม่ปิดโปรเซสลูกของโปรเซสใด เว้นแต่คำค้นจะตรงกับโปรเซสลูกนั้นด้วย
+
+การเลือกหลายแถว (Ctrl-คลิก หรือ Shift-คลิก) ทำงานแบบเดียวกัน ปุ่ม **End task** จะกลายเป็น *End N tasks* และผ่านขั้นตอนแสดงรายการและยืนยันแบบเดียวกัน การเลือกจะคงอยู่แม้รายการรีเฟรชทุกสองวินาที จึงอ่านข้อมูลได้โดยไม่หลุด
 
 จะไม่ปิด `csrss.exe`, `wininit.exe`, `services.exe`, `smss.exe`, `lsass.exe` และ `winlogon.exe` เพราะการปิดตัวใดตัวหนึ่งทำให้ Windows หยุดทำงานทันที จึงปฏิเสธไปเลยแทนการถามยืนยัน
 

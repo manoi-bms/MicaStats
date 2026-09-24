@@ -5,7 +5,7 @@
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:vm="clr-namespace:Kil0bitSystemMonitor.ViewModels"
     Title="MicaStats Processes"
-    Width="640" Height="700" MinWidth="520" MinHeight="420"
+    Width="900" Height="760" MinWidth="840" MinHeight="520"
     WindowStartupLocation="CenterScreen"
     Background="#0E0E13"
     Foreground="#E9EDEDF2"
@@ -82,9 +82,12 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <!-- Fixed rather than Auto. With Auto the star-sized list above took the space
-                 first and the footer was laid out half outside the window; a definite height
-                 is allocated before the star row gets its remainder. -->
+            <!-- The detail pane and the footer are fixed rather than Auto. With Auto the
+                 star-sized list above took the space first and they were laid out half outside
+                 the window; a definite height is allocated before the star row gets its
+                 remainder. The pane is always present, showing a prompt when nothing is
+                 selected, so selecting a row never makes the list jump. -->
+            <RowDefinition Height="112" />
             <RowDefinition Height="42" />
         </Grid.RowDefinitions>
 
@@ -105,21 +108,24 @@
                       VirtualizingPanel.VirtualizationMode="Recycling"
                       VirtualizingPanel.ScrollUnit="Pixel"
                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                      SelectionChanged="OnSelectionChanged">
+                      SelectionChanged="OnSelectionChanged"
+                      GridViewColumnHeader.Click="OnHeaderClick">
                 <ListView.View>
                     <GridView AllowsColumnReorder="False">
-                        <!-- Widths total 516, comfortably inside the client area once the
-                             margins, the list border and a vertical scrollbar are taken out.
-                             Overflowing produces a horizontal scrollbar, and a process list
-                             that scrolls sideways is a process list nobody can read. -->
-                        <GridViewColumn Header="Name" Width="210">
+                        <!-- Widths total 776, inside the client area at the 840 minimum width
+                             once the margins, the list border and a vertical scrollbar are taken
+                             out. Overflowing produces a horizontal scrollbar, and a process list
+                             that scrolls sideways is a process list nobody can read.
+                             Header text is also the sort key: TaskManagerViewModel.ColumnFor maps
+                             it, and a test pins every mapping. Rename both together. -->
+                        <GridViewColumn Header="Name" Width="170">
                             <GridViewColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type vm:ProcessRow}">
                                     <TextBlock Style="{StaticResource ColumnText}" Text="{Binding Name}" />
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
-                        <GridViewColumn Header="PID" Width="62">
+                        <GridViewColumn Header="PID" Width="58">
                             <GridViewColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type vm:ProcessRow}">
                                     <TextBlock Style="{StaticResource NumberText}" Text="{Binding Pid}"
@@ -127,24 +133,56 @@
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
-                        <GridViewColumn Header="CPU" Width="72">
+                        <GridViewColumn Header="Parent" Width="150">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProcessRow}">
+                                    <TextBlock Style="{StaticResource ColumnText}" Text="{Binding Parent}"
+                                               Foreground="{StaticResource Muted}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="CPU" Width="62">
                             <GridViewColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type vm:ProcessRow}">
                                     <TextBlock Style="{StaticResource NumberText}" Text="{Binding Cpu}" />
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
-                        <GridViewColumn Header="Memory" Width="86">
+                        <GridViewColumn Header="Memory" Width="76">
                             <GridViewColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type vm:ProcessRow}">
                                     <TextBlock Style="{StaticResource NumberText}" Text="{Binding Memory}" />
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
-                        <GridViewColumn Header="Disk" Width="86">
+                        <GridViewColumn Header="Disk" Width="72">
                             <GridViewColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type vm:ProcessRow}">
                                     <TextBlock Style="{StaticResource NumberText}" Text="{Binding Disk}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Uptime" Width="66">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProcessRow}">
+                                    <TextBlock Style="{StaticResource NumberText}" Text="{Binding Uptime}"
+                                               Foreground="{StaticResource RowInk}" FontWeight="Normal" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Threads" Width="58">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProcessRow}">
+                                    <TextBlock Style="{StaticResource NumberText}" Text="{Binding Threads}"
+                                               Foreground="{StaticResource RowInk}" FontWeight="Normal" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Handles" Width="64">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProcessRow}">
+                                    <TextBlock Style="{StaticResource NumberText}" Text="{Binding Handles}"
+                                               Foreground="{StaticResource RowInk}" FontWeight="Normal" />
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
@@ -174,6 +212,49 @@
         </Grid>
 
         <!--
+          The selected process: the four facts that need a handle, read for this one row only.
+          Selectable text, so a command line can be copied out.
+        -->
+        <Border Grid.Row="2" Margin="0,10,0,0" Padding="12,9" CornerRadius="6"
+                Background="#141419" BorderBrush="#22FFFFFF" BorderThickness="1"
+                DataContext="{Binding Detail, RelativeSource={RelativeSource AncestorType=Window}}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="86" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="{Binding Title}" Margin="0,0,0,6"
+                           FontSize="12" FontWeight="SemiBold" Foreground="#EDEDF2"
+                           TextTrimming="CharacterEllipsis" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Path" FontSize="11" Foreground="{StaticResource Muted}" />
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ImagePath, Mode=OneWay}" IsReadOnly="True"
+                         Background="Transparent" BorderThickness="0" Padding="0" FontSize="11"
+                         Foreground="{StaticResource RowInk}" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Command line" FontSize="11" Foreground="{StaticResource Muted}" />
+                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding CommandLine, Mode=OneWay}" IsReadOnly="True"
+                         Background="Transparent" BorderThickness="0" Padding="0" FontSize="11"
+                         Foreground="{StaticResource RowInk}" />
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Account" FontSize="11" Foreground="{StaticResource Muted}" />
+                <TextBlock Grid.Row="3" Grid.Column="1" FontSize="11" Foreground="{StaticResource RowInk}"
+                           TextTrimming="CharacterEllipsis">
+                    <Run Text="{Binding User, Mode=OneWay}" />
+                    <Run Text="   ·   Elevated: " Foreground="{StaticResource Muted}" />
+                    <Run Text="{Binding Elevated, Mode=OneWay}" />
+                </TextBlock>
+            </Grid>
+        </Border>
+
+        <!--
           Actions and result on one row. The result shared a row with the buttons rather than
           sitting under them because a second Auto row here rendered nothing: the star-sized
           list above claims whatever the footer does not demand at measure time, and a status
@@ -182,7 +263,7 @@
           The text is star-sized with trimming, so a four-digit count and a long kill message
           degrade to an ellipsis instead of losing their last characters off the edge.
         -->
-        <Grid Grid.Row="2" Margin="0,10,0,0">
+        <Grid Grid.Row="3" Margin="0,10,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />

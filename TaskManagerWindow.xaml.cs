@@ -32,6 +32,9 @@ namespace Kil0bitSystemMonitor
 
         private readonly TaskManagerViewModel _model;
 
+        /// <summary>The detail pane's state, bound from the XAML.</summary>
+        public ProcessDetailViewModel Detail { get; } = new();
+
         /// <summary>The last kill that was refused for lack of privilege, for the retry button.</summary>
         private (int Pid, long CreateTime, string Name)? _pendingElevation;
 
@@ -73,6 +76,20 @@ namespace Kil0bitSystemMonitor
             // A new selection invalidates the previous refusal.
             _pendingElevation = null;
             RetryElevated.Visibility = Visibility.Collapsed;
+
+            if (ProcessList.SelectedItem is ProcessRow row) Detail.Load(row);
+            else Detail.Clear();
+        }
+
+        /// <summary>
+        /// Sorts by the clicked column, flipping direction on a second click. The header text is
+        /// the key, mapped by <see cref="TaskManagerViewModel.ColumnFor"/>.
+        /// </summary>
+        private void OnHeaderClick(object sender, RoutedEventArgs e)
+        {
+            if (e.OriginalSource is not GridViewColumnHeader header || header.Column == null) return;
+            if (TaskManagerViewModel.ColumnFor(header.Column.Header as string) is { } column)
+                _model.SortBy(column);
         }
 
         private void OnEndTask(object sender, RoutedEventArgs e)

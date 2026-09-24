@@ -455,5 +455,109 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Null(account.Elevated);
             Assert.Equal("Process has exited", reason);
         }
+
+        // ------------------------------------------------------- in-place row sync
+
+        private static ProcessUsage U(int pid, long created = 1) =>
+            new ProcessUsage("p" + pid.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".exe", pid, 0f, 0)
+            { CreateTime = created };
+
+        private static System.Collections.ObjectModel.ObservableCollection<ProcessRow> RowsOf(params ProcessUsage[] ps)
+        {
+            var rows = new System.Collections.ObjectModel.ObservableCollection<ProcessRow>();
+            TaskManagerViewModel.SyncRows(rows, ps);
+            return rows;
+        }
+
+        [Fact]
+        public void Syncing_puts_the_rows_in_the_target_order()
+        {
+            var rows = RowsOf(U(1), U(2), U(3));
+
+            TaskManagerViewModel.SyncRows(rows, new[] { U(3), U(1), U(2) });
+
+            Assert.Equal(new[] { 3, 1, 2 }, rows.Select(r => r.Pid));
+        }
+
+        [Fact]
+        public void Syncing_reuses_the_existing_row_objects_so_a_selection_survives()
+        {
+            // A WPF selection holds row objects. Replacing them is what drops it.
+            var rows = RowsOf(U(1), U(2), U(3));
+            var before = rows.ToDictionary(r => r.Pid);
+
+            TaskManagerViewModel.SyncRows(rows, new[] { U(3), U(2), U(1) });
+
+            Assert.All(rows, r => Assert.Same(before[r.Pid], r));
+        }
+
+        [Fact]
+        public void Syncing_removes_exited_processes_and_inserts_new_ones()
+        {
+            var rows = RowsOf(U(1), U(2), U(3));
+            var survivor = rows.Single(r => r.Pid == 2);
+
+            TaskManagerViewModel.SyncRows(rows, new[] { U(4), U(2) });
+
+            Assert.Equal(new[] { 4, 2 }, rows.Select(r => r.Pid));
+            Assert.Same(survivor, rows[1]);
+        }
+
+        [Fact]
+        public void A_reused_pid_with_a_new_creation_time_is_a_new_row()
+        {
+            // Same number, different process. Reusing the old row would carry a selection
+            // across to an unrelated process — and End task with it.
+            var rows = RowsOf(U(7, created: 100));
+            var old = rows[0];
+
+            TaskManagerViewModel.SyncRows(rows, new[] { U(7, created: 200) });
+
+            Assert.Single(rows);
+            Assert.NotSame(old, rows[0]);
+            Assert.Equal(200, rows[0].CreateTime);
+        }
+
+        [Fact]
+        public void Syncing_to_nothing_empties_the_list()
+        {
+            var rows = RowsOf(U(1), U(2));
+
+            TaskManagerViewModel.SyncRows(rows, Array.Empty<ProcessUsage>());
+
+            Assert.Empty(rows);
+        }
+
+        [Fact]
+        public void A_full_reversal_of_many_rows_ends_in_the_right_order()
+        {
+            var forward = Enumerable.Range(1, 300).Select(i => U(i)).ToArray();
+            var rows = RowsOf(forward);
+
+            TaskManagerViewModel.SyncRows(rows, forward.Reverse().ToArray());
+
+            Assert.Equal(Enumerable.Range(1, 300).Reverse(), rows.Select(r => r.Pid));
+        }
+
+        [Fact]
+        public void Matching_returns_the_selected_processes_in_list_order()
+        {
+            var source = new[] { U(1), U(2), U(3) };
+            var rows = RowsOf(source);
+
+            var hits = TaskManagerViewModel.Matching(source, new[] { rows[2], rows[0] });
+
+            Assert.Equal(new[] { 1, 3 }, hits.Select(p => p.Pid));
+        }
+
+        [Fact]
+        public void Matching_ignores_a_selected_row_that_is_no_longer_in_the_source()
+        {
+            var rows = RowsOf(U(1), U(2));
+
+            var hits = TaskManagerViewModel.Matching(new[] { U(2) }, rows);
+
+            Assert.Equal(new[] { 2 }, hits.Select(p => p.Pid));
+        }
     }
 }

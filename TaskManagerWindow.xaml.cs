@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -39,15 +41,6 @@ namespace Kil0bitSystemMonitor
         /// <summary>The last kill that was refused for lack of privilege, for the retry button.</summary>
         private (int Pid, long CreateTime, string Name)? _pendingElevation;
 
-        /// <summary>
-        /// The identity of the row shown in the detail pane, independent of which
-        /// <see cref="ProcessRow"/> instance represents it. <see cref="TaskManagerViewModel.Refresh"/>
-        /// rebuilds <c>Rows</c> — replacing every instance — whenever the process set or its sort
-        /// order changes, which on a busy, CPU-sorted machine is most two-second ticks; identity
-        /// is what lets the same selection survive that rebuild.
-        /// </summary>
-        private (int Pid, long CreateTime)? _selected;
-
         private TaskManagerWindow(ProcessSampler sampler)
         {
             InitializeComponent();
@@ -80,78 +73,25 @@ namespace Kil0bitSystemMonitor
         }
 
         /// <summary>
-        /// Keeps the detail pane attached to a process by identity, not by the <see cref="ProcessRow"/>
-        /// instance the ListView happens to hold — a rebuild replaces every instance and drops the
-        /// selection, and without this the pane would revert to its prompt every couple of seconds.
+        /// The list is synchronised in place, so this fires only when the user changes the
+        /// selection or a selected process exits — never merely because a refresh happened.
         /// </summary>
         private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (ProcessList.SelectedItem is ProcessRow row)
-            {
-                bool sameProcess = _selected is { } current
-                                    && current.Pid == row.Pid && current.CreateTime == row.CreateTime;
+            int count = ProcessList.SelectedItems.Count;
 
-                EndTaskButton.IsEnabled = true;
+            EndTaskButton.IsEnabled = count > 0;
+            EndTaskButton.Content = count > 1
+                ? "End " + count.ToString(CultureInfo.InvariantCulture) + " tasks"
+                : "End task";
 
-                // The rebuild's own restore (below) reselecting the same process, not a genuine
-                // new selection — reloading here would flash "Reading…" and reopen a handle on
-                // every refresh tick, and the pending elevation is still about this same process.
-                if (sameProcess) return;
-
-                // A new selection invalidates the previous refusal.
-                _pendingElevation = null;
-                RetryElevated.Visibility = Visibility.Collapsed;
-
-                _selected = (row.Pid, row.CreateTime);
-                Detail.Load(row);
-                return;
-            }
-
-            if (_selected is { } lost)
-            {
-                // The selection just vanished because Rows was rebuilt, not because the user
-                // deselected anything. Clearing the pane synchronously would make it flicker back
-                // to the prompt on most ticks, so the restore waits one dispatcher pass — past the
-                // Add() calls that are still ahead in this same rebuild — then looks the process
-                // up again by identity and reselects it, without disturbing scroll position.
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-                {
-                    // Input priority sits between this restore and the Normal-priority rebuild
-                    // that scheduled it, so a click on a different row can land in the gap. Bail
-                    // out if the state has already moved on rather than overriding it.
-                    if (_selected != lost || ProcessList.SelectedItem != null) return;
-
-                    ProcessRow? restored = null;
-                    foreach (var candidate in _model.Rows)
-                    {
-                        if (candidate.Pid == lost.Pid && candidate.CreateTime == lost.CreateTime)
-                        {
-                            restored = candidate;
-                            break;
-                        }
-                    }
-
-                    if (restored != null)
-                    {
-                        ProcessList.SelectedItem = restored;   // no ScrollIntoView: keep the scroll position
-                    }
-                    else
-                    {
-                        // Gone for good — exited, or filtered out since the search text changed.
-                        _selected = null;
-                        _pendingElevation = null;
-                        RetryElevated.Visibility = Visibility.Collapsed;
-                        EndTaskButton.IsEnabled = false;
-                        Detail.Clear();
-                    }
-                }));
-                return;
-            }
-
-            EndTaskButton.IsEnabled = false;
+            // A different selection invalidates the previous refusal.
             _pendingElevation = null;
             RetryElevated.Visibility = Visibility.Collapsed;
-            Detail.Clear();
+
+            if (count == 1 && ProcessList.SelectedItem is ProcessRow row) Detail.Load(row);
+            else if (count > 1) Detail.ShowMany(count);
+            else Detail.Clear();
         }
 
         /// <summary>
@@ -165,16 +105,26 @@ namespace Kil0bitSystemMonitor
                 _model.SortBy(column);
         }
 
-        /// <summary>
-        /// Plans against what the filter shows right now, asks for typed confirmation, then ends
-        /// the set off the UI thread and reports the outcome in the footer.
-        /// </summary>
+        /// <summary>End all filtered: everything the search currently matches.</summary>
         private void OnEndAllFiltered(object sender, RoutedEventArgs e)
         {
             if (!_model.CanEndAllFiltered) return;
+            ConfirmAndEnd(_model.Filtered);
+        }
+
+        /// <summary>
+        /// Plans against the given processes, asks for typed confirmation, then ends the set off
+        /// the UI thread and reports the outcome in the footer. Shared by End all filtered and by
+        /// End task on a multi-row selection, so both go through the same exclusions, preview and
+        /// verified kill.
+        /// </summary>
+        private void ConfirmAndEnd(IReadOnlyList<ProcessUsage> candidates)
+        {
+            // One batch at a time: a second confirm while one is running would race it.
+            if (_model.Ending) return;
 
             var ancestors = BulkEndPlan.AncestorsOf(Environment.ProcessId, _model.Snapshot);
-            var plan = BulkEndPlan.Build(_model.Filtered, Environment.ProcessId, ancestors);
+            var plan = BulkEndPlan.Build(candidates, Environment.ProcessId, ancestors);
 
             var dialog = new BulkEndDialog(plan) { Owner = this };
             if (dialog.ShowDialog() != true || plan.ToEnd.Count == 0) return;
@@ -190,8 +140,8 @@ namespace Kil0bitSystemMonitor
                 try { outcome = BulkEnd.Run(plan.ToEnd).Describe(); }
                 catch (Exception ex)
                 {
-                    outcome = "Ending the filtered processes failed; the log has the detail.";
-                    DiagnosticsLog.Error("processes", "End all filtered failed", ex);
+                    outcome = "Ending the processes failed; the log has the detail.";
+                    DiagnosticsLog.Error("processes", "Ending selected or filtered processes failed", ex);
                 }
 
                 Dispatcher.BeginInvoke(new Action(() =>
@@ -205,7 +155,18 @@ namespace Kil0bitSystemMonitor
 
         private void OnEndTask(object sender, RoutedEventArgs e)
         {
-            if (ProcessList.SelectedItem is not ProcessRow row) return;
+            var selected = ProcessList.SelectedItems.OfType<ProcessRow>().ToList();
+            if (selected.Count == 0) return;
+
+            // Several rows: the same exclusions, preview and typed confirmation as End all
+            // filtered. One row keeps the immediate End task, with its elevation retry.
+            if (selected.Count > 1)
+            {
+                ConfirmAndEnd(TaskManagerViewModel.Matching(_model.Filtered, selected));
+                return;
+            }
+
+            var row = selected[0];
 
             var result = ProcessControl.TryEndTask(row.Pid, row.CreateTime, row.Name, out string message);
             _model.Message = message;

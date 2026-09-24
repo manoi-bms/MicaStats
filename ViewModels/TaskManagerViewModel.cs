@@ -237,6 +237,62 @@ namespace Kil0bitSystemMonitor.ViewModels
         }
 
         /// <summary>
+        /// Makes <paramref name="rows"/> hold exactly <paramref name="ordered"/>, in that order,
+        /// reusing every existing row whose process is still there.
+        ///
+        /// <para>
+        /// A WPF selection holds row objects, and clearing the collection drops it. Moving an
+        /// existing object and updating its properties in place does not — so a selection of one
+        /// row or many, and the scroll position, survive every refresh. Identity is
+        /// (pid, creation time): a PID reused by a different process gets a new row, never the
+        /// old one, so a selection can never slide onto an unrelated process.
+        /// </para>
+        /// </summary>
+        public static void SyncRows(ObservableCollection<ProcessRow> rows, IReadOnlyList<ProcessUsage> ordered)
+        {
+            var wanted = new HashSet<(int, long)>();
+            foreach (var p in ordered) wanted.Add((p.Pid, p.CreateTime));
+
+            // Drop what is gone, back to front so the indices ahead stay valid.
+            for (int i = rows.Count - 1; i >= 0; i--)
+            {
+                if (!wanted.Contains((rows[i].Pid, rows[i].CreateTime))) rows.RemoveAt(i);
+            }
+
+            var existing = new Dictionary<(int, long), ProcessRow>(rows.Count);
+            foreach (var r in rows) existing[(r.Pid, r.CreateTime)] = r;
+
+            // Everything before i is final, so a reused row is always found at or after i.
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                var p = ordered[i];
+                if (i < rows.Count && rows[i].Pid == p.Pid && rows[i].CreateTime == p.CreateTime) continue;
+
+                if (existing.TryGetValue((p.Pid, p.CreateTime), out var row))
+                    rows.Move(rows.IndexOf(row), i);
+                else
+                    rows.Insert(i, new ProcessRow(p.Name, p.Pid, p.CreateTime));
+            }
+        }
+
+        /// <summary>
+        /// The processes behind a set of selected rows, in list order, matched by identity.
+        /// A selected row whose process is no longer in <paramref name="source"/> is left out.
+        /// </summary>
+        public static IReadOnlyList<ProcessUsage> Matching(IReadOnlyList<ProcessUsage> source, IEnumerable<ProcessRow> selected)
+        {
+            var ids = new HashSet<(int, long)>();
+            foreach (var r in selected) ids.Add((r.Pid, r.CreateTime));
+
+            var result = new List<ProcessUsage>();
+            foreach (var p in source)
+            {
+                if (ids.Contains((p.Pid, p.CreateTime))) result.Add(p);
+            }
+            return result;
+        }
+
+        /// <summary>
         /// CPU share for display. Before a second sample there is no delta, so this reads as a
         /// dash: 0.0% would be a lie indistinguishable from the frozen list being replaced.
         /// </summary>
@@ -380,25 +436,9 @@ namespace Kil0bitSystemMonitor.ViewModels
             _snapshot = snapshot;
             _filtered = rows;
 
-            // Rebuild only when the set of processes changes; otherwise update in place, so a
-            // selection and a scroll position survive a tick. Rebuilding every two seconds
-            // would move the row out from under the cursor at the moment it is being read.
-            bool sameSet = Rows.Count == rows.Count;
-            if (sameSet)
-            {
-                for (int i = 0; i < rows.Count; i++)
-                {
-                    if (Rows[i].Pid == rows[i].Pid && Rows[i].CreateTime == rows[i].CreateTime) continue;
-                    sameSet = false;
-                    break;
-                }
-            }
-
-            if (!sameSet)
-            {
-                Rows.Clear();
-                foreach (var p in rows) Rows.Add(new ProcessRow(p.Name, p.Pid, p.CreateTime));
-            }
+            // Synchronised in place rather than rebuilt: rows are reused and moved, never
+            // replaced, so a selection of any size and the scroll position survive every tick.
+            SyncRows(Rows, rows);
 
             bool hasCpu = _sampler.HasCpuData;
             var now = DateTime.Now;

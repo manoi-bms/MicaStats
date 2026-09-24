@@ -54,6 +54,18 @@ namespace Kil0bitSystemMonitor.ViewModels
         }
 
         /// <summary>
+        /// For a selection of several rows: there is no single process to describe, and reading
+        /// several would open a handle per row. Says what End task will do instead.
+        /// </summary>
+        public void ShowMany(int count)
+        {
+            Interlocked.Increment(ref _version);
+            Title = count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " processes selected — End task ends all of them, after a preview.";
+            ImagePath = CommandLine = User = Elevated = "";
+        }
+
+        /// <summary>
         /// Shows the row's identity at once and fills the four facts when the read returns.
         /// </summary>
         public void Load(ProcessRow row)

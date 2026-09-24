@@ -314,6 +314,41 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_kernel_pseudo_process_by_pid_is_excluded_with_a_reason()
+        {
+            // PID 4 is always the System pseudo-process, planned as "will end" and then failing
+            // as "need administrator" even for an administrator — it has no real image to open.
+            var plan = BulkEndPlan.Build(
+                new[] { Q("System", 4), Q("cmd.exe", 700) }, 999, Array.Empty<int>());
+
+            Assert.Equal(new[] { 700 }, plan.ToEnd.Select(p => p.Pid));
+            var excluded = Assert.Single(plan.Excluded);
+            Assert.Equal(4, excluded.Process.Pid);
+            Assert.Equal("Windows kernel process", excluded.Reason);
+        }
+
+        [Fact]
+        public void A_kernel_pseudo_process_by_name_is_excluded()
+        {
+            var plan = BulkEndPlan.Build(
+                new[] { Q("Memory Compression", 1234), Q("cmd.exe", 700) }, 999, Array.Empty<int>());
+
+            Assert.Equal(new[] { 700 }, plan.ToEnd.Select(p => p.Pid));
+            Assert.Equal("Windows kernel process", Assert.Single(plan.Excluded).Reason);
+        }
+
+        [Fact]
+        public void An_ordinary_process_whose_name_contains_a_kernel_name_is_not_excluded()
+        {
+            // "system32tool.exe" contains "System" as a substring; the match must be exact.
+            var plan = BulkEndPlan.Build(
+                new[] { Q("system32tool.exe", 800) }, 999, Array.Empty<int>());
+
+            Assert.Equal(new[] { 800 }, plan.ToEnd.Select(p => p.Pid));
+            Assert.Empty(plan.Excluded);
+        }
+
+        [Fact]
         public void MicaStats_itself_is_never_planned()
         {
             var plan = BulkEndPlan.Build(

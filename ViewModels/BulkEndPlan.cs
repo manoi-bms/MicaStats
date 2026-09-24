@@ -22,9 +22,19 @@ namespace Kil0bitSystemMonitor.ViewModels
     public sealed record BulkEndPlan(IReadOnlyList<ProcessUsage> ToEnd, IReadOnlyList<BulkEndExcluded> Excluded)
     {
         /// <summary>
-        /// Partitions the filtered rows. Excluded: core Windows processes, MicaStats itself, and
-        /// any process MicaStats is running inside — ending a terminal whose job object owns this
-        /// app would end the app from under the user.
+        /// Windows kernel pseudo-processes: no image ever backs them, so a handle can never be
+        /// opened — not even by an administrator. Matched by exact name only, never a substring,
+        /// so an ordinary process such as <c>system32tool.exe</c> is unaffected.
+        /// </summary>
+        private static readonly HashSet<string> KernelPseudoNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Registry", "Memory Compression", "Secure System",
+        };
+
+        /// <summary>
+        /// Partitions the filtered rows. Excluded: Windows kernel pseudo-processes, core Windows
+        /// processes, MicaStats itself, and any process MicaStats is running inside — ending a
+        /// terminal whose job object owns this app would end the app from under the user.
         /// </summary>
         public static BulkEndPlan Build(
             IReadOnlyList<ProcessUsage> filtered, int selfPid, IReadOnlyCollection<int> selfAncestors)
@@ -37,7 +47,9 @@ namespace Kil0bitSystemMonitor.ViewModels
 
             foreach (var p in filtered)
             {
-                if (ProcessControl.IsCriticalProcess(p.Name))
+                if (p.Pid == 0 || p.Pid == 4 || KernelPseudoNames.Contains(p.Name))
+                    excluded.Add(new BulkEndExcluded(p, "Windows kernel process"));
+                else if (ProcessControl.IsCriticalProcess(p.Name))
                     excluded.Add(new BulkEndExcluded(p, "core Windows process"));
                 else if (p.Pid == selfPid)
                     excluded.Add(new BulkEndExcluded(p, "this is MicaStats"));

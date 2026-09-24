@@ -75,18 +75,21 @@ namespace Kil0bitSystemMonitor.ViewModels
             set { if (_parent != value) { _parent = value; Raise(nameof(Parent)); } }
         }
 
+        /// <summary>How long the process has run, rendered from the creation time already in the snapshot.</summary>
         public string Uptime
         {
             get => _uptime;
             set { if (_uptime != value) { _uptime = value; Raise(nameof(Uptime)); } }
         }
 
+        /// <summary>Thread count, read from the same kernel buffer as everything else rather than a per-row query.</summary>
         public string Threads
         {
             get => _threads;
             set { if (_threads != value) { _threads = value; Raise(nameof(Threads)); } }
         }
 
+        /// <summary>Open handle count, read from the same kernel buffer as everything else rather than a per-row query.</summary>
         public string Handles
         {
             get => _handles;

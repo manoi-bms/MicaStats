@@ -391,6 +391,24 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void An_ancestor_walk_never_includes_the_pid_it_started_from()
+        {
+            // The chain loops back to the queried pid itself with tied creation times, which
+            // passes the recycled-pid check on its own. Only the parent.Pid != pid guard keeps
+            // the starting pid out of its own ancestor set.
+            var snapshot = new[]
+            {
+                Q("MicaStats.exe", 3, parent: 1, created: 1),
+                Q("a.exe", 1, parent: 2, created: 1),
+                Q("b.exe", 2, parent: 3, created: 1),
+            };
+
+            var ancestors = BulkEndPlan.AncestorsOf(3, snapshot);
+
+            Assert.Equal(new[] { 1, 2 }, ancestors.OrderBy(p => p));
+        }
+
+        [Fact]
         public void The_outcome_reads_as_one_sentence()
         {
             Assert.Equal("Ended 35 · 2 need administrator · 0 survived",

@@ -32,6 +32,10 @@
         </None>
     </ItemGroup>
 
+    <ItemGroup>
+        <InternalsVisibleTo Include="Kil0bitSystemMonitor.Tests" />
+    </ItemGroup>
+
     <!--
       This project lives at the repository root, so the SDK's default **/*.cs glob would compile
       the test project's sources into the application assembly. Exclude them explicitly.

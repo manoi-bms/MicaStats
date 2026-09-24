@@ -37,6 +37,8 @@
 | `Services/Watchdog/ProcessDetails.cs` | Full image path and command line for one candidate PID | 5 |
 | `Services/Watchdog/OrphanLedger.cs` | What has been logged, alerted, and given up on; pure | 6 |
 | `Services/Watchdog/OrphanWatchdog.cs` | Timer, collection, logging, kill escalation | 7 |
+| `Helpers/ToastStack.cs` | One bottom-right corner registry, shared by every toast | 8 |
+| `AlertToastWindow.cs` | *(modify)* move onto the shared stack | 8 |
 | `OrphanToastWindow.cs` | The corner card with *End them* | 8 |
 | `Models/SystemMetrics.cs` | *(modify)* five `AppConfig` properties | 9 |
 | `SettingsWindow.xaml` / `.xaml.cs` | *(modify)* one toggle | 9 |
@@ -2143,9 +2145,17 @@ MSG
 
 ---
 
-### Task 8: The toast
+### Task 8: The toast, on a shared corner stack
+
+`AlertToastWindow` owns a private `Open` list and its own `RestackAll`, both of which lay cards
+up from the bottom-right corner. A second toast class with its own copy of that code would place
+its cards in the same corner from a list the first one cannot see, so an alert card and an orphan
+card open together would draw on top of each other — and on a struggling machine both fire at
+once. The registry is extracted first, then both classes use it.
 
 **Files:**
+- Create: `Helpers/ToastStack.cs`
+- Modify: `AlertToastWindow.cs`
 - Create: `OrphanToastWindow.cs`
 - Modify: `Kil0bitSystemMonitor.csproj`
 - Modify: `tests/Kil0bitSystemMonitor.Tests/OrphanScanTests.cs`
@@ -2153,11 +2163,238 @@ MSG
 **Interfaces:**
 - Consumes: `OrphanFinding` (Task 7); `Helpers/ToastButton.Create`, `Helpers/UiGlyphs`.
 - Produces:
+  - `static void ToastStack.Add(Window toast, int maxOfSameType)`
+  - `static void ToastStack.Remove(Window toast)`
+  - `static void ToastStack.Restack()`
+  - `static void ToastStack.PlayEntrance(Window toast)`
+  - `static void ToastStack.CloseAll<T>() where T : Window`
   - `static OrphanToastWindow OrphanToastWindow.ShowFor(IReadOnlyList<OrphanFinding> findings, Action<IReadOnlyList<OrphanFinding>> onEndAll)`
   - `static void OrphanToastWindow.CloseAll()`
   - `internal static string OrphanToastWindow.Headline(IReadOnlyList<OrphanFinding> findings)`
 
-- [ ] **Step 1: Write the implementation**
+- [ ] **Step 1: Write the shared stack**
+
+Create `Helpers/ToastStack.cs`:
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Windows;
+using System.Windows.Media.Animation;
+
+namespace Kil0bitSystemMonitor.Helpers
+{
+    /// <summary>
+    /// The bottom-right corner, and who is currently in it.
+    ///
+    /// <para>
+    /// One registry for every kind of notice, because the corner is one place. Each toast class
+    /// keeping its own list would have each class laying cards out from a list that cannot see
+    /// the others, and two cards would occupy the same rectangle — which is exactly what
+    /// happens on a struggling machine, where an alert and a runaway-search notice fire
+    /// together.
+    /// </para>
+    ///
+    /// <para>
+    /// Trimming is per type: a burst of alerts must not evict a notice of a different kind that
+    /// the user has not answered yet.
+    /// </para>
+    /// </summary>
+    public static class ToastStack
+    {
+        private const double CardMargin = 18;
+        private const double CardGap = 8;
+
+        /// <summary>Every notice currently on screen, newest last.</summary>
+        private static readonly List<Window> Open = new();
+
+        /// <summary>
+        /// Registers a notice and drops the oldest of its own type once there are more than
+        /// <paramref name="maxOfSameType"/> of them.
+        ///
+        /// <para>
+        /// The oldest goes rather than the newest: the most recent problem is the one the user
+        /// has not seen yet.
+        /// </para>
+        /// </summary>
+        public static void Add(Window toast, int maxOfSameType)
+        {
+            if (toast == null) return;
+
+            Type kind = toast.GetType();
+            while (CountOf(kind) >= maxOfSameType)
+            {
+                Window? oldest = OldestOf(kind);
+                if (oldest == null) break;
+
+                Open.Remove(oldest);
+                try { oldest.Close(); } catch { }
+            }
+
+            Open.Add(toast);
+        }
+
+        /// <summary>Drops a notice that has closed, and closes the gap it left.</summary>
+        public static void Remove(Window toast)
+        {
+            if (toast != null && Open.Remove(toast)) Restack();
+        }
+
+        /// <summary>
+        /// Lays the open notices up from the bottom-right corner. Re-run whenever one appears or
+        /// closes, so a gap never opens in the middle of the stack.
+        /// </summary>
+        public static void Restack()
+        {
+            var work = SystemParameters.WorkArea;
+            double bottom = work.Bottom - CardMargin;
+
+            for (int i = Open.Count - 1; i >= 0; i--)
+            {
+                Window toast = Open[i];
+                if (!toast.IsLoaded) continue;
+
+                toast.Left = work.Right - toast.ActualWidth - CardMargin;
+                toast.Top = bottom - toast.ActualHeight;
+                bottom -= toast.ActualHeight + CardGap;
+            }
+        }
+
+        /// <summary>Fades and lifts a card into place.</summary>
+        public static void PlayEntrance(Window toast)
+        {
+            if (toast == null) return;
+
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            toast.BeginAnimation(UIElement.OpacityProperty,
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { EasingFunction = ease });
+            toast.BeginAnimation(Window.TopProperty,
+                new DoubleAnimation(toast.Top + 16, toast.Top, TimeSpan.FromMilliseconds(260))
+                { EasingFunction = ease });
+        }
+
+        /// <summary>
+        /// Closes every notice of one kind, leaving the others alone — switching off alerts must
+        /// not silently take away an unanswered notice about something else.
+        /// </summary>
+        public static void CloseAll<T>() where T : Window
+        {
+            for (int i = Open.Count - 1; i >= 0; i--)
+            {
+                if (Open[i] is not T toast) continue;
+
+                Open.RemoveAt(i);
+                try { toast.Close(); } catch { }
+            }
+            Restack();
+        }
+
+        private static int CountOf(Type kind)
+        {
+            int n = 0;
+            foreach (Window toast in Open) if (toast.GetType() == kind) n++;
+            return n;
+        }
+
+        private static Window? OldestOf(Type kind)
+        {
+            foreach (Window toast in Open) if (toast.GetType() == kind) return toast;
+            return null;
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Move `AlertToastWindow` onto it**
+
+In `AlertToastWindow.cs`, delete these members entirely:
+
+- the `Open` field and its doc comment
+- the `CardMargin` and `CardGap` constants
+- the whole `RestackAll` method and its doc comment
+- the whole `PlayEntrance` method
+
+Then find:
+
+```csharp
+            Loaded += (s, e) => { RestackAll(); PlayEntrance(); };
+```
+
+Replace with:
+
+```csharp
+            Loaded += (s, e) => { ToastStack.Restack(); ToastStack.PlayEntrance(this); };
+```
+
+Find:
+
+```csharp
+            Closed += (s, e) => { _dismiss.Stop(); Open.Remove(this); RestackAll(); };
+```
+
+Replace with:
+
+```csharp
+            Closed += (s, e) => { _dismiss.Stop(); ToastStack.Remove(this); };
+```
+
+Find the whole body of `ShowFor`:
+
+```csharp
+            // Drop the oldest rather than the newest: the most recent problem is the one the
+            // user has not seen yet.
+            while (Open.Count >= MaxOnScreen)
+            {
+                var oldest = Open[0];
+                try { oldest.Close(); } catch { }
+                Open.Remove(oldest);
+            }
+
+            var toast = new AlertToastWindow(alert);
+            toast.OpenRequested += onOpen;
+            Open.Add(toast);
+            toast.Show();
+            return toast;
+```
+
+Replace with:
+
+```csharp
+            var toast = new AlertToastWindow(alert);
+            toast.OpenRequested += onOpen;
+            ToastStack.Add(toast, MaxOnScreen);
+            toast.Show();
+            return toast;
+```
+
+Find the whole body of `CloseAll`:
+
+```csharp
+            for (int i = Open.Count - 1; i >= 0; i--)
+            {
+                try { Open[i].Close(); } catch { }
+            }
+            Open.Clear();
+```
+
+Replace with:
+
+```csharp
+            ToastStack.CloseAll<AlertToastWindow>();
+```
+
+`AlertToastWindow.cs` already has `using Kil0bitSystemMonitor.Helpers;`. Keep `MaxOnScreen` where
+it is — it is this card's own policy, not the corner's.
+
+- [ ] **Step 3: Build to verify the migration compiles**
+
+Run: `"$LOCALAPPDATA/Microsoft/dotnet/dotnet.exe" build Kil0bitSystemMonitor.csproj`
+
+Expected: Build succeeded, 0 errors. If `System.Collections.Generic` or
+`System.Windows.Media.Animation` is now unused in `AlertToastWindow.cs`, leave the directives —
+removing them is churn outside this task.
+
+- [ ] **Step 4: Write the orphan card**
 
 Create `OrphanToastWindow.cs`:
 
@@ -2168,7 +2405,6 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Watchdog;
@@ -2185,10 +2421,10 @@ namespace Kil0bitSystemMonitor
     /// The notice that something is burning a core for nobody.
     ///
     /// <para>
-    /// Same quiet corner card as <see cref="AlertToastWindow"/> and
-    /// <see cref="UpdateToastWindow"/>, and a separate class for the same reason those two are
-    /// separate: the shared parts are <see cref="ToastButton"/> and <see cref="UiGlyphs"/>, and
-    /// what differs is the one thing a card is for — what it says and what its button does.
+    /// Shares the corner with <see cref="AlertToastWindow"/> through
+    /// <see cref="ToastStack"/>, so the two kinds of card stack together rather than on top of
+    /// each other. What is its own is the one thing a card is for: what it says, and what its
+    /// button does.
     /// </para>
     ///
     /// <para>
@@ -2199,10 +2435,8 @@ namespace Kil0bitSystemMonitor
     /// </summary>
     public sealed class OrphanToastWindow : Window
     {
-        private static readonly List<OrphanToastWindow> Open = new();
-
-        private const double CardMargin = 18;
-        private const double CardGap = 8;
+        /// <summary>One card at a time: every finding from a scan is reported on it.</summary>
+        private const int MaxOnScreen = 1;
 
         /// <summary>Amber, matching the alert card: this is a warning, not information.</summary>
         private static readonly Color Amber = Color.FromRgb(0xE8, 0xA5, 0x3C);
@@ -2222,12 +2456,12 @@ namespace Kil0bitSystemMonitor
             AllowsTransparency = true;
             Background = Brushes.Transparent;
             SizeToContent = SizeToContent.WidthAndHeight;
-            ShowActivated = false;
+            ShowActivated = false;           // must never steal focus: its button is destructive
             Title = "MicaStats runaway search";
 
             Content = BuildCard(onEndAll);
 
-            Loaded += (s, e) => { RestackAll(); PlayEntrance(); };
+            Loaded += (s, e) => { ToastStack.Restack(); ToastStack.PlayEntrance(this); };
 
             // Longer than the alert card. This one asks for a decision, and the machine it
             // appears on is by definition busy.
@@ -2237,7 +2471,7 @@ namespace Kil0bitSystemMonitor
 
             MouseEnter += (s, e) => _dismiss.Stop();
             MouseLeave += (s, e) => _dismiss.Start();
-            Closed += (s, e) => { _dismiss.Stop(); Open.Remove(this); RestackAll(); };
+            Closed += (s, e) => { _dismiss.Stop(); ToastStack.Remove(this); };
         }
 
         /// <summary>Shows one card for a set of findings.</summary>
@@ -2245,20 +2479,13 @@ namespace Kil0bitSystemMonitor
             IReadOnlyList<OrphanFinding> findings, Action<IReadOnlyList<OrphanFinding>> onEndAll)
         {
             var toast = new OrphanToastWindow(findings, onEndAll);
-            Open.Add(toast);
+            ToastStack.Add(toast, MaxOnScreen);
             toast.Show();
             return toast;
         }
 
-        /// <summary>Closes every notice, e.g. when the watchdog is switched off.</summary>
-        public static void CloseAll()
-        {
-            for (int i = Open.Count - 1; i >= 0; i--)
-            {
-                try { Open[i].Close(); } catch { }
-            }
-            Open.Clear();
-        }
+        /// <summary>Closes every runaway-search notice, e.g. when the watchdog is switched off.</summary>
+        public static void CloseAll() => ToastStack.CloseAll<OrphanToastWindow>();
 
         /// <summary>
         /// The headline: what it is, how many, and how much it has cost. The command lines are
@@ -2357,35 +2584,14 @@ namespace Kil0bitSystemMonitor
                 },
             };
         }
-
-        private static void RestackAll()
-        {
-            var work = SystemParameters.WorkArea;
-            double bottom = work.Bottom - CardMargin;
-
-            for (int i = Open.Count - 1; i >= 0; i--)
-            {
-                var toast = Open[i];
-                if (!toast.IsLoaded) continue;
-
-                toast.Left = work.Right - toast.ActualWidth - CardMargin;
-                toast.Top = bottom - toast.ActualHeight;
-                bottom -= toast.ActualHeight + CardGap;
-            }
-        }
-
-        private void PlayEntrance()
-        {
-            var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180));
-            BeginAnimation(OpacityProperty, fade);
-        }
     }
 }
 ```
 
-- [ ] **Step 2: Let the test project see `Headline`**
+- [ ] **Step 5: Let the test project see `Headline`**
 
-`Headline` is `internal` because it is a rendering detail, not API — but the wording is worth testing. In `Kil0bitSystemMonitor.csproj`, find:
+`Headline` is `internal` because it is a rendering detail, not API — but the wording is worth
+testing. In `Kil0bitSystemMonitor.csproj`, find:
 
 ```xml
     <ItemGroup>
@@ -2404,9 +2610,10 @@ Add a new item group immediately after it:
     </ItemGroup>
 ```
 
-- [ ] **Step 3: Write the headline tests**
+- [ ] **Step 6: Write the headline tests**
 
-Add this using directive to the top of `tests/Kil0bitSystemMonitor.Tests/OrphanScanTests.cs`, after the existing ones:
+Add this using directive to the top of `tests/Kil0bitSystemMonitor.Tests/OrphanScanTests.cs`,
+after the existing ones:
 
 ```csharp
 using Kil0bitSystemMonitor;
@@ -2456,21 +2663,31 @@ Append inside the `OrphanScanTests` class, before the closing brace:
         }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 7: Run the tests to verify they pass**
 
 Run: `"$LOCALAPPDATA/Microsoft/dotnet/dotnet.exe" test tests/Kil0bitSystemMonitor.Tests --filter "FullyQualifiedName~OrphanScanTests"`
 
 Expected: PASS, 41 tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Run the whole suite**
+
+Run: `"$LOCALAPPDATA/Microsoft/dotnet/dotnet.exe" test tests/Kil0bitSystemMonitor.Tests`
+
+Expected: PASS, all tests — `AlertToastWindow` was modified, so the pre-existing suite has to
+stay green.
+
+- [ ] **Step 9: Commit**
 
 ```bash
-git add OrphanToastWindow.cs Kil0bitSystemMonitor.csproj tests/Kil0bitSystemMonitor.Tests/OrphanScanTests.cs
+git add Helpers/ToastStack.cs AlertToastWindow.cs OrphanToastWindow.cs Kil0bitSystemMonitor.csproj tests/Kil0bitSystemMonitor.Tests/OrphanScanTests.cs
 git commit -F - <<'MSG'
-feat(watchdog): the corner card with End them
+feat(watchdog): the corner card with End them, on a shared stack
 
-Same quiet pattern as the alert and update cards, sharing ToastButton
-and UiGlyphs. Never takes focus: its button ends processes, and a card
+The corner is one place, so it gets one registry. A second toast class
+with its own list would lay cards out over the alert cards it cannot
+see, and on a struggling machine both kinds fire together.
+
+The new card never takes focus: its button ends processes, and a card
 that stole focus mid-keystroke would be pressed by accident.
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>

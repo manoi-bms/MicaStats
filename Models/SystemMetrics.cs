@@ -249,6 +249,15 @@ namespace Kil0bitSystemMonitor.Models
         private int _slowdownSustainSeconds = 8;
         private bool _alertsEnabled = true;
         private string _alertRules = "";
+
+        // Orphan search watchdog. Thresholds are deliberately conservative: a missed orphan
+        // costs a core until the next scan, a false positive destroys work somebody intended.
+        private bool _watchOrphanedSearches = true;
+        private int _orphanCpuSecondsThreshold = 120;
+        private int _orphanGraceMinutes = 5;
+        private int _orphanTrustedMaxDepth = 3;
+        private string[] _orphanBinaryAllowlist = new[] { @"\Git\usr\bin\find.exe" };
+        private string[] _orphanExpectedParents = new[] { "bash.exe", "sh.exe", "pwsh.exe", "cmd.exe" };
         private string _captureHotkeyRegion = "Ctrl+Shift+1";
         private string _captureHotkeyWindow = "Ctrl+Shift+2";
         private string _captureHotkeyFullScreen = "Ctrl+Shift+3";
@@ -446,6 +455,56 @@ namespace Kil0bitSystemMonitor.Models
         /// See AlertRuleSettings for why this is a flat string rather than nested JSON.
         /// </summary>
         public string AlertRules { get => _alertRules; set { Set(ref _alertRules, value); } }
+
+        /// <summary>Whether to watch for whole-drive searches left running with no parent.</summary>
+        public bool WatchOrphanedSearches
+        {
+            get => _watchOrphanedSearches;
+            set { Set(ref _watchOrphanedSearches, value); }
+        }
+
+        /// <summary>Rule 3. Clamped so a hand-edited config cannot disable the guard entirely.</summary>
+        public int OrphanCpuSecondsThreshold
+        {
+            get => _orphanCpuSecondsThreshold;
+            set { Set(ref _orphanCpuSecondsThreshold, Math.Clamp(value, 10, 86_400)); }
+        }
+
+        /// <summary>Rule 4, in minutes. Clamped for the same reason.</summary>
+        public int OrphanGraceMinutes
+        {
+            get => _orphanGraceMinutes;
+            set { Set(ref _orphanGraceMinutes, Math.Clamp(value, 1, 1440)); }
+        }
+
+        /// <summary>
+        /// Rule 2. The deepest <c>-maxdepth</c> trusted as a bound on a whole-drive scan. Kept
+        /// small because under Git Bash <c>/</c> is every drive at once; clamped to 0..32 so a
+        /// hand-edited config cannot make every depth look shallow.
+        /// </summary>
+        public int OrphanTrustedMaxDepth
+        {
+            get => _orphanTrustedMaxDepth;
+            set { Set(ref _orphanTrustedMaxDepth, Math.Clamp(value, 0, 32)); }
+        }
+
+        /// <summary>
+        /// Rule 1. Image-path suffixes, not names: <c>C:\Windows\System32\find.exe</c> is an
+        /// unrelated Microsoft tool that shares the file name and must never match.
+        /// </summary>
+        public string[] OrphanBinaryAllowlist
+        {
+            get => _orphanBinaryAllowlist;
+            set { Set(ref _orphanBinaryAllowlist, value ?? Array.Empty<string>()); }
+        }
+
+        /// <summary>Rule 5. Parent images that mean a human is still receiving the output.</summary>
+        public string[] OrphanExpectedParents
+        {
+            get => _orphanExpectedParents;
+            set { Set(ref _orphanExpectedParents, value ?? Array.Empty<string>()); }
+        }
+
         public string CaptureHotkeyRegion { get => _captureHotkeyRegion; set { Set(ref _captureHotkeyRegion, value); } }
         public string CaptureHotkeyWindow { get => _captureHotkeyWindow; set { Set(ref _captureHotkeyWindow, value); } }
         public string CaptureHotkeyFullScreen { get => _captureHotkeyFullScreen; set { Set(ref _captureHotkeyFullScreen, value); } }

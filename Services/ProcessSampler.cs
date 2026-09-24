@@ -86,6 +86,11 @@ namespace Kil0bitSystemMonitor.Services
         private const int OffImageNameLength = 0x38;
         private const int OffImageNameBuffer = 0x40;
         private const int OffUniqueProcessId = 0x50;
+
+        // InheritedFromUniqueProcessId, in the same buffer as everything above. The whole
+        // reason the watchdog costs no extra syscall: orphan detection needs the parent, and
+        // the parent is already here.
+        private const int OffParentProcessId = 0x58;
         private const int OffWorkingSetSize = 0x90;
 
         // Cumulative I/O byte totals, in the SAME buffer as everything above. Reading disk
@@ -350,29 +355,42 @@ namespace Kil0bitSystemMonitor.Services
             return result;
         }
 
+        private bool TryQuery() => TryQuery(ref _buffer, ref _bufferSize);
+
         /// <summary>
-        /// Fills the buffer with a fresh snapshot, growing it on STATUS_INFO_LENGTH_MISMATCH. The
-        /// required size scales with thread count rather than process count, so it moves around.
+        /// Fills a caller-owned buffer with a fresh snapshot, growing it on
+        /// STATUS_INFO_LENGTH_MISMATCH. The required size scales with thread count rather than
+        /// process count, so it moves around.
+        ///
+        /// <para>
+        /// Static and buffer-agnostic so the one-shot snapshot can use it without touching the
+        /// instance buffer, which belongs to the sampling timer and is held under its lock.
+        /// </para>
         /// </summary>
-        private bool TryQuery()
+        private static bool TryQuery(ref IntPtr buffer, ref int bufferSize)
         {
-            if (_bufferSize == 0)
+            if (bufferSize == 0)
             {
-                _bufferSize = 1 << 21; // 2 MB covers a typical desktop's ~12k threads
-                _buffer = Marshal.AllocHGlobal(_bufferSize);
+                bufferSize = 1 << 21; // 2 MB covers a typical desktop's ~12k threads
+                buffer = Marshal.AllocHGlobal(bufferSize);
             }
 
             for (int attempt = 0; attempt < 6; attempt++)
             {
-                uint status = NtQuerySystemInformation(SystemProcessInformation, _buffer, (uint)_bufferSize, out uint needed);
+                uint status = NtQuerySystemInformation(SystemProcessInformation, buffer, (uint)bufferSize, out uint needed);
                 if (status == 0) return true;
                 if (status != STATUS_INFO_LENGTH_MISMATCH) return false;
 
                 // Grow past what the kernel asked for: more processes may appear before the retry.
-                int target = Math.Max(_bufferSize * 2, (int)needed + (64 * 1024));
-                Marshal.FreeHGlobal(_buffer);
-                _bufferSize = target;
-                _buffer = Marshal.AllocHGlobal(_bufferSize);
+                int target = Math.Max(bufferSize * 2, (int)needed + (64 * 1024));
+                Marshal.FreeHGlobal(buffer);
+
+                // Zeroed before the allocation that can throw: if AllocHGlobal throws
+                // OutOfMemoryException on the line below, `buffer` must not still hold the
+                // pointer just freed above, or a caller's finally block frees it a second time.
+                buffer = IntPtr.Zero;
+                bufferSize = target;
+                buffer = Marshal.AllocHGlobal(bufferSize);
             }
             return false;
         }
@@ -393,6 +411,77 @@ namespace Kil0bitSystemMonitor.Services
 
             // The kernel reports no image name for the idle and system processes.
             return pid == 4 ? "System" : $"pid {pid}";
+        }
+
+        /// <summary>
+        /// One process as the watchdog needs it: identity, parent, and how much processor time
+        /// it has consumed since it started.
+        /// </summary>
+        /// <param name="CreateTime">Creation time as a FILETIME, as the kernel reports it.</param>
+        /// <param name="CpuSeconds">Cumulative user plus kernel time, in seconds.</param>
+        public readonly record struct RawProcess(
+            int Pid, int ParentPid, string Name, long CreateTime, double CpuSeconds);
+
+        /// <summary>
+        /// Every process, from a single pass, without starting or disturbing the sampler.
+        ///
+        /// <para>
+        /// The sampler proper runs only while a caller holds a <see cref="Retain"/> lease — a
+        /// window being open. The watchdog has to work when nothing is open, and taking a lease
+        /// would run full two-second sampling all day to serve a check that happens once a
+        /// minute. This allocates its own buffer, makes one call, walks it, and frees it.
+        /// </para>
+        ///
+        /// <para>
+        /// Returns an empty list rather than throwing on any failure. It runs unattended.
+        /// </para>
+        /// </summary>
+        public static IReadOnlyList<RawProcess> SnapshotOnce()
+        {
+            IntPtr buffer = IntPtr.Zero;
+            int size = 0;
+
+            try
+            {
+                if (!TryQuery(ref buffer, ref size)) return Array.Empty<RawProcess>();
+
+                var result = new List<RawProcess>(512);
+                IntPtr entry = buffer;
+
+                while (true)
+                {
+                    int next = Marshal.ReadInt32(entry, OffNextEntry);
+
+                    long pid = Marshal.ReadIntPtr(entry, OffUniqueProcessId).ToInt64();
+                    if (pid != 0)
+                    {
+                        long parent = Marshal.ReadIntPtr(entry, OffParentProcessId).ToInt64();
+                        long createTime = Marshal.ReadInt64(entry, OffCreateTime);
+                        long cpuTime = Marshal.ReadInt64(entry, OffUserTime)
+                                       + Marshal.ReadInt64(entry, OffKernelTime);
+
+                        result.Add(new RawProcess(
+                            (int)pid,
+                            (int)parent,
+                            ReadImageName(entry, pid),
+                            createTime,
+                            cpuTime / 10_000_000d));   // kernel times are 100ns units
+                    }
+
+                    if (next == 0) break;
+                    entry = IntPtr.Add(entry, next);
+                }
+
+                return result;
+            }
+            catch
+            {
+                return Array.Empty<RawProcess>();
+            }
+            finally
+            {
+                if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+            }
         }
 
         public void Dispose()

@@ -114,6 +114,62 @@ namespace Kil0bitSystemMonitor.Services
             WaitForSingleObject(handle, 0) == WAIT_OBJECT_0;
 
         /// <summary>
+        /// Whether a specific process has exited, or is no longer there at all.
+        ///
+        /// <para>
+        /// The definitive answer, for a caller that has just tried to end something and needs
+        /// to know whether it worked. A terminated process lingers in the kernel process list
+        /// as a zombie for as long as any handle to it stays open, so being listed proves
+        /// nothing; its handle, however, is signalled the moment it dies.
+        /// </para>
+        ///
+        /// <para>
+        /// <paramref name="createTime"/> is checked against the live process, so a recycled PID
+        /// reports as exited rather than as the original process still running.
+        /// </para>
+        /// </summary>
+        public static bool HasExited(int pid, long createTime)
+        {
+            IntPtr handle = OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, false, pid);
+
+            // Fall back without SYNCHRONIZE the same way TryEndTask does. Identity can still be
+            // checked without it; only the direct "has it exited" wait cannot.
+            bool canWait = true;
+            if (handle == IntPtr.Zero && Marshal.GetLastWin32Error() == ERROR_ACCESS_DENIED)
+            {
+                handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+                canWait = false;
+            }
+
+            if (handle == IntPtr.Zero)
+            {
+                // No such process at all reads as exited. Any other failure is not an answer
+                // this call can give, so it is not reported as exited.
+                return Marshal.GetLastWin32Error() == ERROR_INVALID_PARAMETER;
+            }
+
+            try
+            {
+                if (createTime != 0 &&
+                    GetProcessTimes(handle, out long living, out _, out _, out _) &&
+                    living != createTime)
+                {
+                    // The PID now belongs to a different process; the one asked about is gone.
+                    return true;
+                }
+
+                // Without SYNCHRONIZE there is no way to ask the handle directly, and an
+                // uncertain answer must never claim a kill succeeded.
+                return canWait && HasExited(handle);
+            }
+            finally
+            {
+                CloseHandle(handle);
+            }
+        }
+
+        /// <summary>
         /// Terminates one process, immediately.
         ///
         /// <para>

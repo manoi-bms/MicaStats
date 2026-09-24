@@ -804,6 +804,7 @@ namespace Kil0bitSystemMonitor
                 SlowdownAutoCaptureToggle.IsOn = config.SlowdownAutoCapture;
                 AlertsToggle.IsOn = config.AlertsEnabled;
                 ShowBatteryToggle.IsOn = config.ShowBattery;
+                WatchOrphansToggle.IsOn = config.WatchOrphanedSearches;
                 SlowdownWindowSlider.Value = config.SlowdownWindowSeconds;
                 UpdateSlowdownWindowText(config.SlowdownWindowSeconds);
                 UpdateAlertRulesText(config);
@@ -847,6 +848,7 @@ namespace Kil0bitSystemMonitor
             config.SlowdownAutoCapture = SlowdownAutoCaptureToggle.IsOn;
             config.AlertsEnabled = AlertsToggle.IsOn;
             config.ShowBattery = ShowBatteryToggle.IsOn;
+            config.WatchOrphanedSearches = WatchOrphansToggle.IsOn;
             _config?.SaveConfig();
             App.ApplyDiagnosticsSettings();
         }

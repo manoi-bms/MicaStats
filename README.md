@@ -55,6 +55,7 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 * **Temperature** — CPU package temperature, read from Core Temp, HWiNFO, MSI Afterburner, AIDA64, LibreHardwareMonitor or OpenHardwareMonitor when one of them is running
 * **Sensors** — Every thermal, fan, power and throttle reading MicaStats can obtain, shown beside the load that produced it: the die temperature and ACPI thermal zone in the CPU card, and every adapter's temperature and power draw in the GPU card, each with whether the firmware is currently limiting it
 * **Processes** — A searchable, sortable list of every running process with live CPU, memory and disk figures, and an End task that says what actually happened
+* **Runaway searches** — Notices when a whole-drive file search has been left running with no parent to receive its output, and offers to end it. Never ends anything on its own
 
 Sensor availability may vary depending on the installed hardware, device drivers, Windows performance counters, and system configuration. Anything that cannot be read honestly shows a dash or a flat baseline rather than a misleading zero.
 
@@ -73,6 +74,53 @@ It will not end `csrss.exe`, `wininit.exe`, `services.exe`, `smss.exe`, `lsass.e
 The CPU die sensors — AMD's Tctl and Intel's DTS — are only reachable from kernel mode. Every tool that displays them installs a kernel driver to get there. MicaStats deliberately does not: it runs without administrator rights and installs no driver, so it reads what one of the tools above has already published. If none is running, the CPU die row shows a dash.
 
 MicaStats will not substitute a different sensor for it. The ACPI thermal zone is shown separately and labelled *System*, because measurement showed it moving in the opposite direction to the processor under sustained load — it sits downstream of the fan control loop and reports that loop's response rather than the silicon's state. Presenting it as a CPU temperature would be worse than presenting nothing.
+
+### Runaway search watchdog
+
+Agentic coding tools run shell commands through Git Bash. When one of them starts a
+whole-filesystem search and the launching shell is then killed — a cancelled background task, a
+subagent that finished — the `find` child is not reaped. It keeps scanning at full speed with
+nowhere to send its output. Under Git Bash `/` is the whole drive and the walk includes `/proc`,
+every mount and any dead network path, so it can run effectively forever. Two such processes were
+found on one machine having consumed 2258 and 2115 seconds of CPU between them.
+
+Once a minute MicaStats looks for processes where **all** of these hold, and flags nothing that
+misses any one of them:
+
+1. The full image path is on the allowlist — by default anything ending `\Git\usr\bin\find.exe`.
+   `C:\Windows\System32\find.exe` is a different Microsoft tool that shares the name, and the
+   match is on path rather than name so it can never be touched.
+2. The scan is rooted at a whole filesystem (`/`, `C:\`, `/c/`) with no `-maxdepth`, or with one
+   deeper than 3. Under Git Bash `/` mounts every drive, so `find / -maxdepth 6` still walks every
+   drive five levels down — one such search burned more than 5400 seconds of CPU with its parent
+   long gone. A `-maxdepth` whose value cannot be read is not trusted either.
+3. It has burned more than 120 seconds of CPU.
+4. It is more than 5 minutes old.
+5. Its parent has exited, or the parent is not a shell it recognises.
+
+Rules 3 and 4 exist so a search you started on purpose is never killed mid-flight. Rule 5 is the
+real signal: an orphan has nothing receiving its output, so it can only waste the processor.
+
+When one is found you get a quiet corner card naming it and what it has cost. **Nothing is ended
+until you click End them.** The kill is then verified rather than assumed — a process wedged in
+kernel I/O reports a successful termination and keeps running — and escalated once to
+`taskkill /F /T` if the first attempt did not take. A process that survives both is logged and
+left alone, never retried in a loop.
+
+Every decision, including the ones that keep a process, is written to
+`%APPDATA%\MicaStats\logs\micastats.log` with the full command line and the parent's image path.
+The parent is named by its full path whenever any scan saw it alive, and still named — as
+`(gone, was C:\...\bash.exe)` — after it exits. A parent that exited before the first scan cannot
+be identified, and the log says `(gone, never seen)` rather than guessing.
+
+Thresholds and both lists live in `%APPDATA%\MicaStats\config.json` as `OrphanCpuSecondsThreshold`,
+`OrphanGraceMinutes`, `OrphanTrustedMaxDepth`, `OrphanBinaryAllowlist` and `OrphanExpectedParents`.
+The watchdog ships switched on; turn it off in Settings → Diagnostics.
+
+> [!NOTE]
+> This treats a symptom. The cause is a tool that does not reap its children, and the fix belongs
+> in that tool. The parent image path in the log is there so you can identify which tool is
+> leaking and report it upstream; the watchdog only stops the burning in the meantime.
 
 ### Hardware inspector
 
@@ -595,6 +643,7 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 * **อุณหภูมิ** — อุณหภูมิ CPU อ่านจาก Core Temp, HWiNFO, MSI Afterburner, AIDA64, LibreHardwareMonitor หรือ OpenHardwareMonitor ตัวใดตัวหนึ่งที่กำลังทำงานอยู่
 * **เซ็นเซอร์** — ทุกค่าที่ MicaStats อ่านได้ทั้งอุณหภูมิ พัดลม กำลังไฟ และสถานะการลดความเร็ว แสดงไว้ข้างภาระงานที่ทำให้เกิดค่านั้น โดยอุณหภูมิไดของ CPU และโซนความร้อน ACPI อยู่ในการ์ด CPU ส่วนอุณหภูมิและกำลังไฟของการ์ดจอทุกตัวอยู่ในการ์ด GPU พร้อมระบุว่าเฟิร์มแวร์กำลังจำกัดประสิทธิภาพอยู่หรือไม่
 * **โปรเซส** — รายการโปรเซสที่กำลังทำงานทั้งหมด ค้นหาและเรียงลำดับได้ พร้อมค่า CPU หน่วยความจำ และดิสก์แบบสด และปุ่ม End task ที่บอกผลลัพธ์จริงเสมอ
+* **การค้นหาที่หลุดควบคุม** — ตรวจพบเมื่อการค้นหาไฟล์ทั่วทั้งไดรฟ์ถูกทิ้งให้ทำงานต่อโดยไม่มีโปรเซสแม่คอยรับผลลัพธ์ แล้วเสนอให้ปิด ไม่มีการปิดสิ่งใดเองโดยพลการ
 
 เซ็นเซอร์ที่อ่านได้ขึ้นอยู่กับฮาร์ดแวร์ ไดรเวอร์ ตัวนับประสิทธิภาพของ Windows และการตั้งค่าของเครื่อง ค่าใดที่อ่านไม่ได้จะแสดงเป็นขีด (—) หรือเส้นฐานราบตามจริง ไม่แสดงเลขศูนย์ที่ทำให้เข้าใจผิด
 
@@ -613,6 +662,29 @@ MicaStats ได้เปรียบตรงที่ทำงานอยู�
 เซ็นเซอร์อุณหภูมิบนไดของ CPU ทั้ง Tctl ของ AMD และ DTS ของ Intel อ่านได้จากโหมดเคอร์เนลเท่านั้น เครื่องมือทุกตัวที่แสดงค่านี้จึงต้องติดตั้งไดรเวอร์เคอร์เนล MicaStats เลือกที่จะไม่ทำเช่นนั้น เพราะทำงานโดยไม่ต้องใช้สิทธิ์ผู้ดูแลระบบและไม่ติดตั้งไดรเวอร์ใด ๆ จึงอ่านค่าที่เครื่องมือข้างต้นเผยแพร่ไว้แล้ว หากไม่มีตัวใดทำงานอยู่ แถว CPU die จะแสดงเป็นขีด (—)
 
 MicaStats จะไม่นำเซ็นเซอร์ตัวอื่นมาแทน โซนความร้อน ACPI จะแสดงแยกไว้และระบุว่าเป็น *System* เพราะจากการวัดพบว่าค่านี้เคลื่อนไปในทิศทางตรงข้ามกับตัวประมวลผลเมื่อรับภาระต่อเนื่อง ค่านี้อยู่ถัดจากวงควบคุมพัดลมและรายงานการตอบสนองของพัดลม ไม่ใช่สภาพของตัวชิป การนำมาแสดงเป็นอุณหภูมิ CPU จึงแย่กว่าการไม่แสดงอะไรเลย
+
+### ตัวเฝ้าระวังการค้นหาที่หลุดควบคุม
+
+เครื่องมือเขียนโค้ดแบบเอเจนต์สั่งรันคำสั่งเชลล์ผ่าน Git Bash เมื่อเครื่องมือเหล่านี้เริ่มค้นหาไฟล์ทั่วทั้งระบบไฟล์ แล้วเชลล์ที่เรียกใช้ถูกปิดไป — เช่นงานเบื้องหลังที่ถูกยกเลิก หรือ subagent ที่ทำงานเสร็จแล้ว — โปรเซสลูก `find` จะไม่ถูกเก็บกวาดตามไปด้วย และยังคงสแกนต่อด้วยความเร็วเต็มที่โดยไม่มีที่ให้ส่งผลลัพธ์ บน Git Bash `/` คือทั้งไดรฟ์ และการไล่สแกนจะรวม `/proc` ทุกจุดเมานต์ และพาธเครือข่ายที่ใช้งานไม่ได้แล้วเข้าไปด้วย จึงอาจทำงานไปได้แทบไม่มีวันจบ เคยพบโปรเซสลักษณะนี้สองตัวบนเครื่องเดียว ซึ่งใช้ CPU ไปแล้ว 2258 และ 2115 วินาที
+
+ทุก ๆ หนึ่งนาที MicaStats จะมองหาโปรเซสที่เข้าเงื่อนไข **ครบทุกข้อ** ต่อไปนี้ และจะไม่ตั้งธงโปรเซสใดที่ขาดแม้เพียงข้อเดียว:
+
+1. พาธเต็มของไฟล์โปรแกรมอยู่ในรายการที่อนุญาต — ค่าเริ่มต้นคือพาธใดก็ตามที่ลงท้ายด้วย `\Git\usr\bin\find.exe` ส่วน `C:\Windows\System32\find.exe` เป็นเครื่องมืออีกตัวของ Microsoft ที่เพียงแค่ชื่อซ้ำกัน การจับคู่ใช้พาธแทนชื่อ จึงไม่มีทางไปแตะต้องตัวนั้น
+2. การสแกนเริ่มจากรากของระบบไฟล์ทั้งหมด (`/`, `C:\`, `/c/`) โดยไม่มี `-maxdepth` หรือมีแต่ลึกเกิน 3 บน Git Bash `/` เมานต์ทุกไดรฟ์ไว้ด้วยกัน `find / -maxdepth 6` จึงยังไล่ลงไปห้าชั้นในทุกไดรฟ์ — เคยมีการค้นหาแบบนี้ที่ใช้ CPU ไปกว่า 5400 วินาทีทั้งที่โปรเซสแม่จบไปนานแล้ว ส่วน `-maxdepth` ที่อ่านค่าไม่ได้ก็จะไม่ถูกเชื่อถือเช่นกัน
+3. ใช้ CPU ไปแล้วเกิน 120 วินาที
+4. ทำงานมานานกว่า 5 นาที
+5. โปรเซสแม่จบการทำงานไปแล้ว หรือโปรเซสแม่ไม่ใช่เชลล์ที่รู้จัก
+
+ข้อ 3 และ 4 มีไว้เพื่อไม่ให้การค้นหาที่คุณตั้งใจสั่งเองถูกปิดกลางคัน ข้อ 5 คือสัญญาณที่แท้จริง: โปรเซสกำพร้าไม่มีใครรับผลลัพธ์ของมัน จึงทำได้แค่สิ้นเปลืองตัวประมวลผลไปเปล่า ๆ
+
+เมื่อพบจะมีการ์ดแจ้งเตือนเงียบ ๆ ที่มุมจอ บอกชื่อโปรเซสและ CPU ที่ใช้ไปแล้ว **จะไม่มีการปิดสิ่งใดจนกว่าคุณจะคลิก End them** จากนั้นผลการปิดจะถูกตรวจสอบจริง ไม่ใช่แค่สันนิษฐานเอา — โปรเซสที่ติดอยู่ใน I/O ของเคอร์เนลจะรายงานว่าปิดสำเร็จแต่ยังทำงานต่อ — และจะยกระดับไปใช้ `taskkill /F /T` หนึ่งครั้งหากครั้งแรกไม่ได้ผล โปรเซสที่รอดทั้งสองครั้งจะถูกบันทึกไว้แล้วปล่อยไว้อย่างนั้น ไม่มีการวนลองซ้ำ
+
+ทุกการตัดสินใจ รวมถึงครั้งที่เลือกเก็บโปรเซสไว้ จะถูกเขียนลง `%APPDATA%\MicaStats\logs\micastats.log` พร้อมบรรทัดคำสั่งเต็มและพาธไฟล์โปรแกรมของโปรเซสแม่ โปรเซสแม่จะถูกระบุด้วยพาธเต็มหากการสแกนครั้งใดเคยเห็นมันขณะยังทำงานอยู่ และยังระบุได้ต่อ — ในรูป `(gone, was C:\...\bash.exe)` — หลังจากมันจบไปแล้ว โปรเซสแม่ที่จบไปก่อนการสแกนครั้งแรกจะระบุตัวไม่ได้ และบันทึกจะเขียนว่า `(gone, never seen)` แทนการเดา
+
+ค่าเกณฑ์และรายการทั้งสองอยู่ใน `%APPDATA%\MicaStats\config.json` ในชื่อ `OrphanCpuSecondsThreshold`, `OrphanGraceMinutes`, `OrphanTrustedMaxDepth`, `OrphanBinaryAllowlist` และ `OrphanExpectedParents` ตัวเฝ้าระวังนี้เปิดใช้งานไว้ตั้งแต่ติดตั้ง ปิดได้ที่ **Settings → Diagnostics**
+
+> [!NOTE]
+> ฟีเจอร์นี้แก้ที่อาการ ต้นเหตุคือเครื่องมือที่ไม่เก็บกวาดโปรเซสลูกของตัวเอง และการแก้ไขที่แท้จริงต้องทำในเครื่องมือนั้น พาธไฟล์โปรแกรมของโปรเซสแม่ในบันทึกมีไว้ให้คุณระบุได้ว่าเครื่องมือใดรั่ว แล้วรายงานกลับไปยังผู้พัฒนา ตัวเฝ้าระวังนี้เพียงหยุดการสิ้นเปลืองไว้ในระหว่างนี้
 
 ### เครื่องมือตรวจสอบฮาร์ดแวร์
 

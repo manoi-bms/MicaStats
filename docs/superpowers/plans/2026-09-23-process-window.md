@@ -2295,6 +2295,376 @@ MSG
 
 ---
 
+### Task 9: Keep selections through refresh; End task on every selected row
+
+Added at the owner's request after using the window: a multi-row selection vanished on every two-second refresh, and ending several processes meant one at a time.
+
+The cause is `TaskManagerViewModel.Refresh`, which calls `Rows.Clear()` and re-adds new `ProcessRow` instances whenever the process set or its sort order changes — on a busy, CPU-sorted machine, most ticks. Clearing drops every selection. Task 5 worked around it in the window by remembering one selected identity and re-selecting it; that cannot hold several rows. This task removes the cause instead: rows are synchronised in place — existing instances reused, moved into their new position, with only genuinely new processes inserted and gone ones removed. `ObservableCollection.Move` and in-place property updates do not disturb a WPF selection or the scroll position, so any selection, of one row or many, survives every refresh with no restore logic.
+
+**Files:**
+- Modify: `ViewModels/TaskManagerViewModel.cs`
+- Modify: `ViewModels/ProcessDetailViewModel.cs`
+- Modify: `TaskManagerWindow.xaml`
+- Modify: `TaskManagerWindow.xaml.cs`
+- Modify: `tests/Kil0bitSystemMonitor.Tests/ProcessWindowTests.cs`
+
+**Interfaces:**
+- Consumes: `BulkEndPlan`, `BulkEndDialog`, `BulkEnd`, `TaskManagerViewModel.Ending` (Task 6); `ProcessDetailViewModel` (Task 5).
+- Produces:
+  - `static void TaskManagerViewModel.SyncRows(ObservableCollection<ProcessRow> rows, IReadOnlyList<ProcessUsage> ordered)`
+  - `static IReadOnlyList<ProcessUsage> TaskManagerViewModel.Matching(IReadOnlyList<ProcessUsage> source, IEnumerable<ProcessRow> selected)`
+  - `void ProcessDetailViewModel.ShowMany(int count)`
+
+- [ ] **Step 1: Write the failing tests**
+
+Append inside `ProcessWindowTests`, before its closing brace:
+
+```csharp
+        // ------------------------------------------------------- in-place row sync
+
+        private static ProcessUsage U(int pid, long created = 1) =>
+            new ProcessUsage("p" + pid.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".exe", pid, 0f, 0)
+            { CreateTime = created };
+
+        private static System.Collections.ObjectModel.ObservableCollection<ProcessRow> RowsOf(params ProcessUsage[] ps)
+        {
+            var rows = new System.Collections.ObjectModel.ObservableCollection<ProcessRow>();
+            TaskManagerViewModel.SyncRows(rows, ps);
+            return rows;
+        }
+
+        [Fact]
+        public void Syncing_puts_the_rows_in_the_target_order()
+        {
+            var rows = RowsOf(U(1), U(2), U(3));
+
+            TaskManagerViewModel.SyncRows(rows, new[] { U(3), U(1), U(2) });
+
+            Assert.Equal(new[] { 3, 1, 2 }, rows.Select(r => r.Pid));
+        }
+
+        [Fact]
+        public void Syncing_reuses_the_existing_row_objects_so_a_selection_survives()
+        {
+            // A WPF selection holds row objects. Replacing them is what drops it.
+            var rows = RowsOf(U(1), U(2), U(3));
+            var before = rows.ToDictionary(r => r.Pid);
+
+            TaskManagerViewModel.SyncRows(rows, new[] { U(3), U(2), U(1) });
+
+            Assert.All(rows, r => Assert.Same(before[r.Pid], r));
+        }
+
+        [Fact]
+        public void Syncing_removes_exited_processes_and_inserts_new_ones()
+        {
+            var rows = RowsOf(U(1), U(2), U(3));
+            var survivor = rows.Single(r => r.Pid == 2);
+
+            TaskManagerViewModel.SyncRows(rows, new[] { U(4), U(2) });
+
+            Assert.Equal(new[] { 4, 2 }, rows.Select(r => r.Pid));
+            Assert.Same(survivor, rows[1]);
+        }
+
+        [Fact]
+        public void A_reused_pid_with_a_new_creation_time_is_a_new_row()
+        {
+            // Same number, different process. Reusing the old row would carry a selection
+            // across to an unrelated process — and End task with it.
+            var rows = RowsOf(U(7, created: 100));
+            var old = rows[0];
+
+            TaskManagerViewModel.SyncRows(rows, new[] { U(7, created: 200) });
+
+            Assert.Single(rows);
+            Assert.NotSame(old, rows[0]);
+            Assert.Equal(200, rows[0].CreateTime);
+        }
+
+        [Fact]
+        public void Syncing_to_nothing_empties_the_list()
+        {
+            var rows = RowsOf(U(1), U(2));
+
+            TaskManagerViewModel.SyncRows(rows, Array.Empty<ProcessUsage>());
+
+            Assert.Empty(rows);
+        }
+
+        [Fact]
+        public void A_full_reversal_of_many_rows_ends_in_the_right_order()
+        {
+            var forward = Enumerable.Range(1, 300).Select(i => U(i)).ToArray();
+            var rows = RowsOf(forward);
+
+            TaskManagerViewModel.SyncRows(rows, forward.Reverse().ToArray());
+
+            Assert.Equal(Enumerable.Range(1, 300).Reverse(), rows.Select(r => r.Pid));
+        }
+
+        [Fact]
+        public void Matching_returns_the_selected_processes_in_list_order()
+        {
+            var source = new[] { U(1), U(2), U(3) };
+            var rows = RowsOf(source);
+
+            var hits = TaskManagerViewModel.Matching(source, new[] { rows[2], rows[0] });
+
+            Assert.Equal(new[] { 1, 3 }, hits.Select(p => p.Pid));
+        }
+
+        [Fact]
+        public void Matching_ignores_a_selected_row_that_is_no_longer_in_the_source()
+        {
+            var rows = RowsOf(U(1), U(2));
+
+            var hits = TaskManagerViewModel.Matching(new[] { U(2) }, rows);
+
+            Assert.Equal(new[] { 2 }, hits.Select(p => p.Pid));
+        }
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `"$LOCALAPPDATA/Microsoft/dotnet/dotnet.exe" test tests/Kil0bitSystemMonitor.Tests --filter "FullyQualifiedName~ProcessWindowTests"`
+
+Expected: FAIL — `error CS0117: 'TaskManagerViewModel' does not contain a definition for 'SyncRows'`.
+
+- [ ] **Step 3: Write `SyncRows` and `Matching`**
+
+In `ViewModels/TaskManagerViewModel.cs`, add these two static methods immediately after `ParentText`:
+
+```csharp
+        /// <summary>
+        /// Makes <paramref name="rows"/> hold exactly <paramref name="ordered"/>, in that order,
+        /// reusing every existing row whose process is still there.
+        ///
+        /// <para>
+        /// A WPF selection holds row objects, and clearing the collection drops it. Moving an
+        /// existing object and updating its properties in place does not — so a selection of one
+        /// row or many, and the scroll position, survive every refresh. Identity is
+        /// (pid, creation time): a PID reused by a different process gets a new row, never the
+        /// old one, so a selection can never slide onto an unrelated process.
+        /// </para>
+        /// </summary>
+        public static void SyncRows(ObservableCollection<ProcessRow> rows, IReadOnlyList<ProcessUsage> ordered)
+        {
+            var wanted = new HashSet<(int, long)>();
+            foreach (var p in ordered) wanted.Add((p.Pid, p.CreateTime));
+
+            // Drop what is gone, back to front so the indices ahead stay valid.
+            for (int i = rows.Count - 1; i >= 0; i--)
+            {
+                if (!wanted.Contains((rows[i].Pid, rows[i].CreateTime))) rows.RemoveAt(i);
+            }
+
+            var existing = new Dictionary<(int, long), ProcessRow>(rows.Count);
+            foreach (var r in rows) existing[(r.Pid, r.CreateTime)] = r;
+
+            // Everything before i is final, so a reused row is always found at or after i.
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                var p = ordered[i];
+                if (i < rows.Count && rows[i].Pid == p.Pid && rows[i].CreateTime == p.CreateTime) continue;
+
+                if (existing.TryGetValue((p.Pid, p.CreateTime), out var row))
+                    rows.Move(rows.IndexOf(row), i);
+                else
+                    rows.Insert(i, new ProcessRow(p.Name, p.Pid, p.CreateTime));
+            }
+        }
+
+        /// <summary>
+        /// The processes behind a set of selected rows, in list order, matched by identity.
+        /// A selected row whose process is no longer in <paramref name="source"/> is left out.
+        /// </summary>
+        public static IReadOnlyList<ProcessUsage> Matching(IReadOnlyList<ProcessUsage> source, IEnumerable<ProcessRow> selected)
+        {
+            var ids = new HashSet<(int, long)>();
+            foreach (var r in selected) ids.Add((r.Pid, r.CreateTime));
+
+            var result = new List<ProcessUsage>();
+            foreach (var p in source)
+            {
+                if (ids.Contains((p.Pid, p.CreateTime))) result.Add(p);
+            }
+            return result;
+        }
+```
+
+- [ ] **Step 4: Use it in `Refresh`**
+
+In `Refresh()`, replace the whole block from the comment `// Rebuild only when the set of processes changes;` through the closing brace of `if (!sameSet) { ... }` with:
+
+```csharp
+            // Synchronised in place rather than rebuilt: rows are reused and moved, never
+            // replaced, so a selection of any size and the scroll position survive every tick.
+            SyncRows(Rows, rows);
+```
+
+The per-row property loop that follows stays exactly as it is — after `SyncRows`, `Rows[i]` corresponds to `rows[i]`.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `"$LOCALAPPDATA/Microsoft/dotnet/dotnet.exe" test tests/Kil0bitSystemMonitor.Tests --filter "FullyQualifiedName~ProcessWindowTests|FullyQualifiedName~TaskManagerTests"`
+
+Expected: PASS.
+
+- [ ] **Step 6: A multi-selection message for the detail pane**
+
+In `ViewModels/ProcessDetailViewModel.cs`, add immediately after `Clear()`:
+
+```csharp
+        /// <summary>
+        /// For a selection of several rows: there is no single process to describe, and reading
+        /// several would open a handle per row. Says what End task will do instead.
+        /// </summary>
+        public void ShowMany(int count)
+        {
+            Interlocked.Increment(ref _version);
+            Title = count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " processes selected — End task ends all of them, after a preview.";
+            ImagePath = CommandLine = User = Elevated = "";
+        }
+```
+
+- [ ] **Step 7: Make the multi-select explicit in the XAML**
+
+In `TaskManagerWindow.xaml`, on the `<ListView x:Name="ProcessList"` element, add `SelectionMode="Extended"` (it is already the default; stating it records that several rows is intended).
+
+- [ ] **Step 8: Rewrite the selection and End task handling in the window**
+
+In `TaskManagerWindow.xaml.cs`:
+
+1. Delete the `_selected` field and its doc comment.
+2. Replace the whole `OnSelectionChanged` method (including its doc comment) with:
+
+```csharp
+        /// <summary>
+        /// The list is synchronised in place, so this fires only when the user changes the
+        /// selection or a selected process exits — never merely because a refresh happened.
+        /// </summary>
+        private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            int count = ProcessList.SelectedItems.Count;
+
+            EndTaskButton.IsEnabled = count > 0;
+            EndTaskButton.Content = count > 1
+                ? "End " + count.ToString(CultureInfo.InvariantCulture) + " tasks"
+                : "End task";
+
+            // A different selection invalidates the previous refusal.
+            _pendingElevation = null;
+            RetryElevated.Visibility = Visibility.Collapsed;
+
+            if (count == 1 && ProcessList.SelectedItem is ProcessRow row) Detail.Load(row);
+            else if (count > 1) Detail.ShowMany(count);
+            else Detail.Clear();
+        }
+```
+
+3. Replace `OnEndAllFiltered` with a shared confirm-and-end method plus a one-line handler:
+
+```csharp
+        /// <summary>End all filtered: everything the search currently matches.</summary>
+        private void OnEndAllFiltered(object sender, RoutedEventArgs e)
+        {
+            if (!_model.CanEndAllFiltered) return;
+            ConfirmAndEnd(_model.Filtered);
+        }
+
+        /// <summary>
+        /// Plans against the given processes, asks for typed confirmation, then ends the set off
+        /// the UI thread and reports the outcome in the footer. Shared by End all filtered and by
+        /// End task on a multi-row selection, so both go through the same exclusions, preview and
+        /// verified kill.
+        /// </summary>
+        private void ConfirmAndEnd(IReadOnlyList<ProcessUsage> candidates)
+        {
+            // One batch at a time: a second confirm while one is running would race it.
+            if (_model.Ending) return;
+
+            var ancestors = BulkEndPlan.AncestorsOf(Environment.ProcessId, _model.Snapshot);
+            var plan = BulkEndPlan.Build(candidates, Environment.ProcessId, ancestors);
+
+            var dialog = new BulkEndDialog(plan) { Owner = this };
+            if (dialog.ShowDialog() != true || plan.ToEnd.Count == 0) return;
+
+            _model.Ending = true;
+            _model.Message = "Ending " + plan.ToEnd.Count.ToString(CultureInfo.InvariantCulture) + "…";
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string outcome;
+                try { outcome = BulkEnd.Run(plan.ToEnd).Describe(); }
+                catch (Exception ex)
+                {
+                    outcome = "Ending the processes failed; the log has the detail.";
+                    DiagnosticsLog.Error("processes", "Ending selected or filtered processes failed", ex);
+                }
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    _model.Message = outcome;
+                    _model.Ending = false;
+                    _model.Refresh();
+                }));
+            });
+        }
+```
+
+Keep the existing comment about the `Ending` flag keeping the XAML binding live, moved into `ConfirmAndEnd` beside `_model.Ending = true;`.
+
+4. At the top of `OnEndTask`, replace:
+
+```csharp
+            if (ProcessList.SelectedItem is not ProcessRow row) return;
+```
+
+with:
+
+```csharp
+            var selected = ProcessList.SelectedItems.OfType<ProcessRow>().ToList();
+            if (selected.Count == 0) return;
+
+            // Several rows: the same exclusions, preview and typed confirmation as End all
+            // filtered. One row keeps the immediate End task, with its elevation retry.
+            if (selected.Count > 1)
+            {
+                ConfirmAndEnd(TaskManagerViewModel.Matching(_model.Filtered, selected));
+                return;
+            }
+
+            var row = selected[0];
+```
+
+Add `using System.Collections.Generic;` and `using System.Linq;` to the file if they are not already present.
+
+- [ ] **Step 9: Build and run the whole suite**
+
+Run: `"$LOCALAPPDATA/Microsoft/dotnet/dotnet.exe" build Kil0bitSystemMonitor.csproj -c Debug` — expected 0 warnings, 0 errors.
+
+Run: `"$LOCALAPPDATA/Microsoft/dotnet/dotnet.exe" test tests/Kil0bitSystemMonitor.Tests` — expected PASS, including `The_process_list_is_virtualized_and_recycling`.
+
+- [ ] **Step 10: Commit**
+
+Write the message to a file with the Write tool and commit through PowerShell (`git commit -F <file>`); then confirm with `git reflog -3` that exactly one new commit was made.
+
+```
+feat(processes): keep selections through refresh; end several at once
+
+Rows are synchronised in place instead of rebuilt, so a selection of
+any size and the scroll position survive every two-second refresh, and
+the single-row restore workaround is gone. End task on several rows
+goes through the same exclusions, preview and verified kill as End all
+filtered.
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+```
+
+---
+
 ### Task 8: Documentation and manual verification
 
 **Files:**
@@ -2334,6 +2704,8 @@ Immediately after the paragraph that begins `**End task** terminates immediately
 
 ```markdown
 **End all filtered** ends everything the search currently matches, and is available only while something is typed in the search box — with no filter it would mean every process on the machine. It first shows exactly what will end and what it will not: core Windows processes, MicaStats itself, and anything MicaStats is running inside are listed as refused, with the reason. You confirm by typing the number of processes that will end. Each one is then checked with Windows to confirm it actually exited, and the footer reports how many ended, how many need administrator rights, and how many survived. It never ends a process's children unless the search matched them too.
+
+Selecting several rows (Ctrl-click or Shift-click) works the same way: **End task** becomes *End N tasks* and goes through the same preview and confirmation. Selections survive the two-second refresh, so a selection stays put while you read it.
 ```
 
 - [ ] **Step 2: Update the Thai process-list section to match**
@@ -2368,6 +2740,8 @@ Immediately after the Thai paragraph that begins `**End task** สั่งป�
 
 ```markdown
 **End all filtered** ปิดทุกโปรเซสที่ตรงกับคำค้นในขณะนั้น และใช้ได้เฉพาะเมื่อพิมพ์คำค้นไว้แล้วเท่านั้น เพราะถ้าไม่มีคำค้นจะหมายถึงทุกโปรเซสในเครื่อง ก่อนปิดจะแสดงรายการที่จะถูกปิดและรายการที่จะไม่ถูกปิดให้เห็นชัดเจน ได้แก่ โปรเซสหลักของ Windows ตัว MicaStats เอง และโปรเซสที่ MicaStats ทำงานอยู่ภายใน โดยระบุเหตุผลกำกับ ผู้ใช้ยืนยันด้วยการพิมพ์จำนวนโปรเซสที่จะถูกปิด จากนั้นจะตรวจสอบกับ Windows ทีละตัวว่าปิดไปจริงหรือไม่ แล้วรายงานที่แถบด้านล่างว่าปิดได้กี่ตัว ต้องใช้สิทธิ์ผู้ดูแลระบบกี่ตัว และรอดกี่ตัว จะไม่ปิดโปรเซสลูกของโปรเซสใด เว้นแต่คำค้นจะตรงกับโปรเซสลูกนั้นด้วย
+
+การเลือกหลายแถว (Ctrl-คลิก หรือ Shift-คลิก) ทำงานแบบเดียวกัน ปุ่ม **End task** จะกลายเป็น *End N tasks* และผ่านขั้นตอนแสดงรายการและยืนยันแบบเดียวกัน การเลือกจะคงอยู่แม้รายการรีเฟรชทุกสองวินาที จึงอ่านข้อมูลได้โดยไม่หลุด
 ```
 
 Keep every inline code span, key name and number verbatim. Report the Thai text as needing the owner's check.

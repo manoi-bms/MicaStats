@@ -174,7 +174,10 @@ namespace Kil0bitSystemMonitor.Models
 
         private bool _showOverlay = true;
         private bool _lockPosition = false;
-        private bool _launchOnStartup = false;
+        // On by default: a monitor that has to be started by hand is off exactly when something
+        // goes wrong. ConfigService writes the Run key from this on every launch, so this — not
+        // the installer — is where the default lives.
+        private bool _launchOnStartup = true;
         private bool _showCpu = true;
         private bool _showRam = true;
         private bool _showGpu = true;

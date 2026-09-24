@@ -19,6 +19,16 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_fresh_install_launches_with_windows()
+        {
+            // A monitor that has to be started by hand is off exactly when something goes
+            // wrong. ConfigService rewrites the Run key from this value on every launch, so it
+            // is the only default that matters: an installer-written key would be removed on
+            // first start if this were false.
+            Assert.True(new AppConfig().LaunchOnStartup);
+        }
+
+        [Fact]
         public void Assigning_a_different_bool_notifies()
         {
             var c = new AppConfig();

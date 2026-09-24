@@ -250,6 +250,7 @@ namespace Kil0bitSystemMonitor.ViewModels
         private string _searchText = "";
         private ProcessSortColumn _sortColumn = ProcessSortColumn.Cpu;
         private bool _sortDescending = true;
+        private bool _ending;
         private int _count;
         private string _emptyMessage = "";
         private string _message = "";
@@ -297,11 +298,31 @@ namespace Kil0bitSystemMonitor.ViewModels
         public IReadOnlyList<ProcessUsage> Snapshot => _snapshot;
 
         /// <summary>
-        /// End all filtered is offered only while a filter is typed and matches something. With
-        /// no filter, "all filtered" is every process on the machine, and the button is simply
-        /// not available rather than asking.
+        /// End all filtered is offered only while a filter is typed and matches something, and
+        /// while no batch from a previous click is still running. With no filter, "all filtered"
+        /// is every process on the machine, and the button is simply not available rather than
+        /// asking; while a batch runs, a second click would plan against rows that are already
+        /// mid-termination.
         /// </summary>
-        public bool CanEndAllFiltered => !string.IsNullOrWhiteSpace(_searchText) && _count > 0;
+        public bool CanEndAllFiltered => !_ending && !string.IsNullOrWhiteSpace(_searchText) && _count > 0;
+
+        /// <summary>
+        /// Set for the duration of a bulk end so <see cref="CanEndAllFiltered"/> — and the button
+        /// bound to it — goes false without the window ever assigning the button's IsEnabled
+        /// directly, which would replace the binding with a local value for the rest of the
+        /// window's life.
+        /// </summary>
+        public bool Ending
+        {
+            get => _ending;
+            set
+            {
+                if (_ending == value) return;
+                _ending = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanEndAllFiltered));
+            }
+        }
 
         /// <summary>Row count after filtering.</summary>
         public int Count

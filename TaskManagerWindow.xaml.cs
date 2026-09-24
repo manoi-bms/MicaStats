@@ -165,6 +165,44 @@ namespace Kil0bitSystemMonitor
                 _model.SortBy(column);
         }
 
+        /// <summary>
+        /// Plans against what the filter shows right now, asks for typed confirmation, then ends
+        /// the set off the UI thread and reports the outcome in the footer.
+        /// </summary>
+        private void OnEndAllFiltered(object sender, RoutedEventArgs e)
+        {
+            if (!_model.CanEndAllFiltered) return;
+
+            var ancestors = BulkEndPlan.AncestorsOf(Environment.ProcessId, _model.Snapshot);
+            var plan = BulkEndPlan.Build(_model.Filtered, Environment.ProcessId, ancestors);
+
+            var dialog = new BulkEndDialog(plan) { Owner = this };
+            if (dialog.ShowDialog() != true || plan.ToEnd.Count == 0) return;
+
+            // Ending is folded into CanEndAllFiltered rather than assigning EndAllButton.IsEnabled
+            // directly, so the XAML binding stays live for the rest of the window's life.
+            _model.Ending = true;
+            _model.Message = "Ending " + plan.ToEnd.Count.ToString(CultureInfo.InvariantCulture) + "…";
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string outcome;
+                try { outcome = BulkEnd.Run(plan.ToEnd).Describe(); }
+                catch (Exception ex)
+                {
+                    outcome = "Ending the filtered processes failed; the log has the detail.";
+                    DiagnosticsLog.Error("processes", "End all filtered failed", ex);
+                }
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    _model.Message = outcome;
+                    _model.Ending = false;
+                    _model.Refresh();
+                }));
+            });
+        }
+
         private void OnEndTask(object sender, RoutedEventArgs e)
         {
             if (ProcessList.SelectedItem is not ProcessRow row) return;

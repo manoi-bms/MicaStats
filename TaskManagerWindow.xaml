@@ -279,6 +279,11 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal">
                 <Button x:Name="EndTaskButton" Style="{StaticResource ActionButton}"
                         Content="End task" IsEnabled="False" Click="OnEndTask" />
+                <!-- Enabled only while a filter is typed and matches something: with no filter,
+                     "all filtered" would be every process on the machine. -->
+                <Button x:Name="EndAllButton" Style="{StaticResource ActionButton}"
+                        Content="End all filtered" IsEnabled="{Binding CanEndAllFiltered}"
+                        Click="OnEndAllFiltered" />
                 <Button x:Name="RetryElevated" Style="{StaticResource ActionButton}"
                         Content="Retry as administrator" Visibility="Collapsed"
                         Click="OnRetryElevated" />

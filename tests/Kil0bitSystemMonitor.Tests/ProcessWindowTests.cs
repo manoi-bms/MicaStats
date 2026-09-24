@@ -559,5 +559,19 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(new[] { 2 }, hits.Select(p => p.Pid));
         }
+
+        [Fact]
+        public void Matching_treats_a_pid_reused_by_a_different_process_as_no_match()
+        {
+            // The selected row is (pid 7, created 100). The source only holds (pid 7, created
+            // 200) — the same pid recycled by a different process. A pid-only Matching would
+            // return that unrelated process and hand TryEndTask its identity on the multi-select
+            // path; identity is (pid, created), so this must come back empty.
+            var rows = RowsOf(U(7, created: 100));
+
+            var hits = TaskManagerViewModel.Matching(new[] { U(7, created: 200) }, rows);
+
+            Assert.Empty(hits);
+        }
     }
 }

@@ -359,6 +359,13 @@ namespace Kil0bitSystemMonitor.ViewModels
         /// is every process on the machine, and the button is simply not available rather than
         /// asking; while a batch runs, a second click would plan against rows that are already
         /// mid-termination.
+        ///
+        /// <para>
+        /// The no-filter rule applies to this button only. A multi-row selection — including
+        /// Ctrl+A across every row — can target any number of processes through End task, and is
+        /// protected the same way End all filtered is: the same <see cref="BulkEndPlan"/>
+        /// exclusions, the same preview, and the same typed count.
+        /// </para>
         /// </summary>
         public bool CanEndAllFiltered => !_ending && !string.IsNullOrWhiteSpace(_searchText) && _count > 0;
 
@@ -441,7 +448,7 @@ namespace Kil0bitSystemMonitor.ViewModels
             SyncRows(Rows, rows);
 
             bool hasCpu = _sampler.HasCpuData;
-            var now = DateTime.Now;
+            var now = DateTime.UtcNow;
             var inv = CultureInfo.InvariantCulture;
             for (int i = 0; i < rows.Count; i++)
             {
@@ -450,7 +457,7 @@ namespace Kil0bitSystemMonitor.ViewModels
                 Rows[i].Memory = p.WorkingSetText;
                 Rows[i].Disk = p.DiskBytesPerSec > 0 ? p.DiskText : "—";
                 Rows[i].Parent = ParentText(p);
-                Rows[i].Uptime = p.CreateTime > 0 ? FormatUptime(now - DateTime.FromFileTime(p.CreateTime)) : "";
+                Rows[i].Uptime = p.CreateTime > 0 ? FormatUptime(now - DateTime.FromFileTimeUtc(p.CreateTime)) : "";
                 Rows[i].Threads = p.Threads.ToString(inv);
                 Rows[i].Handles = p.Handles.ToString(inv);
             }

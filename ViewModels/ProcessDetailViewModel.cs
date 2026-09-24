@@ -61,7 +61,8 @@ namespace Kil0bitSystemMonitor.ViewModels
         {
             Interlocked.Increment(ref _version);
             Title = count.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                    + " processes selected — End task ends all of them, after a preview.";
+                    + " processes selected — End task shows what will and will not be ended"
+                    + " before it does anything.";
             ImagePath = CommandLine = User = Elevated = "";
         }
 

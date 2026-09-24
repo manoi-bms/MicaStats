@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.ViewModels;
 
@@ -121,7 +120,11 @@ namespace Kil0bitSystemMonitor
         private void ConfirmAndEnd(IReadOnlyList<ProcessUsage> candidates)
         {
             // One batch at a time: a second confirm while one is running would race it.
-            if (_model.Ending) return;
+            if (_model.Ending)
+            {
+                _model.Message = "Still ending the previous batch; try again when it finishes.";
+                return;
+            }
 
             var ancestors = BulkEndPlan.AncestorsOf(Environment.ProcessId, _model.Snapshot);
             var plan = BulkEndPlan.Build(candidates, Environment.ProcessId, ancestors);

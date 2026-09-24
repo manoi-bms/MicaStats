@@ -54,7 +54,8 @@ namespace Kil0bitSystemMonitor.Services
         /// only job is to fill in a pane.
         /// </summary>
         /// <param name="reason">
-        /// "Process has exited", "Access denied", or "Unavailable (error N)" when false.
+        /// "Process has exited", "Access denied", "Unavailable (error N)", or a bare
+        /// "Unavailable" when the token opened but the account could not be read, when false.
         /// </param>
         public static bool TryRead(int pid, out ProcessAccount account, out string reason)
         {

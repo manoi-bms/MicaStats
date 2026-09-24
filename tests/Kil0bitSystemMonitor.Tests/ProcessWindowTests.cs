@@ -276,5 +276,127 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("",
                 TaskManagerViewModel.ParentText(R("x", 1) with { ParentName = "", ParentPid = 0 }));
         }
+
+        // ------------------------------------------------------- end all filtered
+
+        private static ProcessUsage Q(string name, int pid, int parent = 0, long created = 10) =>
+            new ProcessUsage(name, pid, 1f, 1024) { ParentPid = parent, CreateTime = created };
+
+        [Fact]
+        public void An_empty_filter_result_plans_nothing()
+        {
+            var plan = BulkEndPlan.Build(Array.Empty<ProcessUsage>(), 999, Array.Empty<int>());
+
+            Assert.Empty(plan.ToEnd);
+            Assert.Empty(plan.Excluded);
+        }
+
+        [Fact]
+        public void Ordinary_matches_are_all_planned()
+        {
+            var plan = BulkEndPlan.Build(
+                new[] { Q("find.exe", 10), Q("find.exe", 11) }, 999, Array.Empty<int>());
+
+            Assert.Equal(new[] { 10, 11 }, plan.ToEnd.Select(p => p.Pid));
+            Assert.Empty(plan.Excluded);
+        }
+
+        [Fact]
+        public void A_critical_windows_process_is_excluded_with_a_reason()
+        {
+            var plan = BulkEndPlan.Build(
+                new[] { Q("csrss.exe", 600), Q("cmd.exe", 700) }, 999, Array.Empty<int>());
+
+            Assert.Equal(new[] { 700 }, plan.ToEnd.Select(p => p.Pid));
+            var excluded = Assert.Single(plan.Excluded);
+            Assert.Equal(600, excluded.Process.Pid);
+            Assert.Contains("Windows", excluded.Reason, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void MicaStats_itself_is_never_planned()
+        {
+            var plan = BulkEndPlan.Build(
+                new[] { Q("MicaStats.exe", 999), Q("Micro.exe", 5) }, 999, Array.Empty<int>());
+
+            Assert.Equal(new[] { 5 }, plan.ToEnd.Select(p => p.Pid));
+            Assert.Equal(999, Assert.Single(plan.Excluded).Process.Pid);
+        }
+
+        [Fact]
+        public void A_process_MicaStats_runs_inside_is_never_planned()
+        {
+            var plan = BulkEndPlan.Build(
+                new[] { Q("WindowsTerminal.exe", 50), Q("pwsh.exe", 60) }, 999, new[] { 50 });
+
+            Assert.Equal(new[] { 60 }, plan.ToEnd.Select(p => p.Pid));
+            Assert.Equal(50, Assert.Single(plan.Excluded).Process.Pid);
+        }
+
+        [Fact]
+        public void Nothing_outside_the_filtered_input_is_ever_planned()
+        {
+            var input = new[] { Q("a.exe", 1), Q("b.exe", 2) };
+
+            var plan = BulkEndPlan.Build(input, 999, new[] { 3, 4 });
+
+            Assert.All(plan.ToEnd, p => Assert.Contains(p, input));
+            Assert.All(plan.Excluded, e => Assert.Contains(e.Process, input));
+            Assert.Equal(input.Length, plan.ToEnd.Count + plan.Excluded.Count);
+        }
+
+        [Fact]
+        public void Ancestors_are_walked_up_the_parent_chain()
+        {
+            var snapshot = new[]
+            {
+                Q("explorer.exe", 10, parent: 5, created: 1),
+                Q("WindowsTerminal.exe", 20, parent: 10, created: 2),
+                Q("MicaStats.exe", 30, parent: 20, created: 3),
+            };
+
+            var ancestors = BulkEndPlan.AncestorsOf(30, snapshot);
+
+            Assert.Equal(new[] { 10, 20 }, ancestors.OrderBy(p => p));
+        }
+
+        [Fact]
+        public void An_ancestor_walk_stops_at_a_recycled_parent_pid()
+        {
+            // 10 was reused by a process newer than its supposed child; it is not an ancestor.
+            var snapshot = new[]
+            {
+                Q("unrelated.exe", 10, parent: 0, created: 99),
+                Q("MicaStats.exe", 30, parent: 10, created: 3),
+            };
+
+            Assert.Empty(BulkEndPlan.AncestorsOf(30, snapshot));
+        }
+
+        [Fact]
+        public void An_ancestor_walk_terminates_on_a_cycle()
+        {
+            // Not possible from a correct kernel snapshot, but a walk that can loop forever on
+            // bad input must not exist in code that runs before ending processes.
+            var snapshot = new[]
+            {
+                Q("a.exe", 1, parent: 2, created: 1),
+                Q("b.exe", 2, parent: 1, created: 1),
+                Q("MicaStats.exe", 3, parent: 1, created: 2),
+            };
+
+            var ancestors = BulkEndPlan.AncestorsOf(3, snapshot);
+
+            Assert.Equal(new[] { 1, 2 }, ancestors.OrderBy(p => p));
+        }
+
+        [Fact]
+        public void The_outcome_reads_as_one_sentence()
+        {
+            Assert.Equal("Ended 35 · 2 need administrator · 0 survived",
+                new BulkEndResult(35, 2, 0, 0).Describe());
+            Assert.Equal("Ended 3 · 0 need administrator · 1 survived · 1 failed",
+                new BulkEndResult(3, 0, 1, 1).Describe());
+        }
     }
 }

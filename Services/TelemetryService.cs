@@ -183,20 +183,24 @@ namespace Kil0bitSystemMonitor.Services
         private static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
 
         private readonly ConfigService _config;
+        private readonly object _initLock = new object();
 
         public TelemetryService(ConfigService config)
         {
             _config = config;
             _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
-            
+
             _config.Config.PropertyChanged += Config_PropertyChanged;
-            
+
             // Perform heavy initialization in background to keep UI thread free
             _ = System.Threading.Tasks.Task.Run(() => {
-                try 
+                try
                 {
-                    InitializeGpu();
-                    InitializeDisk();
+                    lock (_initLock)
+                    {
+                        InitializeGpu();
+                        InitializeDisk();
+                    }
                     InitializeNetwork();
                     _lastNetTime = DateTime.Now;
 
@@ -876,22 +880,39 @@ namespace Kil0bitSystemMonitor.Services
 
         private void Config_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(_config.Config.GpuAdapter))
+            // Config setters run on the UI thread (the settings window binds straight to them),
+            // and re-initialising a GPU or disk spawns nvidia-smi and runs WMI perf queries —
+            // seconds of work that froze every window of the app while the settings page loaded.
+            if (e.PropertyName == nameof(_config.Config.GpuAdapter) ||
+                e.PropertyName == nameof(_config.Config.GpuIndex))
             {
-                InitializeGpu();
+                ReinitializeInBackground(InitializeGpu);
             }
             if (e.PropertyName == nameof(_config.Config.SelectedDisks))
             {
-                InitializeDisk();
+                ReinitializeInBackground(InitializeDisk);
             }
             if (e.PropertyName == nameof(_config.Config.UpdateInterval))
             {
                 if (_timer != null) _timer.Interval = _config.Config.UpdateInterval;
             }
-            if (e.PropertyName == nameof(_config.Config.GpuIndex))
+        }
+
+        /// <summary>
+        /// Runs a hardware re-initialisation on the thread pool. The lock serialises it with the
+        /// start-up initialisation and with other changes, so two quick selections never rebuild
+        /// the same counters at once; each run reads the config current when it starts.
+        /// </summary>
+        private void ReinitializeInBackground(Action initialize)
+        {
+            _ = System.Threading.Tasks.Task.Run(() =>
             {
-                InitializeGpu();
-            }
+                lock (_initLock)
+                {
+                    try { initialize(); }
+                    catch (Exception ex) { DiagnosticsLog.Error("telemetry", "Hardware re-initialisation failed", ex); }
+                }
+            });
         }
 
         private void StartSmiReader()

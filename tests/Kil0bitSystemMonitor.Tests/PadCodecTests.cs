@@ -28,6 +28,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("hi\r\n", d!.Text);
             Assert.Equal(PadEncoding.Utf8Bom, d.Encoding);
             Assert.Equal(bytes, TextFileCodec.Encode(d.Text, d.Encoding, d.CodePage));
+            Assert.True(d.Lossless);
         }
 
         [Theory]
@@ -41,6 +42,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(encoding, d!.Encoding);
             Assert.Equal(Sawasdee + "\nhello", d.Text);
             Assert.Equal(bytes, TextFileCodec.Encode(d.Text, d.Encoding, d.CodePage));
+            Assert.True(d.Lossless);
         }
 
         [Fact]
@@ -51,6 +53,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(TextFileCodec.TryDecode(bytes, Thai, out var d, out _));
             Assert.Equal(PadEncoding.Utf8, d!.Encoding);
             Assert.Equal(bytes, TextFileCodec.Encode(d.Text, d.Encoding, d.CodePage));
+            Assert.True(d.Lossless);
         }
 
         [Fact]
@@ -61,6 +64,27 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Thai, d.CodePage);
             Assert.Equal(Sawasdee, d.Text);
             Assert.Equal(SawasdeeCp874, TextFileCodec.Encode(d.Text, d.Encoding, d.CodePage));
+            Assert.True(d.Lossless);
+        }
+
+        [Fact]
+        public void A_bom_file_with_a_bad_byte_still_opens_but_is_marked_lossy()
+        {
+            byte[] bytes = { 0xEF, 0xBB, 0xBF, (byte)'a', 0xFF, (byte)'b' };
+
+            Assert.True(TextFileCodec.TryDecode(bytes, Thai, out var d, out _));
+            Assert.Equal(PadEncoding.Utf8Bom, d!.Encoding);
+            Assert.Equal("a�b", d.Text);
+            Assert.False(d.Lossless);
+        }
+
+        [Fact]
+        public void A_utf16_file_with_an_odd_trailing_byte_is_marked_lossy()
+        {
+            byte[] bytes = { 0xFF, 0xFE, (byte)'A', 0x00, (byte)'B' };
+
+            Assert.True(TextFileCodec.TryDecode(bytes, Thai, out var d, out _));
+            Assert.False(d!.Lossless);
         }
 
         [Fact]

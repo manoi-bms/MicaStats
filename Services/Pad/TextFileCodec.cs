@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
 
 namespace Kil0bitSystemMonitor.Services.Pad
 {
@@ -44,8 +43,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
         Binary,
     }
 
-    /// <summary>A decoded file: its text, and everything needed to write it back byte for byte.</summary>
-    public sealed record DecodedText(string Text, PadEncoding Encoding, int CodePage, LineEnding LineEnding);
+    /// <summary>
+    /// A decoded file: its text, and everything needed to write it back byte for byte.
+    /// <see cref="Lossless"/> is false when some bytes could not be decoded and now read U+FFFD:
+    /// saving such a file cannot give back the original bytes, so the caller warns first.
+    /// </summary>
+    public sealed record DecodedText(string Text, PadEncoding Encoding, int CodePage, LineEnding LineEnding, bool Lossless);
 
     /// <summary>
     /// Turns file bytes into text and back without changing what the user did not change.
@@ -70,17 +73,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private static readonly UnicodeEncoding StrictUtf16Le = new(bigEndian: false, byteOrderMark: false, throwOnInvalidBytes: true);
         private static readonly UnicodeEncoding StrictUtf16Be = new(bigEndian: true, byteOrderMark: false, throwOnInvalidBytes: true);
         private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
-        private static int s_codePagesRegistered;
 
         /// <summary>
         /// Makes legacy code pages such as 874 and 1252 available. .NET 8 ships only the Unicode
-        /// encodings unless this provider is registered. Safe to call any number of times.
+        /// encodings unless this provider is registered. Safe to call any number of times from any
+        /// thread: registration is synchronized, and registering the same provider again does nothing.
         /// </summary>
-        public static void EnsureCodePages()
-        {
-            if (Interlocked.Exchange(ref s_codePagesRegistered, 1) == 0)
-                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        }
+        public static void EnsureCodePages() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
         /// <summary>The system ANSI code page (the "language for non-Unicode programs"), not the user's display culture.</summary>
         public static int SystemAnsiCodePage => (int)GetACP();
@@ -100,14 +99,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 return false;
             }
 
-            // A byte order mark is authoritative, so these decode leniently: a stray bad sequence
-            // later in the file becomes a replacement character instead of refusing the file.
+            // A byte order mark is authoritative. A stray bad sequence later in such a file still
+            // opens, as U+FFFD, but the result is marked not lossless so the caller can warn that
+            // saving will write the replacement characters.
             if (StartsWith(bytes, 0xEF, 0xBB, 0xBF))
-                return Done(Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3), PadEncoding.Utf8Bom, 0, out result);
+                return Decode(bytes, 3, StrictUtf8, Encoding.UTF8, PadEncoding.Utf8Bom, 0, out result);
             if (StartsWith(bytes, 0xFF, 0xFE))
-                return Done(Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2), PadEncoding.Utf16Le, 0, out result);
+                return Decode(bytes, 2, StrictUtf16Le, Encoding.Unicode, PadEncoding.Utf16Le, 0, out result);
             if (StartsWith(bytes, 0xFE, 0xFF))
-                return Done(Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2), PadEncoding.Utf16Be, 0, out result);
+                return Decode(bytes, 2, StrictUtf16Be, Encoding.BigEndianUnicode, PadEncoding.Utf16Be, 0, out result);
 
             int probe = Math.Min(bytes.Length, BinaryProbeBytes);
             if (Array.IndexOf(bytes, (byte)0, 0, probe) >= 0)
@@ -118,7 +118,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
             try
             {
-                return Done(StrictUtf8.GetString(bytes), PadEncoding.Utf8, 0, out result);
+                return Finish(StrictUtf8.GetString(bytes), PadEncoding.Utf8, 0, lossless: true, out result);
             }
             catch (DecoderFallbackException)
             {
@@ -126,7 +126,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
 
             EnsureCodePages();
-            return Done(Encoding.GetEncoding(ansiCodePage).GetString(bytes), PadEncoding.Ansi, ansiCodePage, out result);
+            var strictAnsi = Encoding.GetEncoding(ansiCodePage, EncoderFallback.ReplacementFallback, DecoderFallback.ExceptionFallback);
+            return Decode(bytes, 0, strictAnsi, Encoding.GetEncoding(ansiCodePage), PadEncoding.Ansi, ansiCodePage, out result);
         }
 
         /// <summary>The bytes for <paramref name="text"/>, including the byte order mark the encoding calls for.</summary>
@@ -230,9 +231,24 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return Encoding.GetEncoding(codePage, EncoderFallback.ExceptionFallback, DecoderFallback.ReplacementFallback);
         }
 
-        private static bool Done(string text, PadEncoding encoding, int codePage, out DecodedText? result)
+        /// <summary>Decodes strictly when the bytes allow it; otherwise leniently, marking the result as not lossless.</summary>
+        private static bool Decode(byte[] bytes, int offset, Encoding strict, Encoding lenient,
+                                   PadEncoding encoding, int codePage, out DecodedText? result)
         {
-            result = new DecodedText(text, encoding, codePage, DetectLineEnding(text));
+            int count = bytes.Length - offset;
+            try
+            {
+                return Finish(strict.GetString(bytes, offset, count), encoding, codePage, lossless: true, out result);
+            }
+            catch (DecoderFallbackException)
+            {
+                return Finish(lenient.GetString(bytes, offset, count), encoding, codePage, lossless: false, out result);
+            }
+        }
+
+        private static bool Finish(string text, PadEncoding encoding, int codePage, bool lossless, out DecodedText? result)
+        {
+            result = new DecodedText(text, encoding, codePage, DetectLineEnding(text), lossless);
             return true;
         }
 

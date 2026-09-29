@@ -152,7 +152,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 ### MicaPad: a notepad that never asks to save
 
 * **Every note saves itself** a second after you stop typing — no file names, no Save button to remember
-* **Restart Windows any time**: no "Save changes?" dialogs one by one; every tab comes back after you sign in, with the caret where you left it
+* **Restart Windows any time**: no "Save changes?" dialogs one by one; with **Launch on Startup** on, every tab comes back after you sign in, with the caret where you left it
 * **History for every note** — a version is kept each time you pause after a minute of changes; preview and restore any of them, and Ctrl+Z undoes a restore
 * **Closing a tab never asks** — Ctrl+Shift+T or the closed-notes list brings it back; deleting sends it to the Recycle Bin
 * **Real files stay safe**: edits to an opened file are always kept, but the file itself changes only on Ctrl+S, in its original encoding (Thai TIS-620 / cp874 included) and line endings
@@ -746,7 +746,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 ### MicaPad: โน้ตแพดที่ไม่เคยถามให้บันทึก
 
 * **บันทึกเองเสมอ** หนึ่งวินาทีหลังหยุดพิมพ์ ไม่ต้องตั้งชื่อไฟล์ ไม่ต้องจำว่าต้องกดบันทึก
-* **รีสตาร์ต Windows ได้ทุกเมื่อ** ไม่มีหน้าต่าง "Save changes?" ให้กดทีละอัน ทุกแท็บกลับมาหลังลงชื่อเข้าใช้ พร้อมตำแหน่งเคอร์เซอร์เดิม
+* **รีสตาร์ต Windows ได้ทุกเมื่อ** ไม่มีหน้าต่าง "Save changes?" ให้กดทีละอัน เมื่อเปิดตัวเลือกเริ่มทำงานพร้อม Windows ไว้ ทุกแท็บจะกลับมาหลังลงชื่อเข้าใช้ พร้อมตำแหน่งเคอร์เซอร์เดิม
 * **ประวัติของทุกโน้ต** เก็บเวอร์ชันไว้ทุกครั้งที่หยุดพิมพ์หลังแก้ไขมาครบหนึ่งนาที ดูย้อนหลังและกู้คืนได้ และกด Ctrl+Z เพื่อยกเลิกการกู้คืน
 * **ปิดแท็บโดยไม่ถาม** เปิดกลับได้ด้วย Ctrl+Shift+T หรือจากรายการโน้ตที่ปิดแล้ว โน้ตที่ลบจะไปอยู่ในถังรีไซเคิล
 * **ไฟล์จริงปลอดภัย** การแก้ไขไฟล์ที่เปิดอยู่ถูกเก็บไว้เสมอ แต่ตัวไฟล์จะเปลี่ยนเมื่อกด Ctrl+S เท่านั้น โดยคงการเข้ารหัสเดิม (รวมถึง TIS-620 / cp874) และรูปแบบการขึ้นบรรทัดเดิม

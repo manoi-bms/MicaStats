@@ -114,7 +114,6 @@ Windows:
 | **Ctrl+Shift+1** | Region — pick a rectangle, window or screen |
 | **Ctrl+Shift+2** | The window currently in front |
 | **Ctrl+Shift+3** | The screen the pointer is on |
-| **Ctrl+Alt+N** | Show MicaPad (see MicaPad below) |
 
 ### The region picker
 
@@ -163,7 +162,8 @@ overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, from the Start me
 * Every note is saved one second after you stop typing, and at least every five seconds while
   you keep typing. The status bar says **Saving…** or **Saved 3s ago**.
 * When Windows shuts down or restarts, MicaPad writes everything and lets Windows continue —
-  no questions. If MicaPad was open, it reopens after you sign in with the same tabs.
+  no questions. If MicaPad was open, it reopens with the same tabs after you sign in, with
+  **Launch on Startup** on.
 * Closing a tab (**Ctrl+W**, middle-click or **×**) never asks either. **Ctrl+Shift+T** reopens
   the last one; the **▾** button lists every closed note, with search, **Reopen** and **Delete**
   (which uses the Recycle Bin). A note that never had any text is simply discarded.

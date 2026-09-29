@@ -74,8 +74,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         /// <summary>
-        /// Moves a note's folder to the Recycle Bin. When that fails the folder stays where it is:
-        /// nothing is ever deleted permanently.
+        /// Moves a note's folder to the Recycle Bin. When that fails the folder stays where it is,
+        /// and a drive with no Recycle Bin is refused rather than deleted from. One exception is
+        /// outside MicaPad's control (see <see cref="RecycleBin"/>): on a drive whose Recycle Bin
+        /// is switched off, or too small for the folder, Windows deletes it permanently.
         /// </summary>
         public bool DeleteNote(string id, IRecycleBin bin)
         {

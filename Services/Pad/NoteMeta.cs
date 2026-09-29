@@ -97,10 +97,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Null until the window has been placed once.</summary>
         public double? Top { get; set; }
 
-        /// <summary>Window width in pixels; default 900.</summary>
+        /// <summary>Window width in device-independent pixels (DIPs, 1/96 inch), as WPF measures it; default 900.</summary>
         public double Width { get; set; } = 900;
 
-        /// <summary>Window height in pixels; default 640.</summary>
+        /// <summary>Window height in device-independent pixels (DIPs, 1/96 inch), as WPF measures it; default 640.</summary>
         public double Height { get; set; } = 640;
 
         /// <summary>True when the window was maximized.</summary>
@@ -125,7 +125,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// <summary>Where the user was in one tab.</summary>
     public sealed class TabViewState
     {
-        /// <summary>Caret position in the text, in Unicode codepoints.</summary>
+        /// <summary>
+        /// Caret position in the text, in UTF-16 code units (a .NET string index, as the editor
+        /// counts), not code points: a character outside the BMP, such as an emoji, counts as two.
+        /// </summary>
         public int CaretOffset { get; set; }
 
         /// <summary>Vertical scroll offset in the editor.</summary>

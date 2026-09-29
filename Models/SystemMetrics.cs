@@ -556,7 +556,7 @@ namespace Kil0bitSystemMonitor.Models
         /// <summary>Word wrap in MicaPad; also toggled with Alt+Z.</summary>
         public bool PadWordWrap { get => _padWordWrap; set { Set(ref _padWordWrap, value); } }
 
-        /// <summary>Show line numbers in the editor; also toggled with Ctrl+G.</summary>
+        /// <summary>Show line numbers in the editor; also toggled from MicaPad's menu (Ctrl+G is Go to line).</summary>
         public bool PadShowLineNumbers { get => _padShowLineNumbers; set { Set(ref _padShowLineNumbers, value); } }
 
         /// <summary>

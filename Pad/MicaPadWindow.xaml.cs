@@ -830,8 +830,15 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnClosedDeleteClick(object sender, RoutedEventArgs e)
         {
             if ((sender as FrameworkElement)?.Tag is not ClosedNoteRow row) return;
+
             if (!_workspace.DeleteClosed(row.Id))
+            {
+                // Kept, and still listed: close the popup so the explanation is not hidden behind it.
+                ClosedPopup.IsOpen = false;
                 ShowInfo("That note could not be moved to the Recycle Bin, so it was kept.", null);
+                return;
+            }
+
             _closedRows.Remove(row);
             FilterClosed();
         }

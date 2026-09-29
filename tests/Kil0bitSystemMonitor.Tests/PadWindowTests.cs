@@ -240,6 +240,10 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("first draft", window.Editor.Document.Text);
             Assert.Equal(Visibility.Collapsed, window.PreviewPanel.Visibility);
 
+            window.HistoryPanel.Versions.SelectedItem = null;
+            Assert.Equal(2, window.HistoryPanel.Rows.Count);
+            Assert.Contains(window.HistoryPanel.Rows, r => env.Workspace.ReadSnapshot(r.Snapshot) == "rewritten");
+
             window.Editor.Undo();
             Assert.Equal("rewritten", window.Editor.Document.Text);
         });

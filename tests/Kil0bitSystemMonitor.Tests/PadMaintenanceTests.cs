@@ -102,5 +102,53 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Single(_store.ListSnapshots(open.Id));
             Assert.False(Directory.Exists(_store.NoteDir(closed.Id)));
         }
+
+        [Fact]
+        public void A_save_queued_before_a_recycle_does_not_bring_the_note_back()
+        {
+            var meta = Note("gone", T0);
+            long queuedBeforeDelete = _store.NextVersion();
+
+            Assert.True(_store.DeleteNote(meta.Id, new FakeRecycleBin()));
+
+            Assert.False(_store.SaveNote(meta, "late", queuedBeforeDelete));
+            Assert.False(Directory.Exists(_store.NoteDir(meta.Id)));
+        }
+
+        [Fact]
+        public void A_bin_that_throws_does_not_stop_the_purge_of_other_notes()
+        {
+            DateTime now = T0.AddDays(200);
+            var first = Note("one", now.AddDays(-100));
+            var second = Note("two", now.AddDays(-100));
+
+            Assert.Equal(1, _store.PurgeClosedNotes(now, 90, new ThrowsOnceRecycleBin()));
+            Assert.Single(new[] { first, second }, m => Directory.Exists(_store.NoteDir(m.Id)));
+        }
+
+        [Fact]
+        public void The_purge_never_uses_a_limit_below_seven_days()
+        {
+            DateTime now = T0.AddDays(200);
+            var eightDays = Note("old", now.AddDays(-8));
+            var sixDays = Note("recent", now.AddDays(-6));
+
+            Assert.Equal(1, _store.PurgeClosedNotes(now, historyDays: 1, new FakeRecycleBin()));
+            Assert.False(Directory.Exists(_store.NoteDir(eightDays.Id)));
+            Assert.True(Directory.Exists(_store.NoteDir(sixDays.Id)));
+        }
+
+        /// <summary>A recycle bin whose first call fails the way a shell error would.</summary>
+        private sealed class ThrowsOnceRecycleBin : IRecycleBin
+        {
+            private int _calls;
+
+            public bool TryRecycle(string path)
+            {
+                if (_calls++ == 0) throw new InvalidOperationException("shell failure");
+                Directory.Delete(path, recursive: true);
+                return true;
+            }
+        }
     }
 }

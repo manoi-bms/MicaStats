@@ -45,9 +45,32 @@ namespace Kil0bitSystemMonitor.Services.Pad
             foreach (var meta in LoadAllMetas())
             {
                 if (meta.ClosedAtUtc is not DateTime closed || utcNow - closed < limit) continue;
-                if (DeleteNote(meta.Id, bin)) purged++;
+                try
+                {
+                    if (PurgeIfStillClosed(meta.Id, utcNow - limit, bin)) purged++;
+                }
+                catch (Exception ex)
+                {
+                    // Background maintenance: one bad note must not stop the purge of the others.
+                    _warn("Purging note " + meta.Id + " failed: " + ex.Message);
+                }
             }
             return purged;
+        }
+
+        /// <summary>
+        /// Recycles a note only if, re-read under its lock, it is still closed and closed before
+        /// <paramref name="closedBefore"/>. The purge's list was read without the lock, and the
+        /// note may have been reopened since.
+        /// </summary>
+        private bool PurgeIfStillClosed(string id, DateTime closedBefore, IRecycleBin bin)
+        {
+            lock (LockFor(id))
+            {
+                var current = LoadMeta(id);
+                if (current?.ClosedAtUtc is not DateTime closed || closed > closedBefore) return false;
+                return DeleteNote(id, bin);
+            }
         }
 
         /// <summary>
@@ -59,7 +82,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
             lock (LockFor(id))
             {
                 string folder = NoteDir(id);
-                if (!Directory.Exists(folder)) return true;
+                if (!Directory.Exists(folder))
+                {
+                    // Saves queued before now must still be refused.
+                    _written[id] = NextVersion();
+                    return true;
+                }
 
                 if (bin.TryRecycle(folder))
                 {
@@ -87,8 +115,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 {
                     PruneHistory(meta.Id, localNow, historyDays);
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                catch (Exception ex)
                 {
+                    // Background maintenance: one bad note must not stop the pruning of the others.
                     _warn("Pruning note " + meta.Id + " failed: " + ex.Message);
                 }
             }
@@ -97,8 +126,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 PurgeClosedNotes(utcNow, historyDays, bin);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex)
             {
+                // Background maintenance: one error must not stop the maintenance pass.
                 _warn("Purging closed notes failed: " + ex.Message);
             }
         }

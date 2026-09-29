@@ -23,6 +23,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// permanently instead, so that case is detected first with <c>SHQueryRecycleBin</c> and
     /// refused.
     /// </para>
+    ///
+    /// <para>
+    /// Limitations: a drive whose Recycle Bin is switched off in its properties, or a folder
+    /// larger than the bin's maximum size, is still deleted permanently by the shell, because
+    /// neither setting is visible to <c>SHQueryRecycleBin</c>. MicaPad notes are small, and
+    /// switching the bin off is the user's own choice for every program.
+    /// </para>
     /// </summary>
     public sealed class RecycleBin : IRecycleBin
     {
@@ -42,7 +49,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <inheritdoc />
         public bool TryRecycle(string path)
         {
-            string full = Path.GetFullPath(path);
+            string full;
+            try
+            {
+                full = Path.GetFullPath(path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return false;
+            }
+
             string? root = Path.GetPathRoot(full);
             if (string.IsNullOrEmpty(root)) return false;
 

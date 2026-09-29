@@ -36,6 +36,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Raised on the writer thread after each attempt: the key, and the error or null.</summary>
         public event Action<string, Exception?>? Completed;
 
+        /// <summary>Starts the writer thread. It is a background thread, so it never keeps the process alive.</summary>
         /// <param name="backoff">Delay before retry number n (1-based); <see cref="DefaultBackoff"/> when null. Tests pass milliseconds.</param>
         public AutosaveWriter(Func<int, TimeSpan>? backoff = null)
         {
@@ -74,6 +75,19 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// Waits until everything queued has been written, retrying failed work immediately rather
         /// than after its backoff. False when <paramref name="timeout"/> passes first.
+        ///
+        /// <para>
+        /// If this returns false, the writer keeps running and may later retry or execute queued work.
+        /// The caller may then write the newest state directly only because every write queued here
+        /// is versioned (via <see cref="NoteStore.NextVersion"/>), and the store ignores any version
+        /// older than one already written — a late queued save always loses to the newer direct write.
+        /// Work that is not versioned must never also be written directly while still queued.
+        /// </para>
+        ///
+        /// <para>
+        /// Work waiting in the queue is retried immediately during the flush; work that fails again
+        /// while executing during a flush waits its normal backoff before retry.
+        /// </para>
         /// </summary>
         public bool FlushAll(TimeSpan timeout)
         {

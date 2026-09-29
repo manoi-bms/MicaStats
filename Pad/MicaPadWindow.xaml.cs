@@ -627,9 +627,9 @@ namespace Kil0bitSystemMonitor.Pad
             if (_shown != null) Save(_shown);
         }
 
-        private void Save(OpenNote note, bool overwriteExternalChanges = false) =>
-            HandleSaveResult(note, _workspace.SaveToSource(note, overwriteExternalChanges),
-                             () => Save(note, overwriteExternalChanges));
+        private void Save(OpenNote note, bool overwriteExternalChanges = false, bool overwriteWithoutCopy = false) =>
+            HandleSaveResult(note, _workspace.SaveToSource(note, overwriteExternalChanges, overwriteWithoutCopy),
+                             () => Save(note, overwriteExternalChanges, overwriteWithoutCopy));
 
         private void SaveAs(OpenNote note)
         {
@@ -681,6 +681,14 @@ namespace Kil0bitSystemMonitor.Pad
                         "Overwrite", () => Save(note, overwriteExternalChanges: true),
                         "Reload from disk", () => Reload(note));
                     _infoKind = InfoChangedOnDisk;
+                    break;
+                case SaveToFileStatus.OutsideVersionNotKept:
+                    ShowInfo((Path.GetFileName(note.Meta.SourcePath) ?? note.Title) +
+                             " changed on disk, and that version cannot be kept in History: " + result.Error + ". Overwrite it anyway?",
+                        note,
+                        "Overwrite anyway", () => Save(note, overwriteExternalChanges: true, overwriteWithoutCopy: true),
+                        "Reload from disk", () => Reload(note));
+                    _infoKind = InfoChangedOnDisk;   // the check on activation leaves this question showing
                     break;
                 default:
                     ShowInfo("Could not save: " + result.Error + " Your text is kept here.", note, "Save As…", () => SaveAs(note));

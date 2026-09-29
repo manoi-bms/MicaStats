@@ -332,6 +332,30 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Overwrite_stops_when_the_outside_version_cannot_be_kept_until_the_user_insists()
+        {
+            byte[] binary = { 0x4D, 0x5A, 0x00, 0x01 };
+            string path = WriteFile("turned-binary.txt", Encoding.UTF8.GetBytes("base"));
+            var note = Ws.OpenFile(path).Note!;
+            PadTestEnv.Type(Ws, note, "mine");
+            File.WriteAllBytes(path, binary);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+
+            var result = Ws.SaveToSource(note, overwriteExternalChanges: true);
+
+            Assert.Equal(SaveToFileStatus.OutsideVersionNotKept, result.Status);
+            Assert.Equal("it does not look like text", result.Error);
+            Assert.Equal(binary, File.ReadAllBytes(path));
+            Assert.True(note.HasUnsavedEdits);
+
+            var forced = Ws.SaveToSource(note, overwriteExternalChanges: true, overwriteWithoutCopy: true);
+
+            Assert.Equal(SaveToFileStatus.Saved, forced.Status);
+            Assert.Equal(Encoding.UTF8.GetBytes("mine"), File.ReadAllBytes(path));
+            Assert.False(note.HasUnsavedEdits);
+        }
+
+        [Fact]
         public void Save_as_onto_an_existing_file_is_not_asked_about_outside_changes()
         {
             string path = WriteFile("original.txt", Encoding.UTF8.GetBytes("base"));

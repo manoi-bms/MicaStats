@@ -190,6 +190,35 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Overwrite_asks_again_when_the_outside_version_cannot_be_kept() => WithWindow((window, env, config) =>
+        {
+            byte[] binary = { 0x4D, 0x5A, 0x00, 0x01 };
+            string path = env.FileOf("turned-binary.txt");
+            File.WriteAllText(path, "base");
+            window.OpenPath(path);
+            window.Editor.Document.Insert(0, "mine ");
+            File.WriteAllBytes(path, binary);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+
+            window.HandleShortcut(Key.S, ModifierKeys.Control);
+            window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));   // Overwrite
+
+            Assert.Equal("turned-binary.txt changed on disk, and that version cannot be kept in History: it does not look like text. Overwrite it anyway?",
+                window.InfoText.Text);
+            Assert.Equal("Overwrite anyway", window.InfoPrimary.Content);
+            Assert.Equal("Reload from disk", window.InfoSecondary.Content);
+            Assert.Equal(binary, File.ReadAllBytes(path));
+
+            window.CheckShownNoteOnDisk();   // activation: the same question stays
+            Assert.Equal("Overwrite anyway", window.InfoPrimary.Content);
+
+            window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));   // Overwrite anyway
+
+            Assert.Equal("mine base", File.ReadAllText(path));
+            Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+        });
+
+        [Fact]
         public void Another_message_for_the_same_note_does_not_hide_the_disk_question() => WithWindow((window, env, config) =>
         {
             string path = env.FileOf("broken.txt");

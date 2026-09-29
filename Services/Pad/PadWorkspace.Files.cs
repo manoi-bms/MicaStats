@@ -27,6 +27,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// MicaPad kept the focus. Saving again with <c>overwriteExternalChanges</c> writes anyway.
         /// </summary>
         ChangedOnDisk,
+        /// <summary>
+        /// Overwrite was chosen, but the outside version cannot be kept as a version first
+        /// (<see cref="SaveToFileResult.Error"/> says why); nothing was written. Saving again with
+        /// <c>overwriteWithoutCopy</c> writes anyway, and that version is then gone.
+        /// </summary>
+        OutsideVersionNotKept,
     }
 
     /// <summary>The result of a save to a real file, with the reason when it failed.</summary>
@@ -99,9 +105,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <param name="note">The file-backed note to write.</param>
         /// <param name="overwriteExternalChanges">
         /// The user chose Overwrite: write even though the file changed. The outside version is
-        /// kept as a snapshot first, so it can still be restored from history.
+        /// kept as a snapshot first, so it can still be restored from history; when it cannot be
+        /// kept, nothing is written (<see cref="SaveToFileStatus.OutsideVersionNotKept"/>).
         /// </param>
-        public SaveToFileResult SaveToSource(OpenNote note, bool overwriteExternalChanges = false)
+        /// <param name="overwriteWithoutCopy">
+        /// The user chose Overwrite anyway after <see cref="SaveToFileStatus.OutsideVersionNotKept"/>:
+        /// write even though the outside version cannot be kept.
+        /// </param>
+        public SaveToFileResult SaveToSource(OpenNote note, bool overwriteExternalChanges = false, bool overwriteWithoutCopy = false)
         {
             var meta = note.Meta;
             if (!meta.IsFileBacked) return new SaveToFileResult(SaveToFileStatus.NeedsSaveAs);
@@ -126,7 +137,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (recorded != null && current != null && recorded.Value != current.Value)
             {
                 if (!overwriteExternalChanges) return new SaveToFileResult(SaveToFileStatus.ChangedOnDisk);
-                KeepOutsideVersion(note);
+                if (!TryKeepOutsideVersion(note, out string? whyNot))
+                {
+                    // Losing the other program's text is the user's call, never a side effect.
+                    if (!overwriteWithoutCopy) return new SaveToFileResult(SaveToFileStatus.OutsideVersionNotKept, whyNot);
+                    _warn("Overwrote " + meta.SourcePath + " without keeping the outside version (" + whyNot + "), as the user chose");
+                }
             }
 
             SnapshotNow(note, SnapshotReason.SavedToFile);
@@ -278,26 +294,36 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// Before Overwrite replaces a file another program changed, queues the file's current
         /// text as a snapshot of the note, so the outside version can still be restored. Recorded
         /// as the newest snapshot's hash, so the note's own text is snapshotted after it.
+        /// False, with the reason in words for the info bar, when that version cannot be kept. A
+        /// file that is gone by now has nothing to keep, which counts as kept.
         /// </summary>
-        private void KeepOutsideVersion(OpenNote note)
+        private bool TryKeepOutsideVersion(OpenNote note, out string? whyNot)
         {
             string path = note.Meta.SourcePath!;
             var outside = ReadSource(path, out var status);
             if (outside == null)
             {
-                _warn("The outside version of " + path + " could not be kept before overwriting it (" + status + ")");
-                return;
+                whyNot = status switch
+                {
+                    OpenFileStatus.NotFound => null,
+                    OpenFileStatus.TooLarge => "it is larger than 50 MB",
+                    OpenFileStatus.Binary => "it does not look like text",
+                    _ => "it could not be read",
+                };
+                return whyNot == null;
             }
             if (outside.Text.Length > HistoryPolicy.MaxSnapshotChars)
             {
-                _warn("The outside version of " + path + " is too large to keep as a version; it was overwritten");
-                return;
+                whyNot = "it is too large to keep in History";
+                return false;
             }
 
             DateTime now = _clock();
             EnqueueSnapshot(note.Id, outside.Text, now);
             note.Meta.LastSnapshotHash = HistoryPolicy.Hash(outside.Text);
             note.Meta.LastSnapshotUtc = now;
+            whyNot = null;
+            return true;
         }
 
         private static bool SamePath(string? a, string b) =>

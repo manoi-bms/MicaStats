@@ -7,10 +7,6 @@ merge are not listed.
 
 ## Saving and files
 
-- **Overwrite without a history copy.** Ctrl+S → Overwrite keeps the outside version as a
-  History snapshot first. If that version cannot be kept (unreadable, binary, larger than 50 MB,
-  or over the snapshot size cap), the save still goes ahead with only a log warning. Say so in
-  the info bar, or refuse, mirroring how Reload refuses with `EditsWouldBeLost`.
 - **Stale text for a clean file note restored while its file is unreachable.** Autosave does not
   refresh `current.txt` for a clean file-backed note. If the file cannot be read at launch (an
   offline share), the note shows the older `current.txt` as a clean copy. The History

@@ -80,7 +80,7 @@ process sampler already does.
 
 ## MicaPad phase 2 — notepad4 parity
 
-Phase 1 (autosave, history, restore after restart, shadow mode for files) shipped in 1.12.0.
+Phase 1 (autosave, history, restore after restart, shadow mode for files) ships in 1.12.0.
 Phase 2 brings the editing features of [notepad4](https://github.com/zufuliu/notepad4) to MicaPad,
 reimplemented on AvalonEdit:
 

@@ -114,6 +114,7 @@ Windows:
 | **Ctrl+Shift+1** | Region — pick a rectangle, window or screen |
 | **Ctrl+Shift+2** | The window currently in front |
 | **Ctrl+Shift+3** | The screen the pointer is on |
+| **Ctrl+Alt+N** | Show MicaPad (see MicaPad below) |
 
 ### The region picker
 

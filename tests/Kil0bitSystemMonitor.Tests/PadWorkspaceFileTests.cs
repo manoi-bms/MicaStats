@@ -345,6 +345,53 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_clean_file_note_reopened_while_its_file_cannot_be_read_is_a_stand_in_until_reloaded()
+        {
+            string path = WriteFile("closed.txt", Encoding.UTF8.GetBytes("as it was"));
+            var note = Ws.OpenFile(path).Note!;
+            Ws.Close(note);
+            Assert.True(Ws.FlushAll(TimeSpan.FromSeconds(5)));
+            // Same length and write time, so the stamp alone would say nothing changed: only the
+            // Unverified mark set by Reopen can make the stand-in give way to the file.
+            DateTime written = File.GetLastWriteTimeUtc(path);
+            File.WriteAllBytes(path, Encoding.UTF8.GetBytes("as it is!"));
+            File.SetLastWriteTimeUtc(path, written);
+
+            OpenNote back;
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                back = Ws.Reopen(note.Id)!;
+                Assert.Equal("as it was", back.TextProvider());   // MicaPad's copy stands in for the file
+                Assert.Equal(DiskChangeAction.ReloadSilently, Ws.CheckDisk(back));
+            }
+
+            Assert.Equal("as it is!", Ws.ReloadFromDisk(back, out var status, out _));
+            Assert.Equal(OpenFileStatus.Opened, status);
+            Assert.Equal(DiskChangeAction.None, Ws.CheckDisk(back));
+        }
+
+        [Fact]
+        public void Overwrite_from_a_stand_in_copy_keeps_the_real_file_text_in_history()
+        {
+            string path = WriteFile("stand-in.txt", Encoding.UTF8.GetBytes("the real text"));
+            Ws.OpenFile(path);
+            Assert.True(Ws.FlushAll(TimeSpan.FromSeconds(5)));
+
+            var restored = _env.NewWorkspace();
+            OpenNote note;
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                note = Assert.Single(restored.Restore());
+
+            PadTestEnv.Type(restored, note, "typed over the stand-in");
+            Assert.Equal(SaveToFileStatus.ChangedOnDisk, restored.SaveToSource(note).Status);
+            Assert.Equal(SaveToFileStatus.Saved, restored.SaveToSource(note, overwriteExternalChanges: true).Status);
+            _env.Flush();
+
+            Assert.Equal(Encoding.UTF8.GetBytes("typed over the stand-in"), File.ReadAllBytes(path));
+            Assert.Contains(restored.History(note), s => restored.ReadSnapshot(s) == "the real text");
+        }
+
+        [Fact]
         public void Converting_line_endings_takes_a_snapshot_first()
         {
             string path = WriteFile("unix.txt", Encoding.UTF8.GetBytes("a\nb\n"));
@@ -471,6 +518,24 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(SaveToFileStatus.Saved, forced.Status);
             Assert.Equal(Encoding.UTF8.GetBytes("mine"), File.ReadAllBytes(path));
             Assert.False(note.HasUnsavedEdits);
+        }
+
+        [Fact]
+        public void Overwrite_stops_while_the_outside_version_is_locked_and_says_it_could_not_be_read()
+        {
+            string path = WriteFile("held.txt", Encoding.UTF8.GetBytes("base"));
+            var note = Ws.OpenFile(path).Note!;
+            PadTestEnv.Type(Ws, note, "mine");
+            ChangeFile(path, "theirs");
+
+            SaveToFileResult result;
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                result = Ws.SaveToSource(note, overwriteExternalChanges: true);
+
+            Assert.Equal(SaveToFileStatus.OutsideVersionNotKept, result.Status);
+            Assert.Equal("it could not be read", result.Error);
+            Assert.Equal(Encoding.UTF8.GetBytes("theirs"), File.ReadAllBytes(path));
+            Assert.True(note.HasUnsavedEdits);
         }
 
         [Fact]

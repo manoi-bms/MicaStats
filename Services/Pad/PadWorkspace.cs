@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -77,8 +78,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private readonly int _ansiCodePage;
         private readonly Dictionary<string, OpenNote> _byId = new();
         private readonly Dictionary<string, NoteMeta> _recentlyClosed = new();
-        private long _snapshotSequence;
         private bool _restored;
+
+        /// <summary>A save handed to the writer: the meta copy, text (null: meta only) and store version it was queued with.</summary>
+        private sealed record PendingSave(NoteMeta Meta, string? Text, long Version);
+
+        /// <summary>
+        /// The last queued save of every note, removed once that exact save lands. Read by
+        /// <see cref="FlushAll"/> and <see cref="Reopen"/> when the writer has not caught up.
+        /// </summary>
+        private readonly ConcurrentDictionary<string, PendingSave> _unconfirmed = new();
 
         /// <summary>Creates a workspace over <paramref name="store"/>; call <see cref="Restore"/> to load the saved session.</summary>
         public PadWorkspace(NoteStore store, PadWorkspaceOptions? options = null)
@@ -235,17 +244,19 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (_writer.FlushAll(timeout)) return true;
 
             _warn("Autosave did not finish in time; writing what is left directly");
-            foreach (var note in dirty)
+            // Every save still queued, including those of notes closed this session. Each is
+            // written under the version it was queued with, so if the queued write lands later
+            // the store skips it as not newer.
+            foreach (var entry in _unconfirmed.ToArray())
             {
                 try
                 {
-                    bool writeText = !note.Meta.IsFileBacked || note.Meta.HasUnsavedEdits;
-                    note.SaveSequence = _store.NextVersion();
-                    _store.SaveNote(note.Meta.Clone(), writeText ? note.TextProvider() : null, note.SaveSequence);
+                    _store.SaveNote(entry.Value.Meta, entry.Value.Text, entry.Value.Version);
+                    _unconfirmed.TryRemove(entry);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _error("Writing note " + note.Id + " directly failed", ex);
+                    _error("Writing note " + entry.Key + " directly failed", ex);
                 }
             }
 
@@ -283,7 +294,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             string id = note.Id;
             DateTime local = now.ToLocalTime();
             // A unique key: snapshots must never replace one another in the writer queue.
-            string key = id + "#snapshot#" + (++_snapshotSequence).ToString(CultureInfo.InvariantCulture);
+            string key = id + "#snapshot#" + _store.NextVersion().ToString(CultureInfo.InvariantCulture);
             _writer.Enqueue(key, () => _store.WriteSnapshot(id, text, local));
 
             EnqueueSave(note);   // persists LastSnapshotHash
@@ -305,6 +316,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 string id = note.Id;
                 // Same key as its saves, so it replaces any still waiting and runs after one in progress.
+                _unconfirmed.TryRemove(id, out _);   // being deleted, not saved
                 _writer.Enqueue(id, () => _store.DeleteEmptyNote(id));
             }
             else
@@ -361,30 +373,56 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 return open;
             }
 
-            // Its close may still be queued; its meta must be on disk before it is read back.
+            // Its close may still be queued; normally this lets it land first.
             _writer.FlushAll(TimeSpan.FromSeconds(2));
-            _recentlyClosed.Remove(id);
 
-            var meta = _store.LoadMeta(id);
-            if (meta == null) return null;
+            NoteMeta? meta;
+            string text;
+            if (_unconfirmed.TryGetValue(id, out var pending))
+            {
+                // The writer has not caught up: the newest state is the one still queued, not the
+                // one on disk. Reopening from disk here would bring back older text.
+                meta = pending.Meta.Clone();
+                text = pending.Text ?? LoadInitialText(meta);
+            }
+            else
+            {
+                meta = _store.LoadMeta(id);
+                if (meta == null) return null;
+                text = LoadInitialText(meta);
+            }
+
+            _recentlyClosed.Remove(id);
             meta.ClosedAtUtc = null;
 
-            // Written now, not queued: the daily purge re-reads closedAt on disk under the note's
-            // lock, so a reopened note must stop looking closed at once.
-            _store.SaveNote(meta.Clone(), null, _store.NextVersion());
+            // Written now, not queued: the daily purge re-reads closedAt on disk under the note lock,
+            // so a reopened note must stop looking closed at once.
+            try
+            {
+                bool writeText = !meta.IsFileBacked || meta.HasUnsavedEdits;
+                _store.SaveNote(meta.Clone(), writeText ? text : null, _store.NextVersion());
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _error("Reopening note " + id + " could not be written yet; autosave will retry", ex);
+            }
 
-            var note = AddOpen(meta, LoadInitialText(meta), InsertIndexAfterActive());
+            var note = AddOpen(meta, text, InsertIndexAfterActive());
             SetActive(note);
             EnqueueSave(note);
             SaveSession();
             return note;
         }
 
-        /// <summary>Sends a closed note to the Recycle Bin. False when it could not; the note is then kept.</summary>
+        /// <summary>
+        /// Sends a closed note to the Recycle Bin. False when it could not; the note is then kept.
+        /// Also false while the writer is behind: recycling a note with writes still queued would
+        /// let a late snapshot recreate its folder as an orphan.
+        /// </summary>
         public bool DeleteClosed(string id)
         {
             if (_byId.ContainsKey(id)) return false;
-            _writer.FlushAll(TimeSpan.FromSeconds(2));
+            if (!_writer.FlushAll(TimeSpan.FromSeconds(2))) return false;
             _recentlyClosed.Remove(id);
             return _store.DeleteNote(id, _recycleBin);
         }
@@ -470,11 +508,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
             note.SaveState = SaveState.Saving;
 
             string id = note.Id;
+            var pending = new PendingSave(copy, text, version);
+            _unconfirmed[id] = pending;
             _writer.Enqueue(id, () =>
             {
                 try
                 {
                     _store.SaveNote(copy, text, version);
+                    _unconfirmed.TryRemove(new KeyValuePair<string, PendingSave>(id, pending));
                 }
                 catch (Exception ex)
                 {

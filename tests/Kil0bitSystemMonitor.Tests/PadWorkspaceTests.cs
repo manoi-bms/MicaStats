@@ -234,6 +234,63 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_save_still_queued_at_session_end_is_written_directly()
+        {
+            var note = Ws.NewNote();
+            _env.Flush();
+            using var release = new ManualResetEventSlim();
+            _env.Writer.Enqueue("stuck", () => release.Wait());
+            PadTestEnv.Type(Ws, note, "draft");
+            _env.Clock.Advance(61);
+            Ws.Tick();                                 // queues the save and the pause snapshot
+
+            Assert.False(Ws.FlushAll(TimeSpan.FromMilliseconds(200)));
+            Assert.Equal("draft", _env.DiskText(note));
+
+            release.Set();
+            _env.Flush();
+            Assert.Equal("draft", _env.DiskText(note));
+        }
+
+        [Fact]
+        public void A_note_closed_while_the_writer_is_stuck_is_written_at_session_end()
+        {
+            var note = Ws.NewNote();
+            _env.Flush();
+            using var release = new ManualResetEventSlim();
+            _env.Writer.Enqueue("stuck", () => release.Wait());
+            PadTestEnv.Type(Ws, note, "bye");
+            Ws.Close(note);
+
+            Assert.False(Ws.FlushAll(TimeSpan.FromMilliseconds(200)));
+            Assert.Equal("bye", _env.DiskText(note));
+            Assert.NotNull(_env.Store.LoadMeta(note.Id)!.ClosedAtUtc);
+
+            release.Set();
+            _env.Flush();
+        }
+
+        [Fact]
+        public void Reopening_while_the_writer_is_stuck_keeps_the_newest_text()
+        {
+            var note = Ws.NewNote();
+            PadTestEnv.Type(Ws, note, "old");
+            Assert.True(Ws.FlushAll(TimeSpan.FromSeconds(5)));
+            using var release = new ManualResetEventSlim();
+            _env.Writer.Enqueue("stuck", () => release.Wait());
+            PadTestEnv.Type(Ws, note, "newest");
+            Ws.Close(note);
+
+            var back = Ws.ReopenLastClosed();
+
+            Assert.Equal("newest", back!.TextProvider());
+            release.Set();
+            _env.Flush();
+            Assert.Equal("newest", _env.DiskText(back));
+            Assert.Null(_env.Store.LoadMeta(back.Id)!.ClosedAtUtc);
+        }
+
+        [Fact]
         public void Deleting_a_closed_note_uses_the_recycle_bin()
         {
             var note = Ws.NewNote();

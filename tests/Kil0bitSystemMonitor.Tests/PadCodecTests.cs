@@ -14,7 +14,7 @@ namespace Kil0bitSystemMonitor.Tests
         private const int Thai = 874;
 
         /// <summary>"สวัสดี", written with escapes so this file's own encoding cannot matter.</summary>
-        private const string Sawasdee = "สวัสดี";
+        private const string Sawasdee = "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35";
 
         /// <summary>The same word in TIS-620 / cp874. Not valid UTF-8: 0xCA opens a two-byte sequence that 0xC7 does not continue.</summary>
         private static readonly byte[] SawasdeeCp874 = { 0xCA, 0xC7, 0xD1, 0xCA, 0xB4, 0xD5 };

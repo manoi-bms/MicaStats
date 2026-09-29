@@ -66,6 +66,12 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_relative_path_is_rejected()
+        {
+            Assert.False(Read(PadIpc.Tag, @"notes\x.txt", null, out _));
+        }
+
+        [Fact]
         public void A_null_message_is_rejected()
         {
             Assert.False(PadIpc.TryRead(IntPtr.Zero, out _));

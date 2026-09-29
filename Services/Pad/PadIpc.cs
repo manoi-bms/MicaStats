@@ -74,15 +74,28 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (data.cbData > 0 && data.lpData == IntPtr.Zero) return false;
 
             path = data.cbData == 0 ? "" : Marshal.PtrToStringUni(data.lpData, data.cbData / 2);
+
+            // A MicaStats sender always resolves to a full path first, so anything else is not ours.
+            if (path.Length > 0 && !System.IO.Path.IsPathFullyQualified(path))
+            {
+                path = "";
+                return false;
+            }
             return true;
         }
 
         /// <summary>
-        /// Lets an unelevated sender (Explorer's Open with) reach this window even when MicaStats
-        /// was started as administrator. Harmless when it was not.
+        /// Lets an unelevated sender (Explorer's Open with) reach this window, but only when MicaStats
+        /// itself is elevated. Unelevated, Windows already admits same-integrity senders and keeps
+        /// lower-integrity (sandboxed) ones out, which is what we want; relaxing the filter there would
+        /// let a sandboxed process drive the overlay. Elevated, Explorer would be blocked without it.
         /// </summary>
-        public static void AllowFromLowerIntegrity(IntPtr hwnd)
+        public static void AllowFromLowerIntegrityWhenElevated(IntPtr hwnd)
         {
+            // Under UAC an unelevated administrator has a filtered token, so this is false unless actually elevated.
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            if (!new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)) return;
+
             ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, IntPtr.Zero);
         }
 

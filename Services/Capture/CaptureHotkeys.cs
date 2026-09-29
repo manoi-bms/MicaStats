@@ -33,6 +33,10 @@ namespace Kil0bitSystemMonitor.Services.Capture
         private HwndSource? _source;
         private int _nextId = 0xA100;
 
+        /// <summary>Creates the hotkey host; nothing registers until <see cref="Apply"/>.</summary>
+        /// <param name="dispatcher">The UI dispatcher that capture runs on.</param>
+        /// <param name="config">Supplies the current config, read on every Apply and every trigger.</param>
+        /// <param name="openPad">Opens MicaPad; queued onto the dispatcher, never run inside the window procedure.</param>
         public CaptureHotkeys(Dispatcher dispatcher, Func<AppConfig?> config, Action openPad)
         {
             _dispatcher = dispatcher;

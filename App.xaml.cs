@@ -125,7 +125,7 @@ namespace Kil0bitSystemMonitor
             bool padRequested = Kil0bitSystemMonitor.Services.Pad.PadArguments.TryParse(e.Args, out string? padPath);
             if (padPath != null)
             {
-                // Relative to this process's folder, which is not the folder of the instance that opens it.
+                // Resolved against the launching process's current working directory, which is not the running instance's.
                 try { padPath = System.IO.Path.GetFullPath(padPath); }
                 catch (Exception ex) when (ex is ArgumentException or NotSupportedException or System.IO.PathTooLongException) { padPath = null; }
             }
@@ -630,21 +630,30 @@ namespace Kil0bitSystemMonitor
         /// <summary>Prunes history and purges long-closed notes, off the UI thread.</summary>
         private static void RunPadMaintenance()
         {
-            if (!System.IO.Directory.Exists(Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot)) return;
-
-            int days = ConfigService?.Config.PadHistoryDays ?? 90;
-            var store = PadStore;
-            System.Threading.Tasks.Task.Run(() =>
+            // The whole body is guarded: the NoteStore constructor creates a folder, and an exception
+            // escaping an idle callback or timer tick would crash the app at every launch.
+            try
             {
-                try
+                if (!System.IO.Directory.Exists(Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot)) return;
+
+                int days = ConfigService?.Config.PadHistoryDays ?? 90;
+                var store = PadStore;
+                System.Threading.Tasks.Task.Run(() =>
                 {
-                    store.PruneAll(DateTime.UtcNow, days, Kil0bitSystemMonitor.Services.Pad.RecycleBin.Instance);
-                }
-                catch (Exception ex)
-                {
-                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "MicaPad maintenance failed", ex);
-                }
-            });
+                    try
+                    {
+                        store.PruneAll(DateTime.UtcNow, days, Kil0bitSystemMonitor.Services.Pad.RecycleBin.Instance);
+                    }
+                    catch (Exception ex)
+                    {
+                        Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "MicaPad maintenance failed", ex);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "MicaPad maintenance failed", ex);
+            }
         }
 
         public static void OpenSettings(Kil0bitSystemMonitor.ViewModels.MainViewModel viewModel, Kil0bitSystemMonitor.Services.ConfigService config)
@@ -666,7 +675,8 @@ namespace Kil0bitSystemMonitor
         {
             try
             {
-                // First, while the writer thread and the window still exist.
+                // WPF has already closed MicaPad by now, so the window-state recording relies on Quit or
+                // SessionEnding having called PrepareForExit first. This flush is the writer-thread drain.
                 FlushPad();
                 m_padMaintenanceTimer?.Stop();
                 s_pad?.Dispose();
@@ -694,6 +704,7 @@ namespace Kil0bitSystemMonitor
             base.OnExit(e);
         }
 
+        /// <summary>Records whether MicaPad is showing before shutdown closes it, then shuts the application down.</summary>
         public static void Quit()
         {
             // Record whether MicaPad is showing before shutdown closes it, so it reopens at next login.

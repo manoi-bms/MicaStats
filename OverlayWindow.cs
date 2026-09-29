@@ -168,8 +168,8 @@ namespace Kil0bitSystemMonitor
                 _hWnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW, "Kil0bitOverlayWndClass_Main", "MicaStats Overlay", WS_POPUP, x, y, 300, 32, IntPtr.Zero, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
                 if (_hWnd == IntPtr.Zero) throw new Exception("Failed to create window");
 
-                // A second launch with --pad (Explorer's Open with) arrives as WM_COPYDATA, even when this instance is elevated.
-                Services.Pad.PadIpc.AllowFromLowerIntegrity(_hWnd);
+                // A second launch with --pad (Explorer's Open with) arrives as WM_COPYDATA; when this instance is elevated the filter must admit the unelevated sender.
+                Services.Pad.PadIpc.AllowFromLowerIntegrityWhenElevated(_hWnd);
 
                 if (_hIcon != IntPtr.Zero) { SendMessage(_hWnd, WM_SETICON, (IntPtr)ICON_BIG, _hIcon); SendMessage(_hWnd, WM_SETICON, (IntPtr)ICON_SMALL, _hIcon); }
 

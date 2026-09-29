@@ -221,6 +221,30 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void History_lists_versions_and_restoring_one_can_be_undone() => WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Insert(0, "first draft");
+            env.Clock.Advance(61);
+            env.Workspace.Tick();                       // a pause snapshot of "first draft"
+            window.Editor.Document.Text = "rewritten";
+
+            Assert.True(window.HandleShortcut(Key.H, ModifierKeys.Control | ModifierKeys.Shift));
+            Assert.Equal(Visibility.Visible, window.HistoryPanel.Visibility);
+            var row = Assert.Single(window.HistoryPanel.Rows);
+
+            window.HistoryPanel.Versions.SelectedItem = row;
+            Assert.Equal(Visibility.Visible, window.PreviewPanel.Visibility);
+            Assert.Equal("first draft", window.PreviewEditor.Text);
+
+            window.RestoreButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Equal("first draft", window.Editor.Document.Text);
+            Assert.Equal(Visibility.Collapsed, window.PreviewPanel.Visibility);
+
+            window.Editor.Undo();
+            Assert.Equal("rewritten", window.Editor.Document.Text);
+        });
+
+        [Fact]
         public void The_micapad_icon_is_a_seven_size_ico()
         {
             byte[] ico = File.ReadAllBytes(Path.Combine(RepoRoot(), "Assets", "micapad.ico"));

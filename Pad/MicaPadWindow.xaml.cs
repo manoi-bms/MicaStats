@@ -26,6 +26,7 @@ using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Pen = System.Windows.Media.Pen;
+using Clipboard = System.Windows.Clipboard;
 
 namespace Kil0bitSystemMonitor.Pad
 {
@@ -67,6 +68,8 @@ namespace Kil0bitSystemMonitor.Pad
 
             ConfigureEditor();
             FindBar.Attach(Editor);
+            HistoryPanel.VersionSelected += OnVersionSelected;
+            HistoryPanel.CloseRequested += CloseHistory;
             FindBar.ReplacingAll += () =>
             {
                 if (_shown != null) _workspace.SnapshotNow(_shown, SnapshotReason.BeforeReplace);
@@ -206,6 +209,7 @@ namespace Kil0bitSystemMonitor.Pad
             else if (modifiers == ModifierKeys.Shift && key == Key.F3) FindBar.FindPrevious();
             else if (ctrl && key == Key.G) ShowGoToLine();
             else if (modifiers == ModifierKeys.None && key == Key.Escape && FindBar.IsOpen) FindBar.Close();
+            else if (ctrlShift && key == Key.H) ToggleHistory();
             else return false;
             return true;
         }
@@ -300,6 +304,7 @@ namespace Kil0bitSystemMonitor.Pad
             UpdateFileText();
             if (_infoNote != null && !ReferenceEquals(_infoNote, note)) HideInfo();
             CheckDisk(note);
+            if (HistoryPanel.Visibility == Visibility.Visible) ShowHistory();
         }
 
         private void CloseActiveTab()
@@ -711,6 +716,126 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnGoToLineLostFocus(object sender, KeyboardFocusChangedEventArgs e) =>
             GoToLineBox.Visibility = Visibility.Collapsed;
 
+        // ---- history and closed notes -------------------------------------------------------
+
+        private List<ClosedNoteRow> _closedRows = new();
+
+        private void OnHistoryClick(object sender, RoutedEventArgs e) => ToggleHistory();
+
+        private void ToggleHistory()
+        {
+            if (HistoryPanel.Visibility == Visibility.Visible) CloseHistory();
+            else ShowHistory();
+        }
+
+        private void ShowHistory()
+        {
+            if (_shown == null) return;
+            EndPreview();
+            // A pause or forced snapshot may still be queued; list what is really on disk.
+            _workspace.FlushWrites(TimeSpan.FromSeconds(1));
+            HistoryPanel.Show(_workspace.History(_shown), DateTime.Now,
+                              Editor.Document.TextLength > HistoryPolicy.MaxSnapshotChars);
+        }
+
+        private void CloseHistory()
+        {
+            EndPreview();
+            HistoryPanel.Visibility = Visibility.Collapsed;
+            Editor.Focus();
+        }
+
+        private void OnVersionSelected(SnapshotInfo snapshot)
+        {
+            string? text = _workspace.ReadSnapshot(snapshot);
+            if (text == null)
+            {
+                ShowInfo("That version could not be read.", _shown);
+                return;
+            }
+
+            PreviewEditor.FontFamily = Editor.FontFamily;
+            PreviewEditor.FontSize = Editor.FontSize;
+            PreviewEditor.WordWrap = Editor.WordWrap;
+            PreviewEditor.Text = text;
+            PreviewText.Text = "Viewing " + HistoryRows.When(snapshot.Stamp, DateTime.Now);
+            PreviewPanel.Visibility = Visibility.Visible;
+        }
+
+        private void EndPreview()
+        {
+            PreviewPanel.Visibility = Visibility.Collapsed;
+            PreviewEditor.Text = "";
+            HistoryPanel.ClearSelection();
+        }
+
+        private void OnPreviewBackClick(object sender, RoutedEventArgs e)
+        {
+            EndPreview();
+            Editor.Focus();
+        }
+
+        private void OnPreviewCopyClick(object sender, RoutedEventArgs e)
+        {
+            if (PreviewEditor.Text.Length == 0) return;
+            try
+            {
+                Clipboard.SetText(PreviewEditor.Text);
+            }
+            catch (System.Runtime.InteropServices.ExternalException ex)
+            {
+                DiagnosticsLog.Warn("pad", "Copying a version failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>Snapshots the current text, then puts the old version in as one undoable edit.</summary>
+        private void OnPreviewRestoreClick(object sender, RoutedEventArgs e)
+        {
+            if (_shown == null || PreviewPanel.Visibility != Visibility.Visible) return;
+
+            string text = PreviewEditor.Text;
+            _workspace.SnapshotNow(_shown, SnapshotReason.BeforeReplace);
+            ReplaceText(_shown, text, markUnsaved: true);
+            ShowHistory();
+            Editor.Focus();
+        }
+
+        private void OnClosedNotesClick(object sender, RoutedEventArgs e)
+        {
+            _closedRows = new List<ClosedNoteRow>(HistoryRows.Closed(_workspace.ClosedNotes(), DateTime.Now));
+            ClosedSearch.Text = "";
+            FilterClosed();
+            ClosedPopup.IsOpen = true;
+            ClosedSearch.Focus();
+        }
+
+        private void OnClosedSearchChanged(object sender, TextChangedEventArgs e) => FilterClosed();
+
+        private void FilterClosed()
+        {
+            string query = ClosedSearch.Text.Trim();
+            var rows = _closedRows.FindAll(r => r.Matches(query));
+            ClosedList.ItemsSource = rows;
+            ClosedEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void OnClosedReopenClick(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.Tag is not ClosedNoteRow row) return;
+            ClosedPopup.IsOpen = false;
+            var note = _workspace.Reopen(row.Id);
+            if (note != null) ShowNote(note);
+        }
+
+        private void OnClosedDeleteClick(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.Tag is not ClosedNoteRow row) return;
+            if (!_workspace.DeleteClosed(row.Id))
+                ShowInfo("That note could not be moved to the Recycle Bin, so it was kept.", null);
+            _closedRows.Remove(row);
+            FilterClosed();
+        }
+
         // ---- keys, menu, settings -----------------------------------------------------------
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -738,6 +863,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false)));
             menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true)));
             menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine));
+            menu.Items.Add(Item("History", "Ctrl+Shift+H", ToggleHistory));
             menu.Items.Add(new Separator());
             menu.Items.Add(Check("Word wrap", "Alt+Z", _config.PadWordWrap, ToggleWordWrap));
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,

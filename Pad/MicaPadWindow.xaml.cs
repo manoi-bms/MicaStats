@@ -80,7 +80,9 @@ namespace Kil0bitSystemMonitor.Pad
             _config.PropertyChanged += OnConfigChanged;
             Editor.TextArea.Caret.PositionChanged += (s, e) => UpdateCaretText();
 
-            _tick = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
+            // Normal, not Background: sustained typing keeps input work queued, and a tick below it
+            // could starve past the five-second autosave promise.
+            _tick = new DispatcherTimer(DispatcherPriority.Normal) { Interval = TimeSpan.FromMilliseconds(250) };
             _tick.Tick += (s, e) =>
             {
                 _workspace.Tick();
@@ -107,8 +109,17 @@ namespace Kil0bitSystemMonitor.Pad
             if (window == null)
             {
                 window = new MicaPadWindow(workspace, config) { OpenSettingsRequested = openSettings };
+                try
+                {
+                    window.LoadSession();
+                }
+                catch
+                {
+                    // Cached only once built: a half-loaded window must not be the one the next show reuses.
+                    window.CloseForExit();
+                    throw;
+                }
                 s_current = window;
-                window.LoadSession();
             }
 
             workspace.Session.WindowOpen = true;
@@ -419,6 +430,17 @@ namespace Kil0bitSystemMonitor.Pad
         private Action? _infoSecondary;
         private OpenNote? _infoNote;
 
+        /// <summary>
+        /// Which disk question the info bar is asking about <see cref="_infoNote"/>, or null for any
+        /// other message. Lets the check on activation skip a question already showing without
+        /// letting an unrelated message (lossy text, a failed save) hide the question.
+        /// </summary>
+        private string? _infoKind;
+
+        private const string InfoChangedOnDisk = "changed-on-disk";
+        private const string InfoFileGone = "file-gone";
+        private const string InfoUnreachable = "unreachable";
+
         /// <summary>Opens a file in a tab, or reports in the info bar why it was not opened.</summary>
         public void OpenPath(string path)
         {
@@ -461,6 +483,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             InfoText.Text = message;
             _infoNote = about;
+            _infoKind = null;   // the disk questions set it after calling this
             _infoPrimary = primary;
             _infoSecondary = secondary;
             InfoPrimary.Content = primaryLabel;
@@ -477,6 +500,7 @@ namespace Kil0bitSystemMonitor.Pad
             _infoPrimary = null;
             _infoSecondary = null;
             _infoNote = null;
+            _infoKind = null;
         }
 
         private void OnInfoPrimaryClick(object sender, RoutedEventArgs e)
@@ -498,29 +522,59 @@ namespace Kil0bitSystemMonitor.Pad
         private void CheckDisk(OpenNote note)
         {
             var action = _workspace.CheckDisk(note);
-            if (action == DiskChangeAction.None) return;
+            if (action == DiskChangeAction.None)
+            {
+                HideDiskQuestion(note);   // the file is back as it was: a question about it no longer applies
+                return;
+            }
             if (action == DiskChangeAction.ReloadSilently)
             {
                 Reload(note);
                 return;
             }
 
-            // The same question is already showing: do not flicker it on every activation.
-            if (InfoBar.Visibility == Visibility.Visible && ReferenceEquals(_infoNote, note)) return;
+            string? path = note.Meta.SourcePath;
+            string name = Path.GetFileName(path) ?? note.Title;
+            string kind = action == DiskChangeAction.AskReloadOrKeep ? InfoChangedOnDisk
+                : IsFolderMissing(path) ? InfoUnreachable
+                : InfoFileGone;
 
-            string name = Path.GetFileName(note.Meta.SourcePath) ?? note.Title;
-            if (action == DiskChangeAction.AskReloadOrKeep)
+            // The same question is already showing: do not flicker it on every activation. Only
+            // the same one: a lossy or failed-save message for this note must not hide it.
+            if (InfoBar.Visibility == Visibility.Visible && ReferenceEquals(_infoNote, note) && _infoKind == kind) return;
+
+            if (kind == InfoChangedOnDisk)
             {
                 ShowInfo(name + " changed on disk.", note,
                     "Reload from disk", () => Reload(note),
                     "Keep mine", () => _workspace.KeepMine(note));
             }
-            else
+            else if (kind == InfoFileGone)
             {
                 ShowInfo(name + " no longer exists.", note,
                     "Save As…", () => SaveAs(note),
                     "Keep as note", () => { _workspace.DetachFromFile(note); UpdateFileText(); });
             }
+            else
+            {
+                // Its folder is missing too: far more likely an offline share or an unplugged drive
+                // than a deletion. Keep as note would detach a file that still exists, so nothing is offered.
+                ShowInfo(name + " cannot be reached right now.", note);
+            }
+            _infoKind = kind;
+        }
+
+        /// <summary>True when the file's folder is missing as well as the file.</summary>
+        private static bool IsFolderMissing(string? path)
+        {
+            string? folder = path == null ? null : Path.GetDirectoryName(path);
+            return !string.IsNullOrEmpty(folder) && !Directory.Exists(folder);
+        }
+
+        /// <summary>Hides a disk question about <paramref name="note"/> that no longer applies.</summary>
+        private void HideDiskQuestion(OpenNote note)
+        {
+            if (_infoKind != null && ReferenceEquals(_infoNote, note)) HideInfo();
         }
 
         private void Reload(OpenNote note)
@@ -531,13 +585,23 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 ShowInfo(status == OpenFileStatus.EditsWouldBeLost
                     ? name + " changed on disk, but this note is too large to keep a copy of your version, so it was not reloaded. Use Save As to keep your version first."
-                    : "Could not reload " + name + " (" + status + ").", note);
+                    : "Could not reload " + name + ": " + ReloadFailureReason(status) + ".", note);
                 return;
             }
             ReplaceText(note, text, markUnsaved: false);
             UpdateFileText();
+            HideDiskQuestion(note);   // a silent reload answers any question still showing about the file
             if (lossy) ShowLossyWarning(note);
         }
+
+        /// <summary>Why a reload failed, in words rather than an enum name.</summary>
+        private static string ReloadFailureReason(OpenFileStatus status) => status switch
+        {
+            OpenFileStatus.NotFound => "the file is gone",
+            OpenFileStatus.TooLarge => "it is now larger than 50 MB",
+            OpenFileStatus.Binary => "it no longer looks like text",
+            _ => "it could not be read",
+        };
 
         /// <summary>
         /// Warns that the file held bytes its encoding could not decode: they show as the
@@ -563,7 +627,9 @@ namespace Kil0bitSystemMonitor.Pad
             if (_shown != null) Save(_shown);
         }
 
-        private void Save(OpenNote note) => HandleSaveResult(note, _workspace.SaveToSource(note), () => Save(note));
+        private void Save(OpenNote note, bool overwriteExternalChanges = false) =>
+            HandleSaveResult(note, _workspace.SaveToSource(note, overwriteExternalChanges),
+                             () => Save(note, overwriteExternalChanges));
 
         private void SaveAs(OpenNote note)
         {
@@ -578,7 +644,9 @@ namespace Kil0bitSystemMonitor.Pad
                     : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
             };
             if (dialog.ShowDialog(this) != true) return;
-            SaveAsPath(note, dialog.FileName);
+            string? path = dialog.FileName;
+            if (string.IsNullOrEmpty(path)) return;
+            SaveAsPath(note, path);
         }
 
         private void SaveAsPath(OpenNote note, string path) =>
@@ -606,6 +674,13 @@ namespace Kil0bitSystemMonitor.Pad
                             retry();
                         },
                         "Cancel", () => { });
+                    break;
+                case SaveToFileStatus.ChangedOnDisk:
+                    ShowInfo((Path.GetFileName(note.Meta.SourcePath) ?? note.Title) + " changed on disk since it was opened.",
+                        note,
+                        "Overwrite", () => Save(note, overwriteExternalChanges: true),
+                        "Reload from disk", () => Reload(note));
+                    _infoKind = InfoChangedOnDisk;
                     break;
                 default:
                     ShowInfo("Could not save: " + result.Error + " Your text is kept here.", note, "Save As…", () => SaveAs(note));
@@ -835,7 +910,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 // Kept, and still listed: close the popup so the explanation is not hidden behind it.
                 ClosedPopup.IsOpen = false;
-                ShowInfo("That note could not be moved to the Recycle Bin, so it was kept.", null);
+                ShowInfo("That note could not be deleted right now, so it was kept.", null);
                 return;
             }
 

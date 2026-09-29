@@ -21,6 +21,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
         Lossy,
         /// <summary>The write failed; <see cref="SaveToFileResult.Error"/> says why. The shadow copy keeps the edits.</summary>
         Failed,
+        /// <summary>
+        /// Another program changed the file since it was opened or last saved; nothing was written.
+        /// Checked on every Ctrl+S, because the check on activation misses a change made while
+        /// MicaPad kept the focus. Saving again with <c>overwriteExternalChanges</c> writes anyway.
+        /// </summary>
+        ChangedOnDisk,
     }
 
     /// <summary>The result of a save to a real file, with the reason when it failed.</summary>
@@ -86,21 +92,47 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// Ctrl+S: writes the note to its file in the note's encoding, atomically. Checks first that
-        /// the encoding can hold every character, and snapshots the text being saved.
+        /// the encoding can hold every character and that no other program changed the file since
+        /// it was opened or last saved (<see cref="SaveToFileStatus.ChangedOnDisk"/>), then
+        /// snapshots the text being saved.
         /// </summary>
-        public SaveToFileResult SaveToSource(OpenNote note)
+        /// <param name="note">The file-backed note to write.</param>
+        /// <param name="overwriteExternalChanges">
+        /// The user chose Overwrite: write even though the file changed. The outside version is
+        /// kept as a snapshot first, so it can still be restored from history.
+        /// </param>
+        public SaveToFileResult SaveToSource(OpenNote note, bool overwriteExternalChanges = false)
         {
             var meta = note.Meta;
             if (!meta.IsFileBacked) return new SaveToFileResult(SaveToFileStatus.NeedsSaveAs);
 
             string text = note.TextProvider();
-            if (!TextFileCodec.CanEncodeLosslessly(text, meta.Encoding, meta.CodePage))
-                return new SaveToFileResult(SaveToFileStatus.Lossy);
+            byte[] bytes;
+            try
+            {
+                if (!TextFileCodec.CanEncodeLosslessly(text, meta.Encoding, meta.CodePage))
+                    return new SaveToFileResult(SaveToFileStatus.Lossy);
+                bytes = TextFileCodec.Encode(text, meta.Encoding, meta.CodePage);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+            {
+                // A code page this PC does not have (a meta.json edited by hand or corrupt).
+                return new SaveToFileResult(SaveToFileStatus.Failed,
+                    TextFileCodec.Describe(meta.Encoding, meta.CodePage) + " is not available on this PC. Choose another encoding in the status bar.");
+            }
+
+            var recorded = meta.SourceStamp;
+            var current = SourceStamp.Read(meta.SourcePath!);
+            if (recorded != null && current != null && recorded.Value != current.Value)
+            {
+                if (!overwriteExternalChanges) return new SaveToFileResult(SaveToFileStatus.ChangedOnDisk);
+                KeepOutsideVersion(note);
+            }
 
             SnapshotNow(note, SnapshotReason.SavedToFile);
             try
             {
-                AtomicFile.WriteSource(meta.SourcePath!, TextFileCodec.Encode(text, meta.Encoding, meta.CodePage));
+                AtomicFile.WriteSource(meta.SourcePath!, bytes);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -141,6 +173,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
             if (oldPath == null) meta.LineEnding = TextFileCodec.DetectLineEnding(note.TextProvider());
             meta.SourcePath = full;
+            // The Save dialog already confirmed replacing whatever is at the new path, and the old
+            // file's stamp says nothing about it: no changed-on-disk question here.
+            meta.SourceStamp = null;
             note.HasUnsavedEdits = true;
             if (!meta.TitleIsCustom) note.Title = NoteTitle.ForFile(full);
 
@@ -237,6 +272,32 @@ namespace Kil0bitSystemMonitor.Services.Pad
             meta.SourceStamp = null;
             note.HasUnsavedEdits = false;
             EnqueueSave(note);           // now a scratch note, so its text is written
+        }
+
+        /// <summary>
+        /// Before Overwrite replaces a file another program changed, queues the file's current
+        /// text as a snapshot of the note, so the outside version can still be restored. Recorded
+        /// as the newest snapshot's hash, so the note's own text is snapshotted after it.
+        /// </summary>
+        private void KeepOutsideVersion(OpenNote note)
+        {
+            string path = note.Meta.SourcePath!;
+            var outside = ReadSource(path, out var status);
+            if (outside == null)
+            {
+                _warn("The outside version of " + path + " could not be kept before overwriting it (" + status + ")");
+                return;
+            }
+            if (outside.Text.Length > HistoryPolicy.MaxSnapshotChars)
+            {
+                _warn("The outside version of " + path + " is too large to keep as a version; it was overwritten");
+                return;
+            }
+
+            DateTime now = _clock();
+            EnqueueSnapshot(note.Id, outside.Text, now);
+            note.Meta.LastSnapshotHash = HistoryPolicy.Hash(outside.Text);
+            note.Meta.LastSnapshotUtc = now;
         }
 
         private static bool SamePath(string? a, string b) =>

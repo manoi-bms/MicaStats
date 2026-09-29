@@ -14,6 +14,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// after 1, 2, 5, then every 10 seconds; the error is reported through <see cref="Completed"/>
     /// each time, and other keys keep flowing meanwhile.
     /// </para>
+    ///
+    /// <para>
+    /// Every timing uses <see cref="Environment.TickCount64"/>, not the wall clock: a clock
+    /// change (a time sync, the user setting the date) must neither hold back a retry nor, on a
+    /// large backwards jump, hand <see cref="Monitor.Wait(object, int)"/> a timeout it rejects.
+    /// </para>
     /// </summary>
     public sealed class AutosaveWriter : IDisposable
     {
@@ -22,7 +28,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
             public string Key = "";
             public Action Work = () => { };
             public int Failures;
-            public DateTime RetryAtUtc;
+
+            /// <summary>
+            /// <see cref="Environment.TickCount64"/> at which the work may run. 0, the default,
+            /// means now: TickCount64 counts up from boot and is never negative.
+            /// </summary>
+            public long RetryAtMs;
         }
 
         private readonly object _gate = new();
@@ -91,17 +102,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// </summary>
         public bool FlushAll(TimeSpan timeout)
         {
-            DateTime deadline = DateTime.UtcNow + timeout;
+            long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
             lock (_gate)
             {
-                foreach (var entry in _queue) entry.RetryAtUtc = DateTime.MinValue;
+                foreach (var entry in _queue) entry.RetryAtMs = 0;
                 Monitor.PulseAll(_gate);
 
                 while (_queue.Count > 0 || _busy)
                 {
-                    TimeSpan left = deadline - DateTime.UtcNow;
-                    if (left <= TimeSpan.Zero) return false;
-                    Monitor.Wait(_gate, left);
+                    long left = deadline - Environment.TickCount64;
+                    if (left <= 0) return false;
+                    Monitor.Wait(_gate, WaitMs(left));
                 }
                 return true;
             }
@@ -129,13 +140,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     {
                         if (_stopping) return;
 
-                        DateTime now = DateTime.UtcNow;
+                        long now = Environment.TickCount64;
                         LinkedListNode<Entry>? ready = null;
-                        DateTime earliest = DateTime.MaxValue;
+                        long earliest = long.MaxValue;
                         for (var node = _queue.First; node != null; node = node.Next)
                         {
-                            if (node.Value.RetryAtUtc <= now) { ready = node; break; }
-                            if (node.Value.RetryAtUtc < earliest) earliest = node.Value.RetryAtUtc;
+                            if (node.Value.RetryAtMs <= now) { ready = node; break; }
+                            if (node.Value.RetryAtMs < earliest) earliest = node.Value.RetryAtMs;
                         }
 
                         if (ready != null)
@@ -147,8 +158,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
                             break;
                         }
 
-                        if (earliest == DateTime.MaxValue) Monitor.Wait(_gate);
-                        else Monitor.Wait(_gate, earliest - now);
+                        if (earliest == long.MaxValue) Monitor.Wait(_gate);
+                        else Monitor.Wait(_gate, WaitMs(earliest - now));
                     }
                 }
 
@@ -172,13 +183,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     if (error != null && !_stopping)
                     {
                         entry.Failures++;
-                        entry.RetryAtUtc = DateTime.UtcNow + _backoff(entry.Failures);
+                        entry.RetryAtMs = Environment.TickCount64 + (long)_backoff(entry.Failures).TotalMilliseconds;
 
                         if (_byKey.TryGetValue(entry.Key, out var newer))
                         {
                             // Newer work arrived while this ran: it supersedes the failed work but inherits the backoff.
                             newer.Value.Failures = entry.Failures;
-                            newer.Value.RetryAtUtc = entry.RetryAtUtc;
+                            newer.Value.RetryAtMs = entry.RetryAtMs;
                         }
                         else
                         {
@@ -189,5 +200,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 }
             }
         }
+
+        /// <summary>A millisecond span as a <see cref="Monitor.Wait(object, int)"/> timeout: never negative, never past int.MaxValue.</summary>
+        private static int WaitMs(long span) => (int)Math.Min(int.MaxValue, Math.Max(0, span));
     }
 }

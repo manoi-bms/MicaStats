@@ -101,6 +101,32 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Text_that_exists_but_cannot_be_read_is_not_replaced_by_an_older_snapshot()
+        {
+            var meta = Note("newest");
+            _store.WriteSnapshot(meta.Id, "older", new DateTime(2026, 9, 29, 10, 0, 0));
+
+            using (new FileStream(_store.CurrentPath(meta.Id), FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.False(_store.TryLoadText(meta.Id, out string? text));
+                Assert.Null(text);
+                Assert.Null(_store.LoadText(meta.Id));
+            }
+
+            Assert.True(_store.TryLoadText(meta.Id, out string? after));
+            Assert.Equal("newest", after);
+        }
+
+        [Fact]
+        public void A_note_with_no_text_anywhere_loads_as_null_rather_than_unreadable()
+        {
+            var meta = Note(text: null);
+
+            Assert.True(_store.TryLoadText(meta.Id, out string? text));
+            Assert.Null(text);
+        }
+
+        [Fact]
         public void Corrupt_meta_is_rebuilt_from_the_text()
         {
             var meta = Note("First line\nmore");

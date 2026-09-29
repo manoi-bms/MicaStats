@@ -162,6 +162,95 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Ctrl_s_after_an_outside_change_asks_and_overwrite_writes() => WithWindow((window, env, config) =>
+        {
+            string path = env.FileOf("race.txt");
+            File.WriteAllText(path, "base");
+            window.OpenPath(path);
+            window.Editor.Document.Insert(0, "mine ");
+            File.WriteAllText(path, "theirs, longer");
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+
+            Assert.True(window.HandleShortcut(Key.S, ModifierKeys.Control));
+
+            Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
+            Assert.Equal("race.txt changed on disk since it was opened.", window.InfoText.Text);
+            Assert.Equal("Overwrite", window.InfoPrimary.Content);
+            Assert.Equal("Reload from disk", window.InfoSecondary.Content);
+            Assert.Equal("theirs, longer", File.ReadAllText(path));
+
+            window.CheckShownNoteOnDisk();   // activation: the same question stays, Overwrite included
+            Assert.Equal("Overwrite", window.InfoPrimary.Content);
+
+            window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+            Assert.Equal("mine base", File.ReadAllText(path));
+            Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+            Assert.False(env.Workspace.Active!.HasUnsavedEdits);
+        });
+
+        [Fact]
+        public void Another_message_for_the_same_note_does_not_hide_the_disk_question() => WithWindow((window, env, config) =>
+        {
+            string path = env.FileOf("broken.txt");
+            File.WriteAllBytes(path, new byte[] { 0xEF, 0xBB, 0xBF, (byte)'a', 0xFF, (byte)'b' });
+            window.OpenPath(path);
+            Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);          // the undecodable-bytes warning
+            Assert.Equal(Visibility.Collapsed, window.InfoPrimary.Visibility);
+
+            window.Editor.Document.Insert(0, "mine ");
+            File.WriteAllText(path, "theirs, longer");
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+            window.CheckShownNoteOnDisk();
+
+            Assert.Equal("broken.txt changed on disk.", window.InfoText.Text);
+            Assert.Equal("Reload from disk", window.InfoPrimary.Content);
+        });
+
+        [Fact]
+        public void A_file_whose_folder_is_gone_too_is_unreachable_and_not_offered_keep_as_note() => WithWindow((window, env, config) =>
+        {
+            string folder = env.FileOf("share");
+            Directory.CreateDirectory(folder);
+            string path = Path.Combine(folder, "remote.txt");
+            File.WriteAllText(path, "text");
+            window.OpenPath(path);
+            Directory.Delete(folder, recursive: true);
+
+            window.CheckShownNoteOnDisk();
+
+            Assert.Equal("remote.txt cannot be reached right now.", window.InfoText.Text);
+            Assert.Equal(Visibility.Collapsed, window.InfoPrimary.Visibility);
+            Assert.Equal(Visibility.Collapsed, window.InfoSecondary.Visibility);
+            Assert.True(env.Workspace.Active!.Meta.IsFileBacked);
+
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(path, "text");
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+            window.CheckShownNoteOnDisk();   // back, and changed: reloaded without edits of ours, notice gone
+
+            Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+        });
+
+        [Fact]
+        public void A_failed_reload_says_why_in_words() => WithWindow((window, env, config) =>
+        {
+            string path = env.FileOf("vanishing.txt");
+            File.WriteAllText(path, "base");
+            window.OpenPath(path);
+            window.Editor.Document.Insert(0, "mine ");
+            File.WriteAllText(path, "theirs, longer");
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+            window.CheckShownNoteOnDisk();
+            File.Delete(path);
+
+            window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));   // Reload from disk
+
+            Assert.Equal("Could not reload vanishing.txt: the file is gone.", window.InfoText.Text);
+            Assert.Equal("mine base", window.Editor.Document.Text);
+        });
+
+        [Fact]
         public void Find_counts_matches_f3_walks_them_and_replace_all_is_one_undo_step() => WithWindow((window, env, config) =>
         {
             window.Editor.Document.Text = "cat concat cat";

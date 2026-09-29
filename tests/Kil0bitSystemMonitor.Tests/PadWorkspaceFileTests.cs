@@ -284,6 +284,86 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("keep me", _env.DiskText(note));
         }
 
+        [Fact]
+        public void Ctrl_s_after_an_outside_change_is_refused_and_the_file_keeps_the_outside_text()
+        {
+            string path = WriteFile("shared.txt", Encoding.UTF8.GetBytes("base"));
+            var note = Ws.OpenFile(path).Note!;
+            PadTestEnv.Type(Ws, note, "mine");
+            ChangeFile(path, "theirs");
+
+            var result = Ws.SaveToSource(note);
+            _env.Flush();
+
+            Assert.Equal(SaveToFileStatus.ChangedOnDisk, result.Status);
+            Assert.Equal(Encoding.UTF8.GetBytes("theirs"), File.ReadAllBytes(path));
+            Assert.True(note.HasUnsavedEdits);
+            Assert.Empty(_env.Store.ListSnapshots(note.Id));
+        }
+
+        [Fact]
+        public void A_clean_note_is_not_saved_over_an_outside_change_either()
+        {
+            string path = WriteFile("log.txt", Encoding.UTF8.GetBytes("line 1"));
+            var note = Ws.OpenFile(path).Note!;
+            ChangeFile(path, "line 1\r\nline 2");
+
+            Assert.Equal(SaveToFileStatus.ChangedOnDisk, Ws.SaveToSource(note).Status);
+            Assert.Equal(Encoding.UTF8.GetBytes("line 1\r\nline 2"), File.ReadAllBytes(path));
+        }
+
+        [Fact]
+        public void Overwrite_writes_the_note_and_keeps_the_outside_version_in_history()
+        {
+            string path = WriteFile("shared.txt", Encoding.UTF8.GetBytes("base"));
+            var note = Ws.OpenFile(path).Note!;
+            PadTestEnv.Type(Ws, note, "mine");
+            ChangeFile(path, "theirs");
+
+            var result = Ws.SaveToSource(note, overwriteExternalChanges: true);
+            _env.Flush();
+
+            Assert.Equal(SaveToFileStatus.Saved, result.Status);
+            Assert.Equal(Encoding.UTF8.GetBytes("mine"), File.ReadAllBytes(path));
+            Assert.False(note.HasUnsavedEdits);
+            var versions = _env.Store.ListSnapshots(note.Id);
+            Assert.Equal(new[] { "mine", "theirs" }, versions.Select(v => _env.Store.ReadSnapshot(v)));
+            Assert.Equal(SaveToFileStatus.Saved, Ws.SaveToSource(note).Status);   // the file is ours again
+        }
+
+        [Fact]
+        public void Save_as_onto_an_existing_file_is_not_asked_about_outside_changes()
+        {
+            string path = WriteFile("original.txt", Encoding.UTF8.GetBytes("base"));
+            var note = Ws.OpenFile(path).Note!;
+            PadTestEnv.Type(Ws, note, "mine");
+            ChangeFile(path, "theirs");                                   // Ctrl+S would now ask
+            string other = WriteFile("other.txt", Encoding.UTF8.GetBytes("something else"));
+
+            Assert.Equal(SaveToFileStatus.Saved, Ws.SaveAs(note, other).Status);
+            Assert.Equal(Encoding.UTF8.GetBytes("mine"), File.ReadAllBytes(other));
+            Assert.Equal(Encoding.UTF8.GetBytes("theirs"), File.ReadAllBytes(path));
+
+            string fresh = _env.FileOf("fresh-copy.txt");
+            PadTestEnv.Type(Ws, note, "mine, again");
+            Assert.Equal(SaveToFileStatus.Saved, Ws.SaveAs(note, fresh).Status);
+            Assert.Equal(Encoding.UTF8.GetBytes("mine, again"), File.ReadAllBytes(fresh));
+        }
+
+        [Fact]
+        public void A_code_page_this_pc_does_not_have_fails_the_save_without_throwing()
+        {
+            string path = WriteFile("odd.txt", Encoding.UTF8.GetBytes("plain"));
+            var note = Ws.OpenFile(path).Note!;
+            Ws.SetEncoding(note, PadEncoding.Ansi, 99999);
+
+            var result = Ws.SaveToSource(note);
+
+            Assert.Equal(SaveToFileStatus.Failed, result.Status);
+            Assert.Contains("99999", result.Error);
+            Assert.Equal(Encoding.UTF8.GetBytes("plain"), File.ReadAllBytes(path));
+        }
+
         [Theory]
         [InlineData("missing.txt", OpenFileStatus.NotFound)]
         [InlineData("binary.bin", OpenFileStatus.Binary)]

@@ -115,26 +115,54 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// The note's text, most trusted source first: a completed write not yet swapped in,
-        /// <c>current.txt</c>, then the newest snapshot. Null when none exists.
+        /// <c>current.txt</c>, then the newest snapshot.
+        ///
+        /// <para>
+        /// True with the text, or with null when the note has no text anywhere (no
+        /// <c>current.txt</c>, no completed write, no snapshot). False when the text exists but
+        /// cannot be read right now (locked, no permission): the caller must then leave the note
+        /// alone. The snapshot is used only when <c>current.txt</c> truly does not exist, because a
+        /// snapshot may be older; standing it in for a file that is merely locked would let the
+        /// next save overwrite the newer text with it.
+        /// </para>
         /// </summary>
-        public string? LoadText(string id)
+        public bool TryLoadText(string id, out string? text)
         {
+            text = null;
             lock (LockFor(id))
             {
                 try
                 {
-                    string? text = AtomicFile.ReadText(CurrentPath(id));
-                    if (text != null) return text;
+                    text = AtomicFile.ReadText(CurrentPath(id));
+                    if (text != null) return true;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     _warn("Could not read the text of note " + id + ": " + ex.Message);
+                    return false;
                 }
 
-                var newest = ListSnapshots(id).FirstOrDefault();
-                return newest == null ? null : ReadSnapshot(newest);
+                try
+                {
+                    var newest = ListSnapshots(id).FirstOrDefault();
+                    if (newest == null) return true;
+                    text = ReadSnapshot(newest);
+                    return text != null;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _warn("Could not list the versions of note " + id + ": " + ex.Message);
+                    return false;
+                }
             }
         }
+
+        /// <summary>
+        /// The note's text as <see cref="TryLoadText"/> finds it, or null when there is none or it
+        /// cannot be read. For readers only: a caller that may write the text back must use
+        /// <see cref="TryLoadText"/>, which tells an unreadable note from an empty one.
+        /// </summary>
+        public string? LoadText(string id) => TryLoadText(id, out string? text) ? text : null;
 
         /// <summary>
         /// The note's metadata, rebuilt from its text when <c>meta.json</c> is missing or corrupt.

@@ -80,6 +80,19 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private readonly int _ansiCodePage;
         private readonly Dictionary<string, OpenNote> _byId = new();
         private readonly Dictionary<string, NoteMeta> _recentlyClosed = new();
+
+        /// <summary>
+        /// Open notes whose text could not be read at <see cref="Restore"/>. Not shown, never
+        /// written, but kept in the session so they come back once they can be read.
+        /// </summary>
+        private readonly List<string> _unreadable = new();
+
+        /// <summary>When each write failure was last logged (<see cref="Environment.TickCount64"/>), per log key.</summary>
+        private readonly ConcurrentDictionary<string, long> _failureLoggedAt = new();
+
+        /// <summary>A stuck write retries every 10 s; the log hears about it at most this often.</summary>
+        private const long FailureLogIntervalMs = 60_000;
+
         private bool _restored;
 
         /// <summary>A save handed to the writer: the meta copy, text (null: meta only) and store version it was queued with.</summary>
@@ -121,6 +134,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// Loads the saved session's notes into <see cref="Open"/>. Only the first call does
         /// anything, so a window recreated later finds the same notes without reading them again.
+        /// A note whose text cannot be read (a locked <c>current.txt</c>, say) is skipped and its
+        /// folder left untouched; it stays in the session, so it returns at the next launch.
         /// </summary>
         public IReadOnlyList<OpenNote> Restore()
         {
@@ -130,7 +145,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             Session = _store.LoadSession();
             foreach (string id in Session.OpenNoteIds.ToList())
             {
-                if (_byId.ContainsKey(id)) continue;
+                if (_byId.ContainsKey(id) || _unreadable.Contains(id)) continue;
                 var meta = _store.LoadMeta(id);
                 if (meta == null)
                 {
@@ -138,7 +153,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     continue;
                 }
                 if (meta.IsClosed) continue;
-                AddOpen(meta, LoadInitialText(meta), Open.Count);
+                if (!TryLoadInitialText(meta, out string text))
+                {
+                    // Opening it empty (or from an older snapshot) would let the next autosave
+                    // overwrite the newer text that could not be read.
+                    _warn("The text of note " + id + " could not be read; it was left as it is and will be tried again next time");
+                    _unreadable.Add(id);
+                    continue;
+                }
+                AddOpen(meta, text, Open.Count);
             }
 
             var active = Open.FirstOrDefault(n => n.Id == Session.ActiveNoteId) ?? Open.LastOrDefault();
@@ -293,12 +316,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             note.Meta.LastSnapshotUtc = now;
             note.SnapshotClockUtc = now;
 
-            string id = note.Id;
-            DateTime local = now.ToLocalTime();
-            // A unique key: snapshots must never replace one another in the writer queue.
-            string key = id + "#snapshot#" + _store.NextVersion().ToString(CultureInfo.InvariantCulture);
-            _writer.Enqueue(key, () => _store.WriteSnapshot(id, text, local));
-
+            EnqueueSnapshot(note.Id, text, now);
             EnqueueSave(note);   // persists LastSnapshotHash
             return true;
         }
@@ -319,7 +337,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 string id = note.Id;
                 // Same key as its saves, so it replaces any still waiting and runs after one in progress.
                 _unconfirmed.TryRemove(id, out _);   // being deleted, not saved
-                _writer.Enqueue(id, () => _store.DeleteEmptyNote(id));
+                _writer.Enqueue(id, Logged(id + "#delete", "Removing empty note " + id + " failed; it will be retried",
+                    () => _store.DeleteEmptyNote(id)));
             }
             else
             {
@@ -366,7 +385,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return last == null ? null : Reopen(last.Id);
         }
 
-        /// <summary>Reopens a closed note after the active tab; an open one is just activated.</summary>
+        /// <summary>
+        /// Reopens a closed note after the active tab; an open one is just activated. Null when the
+        /// note cannot be loaded, including when its text exists but cannot be read right now: then
+        /// nothing is written and the note stays in the closed list.
+        /// </summary>
         public OpenNote? Reopen(string id)
         {
             if (_byId.TryGetValue(id, out var open))
@@ -385,13 +408,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 // The writer has not caught up: the newest state is the one still queued, not the
                 // one on disk. Reopening from disk here would bring back older text.
                 meta = pending.Meta.Clone();
-                text = pending.Text ?? LoadInitialText(meta);
+                if (pending.Text != null) text = pending.Text;
+                else if (!TryLoadInitialText(meta, out text)) return UnreadableOnReopen(id);
             }
             else
             {
                 meta = _store.LoadMeta(id);
                 if (meta == null) return null;
-                text = LoadInitialText(meta);
+                // Reopening writes the text straight back, so text that cannot be read must stop it here.
+                if (!TryLoadInitialText(meta, out text)) return UnreadableOnReopen(id);
             }
 
             _recentlyClosed.Remove(id);
@@ -458,7 +483,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public void SaveSession()
         {
             string json = NoteStore.SerializeSession(PrepareSession());
-            _writer.Enqueue(SessionKey, () => _store.WriteSessionJson(json));
+            _writer.Enqueue(SessionKey, Logged(SessionKey, "Writing the MicaPad session failed; it will be retried",
+                () => _store.WriteSessionJson(json)));
         }
 
         /// <summary>Releases the writer when this workspace created it; a shared one is left to its owner.</summary>
@@ -469,10 +495,62 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private SessionState PrepareSession()
         {
-            Session.OpenNoteIds = Open.Select(n => n.Id).ToList();
+            // Notes that could not be read at restore go last, so they return at the next launch.
+            Session.OpenNoteIds = Open.Select(n => n.Id)
+                .Concat(_unreadable.Where(id => !_byId.ContainsKey(id)))
+                .ToList();
             foreach (string stale in Session.Tabs.Keys.Where(k => !_byId.ContainsKey(k)).ToList())
                 Session.Tabs.Remove(stale);
             return Session;
+        }
+
+        private OpenNote? UnreadableOnReopen(string id)
+        {
+            _warn("Note " + id + " was not reopened: its text could not be read, so it was left as it is");
+            return null;
+        }
+
+        /// <summary>
+        /// Queues a version of <paramref name="text"/> under a unique key: snapshots must never
+        /// replace one another in the writer queue.
+        /// </summary>
+        private void EnqueueSnapshot(string id, string text, DateTime utcNow)
+        {
+            DateTime local = utcNow.ToLocalTime();
+            string key = id + "#snapshot#" + _store.NextVersion().ToString(CultureInfo.InvariantCulture);
+            _writer.Enqueue(key, Logged(id + "#snapshot", "Keeping a version of note " + id + " failed; it will be retried",
+                () => _store.WriteSnapshot(id, text, local)));
+        }
+
+        /// <summary>
+        /// Wraps writer work so a failure is logged (throttled by <see cref="LogWriteFailure"/>)
+        /// and then rethrown, which is what makes the writer retry it.
+        /// </summary>
+        private Action Logged(string logKey, string message, Action work) => () =>
+        {
+            try
+            {
+                work();
+            }
+            catch (Exception ex)
+            {
+                LogWriteFailure(logKey, message, ex);
+                throw;
+            }
+        };
+
+        /// <summary>
+        /// Reports a failed write at most once per <paramref name="key"/> every
+        /// <see cref="FailureLogIntervalMs"/>: a write that stays stuck is retried every 10 s, and
+        /// the log should say so without filling up. Runs on the writer thread. Uses
+        /// <see cref="Environment.TickCount64"/>, so a clock change cannot silence it.
+        /// </summary>
+        private void LogWriteFailure(string key, string message, Exception ex)
+        {
+            long now = Environment.TickCount64;
+            if (_failureLoggedAt.TryGetValue(key, out long last) && now - last < FailureLogIntervalMs) return;
+            _failureLoggedAt[key] = now;
+            _error(message, ex);
         }
 
         private OpenNote AddOpen(NoteMeta meta, string text, int index)
@@ -521,7 +599,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 }
                 catch (Exception ex)
                 {
-                    _error("Autosave of note " + id + " failed; it will be retried", ex);
+                    LogWriteFailure(id, "Autosave of note " + id + " failed; it will be retried", ex);
                     _post(() => note.SaveState = SaveState.Failed);
                     throw;
                 }
@@ -537,9 +615,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// A note's text on restore or reopen: a file-backed note with no unsaved edits is read
-        /// fresh from its file; every other note from the store.
+        /// fresh from its file; every other note (and a file that cannot be read) from the store.
+        /// False when the store holds text that cannot be read right now; the note must then not
+        /// be opened, or its next save would overwrite that text.
         /// </summary>
-        private string LoadInitialText(NoteMeta meta)
+        private bool TryLoadInitialText(NoteMeta meta, out string text)
         {
             if (meta.IsFileBacked && !meta.HasUnsavedEdits)
             {
@@ -552,10 +632,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     meta.CodePage = decoded.CodePage;
                     meta.LineEnding = decoded.LineEnding;
                     meta.SourceStamp = stamp;
-                    return decoded.Text;
+                    text = decoded.Text;
+                    return true;
                 }
             }
-            return _store.LoadText(meta.Id) ?? "";
+
+            if (!_store.TryLoadText(meta.Id, out string? stored))
+            {
+                text = "";
+                return false;
+            }
+            text = stored ?? "";
+            return true;
         }
 
         /// <summary>Reads and decodes a user's file, sharing it with any program writing to it (a log, say).</summary>

@@ -64,6 +64,15 @@ namespace Kil0bitSystemMonitor
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
+        /// <summary>The id of the process that owns a window; 0 when the window is gone.</summary>
+        [DllImport("user32.dll")]
+        static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        /// <summary>Lets another process take the foreground, which this one may do while it holds the right.</summary>
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool AllowSetForegroundWindow(uint dwProcessId);
+
         private const uint WM_SHOW_SETTINGS = 0x0501; // Must match OverlayWindow.WM_SHOW_SETTINGS
 
         /// <summary>
@@ -140,9 +149,24 @@ namespace Kil0bitSystemMonitor
                 IntPtr existingWnd = FindWindow("Kil0bitOverlayWndClass_Main", null);
                 if (existingWnd != IntPtr.Zero)
                 {
+                    // This launch came from the user (Start menu, taskbar, Explorer), so Windows let it
+                    // take the foreground; the running instance has no such right, and without this its
+                    // Activate() would leave MicaPad or Settings behind the current window.
+                    GetWindowThreadProcessId(existingWnd, out uint existingPid);
+                    if (existingPid != 0) AllowSetForegroundWindow(existingPid);
+
                     // --pad (Start menu, Open with, a pinned MicaPad button) goes to the running instance's MicaPad.
-                    if (padRequested) Kil0bitSystemMonitor.Services.Pad.PadIpc.SendOpen(existingWnd, padPath);
-                    else SendMessage(existingWnd, WM_SHOW_SETTINGS, IntPtr.Zero, IntPtr.Zero);
+                    if (padRequested)
+                    {
+                        if (!Kil0bitSystemMonitor.Services.Pad.PadIpc.SendOpen(existingWnd, padPath))
+                            Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("pad",
+                                "The running MicaStats did not take the request to open MicaPad" +
+                                (padPath != null ? " with " + padPath : "") + "; it was lost");
+                    }
+                    else
+                    {
+                        SendMessage(existingWnd, WM_SHOW_SETTINGS, IntPtr.Zero, IntPtr.Zero);
+                    }
                 }
                 s_mutex.Dispose();
                 System.Environment.Exit(0);

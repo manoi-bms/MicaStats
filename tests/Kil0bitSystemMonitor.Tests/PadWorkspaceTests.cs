@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -288,6 +289,92 @@ namespace Kil0bitSystemMonitor.Tests
             _env.Flush();
             Assert.Equal("newest", _env.DiskText(back));
             Assert.Null(_env.Store.LoadMeta(back.Id)!.ClosedAtUtc);
+        }
+
+        [Fact]
+        public void A_note_whose_text_cannot_be_read_is_skipped_at_restore_kept_in_the_session_and_left_untouched()
+        {
+            var readable = Ws.NewNote();
+            PadTestEnv.Type(Ws, readable, "fine");
+            var locked = Ws.NewNote();
+            PadTestEnv.Type(Ws, locked, "newest text");
+            Assert.True(Ws.FlushAll(TimeSpan.FromSeconds(5)));
+            _env.Store.WriteSnapshot(locked.Id, "older text", new DateTime(2026, 9, 29, 10, 0, 0));
+            string path = _env.Store.CurrentPath(locked.Id);
+            byte[] before = File.ReadAllBytes(path);
+
+            var restored = _env.NewWorkspace();
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.Equal(new[] { readable.Id }, restored.Restore().Select(n => n.Id));
+                Assert.True(restored.FlushAll(TimeSpan.FromSeconds(5)));   // everything an exit would write
+            }
+
+            Assert.Equal(before, File.ReadAllBytes(path));
+            Assert.Equal(new[] { readable.Id, locked.Id }, _env.Store.LoadSession().OpenNoteIds);
+
+            var later = _env.NewWorkspace();
+            Assert.Contains(later.Restore(), n => n.Id == locked.Id && n.TextProvider() == "newest text");
+        }
+
+        [Fact]
+        public void Reopening_a_closed_note_whose_text_cannot_be_read_returns_null_and_writes_nothing()
+        {
+            var note = Ws.NewNote();
+            PadTestEnv.Type(Ws, note, "keep this");
+            Ws.Close(note);
+            _env.Flush();
+            string path = _env.Store.CurrentPath(note.Id);
+            byte[] before = File.ReadAllBytes(path);
+
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.Null(Ws.Reopen(note.Id));
+                Assert.Empty(Ws.Open);
+                Assert.Equal(note.Id, Assert.Single(Ws.ClosedNotes()).Id);
+                _env.Flush();
+            }
+
+            Assert.Equal(before, File.ReadAllBytes(path));
+            Assert.NotNull(_env.Store.LoadMeta(note.Id)!.ClosedAtUtc);
+
+            var back = Ws.Reopen(note.Id);
+            Assert.Equal("keep this", back!.TextProvider());
+        }
+
+        [Fact]
+        public void A_write_that_keeps_failing_is_logged_once_rather_than_on_every_retry()
+        {
+            var errors = new ConcurrentQueue<string>();
+            int failures = 0;
+            _env.Writer.Completed += (key, error) =>
+            {
+                if (error != null && key.Contains("#snapshot#")) Interlocked.Increment(ref failures);
+            };
+            using var ws = new PadWorkspace(_env.Store, new PadWorkspaceOptions
+            {
+                Writer = _env.Writer,
+                UtcClock = () => _env.Clock.UtcNow,
+                RecycleBin = _env.Bin,
+                Warn = _ => { },
+                Error = (message, _) => errors.Enqueue(message),
+                AnsiCodePage = 874,
+            });
+            var note = ws.NewNote();
+            PadTestEnv.Type(ws, note, "text");
+            _env.Flush();
+            string blocker = _env.Store.HistoryDir(note.Id);
+            File.WriteAllText(blocker, "a file where the history folder should be");
+
+            Assert.True(ws.SnapshotNow(note, SnapshotReason.BeforeReplace));
+            Assert.False(_env.Writer.FlushAll(TimeSpan.FromMilliseconds(300)));   // retried every 10 ms meanwhile
+
+            Assert.True(Volatile.Read(ref failures) >= 2);
+            Assert.Contains("version of note " + note.Id, Assert.Single(errors));
+
+            File.Delete(blocker);
+            _env.Flush();
+            Assert.Single(_env.Store.ListSnapshots(note.Id));
         }
 
         [Fact]

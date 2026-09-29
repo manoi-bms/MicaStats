@@ -224,9 +224,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
             if (oldPath == null) meta.LineEnding = TextFileCodec.DetectLineEnding(note.TextProvider());
             meta.SourcePath = full;
-            // The Save dialog already confirmed replacing whatever is at the new path, and the old
-            // file's stamp says nothing about it: no changed-on-disk question here.
-            meta.SourceStamp = null;
+            // The Save dialog already confirmed replacing whatever is at a new path, and the old
+            // file's stamp says nothing about it: no changed-on-disk question there. Onto the note's
+            // own file (the dialog's default) the stamp stays, so an outside change, or a stand-in
+            // copy that never saw the file (SourceStamp.Unverified), is still asked about.
+            if (!SamePath(oldPath, full)) meta.SourceStamp = null;
             note.HasUnsavedEdits = true;
             if (!meta.TitleIsCustom) note.Title = NoteTitle.ForFile(full);
 

@@ -493,6 +493,24 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Save_as_onto_the_notes_own_file_still_asks_about_an_outside_change()
+        {
+            string path = WriteFile("own.txt", Encoding.UTF8.GetBytes("base"));
+            var note = Ws.OpenFile(path).Note!;
+            PadTestEnv.Type(Ws, note, "mine");
+            ChangeFile(path, "theirs");
+
+            var result = Ws.SaveAs(note, path);   // the Save dialog suggests the note's own file
+
+            Assert.Equal(SaveToFileStatus.ChangedOnDisk, result.Status);
+            Assert.Equal(Encoding.UTF8.GetBytes("theirs"), File.ReadAllBytes(path));
+            Assert.True(note.Meta.IsFileBacked);
+            Assert.Equal(Path.GetFullPath(path), note.Meta.SourcePath);
+            Assert.True(note.HasUnsavedEdits);
+            Assert.Equal("mine", note.TextProvider());
+        }
+
+        [Fact]
         public void A_code_page_this_pc_does_not_have_fails_the_save_without_throwing()
         {
             string path = WriteFile("odd.txt", Encoding.UTF8.GetBytes("plain"));

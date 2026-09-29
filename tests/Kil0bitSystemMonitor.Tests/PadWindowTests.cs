@@ -227,6 +227,45 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Ctrl_s_on_a_stand_in_copy_says_the_file_was_not_read_rather_than_changed() => WithWindow((window, env, config) =>
+        {
+            const string Question = "offline.txt could not be read when this tab was restored, so saving could replace text you have not seen.";
+            string path = env.FileOf("offline.txt");
+            File.WriteAllText(path, "base");
+            window.OpenPath(path);
+            window.Editor.Document.Insert(0, "mine ");
+            env.Workspace.Active!.Meta.SourceStamp = SourceStamp.Unverified;   // as after a restore that could not read the file
+
+            Assert.True(window.HandleShortcut(Key.S, ModifierKeys.Control));
+
+            Assert.Equal(Question, window.InfoText.Text);
+            Assert.Equal("Overwrite", window.InfoPrimary.Content);
+            Assert.Equal("Reload from disk", window.InfoSecondary.Content);
+            Assert.Equal("base", File.ReadAllText(path));
+
+            window.CheckShownNoteOnDisk();   // activation: the same question stays
+            Assert.Equal(Question, window.InfoText.Text);
+            Assert.Equal("Overwrite", window.InfoPrimary.Content);
+        });
+
+        [Fact]
+        public void The_activation_check_on_a_stand_in_copy_says_the_tab_may_not_match_the_file() => WithWindow((window, env, config) =>
+        {
+            string path = env.FileOf("offline.txt");
+            File.WriteAllText(path, "base");
+            window.OpenPath(path);
+            window.Editor.Document.Insert(0, "mine ");
+            env.Workspace.Active!.Meta.SourceStamp = SourceStamp.Unverified;
+
+            window.CheckShownNoteOnDisk();
+
+            Assert.Equal("offline.txt could not be read when this tab was restored, so this tab may not match the file.",
+                window.InfoText.Text);
+            Assert.Equal("Reload from disk", window.InfoPrimary.Content);
+            Assert.Equal("Keep mine", window.InfoSecondary.Content);
+        });
+
+        [Fact]
         public void Overwrite_asks_again_when_the_outside_version_cannot_be_kept() => WithWindow((window, env, config) =>
         {
             byte[] binary = { 0x4D, 0x5A, 0x00, 0x01 };

@@ -553,7 +553,10 @@ namespace Kil0bitSystemMonitor.Pad
 
             if (kind == InfoChangedOnDisk)
             {
-                ShowInfo(name + " changed on disk.", note,
+                ShowInfo(IsStandIn(note)
+                        ? name + " could not be read when this tab was restored, so this tab may not match the file."
+                        : name + " changed on disk.",
+                    note,
                     "Reload from disk", () => Reload(note),
                     "Keep mine", () => _workspace.KeepMine(note));
             }
@@ -571,6 +574,13 @@ namespace Kil0bitSystemMonitor.Pad
             }
             _infoKind = kind;
         }
+
+        /// <summary>
+        /// True when the tab shows MicaPad's own copy of a file it could not read at restore or
+        /// reopen (<see cref="SourceStamp.Unverified"/>). MicaPad never saw that file, so a disk
+        /// question must not claim the file changed; it says the file was not read instead.
+        /// </summary>
+        private static bool IsStandIn(OpenNote note) => note.Meta.SourceStamp == SourceStamp.Unverified;
 
         /// <summary>True when the file's folder is missing as well as the file.</summary>
         private static bool IsFolderMissing(string? path)
@@ -684,7 +694,9 @@ namespace Kil0bitSystemMonitor.Pad
                         "Cancel", () => { });
                     break;
                 case SaveToFileStatus.ChangedOnDisk:
-                    ShowInfo((Path.GetFileName(note.Meta.SourcePath) ?? note.Title) + " changed on disk since it was opened.",
+                    ShowInfo((Path.GetFileName(note.Meta.SourcePath) ?? note.Title) + (IsStandIn(note)
+                            ? " could not be read when this tab was restored, so saving could replace text you have not seen."
+                            : " changed on disk since it was opened."),
                         note,
                         "Overwrite", () => Save(note, overwriteExternalChanges: true),
                         "Reload from disk", () => Reload(note));

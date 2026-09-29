@@ -149,6 +149,17 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Redaction** (pixelate, blur or solid) baked into real pixels, so content hidden on screen is hidden in the saved file
 * Crop, undo/redo, copy as PNG **and** DIB so it pastes anywhere, save to PNG/JPEG, or **pin** a capture on top of every window
 
+### MicaPad: a notepad that never asks to save
+
+* **Every note saves itself** a second after you stop typing — no file names, no Save button to remember
+* **Restart Windows any time**: no "Save changes?" dialogs one by one; with **Launch on Startup** on, every tab comes back after you sign in, with the caret where you left it
+* **History for every note** — a version is kept each time you pause after a minute of changes; preview and restore any of them, and Ctrl+Z undoes a restore
+* **Closing a tab never asks** — Ctrl+Shift+T or the closed-notes list brings it back; deleting sends it to the Recycle Bin
+* **Real files stay safe**: edits to an opened file are always kept, but the file itself changes only on Ctrl+S, in its original encoding (Thai TIS-620 / cp874 included) and line endings
+* Find and replace with regular expressions, go to line, zoom, word wrap
+* Open it from the overlay's right-click menu, **Ctrl+Alt+N** anywhere, the Start menu, or Explorer's **Open with**
+* Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
+
 ### Windows 11 interface
 
 * Compact, menu-style monitoring panels
@@ -238,6 +249,18 @@ Windows measures how long your boot took, which app delayed it, and how worn you
 | **Ctrl+Shift+1** | Capture a region (or click a window / screen) |
 | **Ctrl+Shift+2** | Capture the window currently in front |
 | **Ctrl+Shift+3** | Capture the screen the pointer is on |
+| **Ctrl+Alt+N** | Show MicaPad |
+
+Inside MicaPad:
+
+| Key | Action |
+| --- | --- |
+| **Ctrl+N** · **Ctrl+W** · **Ctrl+Shift+T** | New note · close tab · reopen closed tab |
+| **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | Open file · save to its file · save as |
+| **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | Find · replace · next / previous |
+| **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | Go to line · word wrap · history |
+| **Ctrl+Tab** · **Ctrl+1…9** | Next tab · jump to a tab |
+| **Ctrl+wheel** · **Ctrl+0** | Zoom · reset zoom |
 
 While the region picker is open:
 
@@ -431,6 +454,7 @@ The published application will be created in the `publish` directory.
 | Runtime             | .NET 8                                       |
 | Desktop framework   | Windows Presentation Foundation              |
 | UI library          | ModernWpfUI                                  |
+| Text editor         | AvalonEdit (MIT), for MicaPad                |
 | Windows integration | Win32 APIs                                   |
 | Performance data    | Windows performance counters and system APIs |
 | Hardware identity   | CPUID instruction and raw SMBIOS tables      |
@@ -719,6 +743,17 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **การปิดบังข้อมูล** (โมเสก, เบลอ หรือทึบ) ถูกฝังลงในพิกเซลจริง สิ่งที่ถูกปิดบังบนจอจึงถูกปิดบังในไฟล์ที่บันทึกด้วย
 * ตัดภาพ (crop), ย้อนกลับ/ทำซ้ำ, คัดลอกเป็นทั้ง PNG **และ** DIB เพื่อให้วางได้ทุกโปรแกรม, บันทึกเป็น PNG/JPEG หรือ **ปักหมุด** ภาพให้ลอยอยู่เหนือทุกหน้าต่าง
 
+### MicaPad: โน้ตแพดที่ไม่เคยถามให้บันทึก
+
+* **บันทึกเองเสมอ** หนึ่งวินาทีหลังหยุดพิมพ์ ไม่ต้องตั้งชื่อไฟล์ ไม่ต้องจำว่าต้องกดบันทึก
+* **รีสตาร์ต Windows ได้ทุกเมื่อ** ไม่มีหน้าต่าง "Save changes?" ให้กดทีละอัน เมื่อเปิดตัวเลือกเริ่มทำงานพร้อม Windows ไว้ ทุกแท็บจะกลับมาหลังลงชื่อเข้าใช้ พร้อมตำแหน่งเคอร์เซอร์เดิม
+* **ประวัติของทุกโน้ต** เก็บเวอร์ชันไว้ทุกครั้งที่หยุดพิมพ์หลังแก้ไขมาครบหนึ่งนาที ดูย้อนหลังและกู้คืนได้ และกด Ctrl+Z เพื่อยกเลิกการกู้คืน
+* **ปิดแท็บโดยไม่ถาม** เปิดกลับได้ด้วย Ctrl+Shift+T หรือจากรายการโน้ตที่ปิดแล้ว โน้ตที่ลบจะไปอยู่ในถังรีไซเคิล
+* **ไฟล์จริงปลอดภัย** การแก้ไขไฟล์ที่เปิดอยู่ถูกเก็บไว้เสมอ แต่ตัวไฟล์จะเปลี่ยนเมื่อกด Ctrl+S เท่านั้น โดยคงการเข้ารหัสเดิม (รวมถึง TIS-620 / cp874) และรูปแบบการขึ้นบรรทัดเดิม
+* ค้นหาและแทนที่ด้วย regular expression, ไปยังบรรทัด, ซูม, ตัดบรรทัดอัตโนมัติ
+* เปิดได้จากเมนูคลิกขวาของโอเวอร์เลย์, **Ctrl+Alt+N** จากที่ใดก็ได้, เมนู Start หรือ **Open with** ใน Explorer
+* โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
+
 ### หน้าตาแบบ Windows 11
 
 * แผงข้อมูลกะทัดรัดสไตล์เมนู
@@ -808,6 +843,18 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | **Ctrl+Shift+1** | จับภาพเฉพาะพื้นที่ (หรือคลิกเลือกหน้าต่าง/หน้าจอ) |
 | **Ctrl+Shift+2** | จับภาพหน้าต่างที่อยู่ด้านหน้าสุด |
 | **Ctrl+Shift+3** | จับภาพหน้าจอที่เมาส์อยู่ |
+| **Ctrl+Alt+N** | เปิด MicaPad |
+
+ภายใน MicaPad:
+
+| ปุ่ม | การทำงาน |
+| --- | --- |
+| **Ctrl+N** · **Ctrl+W** · **Ctrl+Shift+T** | โน้ตใหม่ · ปิดแท็บ · เปิดแท็บที่ปิดไปกลับมา |
+| **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | เปิดไฟล์ · บันทึกลงไฟล์ · บันทึกเป็น |
+| **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | ค้นหา · แทนที่ · ถัดไป / ก่อนหน้า |
+| **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | ไปยังบรรทัด · ตัดบรรทัดอัตโนมัติ · ประวัติ |
+| **Ctrl+Tab** · **Ctrl+1…9** | แท็บถัดไป · ไปยังแท็บ |
+| **Ctrl+ล้อเมาส์** · **Ctrl+0** | ซูม · รีเซ็ตซูม |
 
 ขณะเปิดตัวเลือกพื้นที่:
 
@@ -1001,6 +1048,7 @@ dotnet publish `
 | รันไทม์ | .NET 8 |
 | เฟรมเวิร์กเดสก์ท็อป | Windows Presentation Foundation |
 | ไลบรารี UI | ModernWpfUI |
+| โปรแกรมแก้ไขข้อความ | AvalonEdit (MIT) สำหรับ MicaPad |
 | การเชื่อมต่อกับ Windows | Win32 API |
 | ข้อมูลประสิทธิภาพ | ตัวนับประสิทธิภาพและ API ของ Windows |
 | ข้อมูลฮาร์ดแวร์ | คำสั่ง CPUID และตาราง SMBIOS โดยตรง |

@@ -451,6 +451,7 @@ namespace Kil0bitSystemMonitor
                 CaptureSection.Visibility = Visibility.Collapsed;
                 DiagnosticsSection.Visibility = Visibility.Collapsed;
                 UpdatesSection.Visibility = Visibility.Collapsed;
+                PadSection.Visibility = Visibility.Collapsed;
 
                 switch (sectionName)
                 {
@@ -459,6 +460,7 @@ namespace Kil0bitSystemMonitor
                     case "Monitoring": MonitoringSection.Visibility = Visibility.Visible; break;
                     case "Appearance": AppearanceSection.Visibility = Visibility.Visible; LoadOverlayTheme(); break;
                     case "Capture": CaptureSection.Visibility = Visibility.Visible; break;
+                    case "MicaPad": PadSection.Visibility = Visibility.Visible; LoadPadSettings(); break;
                     case "Diagnostics": DiagnosticsSection.Visibility = Visibility.Visible; LoadDiagnosticsSettings(); break;
                     case "Updates": UpdatesSection.Visibility = Visibility.Visible; break;
                     case "About": AboutSection.Visibility = Visibility.Visible; break;
@@ -531,6 +533,117 @@ namespace Kil0bitSystemMonitor
                 Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("capture", "Could not load capture settings", ex);
             }
             finally { _loadingCapture = false; }
+        }
+
+        // ---- MicaPad ----------------------------------------------------------------------
+
+        private const string PadHotkeyHelp = "Shows MicaPad from anywhere. Leave empty to turn it off.";
+        private static readonly int[] PadHistoryChoices = { 30, 90, 180, 365 };
+        private static readonly int[] PadFontSizes = { 10, 11, 12, 13, 14, 15, 16, 18, 20, 24 };
+
+        /// <summary>Suppresses change handlers while the section is being filled from the config.</summary>
+        private bool _loadingPad;
+
+        private void LoadPadSettings()
+        {
+            _loadingPad = true;
+            try
+            {
+                var cfg = _config.Config;
+                PadHotkeyBox.Text = cfg.PadHotkey;
+                PadHotkeyHint.Text = PadHotkeyHelp;
+                PadReopenToggle.IsOn = cfg.PadReopenAtLogin;
+                PadWrapToggle.IsOn = cfg.PadWordWrap;
+                PadLineNumbersToggle.IsOn = cfg.PadShowLineNumbers;
+                PadFontBox.Text = cfg.PadFontFamily;
+                PadFontSizeBox.ItemsSource = PadFontSizes;
+                PadFontSizeBox.SelectedItem = PadFontSizes.OrderBy(s => Math.Abs(s - cfg.PadFontSize)).First();
+                int days = PadHistoryChoices.OrderBy(d => Math.Abs(d - cfg.PadHistoryDays)).First();
+                PadHistoryBox.SelectedIndex = Array.IndexOf(PadHistoryChoices, days);
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Could not load MicaPad settings", ex);
+            }
+            finally
+            {
+                _loadingPad = false;
+            }
+        }
+
+        private void OnPadToggled(object sender, RoutedEventArgs e)
+        {
+            if (_loadingPad) return;
+            var cfg = _config.Config;
+            cfg.PadReopenAtLogin = PadReopenToggle.IsOn;
+            cfg.PadWordWrap = PadWrapToggle.IsOn;
+            cfg.PadShowLineNumbers = PadLineNumbersToggle.IsOn;
+            _config.SaveConfig();
+        }
+
+        private void OnPadHotkeyChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loadingPad) return;
+            string text = PadHotkeyBox.Text.Trim();
+
+            if (text.Length == 0)
+            {
+                _config.Config.PadHotkey = "";
+                PadHotkeyHint.Text = "Shortcut off. MicaPad is still in the overlay's right-click menu.";
+                _config.SaveConfig();
+                return;
+            }
+
+            if (Kil0bitSystemMonitor.Services.Capture.HotkeyParser.TryParse(text, out var mods, out uint vk))
+            {
+                string normal = Kil0bitSystemMonitor.Services.Capture.HotkeyParser.Describe(mods, vk);
+                PadHotkeyBox.Text = normal;
+                PadHotkeyHint.Text = PadHotkeyHelp;
+                _config.Config.PadHotkey = normal;
+                _config.SaveConfig();
+            }
+            else
+            {
+                PadHotkeyHint.Text = "Not a valid shortcut. Use one or more of Ctrl, Alt, Shift, Win and one key, like Ctrl+Alt+N.";
+            }
+        }
+
+        private void OnPadFontChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loadingPad) return;
+            _config.Config.PadFontFamily = PadFontBox.Text;
+            PadFontBox.Text = _config.Config.PadFontFamily;
+            _config.SaveConfig();
+        }
+
+        private void OnPadFontSizeChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingPad || PadFontSizeBox.SelectedItem is not int size) return;
+            _config.Config.PadFontSize = size;
+            _config.SaveConfig();
+        }
+
+        private void OnPadHistoryChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingPad || PadHistoryBox.SelectedIndex < 0) return;
+            _config.Config.PadHistoryDays = PadHistoryChoices[PadHistoryBox.SelectedIndex];
+            _config.SaveConfig();
+        }
+
+        private void OnOpenPad(object sender, RoutedEventArgs e) => App.OpenPad(null);
+
+        private void OnOpenPadFolder(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string root = Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot;
+                System.IO.Directory.CreateDirectory(root);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", "\"" + root + "\"") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Could not open the notes folder", ex);
+            }
         }
 
         private void OnCaptureSettingToggled(object sender, RoutedEventArgs e)

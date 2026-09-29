@@ -78,6 +78,20 @@ process sampler already does.
     (slower ticks on battery); keep the panel-only process sampling model.
 17. **Portable mode** — config beside the exe for USB-stick use.
 
+## MicaPad phase 2 — notepad4 parity
+
+Phase 1 (autosave, history, restore after restart, shadow mode for files) ships in 1.12.0.
+Phase 2 brings the editing features of [notepad4](https://github.com/zufuliu/notepad4) to MicaPad,
+reimplemented on AvalonEdit:
+
+- Syntax highlighting (AvalonEdit's built-in definitions plus `.xshd` files) and code folding
+- Bookmarks; mark all occurrences with a count
+- Auto-closing brackets and quotes; auto-completion
+- Line operations: duplicate, move, sort, trim, join
+- Base64, number base conversion, GUID and timestamp insertion, expression evaluation
+- Clickable URLs, copy as RTF, full screen
+- A line diff in the history pane; drag-to-reorder tabs; more than one MicaPad window
+
 ## Explicitly not planned
 
 - **Fan control** — iStat Menus has it, but on Windows it requires a resident kernel driver

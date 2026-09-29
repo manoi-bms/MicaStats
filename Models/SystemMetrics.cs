@@ -530,6 +530,44 @@ namespace Kil0bitSystemMonitor.Models
         public bool StickToTaskbar { get => _stickToTaskbar; set { Set(ref _stickToTaskbar, value); } }
         public bool ShowBackground { get => _showBackground; set { Set(ref _showBackground, value); } }
 
+        // ----- MicaPad ----------------------------------------------------------------------
+
+        private string _padHotkey = "Ctrl+Alt+N";
+        private string _padFontFamily = "Cascadia Mono";
+        private double _padFontSize = 14;
+        private bool _padWordWrap = true;
+        private bool _padShowLineNumbers = true;
+        private int _padHistoryDays = 90;
+        private bool _padReopenAtLogin = true;
+
+        /// <summary>Global shortcut that shows MicaPad, in <c>HotkeyParser</c> syntax. Empty turns it off.</summary>
+        public string PadHotkey { get => _padHotkey; set { Set(ref _padHotkey, value ?? ""); } }
+
+        /// <summary>Editor font; a blank value falls back to Cascadia Mono.</summary>
+        public string PadFontFamily
+        {
+            get => _padFontFamily;
+            set { Set(ref _padFontFamily, string.IsNullOrWhiteSpace(value) ? "Cascadia Mono" : value.Trim()); }
+        }
+
+        /// <summary>Editor font size in device-independent pixels, 8 to 48. Zoom multiplies it.</summary>
+        public double PadFontSize { get => _padFontSize; set { Set(ref _padFontSize, Math.Clamp(value, 8, 48)); } }
+
+        /// <summary>Word wrap in MicaPad; also toggled with Alt+Z.</summary>
+        public bool PadWordWrap { get => _padWordWrap; set { Set(ref _padWordWrap, value); } }
+
+        /// <summary>Show line numbers in the editor; also toggled from MicaPad's menu (Ctrl+G is Go to line).</summary>
+        public bool PadShowLineNumbers { get => _padShowLineNumbers; set { Set(ref _padShowLineNumbers, value); } }
+
+        /// <summary>
+        /// Days of history kept per note, and the age at which closed notes go to the Recycle Bin.
+        /// At least 7, so the hourly tier of the history policy always exists.
+        /// </summary>
+        public int PadHistoryDays { get => _padHistoryDays; set { Set(ref _padHistoryDays, Math.Clamp(value, 7, 3650)); } }
+
+        /// <summary>Reopen MicaPad at login when it was open at shutdown.</summary>
+        public bool PadReopenAtLogin { get => _padReopenAtLogin; set { Set(ref _padReopenAtLogin, value); } }
+
         [System.Text.Json.Serialization.JsonIgnore]
         public System.Windows.Media.Color AccentColor { get => HexToColor(AccentColorHex); set => AccentColorHex = ColorToHex(value); }
 

@@ -49,6 +49,13 @@ namespace Kil0bitSystemMonitor
                 this.Close();
             };
 
+            var padItem = new MenuItem { Header = "MicaPad" };
+            padItem.Click += (s, e) =>
+            {
+                App.OpenPad(null);
+                this.Close();
+            };
+
             var taskMgrItem = new MenuItem { Header = "Task Manager" };
             taskMgrItem.Click += (s, e) =>
             {
@@ -68,6 +75,7 @@ namespace Kil0bitSystemMonitor
 
             menu.Items.Add(settingsItem);
             menu.Items.Add(processesItem);
+            menu.Items.Add(padItem);
             menu.Items.Add(taskMgrItem);
             menu.Items.Add(new Separator());
             menu.Items.Add(aboutItem);

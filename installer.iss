@@ -39,7 +39,37 @@ Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\MicaStats"; Filename: "{app}\MicaStats.exe"
+Name: "{autoprograms}\MicaPad"; Filename: "{app}\MicaStats.exe"; Parameters: "--pad"; IconFilename: "{app}\micapad.ico"; AppUserModelID: "Kil0bit.SystemMonitor.MicaPad"
 Name: "{autodesktop}\MicaStats"; Filename: "{app}\MicaStats.exe"; Tasks: desktopicon
+
+[Registry]
+; "Open with > MicaPad" in Explorer for common text files. MicaPad is offered, never made the default.
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "MicaPad"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\micapad.ico"
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MicaStats.exe"" --pad ""%1"""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".txt"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".log"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".ini"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".md"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".json"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".xml"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".csv"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".cfg"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".conf"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".yaml"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\MicaStats.exe\SupportedTypes"; ValueType: string; ValueName: ".yml"; ValueData: ""
+; Listed directly in each type's Open with submenu.
+Root: HKA; Subkey: "Software\Classes\.txt\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.log\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.ini\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.md\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.json\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.xml\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.csv\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.cfg\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.conf\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.yaml\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.yml\OpenWithList\MicaStats.exe"; ValueType: none; Flags: uninsdeletekey
 
 [Run]
 Filename: "{app}\MicaStats.exe"; Description: "{cm:LaunchProgram,MicaStats}"; Flags: nowait postinstall skipifsilent

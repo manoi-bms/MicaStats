@@ -1,0 +1,247 @@
+<Window
+    x:Class="Kil0bitSystemMonitor.Pad.MicaPadWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.modernwpf.com/2019"
+    xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
+    xmlns:pad="clr-namespace:Kil0bitSystemMonitor.Services.Pad"
+    xmlns:local="clr-namespace:Kil0bitSystemMonitor.Pad"
+    Title="MicaPad"
+    Width="900" Height="640" MinWidth="420" MinHeight="260"
+    WindowStartupLocation="CenterScreen"
+    Background="#0E0E13"
+    Foreground="#E9EDEDF2"
+    FontFamily="Segoe UI Variable Text, Segoe UI"
+    ui:ThemeManager.RequestedTheme="Dark"
+    UseLayoutRounding="True"
+    SnapsToDevicePixels="True"
+    PreviewKeyDown="OnPreviewKeyDown"
+    PreviewMouseWheel="OnPreviewMouseWheel">
+
+    <!--
+      MicaPad: tabs of notes that save themselves. The window is a thin shell over PadWorkspace,
+      which owns every rule about saving, history and closing. One AvalonEdit editor shows the
+      active tab's TextDocument; each document keeps its own undo stack.
+    -->
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <SolidColorBrush x:Key="DataCyan" Color="#3FD2E4" />
+        <SolidColorBrush x:Key="Muted" Color="#88EDEDF2" />
+        <SolidColorBrush x:Key="Chrome" Color="#141419" />
+        <SolidColorBrush x:Key="AlertRed" Color="#FF6B6B" />
+
+        <Style x:Key="FlatButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#CFEDEDF2" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#1FFFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="GlyphButton" TargetType="Button" BasedOn="{StaticResource FlatButton}">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+
+        <Style x:Key="ScrollButton" TargetType="RepeatButton">
+            <Setter Property="Foreground" Value="#CFEDEDF2" />
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="4" Padding="6,8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#1FFFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="TabTemplate" DataType="{x:Type pad:OpenNote}">
+            <Border x:Name="TabBorder" Background="Transparent" CornerRadius="6,6,0,0"
+                    MinWidth="80" MaxWidth="200" Height="32" Padding="10,0,4,0" Margin="0,0,2,0"
+                    Cursor="Hand" Tag="{Binding}" ToolTip="{Binding Meta.SourcePath}"
+                    MouseLeftButtonDown="OnTabMouseLeftButtonDown" MouseUp="OnTabMouseUp">
+                <DockPanel LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource GlyphButton}" Padding="5,3" FontSize="9"
+                            Content="&#xE711;" Tag="{Binding}" Click="OnTabCloseClick" ToolTip="Close (Ctrl+W)" />
+                    <TextBlock DockPanel.Dock="Right" Text="•" Foreground="{StaticResource DataCyan}" Margin="4,0,2,0"
+                               VerticalAlignment="Center" ToolTip="Edited since the file was last saved"
+                               Visibility="{Binding HasUnsavedEdits, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock x:Name="TabTitle" Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" FontSize="12" Foreground="#99EDEDF2" />
+                </DockPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <Trigger SourceName="TabBorder" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="TabBorder" Property="Background" Value="#16161C" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter TargetName="TabBorder" Property="Background" Value="#1C1C24" />
+                    <Setter TargetName="TabTitle" Property="Foreground" Value="#EDEDF2" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Row 0: tabs. Row 1: info bar. Row 2: find bar. Row 3: editor and history. Row 4: status. -->
+        <DockPanel Grid.Row="0" Background="{StaticResource Chrome}" LastChildFill="True">
+            <Button x:Name="MenuButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
+                    Content="&#xE700;" ToolTip="Menu" Click="OnMenuButtonClick" Margin="0,4,6,0" />
+            <Button x:Name="ClosedNotesButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
+                    Content="&#xE70D;" ToolTip="Closed notes" Click="OnClosedNotesClick" Margin="0,4,0,0" />
+            <RepeatButton x:Name="ScrollRightButton" DockPanel.Dock="Right" Style="{StaticResource ScrollButton}"
+                          Content="&#xE76C;" Click="OnScrollTabsRight" Visibility="Collapsed" />
+            <RepeatButton x:Name="ScrollLeftButton" DockPanel.Dock="Left" Style="{StaticResource ScrollButton}"
+                          Content="&#xE76B;" Click="OnScrollTabsLeft" Visibility="Collapsed" />
+            <ScrollViewer x:Name="TabScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                          ScrollChanged="OnTabScrollChanged" Margin="6,6,0,0">
+                <StackPanel Orientation="Horizontal">
+                    <ItemsControl x:Name="TabStrip" ItemTemplate="{StaticResource TabTemplate}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <Button Style="{StaticResource GlyphButton}" Content="&#xE710;" ToolTip="New note (Ctrl+N)"
+                            Click="OnNewTabClick" VerticalAlignment="Center" Margin="2,0,0,0" />
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+
+        <Border x:Name="InfoBar" Grid.Row="1" Background="#2A2410" BorderBrush="#55FFC857" BorderThickness="0,0,0,1"
+                Padding="12,6" Visibility="Collapsed">
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right" Style="{StaticResource GlyphButton}" Content="&#xE711;" FontSize="9"
+                        ToolTip="Dismiss" Click="OnInfoCloseClick" />
+                <Button x:Name="InfoSecondary" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
+                        Margin="4,0,0,0" Click="OnInfoSecondaryClick" />
+                <Button x:Name="InfoPrimary" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
+                        Margin="8,0,0,0" Foreground="{StaticResource DataCyan}" Click="OnInfoPrimaryClick" />
+                <TextBlock x:Name="InfoText" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+            </DockPanel>
+        </Border>
+
+        <local:FindReplaceBar x:Name="FindBar" Grid.Row="2" />
+
+        <Grid x:Name="EditorArea" Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <avalon:TextEditor x:Name="Editor" Grid.Column="0"
+                               Background="#0E0E13" Foreground="#EDEDF2"
+                               FontFamily="Cascadia Mono, Consolas" FontSize="14"
+                               ShowLineNumbers="True" WordWrap="True"
+                               HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                               Padding="6,4,0,0" />
+
+            <DockPanel x:Name="PreviewPanel" Grid.Column="0" Background="#0E0E13" Visibility="Collapsed">
+                <Border DockPanel.Dock="Top" Background="#10283A" BorderBrush="#333FD2E4" BorderThickness="0,0,0,1" Padding="12,6">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Back" Click="OnPreviewBackClick" />
+                        <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Copy all" Click="OnPreviewCopyClick" />
+                        <Button x:Name="RestoreButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Restore"
+                                Foreground="{StaticResource DataCyan}" Click="OnPreviewRestoreClick" />
+                        <TextBlock x:Name="PreviewText" VerticalAlignment="Center" FontSize="12" />
+                    </DockPanel>
+                </Border>
+                <avalon:TextEditor x:Name="PreviewEditor" IsReadOnly="True" Background="#0E0E13" Foreground="#CFEDEDF2"
+                                   ShowLineNumbers="True" FontFamily="Cascadia Mono, Consolas" FontSize="14"
+                                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
+            </DockPanel>
+
+            <local:HistoryPane x:Name="HistoryPanel" Grid.Column="1" />
+
+            <Border x:Name="GoToLineBox" Grid.Column="0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,8,24,0" Padding="10,6" Background="#1C1C24" BorderBrush="#33FFFFFF" BorderThickness="1"
+                    CornerRadius="6" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Go to line" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,8,0" />
+                    <TextBox x:Name="GoToLineInput" Width="90" KeyDown="OnGoToLineKeyDown" LostKeyboardFocus="OnGoToLineLostFocus" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="4" Background="{StaticResource Chrome}" BorderBrush="#1AFFFFFF" BorderThickness="0,1,0,0" Padding="10,3">
+            <DockPanel LastChildFill="True">
+                <Button x:Name="HistoryButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" FontSize="11.5"
+                        Content="History" ToolTip="Versions of this note (Ctrl+Shift+H)" Click="OnHistoryClick" />
+                <TextBlock x:Name="SaveText" DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="11.5"
+                           Foreground="{StaticResource Muted}" Margin="12,0,4,0" />
+                <Button x:Name="EolButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" FontSize="11.5"
+                        ToolTip="Line ending" Click="OnEolClick" />
+                <Button x:Name="EncodingButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" FontSize="11.5"
+                        ToolTip="Encoding used when saving to the file" Click="OnEncodingClick" />
+                <TextBlock x:Name="CaretText" VerticalAlignment="Center" FontSize="11.5" Foreground="{StaticResource Muted}" />
+                <TextBlock x:Name="CharsText" VerticalAlignment="Center" FontSize="11.5" Foreground="{StaticResource Muted}" Margin="16,0,0,0" />
+            </DockPanel>
+        </Border>
+
+        <Popup x:Name="RenamePopup" StaysOpen="False" Placement="Bottom" AllowsTransparency="True">
+            <Border Background="#1C1C24" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6" Padding="8">
+                <TextBox x:Name="RenameBox" Width="220" KeyDown="OnRenameKeyDown" ui:ControlHelper.PlaceholderText="Tab name (empty for automatic)" />
+            </Border>
+        </Popup>
+
+        <Popup x:Name="ClosedPopup" StaysOpen="False" Placement="Bottom" AllowsTransparency="True"
+               PlacementTarget="{Binding ElementName=ClosedNotesButton}">
+            <Border Background="#1C1C24" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="8" Padding="8" Width="360">
+                <StackPanel>
+                    <TextBox x:Name="ClosedSearch" ui:ControlHelper.PlaceholderText="Search closed notes" TextChanged="OnClosedSearchChanged" />
+                    <ListBox x:Name="ClosedList" MaxHeight="360" Margin="0,6,0,0" Background="Transparent" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Width="320">
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Delete"
+                                            Tag="{Binding}" Click="OnClosedDeleteClick" ToolTip="Move to the Recycle Bin" />
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Reopen"
+                                            Foreground="{StaticResource DataCyan}" Tag="{Binding}" Click="OnClosedReopenClick" />
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontSize="12.5" />
+                                        <TextBlock Text="{Binding Detail}" TextTrimming="CharacterEllipsis" FontSize="11" Foreground="#88EDEDF2" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock x:Name="ClosedEmpty" Text="No closed notes." Foreground="{StaticResource Muted}" Margin="4,8" Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+        </Popup>
+    </Grid>
+</Window>

@@ -1,0 +1,207 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+
+namespace Kil0bitSystemMonitor.Services.Pad
+{
+    /// <summary>
+    /// The one thread that writes MicaPad's files, so typing never waits on the disk.
+    ///
+    /// <para>
+    /// Work runs in the order it was queued. Work queued under a key that is still waiting
+    /// replaces the waiting work in place — only the newest text of a note matters — and keeps its
+    /// position, so a delete queued after a save still runs after it. Work that throws is retried
+    /// after 1, 2, 5, then every 10 seconds; the error is reported through <see cref="Completed"/>
+    /// each time, and other keys keep flowing meanwhile.
+    /// </para>
+    ///
+    /// <para>
+    /// Every timing uses <see cref="Environment.TickCount64"/>, not the wall clock: a clock
+    /// change (a time sync, the user setting the date) must neither hold back a retry nor, on a
+    /// large backwards jump, hand <see cref="Monitor.Wait(object, int)"/> a timeout it rejects.
+    /// </para>
+    /// </summary>
+    public sealed class AutosaveWriter : IDisposable
+    {
+        private sealed class Entry
+        {
+            public string Key = "";
+            public Action Work = () => { };
+            public int Failures;
+
+            /// <summary>
+            /// <see cref="Environment.TickCount64"/> at which the work may run. 0, the default,
+            /// means now: TickCount64 counts up from boot and is never negative.
+            /// </summary>
+            public long RetryAtMs;
+        }
+
+        private readonly object _gate = new();
+        private readonly LinkedList<Entry> _queue = new();
+        private readonly Dictionary<string, LinkedListNode<Entry>> _byKey = new();
+        private readonly Func<int, TimeSpan> _backoff;
+        private readonly Thread _thread;
+        private bool _busy;
+        private bool _stopping;
+
+        /// <summary>Raised on the writer thread after each attempt: the key, and the error or null.</summary>
+        public event Action<string, Exception?>? Completed;
+
+        /// <summary>Starts the writer thread. It is a background thread, so it never keeps the process alive.</summary>
+        /// <param name="backoff">Delay before retry number n (1-based); <see cref="DefaultBackoff"/> when null. Tests pass milliseconds.</param>
+        public AutosaveWriter(Func<int, TimeSpan>? backoff = null)
+        {
+            _backoff = backoff ?? DefaultBackoff;
+            _thread = new Thread(Run) { IsBackground = true, Name = "MicaPad writer" };
+            _thread.Start();
+        }
+
+        /// <summary>1 s, 2 s, 5 s, then 10 s for every later retry.</summary>
+        public static TimeSpan DefaultBackoff(int failures) => failures switch
+        {
+            1 => TimeSpan.FromSeconds(1),
+            2 => TimeSpan.FromSeconds(2),
+            3 => TimeSpan.FromSeconds(5),
+            _ => TimeSpan.FromSeconds(10),
+        };
+
+        /// <summary>Queues work, replacing work still waiting under the same key.</summary>
+        public void Enqueue(string key, Action work)
+        {
+            lock (_gate)
+            {
+                if (_stopping) return;
+                if (_byKey.TryGetValue(key, out var node)) node.Value.Work = work;
+                else _byKey[key] = _queue.AddLast(new Entry { Key = key, Work = work });
+                Monitor.PulseAll(_gate);
+            }
+        }
+
+        /// <summary>Work queued or running.</summary>
+        public int PendingCount
+        {
+            get { lock (_gate) return _queue.Count + (_busy ? 1 : 0); }
+        }
+
+        /// <summary>
+        /// Waits until everything queued has been written, retrying failed work immediately rather
+        /// than after its backoff. False when <paramref name="timeout"/> passes first.
+        ///
+        /// <para>
+        /// If this returns false, the writer keeps running and may later retry or execute queued work.
+        /// The caller may then write the newest state directly only because every write queued here
+        /// is versioned (via <see cref="NoteStore.NextVersion"/>), and the store ignores any version
+        /// older than one already written — a late queued save always loses to the newer direct write.
+        /// Work that is not versioned must never also be written directly while still queued.
+        /// </para>
+        ///
+        /// <para>
+        /// Work waiting in the queue is retried immediately during the flush; work that fails again
+        /// while executing during a flush waits its normal backoff before retry.
+        /// </para>
+        /// </summary>
+        public bool FlushAll(TimeSpan timeout)
+        {
+            long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+            lock (_gate)
+            {
+                foreach (var entry in _queue) entry.RetryAtMs = 0;
+                Monitor.PulseAll(_gate);
+
+                while (_queue.Count > 0 || _busy)
+                {
+                    long left = deadline - Environment.TickCount64;
+                    if (left <= 0) return false;
+                    Monitor.Wait(_gate, WaitMs(left));
+                }
+                return true;
+            }
+        }
+
+        /// <summary>Stops the thread after the work in progress. Queued work is dropped: call <see cref="FlushAll"/> first.</summary>
+        public void Dispose()
+        {
+            lock (_gate)
+            {
+                _stopping = true;
+                Monitor.PulseAll(_gate);
+            }
+            _thread.Join(TimeSpan.FromSeconds(2));
+        }
+
+        private void Run()
+        {
+            while (true)
+            {
+                Entry entry;
+                lock (_gate)
+                {
+                    while (true)
+                    {
+                        if (_stopping) return;
+
+                        long now = Environment.TickCount64;
+                        LinkedListNode<Entry>? ready = null;
+                        long earliest = long.MaxValue;
+                        for (var node = _queue.First; node != null; node = node.Next)
+                        {
+                            if (node.Value.RetryAtMs <= now) { ready = node; break; }
+                            if (node.Value.RetryAtMs < earliest) earliest = node.Value.RetryAtMs;
+                        }
+
+                        if (ready != null)
+                        {
+                            _queue.Remove(ready);
+                            _byKey.Remove(ready.Value.Key);
+                            entry = ready.Value;
+                            _busy = true;
+                            break;
+                        }
+
+                        if (earliest == long.MaxValue) Monitor.Wait(_gate);
+                        else Monitor.Wait(_gate, WaitMs(earliest - now));
+                    }
+                }
+
+                Exception? error = null;
+                try
+                {
+                    entry.Work();
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+                }
+
+                // Reported while still marked busy, so FlushAll cannot return before listeners hear the outcome.
+                try { Completed?.Invoke(entry.Key, error); }
+                catch (Exception) { }
+
+                lock (_gate)
+                {
+                    _busy = false;
+                    if (error != null && !_stopping)
+                    {
+                        entry.Failures++;
+                        entry.RetryAtMs = Environment.TickCount64 + (long)_backoff(entry.Failures).TotalMilliseconds;
+
+                        if (_byKey.TryGetValue(entry.Key, out var newer))
+                        {
+                            // Newer work arrived while this ran: it supersedes the failed work but inherits the backoff.
+                            newer.Value.Failures = entry.Failures;
+                            newer.Value.RetryAtMs = entry.RetryAtMs;
+                        }
+                        else
+                        {
+                            _byKey[entry.Key] = _queue.AddFirst(entry);
+                        }
+                    }
+                    Monitor.PulseAll(_gate);
+                }
+            }
+        }
+
+        /// <summary>A millisecond span as a <see cref="Monitor.Wait(object, int)"/> timeout: never negative, never past int.MaxValue.</summary>
+        private static int WaitMs(long span) => (int)Math.Min(int.MaxValue, Math.Max(0, span));
+    }
+}

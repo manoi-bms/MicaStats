@@ -151,6 +151,52 @@ are all in **Settings → Capture**.
 
 ---
 
+## 📝 MicaPad
+
+A notepad built into MicaStats that never loses text and never asks to save. Open it from the
+overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, from the Start menu, or with
+**Open with → MicaPad** on a text file in Explorer.
+
+### How saving works
+
+* Every note is saved one second after you stop typing, and at least every five seconds while
+  you keep typing. The status bar says **Saving…** or **Saved 3s ago**.
+* When Windows shuts down or restarts, MicaPad writes everything and lets Windows continue —
+  no questions. If MicaPad was open, it reopens with the same tabs after you sign in, with
+  **Launch on Startup** on.
+* Closing a tab (**Ctrl+W**, middle-click or **×**) never asks either. **Ctrl+Shift+T** reopens
+  the last one; the **▾** button lists every closed note, with search, **Reopen** and **Delete**
+  (which uses the Recycle Bin). A note that never had any text is simply discarded.
+
+### History
+
+A version is kept each time you pause after at least a minute of changes, and before anything
+that replaces the whole text (reload, restore, Replace All, a line-ending change). **Ctrl+Shift+H**
+or **History** in the status bar lists them by day. Pick one to preview it, then **Restore**,
+**Copy all** or **Back**. Restoring is one step: **Ctrl+Z** undoes it.
+
+Every version from the last day is kept; then one per hour for a week; then one per day up to the
+limit in **Settings → MicaPad** (90 days by default). The newest version is always kept.
+
+### Real files
+
+Opening a file (Ctrl+O, or Open with) edits a *copy*: your changes are saved continuously, but the
+file on disk changes only when you press **Ctrl+S**. A dot on the tab means "edited since the
+file was last saved". The file keeps its encoding and line endings; both are shown, and can be
+changed, in the status bar. If a character you typed cannot be stored in the file's encoding,
+MicaPad offers **Save as UTF-8** instead of saving question marks.
+
+If another program changes the file, MicaPad reloads it — or, when you have edits of your own,
+asks **Reload from disk** or **Keep mine** (a reload first keeps your version in history). If the
+file is deleted, **Keep as note** turns the tab into an ordinary note.
+
+### Where notes live
+
+`%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`
+folder of plain text files. **Settings → MicaPad → Open notes folder** takes you there.
+
+---
+
 ## 🔩 Hardware Inspector
 
 The **Hardware** button at the top of the stats panel opens a CPU-Z-style inspector with six tabs:

@@ -74,6 +74,24 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_closed_note_that_cannot_be_reopened_says_so() => WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Insert(0, "keep this");
+            var note = env.Workspace.Active!;
+            window.HandleShortcut(Key.W, ModifierKeys.Control);
+            env.Flush();
+
+            using (new FileStream(env.Store.CurrentPath(note.Id), FileMode.Open, FileAccess.Read, FileShare.None))
+                Assert.True(window.HandleShortcut(Key.T, ModifierKeys.Control | ModifierKeys.Shift));
+
+            Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
+            Assert.Equal("That note could not be reopened right now, so it was left as it is.", window.InfoText.Text);
+
+            window.HandleShortcut(Key.T, ModifierKeys.Control | ModifierKeys.Shift);
+            Assert.Equal("keep this", window.Editor.Document.Text);
+        });
+
+        [Fact]
         public void Zoom_scales_the_editor_font_and_ctrl_0_resets_it() => WithWindow((window, env, config) =>
         {
             window.HandleShortcut(Key.OemPlus, ModifierKeys.Control);

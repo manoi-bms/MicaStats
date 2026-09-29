@@ -327,7 +327,12 @@ namespace Kil0bitSystemMonitor.Pad
         {
             var note = _workspace.ReopenLastClosed();
             if (note != null) ShowNote(note);
+            else if (_workspace.ClosedNotes().Count > 0) ShowReopenFailed();   // not just an empty list
         }
+
+        /// <summary>Reopen found the note but could not load it (its text cannot be read right now, say).</summary>
+        private void ShowReopenFailed() =>
+            ShowInfo("That note could not be reopened right now, so it was left as it is.", null);
 
         private void CycleTab(int delta)
         {
@@ -911,6 +916,7 @@ namespace Kil0bitSystemMonitor.Pad
             ClosedPopup.IsOpen = false;
             var note = _workspace.Reopen(row.Id);
             if (note != null) ShowNote(note);
+            else ShowReopenFailed();
         }
 
         private void OnClosedDeleteClick(object sender, RoutedEventArgs e)

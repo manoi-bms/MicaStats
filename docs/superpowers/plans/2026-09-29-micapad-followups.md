@@ -19,8 +19,6 @@ merge are not listed.
 
 - A note skipped because its text was unreadable comes back at the next launch without its
   caret and scroll position (`PrepareSession` drops its view state).
-- The window ignores a null from Reopen, so clicking Reopen on a note whose text is locked does
-  nothing visible. Show a message.
 - A missing note can stay at the top of the closed list until it is deleted.
 - `ClosedNotes` reads every `meta.json` on the UI thread. Reopen and DeleteClosed can block the
   UI for up to 2 s while the writer is behind.

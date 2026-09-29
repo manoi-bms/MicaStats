@@ -14,6 +14,13 @@ merge are not listed.
 - A lossy decode is not shown on restore at startup, only on open and reload.
 - A no-op line-ending change is neither marked unsaved nor persisted.
 - File operations on an offline share run on the UI thread and can stall it.
+- Overwrite anyway is not tied to the version the user was shown: if the file changes again to
+  another version that cannot be kept, that unseen version is dropped. Pass the stamp shown with
+  the question and skip the copy only while the file still has it.
+- Reloading a clean stand-in (`SourceStamp.Unverified`) snapshots the stand-in first, which can
+  add an empty or stale version to History. Skip that snapshot when the note has no edits.
+- Keep mine on a stand-in, then Ctrl+S, replaces the file without a History copy of it.
+  Snapshot the file first when the stamp is `Unverified`.
 
 ## Restore and closed notes
 
@@ -24,6 +31,11 @@ merge are not listed.
   UI for up to 2 s while the writer is behind.
 - A note marked open but missing from the session list is orphaned: never shown and never
   purged.
+- A clean closed file note detached on Reopen (its file now held by another tab) reads that
+  file, so it returns with the other tab's text rather than its own (its own is in History).
+  Load its newest snapshot instead.
+- The reopen-failed message does not name the note; for text that can never be read the
+  closed-note refusal (Try again in a moment) is a dead end until the note is deleted.
 
 ## Writer and store
 
@@ -62,6 +74,8 @@ merge are not listed.
   many tabs. The Maximized state can be lost when the window is minimized. Shortcuts fire while
   a tab is being renamed.
 - `TaskbarIdentity` ignores HRESULTs.
+- A plain second launch (Settings) also waits up to 5 s when no window appears and is then
+  dropped without a log line; only `--pad` is logged.
 - Copy all gives no feedback when the clipboard is busy.
 - Font changes in Settings save on every LostFocus, with no hint when the font does not exist.
 
@@ -72,6 +86,6 @@ merge are not listed.
 - Store: concurrency between the UI and writer threads; crash leftovers (`.ready` without a
   target, meta/session `.ready`, the `WriteSource` copy fallback).
 - Writer: replace-keeps-position, other keys flowing during a backoff, `Dispose`.
-- Window: hide-on-close, flush on deactivate and tab switch, Ctrl+Tab, Ctrl+Shift+T, the
-  refused-delete path, invalid regex, wrap-around, single Replace.
+- Window: hide-on-close, flush on deactivate and tab switch, Ctrl+Tab, the refused-delete
+  path, invalid regex, wrap-around, single Replace.
 - IPC: `SendOpen` end to end; `cbData` at or above 2^31.

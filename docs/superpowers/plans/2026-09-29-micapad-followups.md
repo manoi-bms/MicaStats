@@ -21,6 +21,11 @@ merge are not listed.
   add an empty or stale version to History. Skip that snapshot when the note has no edits.
 - Keep mine on a stand-in, then Ctrl+S, replaces the file without a History copy of it.
   Snapshot the file first when the stamp is `Unverified`.
+- Two messages still say "changed on disk" for a stand-in: the Overwrite anyway question and
+  the "too large to keep a copy of your version" reload message. Use the stand-in wording there too.
+- Save As onto the file of a note skipped at restore is allowed (`SaveAs` checks only open
+  tabs, and `Restore` removes duplicates by id, not by path), so both notes come back as tabs for
+  one file at the next launch. The stamp check still stops a silent overwrite.
 
 ## Restore and closed notes
 
@@ -36,6 +41,17 @@ merge are not listed.
   Load its newest snapshot instead.
 - The reopen-failed message does not name the note; for text that can never be read the
   closed-note refusal (Try again in a moment) is a dead end until the note is deleted.
+- A note skipped at restore whose text can never be read blocks opening its file for good, and
+  it cannot be deleted from the UI because it is not a closed note. Offer to open the file as a
+  new note after keeping what can be kept, or list skipped notes somewhere they can be removed.
+- Opening the file of a clean note skipped at restore (both its file and its stored copy were
+  unreadable) says it "has unsaved edits", which it does not.
+- A skipped note brought back by opening its file skips the file checks the closed-note path
+  runs: no undecodable-bytes warning, and a file that is now binary or over 50 MB opens as a
+  stand-in instead of being refused.
+- The design spec says one file never ends up in two notes (see the Save As case above) and that
+  a detached closed note keeps its text (a clean one takes the other tab's text); it also puts
+  the Save As onto the note's own file rule in the scratch-note paragraph. Correct the wording.
 
 ## Writer and store
 

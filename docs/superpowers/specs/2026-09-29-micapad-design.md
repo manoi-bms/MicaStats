@@ -1,7 +1,7 @@
 # MicaPad: a built-in notepad that never loses text and never asks to save
 
 **Date:** 2026-09-29
-**Status:** approved in brainstorming, awaiting written-spec review
+**Status:** approved; implementation plan in `docs/superpowers/plans/2026-09-29-micapad.md`
 **Phase:** 1 of 2. Phase 1 is the autosave core described here. Phase 2 (a later spec) brings
 editing parity with [notepad4](https://github.com/zufuliu/notepad4); its backlog is listed under
 *Out of scope*.
@@ -39,7 +39,8 @@ Two rules carried over from the rest of MicaStats:
    for 90 days).
 5. **Entry points:** overlay menu, global hotkey, `--pad` command line with Explorer "Open with",
    and reopen at login.
-6. **Editor engine: AvalonEdit** (`ICSharpCode.AvalonEdit` 6.3.x, MIT). WPF-native, virtualized
+6. **Editor engine: AvalonEdit** (NuGet package `AvalonEdit` 6.3.1.120, namespace
+   `ICSharpCode.AvalonEdit`, MIT). WPF-native, virtualized
    rendering, per-document undo stack. Chosen over ScintillaNET (notepad4's engine) because
    hosting Scintilla needs `WindowsFormsHost`, native DLLs per architecture and manual theming
    — costs paid in phase 1 for lexer value that only arrives in phase 2. notepad4's C++ source
@@ -68,13 +69,15 @@ MicaPad\
   `encoding` (name plus BOM flag), `lineEnding`, and the source stamp (`lastWriteTimeUtc`,
   `length`) taken at the last load or save.
 
-**Atomic writes.** Every file is written to `name.tmp`, flushed with `FileStream.Flush(true)`,
-then moved over the target (`File.Replace` when the target exists, `File.Move` otherwise).
+**Atomic writes, in two phases.** Every store file is written to `name.tmp` and flushed with
+`FileStream.Flush(true)`; the complete temp file is then renamed to `name.ready`; finally
+`name.ready` is moved over the target (`File.Replace` when the target exists, `File.Move`
+otherwise). A crash while writing leaves only a partial `.tmp`, which is never read. A crash
+after the rename leaves a `.ready`, which is always complete.
 
 **Loading one note**, most trusted source first:
 
-1. `current.txt.tmp` that is newer than `current.txt` — an interrupted replace; it is the most
-   recent complete write.
+1. `current.txt.ready` — a complete write whose final replace was interrupted.
 2. `current.txt`.
 3. The newest file in `history\`.
 
@@ -96,9 +99,11 @@ notes whose `closedAt` is null, ordered by `modified`.
 at most 5 s after the first unsaved change. Immediate flush on window deactivation, tab switch,
 tab close, Ctrl+S and application exit. Worst case on power loss: about 5 s of typing.
 
-**Threading.** On the UI thread, a save only takes `TextDocument.CreateSnapshot()` and reads its
-text. `AutosaveQueue` — a single background writer — performs the writes, serialized per note
-(a newer pending save for the same note replaces an older one; last write wins).
+**Threading.** On the UI thread, a save only reads the document's text. `AutosaveWriter` — a
+single background writer — performs the writes in order, with a newer pending save for the same
+note replacing an older one (last write wins). Every save carries a per-note version number and
+the store ignores a write older than one it has already made, so a late background write can
+never overwrite a newer synchronous one.
 
 **Session end.** `Application.SessionEnding` (raised by `WM_QUERYENDSESSION`) flushes every
 dirty note synchronously and never sets `Cancel`: it waits up to 2 s for the queue to drain,
@@ -131,8 +136,9 @@ with `DiagnosticsLog.Error("pad", …)`. The text stays in memory and the UI nev
   CRLF.
 
 **Editing.** Edits autosave to `current.txt` and set `hasUnsavedEdits`; the tab shows `•`. The
-real file is untouched. Line endings already in the text are never normalized; newly typed line
-breaks use the note's line ending.
+real file is untouched. Line endings already in the text are never normalized. Newly typed or
+pasted line breaks follow AvalonEdit's rule: they copy the ending of the adjacent line, which is
+the file's own ending in every file that has at least one line break.
 
 **Ctrl+S on a file-backed note** writes the document text to `sourcePath` with the note's
 encoding, BOM and line ending setting, atomically: a temp file in the same folder, then
@@ -202,7 +208,8 @@ given `closedAt`, and removed from the session. A scratch note that has never co
 deleted instead. A file-backed note with unsaved edits keeps them; reopening restores them.
 
 **Closed notes.** Ctrl+Shift+T reopens the most recently closed note. The `▾` button at the end
-of the tab strip lists closed notes (title, closed time, first line) with a search box and
+of the tab strip lists closed notes (title — which for a scratch note is its first line — closed
+time, and the file path for a file-backed note) with a search box and
 **Reopen** / **Delete** actions.
 
 **Deletion always goes to the Recycle Bin.** Both *Delete* and the automatic purge of notes
@@ -273,8 +280,8 @@ snapshot first and applies as one undoable edit. Matching is done by the pure
   whenever `PadHotkey` is non-empty and valid. `App`'s config listener re-applies on
   `PadHotkey` as well as `CaptureHotkey*`. A combination already taken by another program is
   logged, as the capture keys are today.
-- **Command line:** `PadArguments.TryParse(args, out bool openPad, out string? path)` accepts
-  `--pad` and `--pad "<path>"`, alone or with `--startup`.
+- **Command line:** `PadArguments.TryParse(args, out string? path)` returns true when `--pad`
+  is present and accepts `--pad` and `--pad "<path>"`, alone or with `--startup`.
   - Another instance already running: send `WM_COPYDATA` to `Kil0bitOverlayWndClass_Main` with
     `dwData = 0x4D504144` ("MPAD") and the path as UTF-16 (empty means "just open"), then exit.
     The overlay's `WndProc` accepts only that `dwData`, ignores payloads over 32,768 characters,
@@ -318,9 +325,14 @@ New code under `Services/Pad/` holds no WPF types and is unit-tested:
 | Unit | Responsibility |
 |---|---|
 | `NoteMeta`, `SessionState` | Serializable records for `meta.json` and `session.json` |
-| `NoteStore` | Folder layout, atomic writes, load order and recovery, snapshots, pruning, closed-note purge |
-| `AutosaveQueue` | Debounce (1 s / 5 s), single background writer, per-note last-write-wins, `FlushAll(timeout)` |
+| `AtomicFile` | Two-phase atomic write for store files; same-folder temp-and-replace for source files |
+| `NoteStore` | Folder layout, load order and recovery, snapshots, pruning, closed-note purge |
+| `AutosaveScheduler` | Debounce (1 s / 5 s) decision, pure |
+| `AutosaveWriter` | Single background writer, FIFO, last-write-wins per key, retry with backoff, `FlushAll(timeout)` (the spec's "AutosaveQueue") |
+| `PadWorkspace` | The open notes and every rule above that joins them: autosave, snapshots, close and reopen, session, file operations. No WPF types, so it is tested directly |
 | `HistoryPolicy` | Snapshot trigger decision and `SelectToPrune` |
+| `HistoryRows` | History pane grouping and text, pure |
+| `PadIpc` | `WM_COPYDATA` send and validated read |
 | `TextFileCodec` | Encoding and line-ending detection, binary and size guards, lossless decode/encode, lossy-character check |
 | `FindReplaceEngine` | Find all, next and previous, replace, replace all; case, whole word, regex |
 | `NoteTitle` | Title derivation |
@@ -348,10 +360,12 @@ package, icon asset).
 
 ## Testing
 
-**Automated** (xUnit, `tests/Kil0bitSystemMonitor.Tests/PadTests.cs`, temp folders, an
-injected `Func<DateTime>` clock):
+**Automated** (xUnit, `tests/Kil0bitSystemMonitor.Tests/Pad*Tests.cs`, one file per unit, temp
+folders, an injected `Func<DateTime>` clock; window tests build the real window on one shared
+STA thread without showing it):
 
-- `NoteStore`: save/load round trip; a newer `.tmp` wins over its target; corrupt `meta.json`
+- `NoteStore`: save/load round trip; a leftover `.ready` wins over its target and a partial
+  `.tmp` is ignored; corrupt `meta.json`
   rebuilt; missing `current.txt` falls back to the newest snapshot; corrupt `session.json`
   rebuilt from open notes ordered by `modified`; closed notes excluded from the session;
   reopening a path finds the existing note.
@@ -363,8 +377,12 @@ injected `Func<DateTime>` clock):
   exactly for each supported encoding; lossy-character check.
 - `FindReplaceEngine`: match case, whole word, regex, replace all with capture groups; an
   invalid pattern returns an error rather than throwing; a zero-length match does not loop.
-- `AutosaveQueue`: 1 s debounce and 5 s maximum latency on a fake clock; last write wins per
-  note; `FlushAll` waits for pending writes.
+- `AutosaveScheduler`: 1 s debounce and 5 s maximum latency on a fake clock.
+- `AutosaveWriter`: last write wins per key; FIFO order; failed work is retried; `FlushAll`
+  waits for pending work.
+- `PadWorkspace`: autosave, pause and forced snapshots, close and reopen, session restore,
+  session-end flush, and every file operation, against a temp folder and a fake clock.
+- `PadIpc`: wrong tag, oversized and odd-length payloads are rejected.
 - `PadArguments`: `--pad`, `--pad "C:\a b\x.txt"`, combined with `--startup`.
 - `HotkeyParser` parses the default `Ctrl+Alt+N`.
 - `NoteTitle` and `DiskChangePolicy` decision tables.

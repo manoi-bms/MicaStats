@@ -7,9 +7,6 @@ merge are not listed.
 
 ## Saving and files
 
-- **Two notes for one file.** Opening a file whose closed note cannot be read opens a second,
-  clean note for the same file. `SaveAs` also checks only open tabs, so a closed note can share
-  a path.
 - **Text written before meta.** A crash in between can leave the last five seconds of edits to
   a file note without the "unsaved" flag.
 - `DetachFromFile` pins the title, so a later Save As keeps the old name.

@@ -77,6 +77,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
                 var reopened = Reopen(closed.Id);
                 if (reopened != null) return new OpenFileResult(OpenFileStatus.Opened, reopened, lossy);
+                // Its unsaved edits are in text that cannot be read right now (Reopen logged why).
+                // A fresh note beside it would be a second note for this file.
+                if (closed.HasUnsavedEdits) return new OpenFileResult(OpenFileStatus.ClosedNoteUnreadable, null);
             }
 
             var stamp = SourceStamp.Read(full);

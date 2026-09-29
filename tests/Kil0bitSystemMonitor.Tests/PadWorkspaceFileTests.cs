@@ -89,6 +89,50 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Opening_a_file_whose_closed_note_cannot_be_read_is_refused_rather_than_duplicated()
+        {
+            string path = WriteFile("draft.txt", Encoding.UTF8.GetBytes("v1"));
+            var note = Ws.OpenFile(path).Note!;
+            PadTestEnv.Type(Ws, note, "v1 plus edits");
+            Ws.Close(note);
+            _env.Flush();
+
+            using (new FileStream(_env.Store.CurrentPath(note.Id), FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                var refused = Ws.OpenFile(path);
+                Assert.Equal(OpenFileStatus.ClosedNoteUnreadable, refused.Status);
+                Assert.Null(refused.Note);
+                Assert.Empty(Ws.Open);
+            }
+
+            var again = Ws.OpenFile(path);
+            Assert.Equal(note.Id, again.Note!.Id);
+            Assert.Equal("v1 plus edits", again.Note.TextProvider());
+        }
+
+        [Fact]
+        public void A_closed_note_whose_file_another_tab_now_holds_reopens_as_a_note_of_its_own()
+        {
+            string path = WriteFile("twice.txt", Encoding.UTF8.GetBytes("base"));
+            var old = Ws.OpenFile(path).Note!;
+            PadTestEnv.Type(Ws, old, "old edits");
+            Ws.Close(old);
+            var scratch = Ws.NewNote();
+            PadTestEnv.Type(Ws, scratch, "new text");
+            Assert.Equal(SaveToFileStatus.Saved, Ws.SaveAs(scratch, path).Status);   // two notes now name the file
+
+            var back = Ws.Reopen(old.Id)!;
+            _env.Flush();
+
+            Assert.Equal("old edits", back.TextProvider());
+            Assert.False(back.Meta.IsFileBacked);
+            Assert.Equal("twice.txt", back.Title);
+            Assert.Equal("old edits", _env.DiskText(back));
+            Assert.Same(scratch, Assert.Single(Ws.Open, n => n.Meta.IsFileBacked));
+            Assert.Equal(Encoding.UTF8.GetBytes("new text"), File.ReadAllBytes(path));
+        }
+
+        [Fact]
         public void Saving_keeps_the_original_ansi_encoding()
         {
             byte[] cp874 = { 0xCA, 0xC7, 0xD1, 0xCA, 0xB4, 0xD5 };

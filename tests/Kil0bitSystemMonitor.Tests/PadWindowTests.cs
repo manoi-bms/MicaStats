@@ -120,6 +120,25 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Opening_a_file_whose_closed_note_cannot_be_read_says_so() => WithWindow((window, env, config) =>
+        {
+            string path = env.FileOf("draft.txt");
+            File.WriteAllText(path, "v1");
+            window.OpenPath(path);
+            window.Editor.Document.Insert(2, " plus edits");
+            var note = env.Workspace.Active!;
+            window.HandleShortcut(Key.W, ModifierKeys.Control);
+            env.Flush();
+
+            using (new FileStream(env.Store.CurrentPath(note.Id), FileMode.Open, FileAccess.Read, FileShare.None))
+                window.OpenPath(path);
+
+            Assert.Equal("draft.txt has unsaved edits in a closed note that cannot be read right now, so it was not opened. Try again in a moment.",
+                window.InfoText.Text);
+            Assert.DoesNotContain(env.Workspace.Open, n => n.Meta.IsFileBacked);
+        });
+
+        [Fact]
         public void An_outside_change_to_an_edited_file_asks_and_reload_takes_it() => WithWindow((window, env, config) =>
         {
             string path = env.FileOf("shared.txt");

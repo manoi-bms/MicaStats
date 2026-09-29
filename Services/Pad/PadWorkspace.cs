@@ -25,6 +25,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
         Failed,
         /// <summary>Reloading would discard unsaved edits too large to keep as a version; nothing was changed.</summary>
         EditsWouldBeLost,
+        /// <summary>
+        /// The file has a closed note with unsaved edits whose text cannot be read right now.
+        /// Opening the file fresh beside it would leave two notes for one file, so nothing was opened.
+        /// </summary>
+        ClosedNoteUnreadable,
     }
 
     /// <summary>Collaborators for <see cref="PadWorkspace"/>; tests replace every one of them.</summary>
@@ -388,7 +393,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// Reopens a closed note after the active tab; an open one is just activated. Null when the
         /// note cannot be loaded, including when its text exists but cannot be read right now: then
-        /// nothing is written and the note stays in the closed list.
+        /// nothing is written and the note stays in the closed list. A file note whose file another
+        /// tab already holds comes back as a note of its own.
         /// </summary>
         public OpenNote? Reopen(string id)
         {
@@ -417,6 +423,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 if (meta == null) return null;
                 // Reopening writes the text straight back, so text that cannot be read must stop it here.
                 if (!TryLoadInitialText(meta, out text)) return UnreadableOnReopen(id);
+            }
+
+            if (meta.IsFileBacked && Open.Any(n => SamePath(n.Meta.SourcePath, meta.SourcePath!)))
+            {
+                // Another tab holds this file now (a Save As onto it while this note was closed).
+                // Two tabs saving one file would overwrite each other, so this note comes back on
+                // its own, under the file's name, keeping its text and history.
+                meta.TitleIsCustom = true;
+                meta.SourcePath = null;
+                meta.SourceStamp = null;
+                meta.HasUnsavedEdits = false;
             }
 
             _recentlyClosed.Remove(id);

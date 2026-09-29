@@ -168,6 +168,9 @@ namespace Kil0bitSystemMonitor
                 _hWnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW, "Kil0bitOverlayWndClass_Main", "MicaStats Overlay", WS_POPUP, x, y, 300, 32, IntPtr.Zero, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
                 if (_hWnd == IntPtr.Zero) throw new Exception("Failed to create window");
 
+                // A second launch with --pad (Explorer's Open with) arrives as WM_COPYDATA, even when this instance is elevated.
+                Services.Pad.PadIpc.AllowFromLowerIntegrity(_hWnd);
+
                 if (_hIcon != IntPtr.Zero) { SendMessage(_hWnd, WM_SETICON, (IntPtr)ICON_BIG, _hIcon); SendMessage(_hWnd, WM_SETICON, (IntPtr)ICON_SMALL, _hIcon); }
 
                 _currentDpi = GetDpiForWindow(_hWnd);
@@ -1636,6 +1639,12 @@ namespace Kil0bitSystemMonitor
             try { if (_onHistoryUpdated != null) _history.Updated -= _onHistoryUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _startupRecoveryTimer?.Stop(); _startupRecoveryTimer = null; _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
         }
 
+        /// <summary>The tab-separated shortcut column for MicaPad's menu item; empty when no valid hotkey is set.</summary>
+        private string PadShortcutLabel() =>
+            Services.Capture.HotkeyParser.TryParse(_config.Config.PadHotkey, out var mods, out uint vk)
+                ? "\t" + Services.Capture.HotkeyParser.Describe(mods, vk)
+                : "";
+
         private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
             if (msg == 0x0084) return (IntPtr)1;
@@ -1651,6 +1660,13 @@ namespace Kil0bitSystemMonitor
             if (msg == WM_ENTERSIZEMOVE) { _inSizeMove = true; }
             if (msg == WM_EXITSIZEMOVE) { _inSizeMove = false; if (Win32Helper.GetWindowRect(hWnd, out Win32Helper.RECT r)) { _config.Config.X = r.Left; _config.Config.Y = r.Top; _config.SaveConfig(); } }
             if (msg == WM_SHOW_SETTINGS) { _dispatcher.BeginInvoke(() => App.OpenSettings(_viewModel, _config)); return IntPtr.Zero; }
+            if (msg == Services.Pad.PadIpc.WM_COPYDATA)
+            {
+                // Anything not tagged as a MicaPad request is refused; the path is only ever opened as text.
+                if (!Services.Pad.PadIpc.TryRead(lParam, out string padPath)) return IntPtr.Zero;
+                _dispatcher.BeginInvoke(() => App.OpenPad(padPath.Length == 0 ? null : padPath));
+                return (IntPtr)1;
+            }
             if (msg == WM_DPICHANGED) { _currentDpi = (uint)(wParam.ToInt32() & 0xFFFF); _dpiScale = _currentDpi / 96.0f; ClearCaches(); AlignToTaskbarCenter(); UpdateLayer(); return IntPtr.Zero; }
             if (msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE)
             {
@@ -1757,6 +1773,7 @@ namespace Kil0bitSystemMonitor
                     AppendMenu(hMenu, 0, 1041, "Record Slowdown Now");
                     AppendMenu(hMenu, 0, 1001, "Settings");
                     AppendMenu(hMenu, 0, 1011, "Processes");
+                    AppendMenu(hMenu, 0, 1012, "MicaPad" + PadShortcutLabel());
                     AppendMenu(hMenu, 0, 1002, "Task Manager");
                     AppendMenu(hMenu, 0x0800, 0, null);
                     AppendMenu(hMenu, 0, 1020, "Capture Region	Ctrl+Shift+1");
@@ -1808,6 +1825,7 @@ namespace Kil0bitSystemMonitor
                     // MicaStats' own list, from the snapshot it already holds. Task Manager stays
                     // beside it for its other tabs, and for when MicaStats itself is the problem.
                     else if (ch == 1011) _dispatcher.BeginInvoke(() => TaskManagerWindow.ShowOrActivate(App.SharedProcessSampler));
+                    else if (ch == 1012) _dispatcher.BeginInvoke(() => App.OpenPad(null));
                     else if (ch == 1002) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("taskmgr") { UseShellExecute = true });
                     // Capture runs on the dispatcher: the selector is a WPF window, and this
                     // handler is inside the native menu's message loop.

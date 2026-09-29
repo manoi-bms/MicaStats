@@ -25,6 +25,10 @@ namespace Kil0bitSystemMonitor
         private static System.Threading.Mutex? s_mutex;
         private Kil0bitSystemMonitor.Services.Capture.CaptureHotkeys? m_captureHotkeys;
         public static SettingsWindow? SettingsWindow { get; private set; }
+        private Kil0bitSystemMonitor.ViewModels.MainViewModel? m_viewModel;
+        private System.Windows.Threading.DispatcherTimer? m_padMaintenanceTimer;
+        private static Kil0bitSystemMonitor.Services.Pad.NoteStore? s_padStore;
+        private static Kil0bitSystemMonitor.Services.Pad.PadWorkspace? s_pad;
 
         // ---- diagnostics ----------------------------------------------------------------
 
@@ -115,6 +119,17 @@ namespace Kil0bitSystemMonitor
 
             base.OnStartup(e);
 
+            // Legacy code pages (cp874 on Thai Windows) for MicaPad, before anything reads a file.
+            Kil0bitSystemMonitor.Services.Pad.TextFileCodec.EnsureCodePages();
+
+            bool padRequested = Kil0bitSystemMonitor.Services.Pad.PadArguments.TryParse(e.Args, out string? padPath);
+            if (padPath != null)
+            {
+                // Relative to this process's folder, which is not the folder of the instance that opens it.
+                try { padPath = System.IO.Path.GetFullPath(padPath); }
+                catch (Exception ex) when (ex is ArgumentException or NotSupportedException or System.IO.PathTooLongException) { padPath = null; }
+            }
+
             // Robust single-instance check using Mutex
             bool createdNew;
             s_mutex = new System.Threading.Mutex(true, "Local\\MicaStats_SingleInstance_Mutex", out createdNew);
@@ -125,7 +140,9 @@ namespace Kil0bitSystemMonitor
                 IntPtr existingWnd = FindWindow("Kil0bitOverlayWndClass_Main", null);
                 if (existingWnd != IntPtr.Zero)
                 {
-                    SendMessage(existingWnd, WM_SHOW_SETTINGS, IntPtr.Zero, IntPtr.Zero);
+                    // --pad (Start menu, Open with, a pinned MicaPad button) goes to the running instance's MicaPad.
+                    if (padRequested) Kil0bitSystemMonitor.Services.Pad.PadIpc.SendOpen(existingWnd, padPath);
+                    else SendMessage(existingWnd, WM_SHOW_SETTINGS, IntPtr.Zero, IntPtr.Zero);
                 }
                 s_mutex.Dispose();
                 System.Environment.Exit(0);
@@ -168,6 +185,7 @@ namespace Kil0bitSystemMonitor
 
             var viewModel = new Kil0bitSystemMonitor.ViewModels.MainViewModel();
             viewModel.Config = config.Config;
+            m_viewModel = viewModel;
 
             // WMI is slow enough that the settings window already backgrounds the equivalent query,
             // so resolve the panel's header details now rather than on the panel-open path.
@@ -182,11 +200,14 @@ namespace Kil0bitSystemMonitor
 
             // System-wide capture shortcuts. Re-applied whenever the user edits them, so a new
             // combination takes effect without a restart.
-            m_captureHotkeys = new Kil0bitSystemMonitor.Services.Capture.CaptureHotkeys(Dispatcher, () => m_config?.Config);
+            m_captureHotkeys = new Kil0bitSystemMonitor.Services.Capture.CaptureHotkeys(
+                Dispatcher, () => m_config?.Config, () => OpenPad(null));
             m_captureHotkeys.Apply();
             config.Config.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName != null && e.PropertyName.StartsWith("CaptureHotkey", StringComparison.Ordinal))
+                if (e.PropertyName != null &&
+                    (e.PropertyName.StartsWith("CaptureHotkey", StringComparison.Ordinal) ||
+                     e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.PadHotkey)))
                     Dispatcher.BeginInvoke(new Action(() => m_captureHotkeys?.Apply()));
             };
 
@@ -210,12 +231,28 @@ namespace Kil0bitSystemMonitor
 
             StartDiagnostics(config);
 
+            // Windows is shutting down or signing out: every MicaPad note reaches disk now, and
+            // nothing is asked. Cancel is never set.
+            SessionEnding += (s, ending) => FlushPad();
+
             string[] args = System.Environment.GetCommandLineArgs();
             bool isStartup = System.Linq.Enumerable.Contains(args, "--startup");
-            if (!isStartup)
+            if (padRequested)
+            {
+                OpenPad(padPath);
+            }
+            else if (!isStartup)
             {
                 OpenSettings(viewModel, config);
             }
+
+            // Once startup has settled: bring MicaPad back if it was open at shutdown, and start
+            // the daily history maintenance.
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                ReopenPadIfItWasOpen(config);
+                SchedulePadMaintenance();
+            }));
         }
 
         /// <summary>
@@ -508,6 +545,108 @@ namespace Kil0bitSystemMonitor
             _hoverCloseTimer.Start();
         }
 
+        // ---- MicaPad ----------------------------------------------------------------------
+
+        /// <summary>The MicaPad store, created on first use so a user who never opens MicaPad gets no folder.</summary>
+        private static Kil0bitSystemMonitor.Services.Pad.NoteStore PadStore =>
+            s_padStore ??= new Kil0bitSystemMonitor.Services.Pad.NoteStore(Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot);
+
+        /// <summary>
+        /// Shows MicaPad, creating its workspace on first use, and opens <paramref name="path"/> in a
+        /// tab when given. From the overlay menu, the hotkey, <c>--pad</c> and the settings page.
+        /// </summary>
+        public static void OpenPad(string? path)
+        {
+            var config = ConfigService?.Config;
+            if (config == null) return;
+
+            try
+            {
+                if (s_pad == null)
+                {
+                    var dispatcher = Current.Dispatcher;
+                    s_pad = new Kil0bitSystemMonitor.Services.Pad.PadWorkspace(PadStore,
+                        new Kil0bitSystemMonitor.Services.Pad.PadWorkspaceOptions
+                        {
+                            Post = action => dispatcher.BeginInvoke(action),
+                        });
+                }
+
+                var window = Kil0bitSystemMonitor.Pad.MicaPadWindow.ShowOrActivate(s_pad, config, () => ShowSettingsSection("MicaPad"));
+                if (!string.IsNullOrWhiteSpace(path)) window.OpenPath(path);
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Opening MicaPad failed", ex);
+            }
+        }
+
+        /// <summary>Opens Settings on one section.</summary>
+        public static void ShowSettingsSection(string section)
+        {
+            if (Current is not App app || app.m_viewModel == null || app.m_config == null) return;
+            OpenSettings(app.m_viewModel, app.m_config);
+            SettingsWindow?.SelectSection(section);
+        }
+
+        /// <summary>Everything MicaPad holds goes to disk. Never shows UI and never cancels anything.</summary>
+        private static void FlushPad()
+        {
+            try
+            {
+                Kil0bitSystemMonitor.Pad.MicaPadWindow.Current?.PrepareForExit();
+                s_pad?.FlushAll(TimeSpan.FromSeconds(2));
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Flushing MicaPad failed", ex);
+            }
+        }
+
+        private static void ReopenPadIfItWasOpen(Kil0bitSystemMonitor.Services.ConfigService config)
+        {
+            try
+            {
+                if (!config.Config.PadReopenAtLogin || Kil0bitSystemMonitor.Pad.MicaPadWindow.Current != null) return;
+
+                string session = System.IO.Path.Combine(Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot, "session.json");
+                if (!System.IO.File.Exists(session)) return;
+                if (PadStore.LoadSession().WindowOpen) OpenPad(null);
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Reopening MicaPad failed", ex);
+            }
+        }
+
+        private void SchedulePadMaintenance()
+        {
+            RunPadMaintenance();
+            m_padMaintenanceTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromHours(24) };
+            m_padMaintenanceTimer.Tick += (s, e) => RunPadMaintenance();
+            m_padMaintenanceTimer.Start();
+        }
+
+        /// <summary>Prunes history and purges long-closed notes, off the UI thread.</summary>
+        private static void RunPadMaintenance()
+        {
+            if (!System.IO.Directory.Exists(Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot)) return;
+
+            int days = ConfigService?.Config.PadHistoryDays ?? 90;
+            var store = PadStore;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    store.PruneAll(DateTime.UtcNow, days, Kil0bitSystemMonitor.Services.Pad.RecycleBin.Instance);
+                }
+                catch (Exception ex)
+                {
+                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "MicaPad maintenance failed", ex);
+                }
+            });
+        }
+
         public static void OpenSettings(Kil0bitSystemMonitor.ViewModels.MainViewModel viewModel, Kil0bitSystemMonitor.Services.ConfigService config)
         {
             if (SettingsWindow != null)
@@ -527,6 +666,10 @@ namespace Kil0bitSystemMonitor
         {
             try
             {
+                // First, while the writer thread and the window still exist.
+                FlushPad();
+                m_padMaintenanceTimer?.Stop();
+                s_pad?.Dispose();
                 m_captureHotkeys?.Dispose();
                 // The watchdog owns nothing else here — its scans are a static kernel snapshot,
                 // not a lease on m_history or SharedProcessSampler — so stopping it first just
@@ -553,6 +696,8 @@ namespace Kil0bitSystemMonitor
 
         public static void Quit()
         {
+            // Record whether MicaPad is showing before shutdown closes it, so it reopens at next login.
+            Kil0bitSystemMonitor.Pad.MicaPadWindow.Current?.PrepareForExit();
             Current.Shutdown();
         }
     }

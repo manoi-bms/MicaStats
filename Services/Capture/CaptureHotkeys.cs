@@ -16,6 +16,11 @@ namespace Kil0bitSystemMonitor.Services.Capture
     /// and the remaining hotkeys still register, rather than the whole feature going quiet with
     /// no explanation.
     /// </para>
+    ///
+    /// <para>
+    /// The same hidden window also carries MicaPad's shortcut. Each registration maps to an
+    /// action, and MicaPad's key registers whether or not the capture shortcuts are switched on.
+    /// </para>
     /// </summary>
     public sealed class CaptureHotkeys : IDisposable
     {
@@ -23,14 +28,16 @@ namespace Kil0bitSystemMonitor.Services.Capture
 
         private readonly Dispatcher _dispatcher;
         private readonly Func<AppConfig?> _config;
-        private readonly Dictionary<int, CaptureMode> _registered = new();
+        private readonly Dictionary<int, Action> _registered = new();
+        private readonly Action _openPad;
         private HwndSource? _source;
         private int _nextId = 0xA100;
 
-        public CaptureHotkeys(Dispatcher dispatcher, Func<AppConfig?> config)
+        public CaptureHotkeys(Dispatcher dispatcher, Func<AppConfig?> config, Action openPad)
         {
             _dispatcher = dispatcher;
             _config = config;
+            _openPad = openPad;
         }
 
         /// <summary>Registers the configured shortcuts. Safe to call again to re-apply changes.</summary>
@@ -39,14 +46,27 @@ namespace Kil0bitSystemMonitor.Services.Capture
             Unregister();
 
             var cfg = _config();
-            if (cfg == null || !cfg.CaptureHotkeysEnabled) return;
+            if (cfg == null) return;
+
+            bool wantCapture = cfg.CaptureHotkeysEnabled;
+            bool wantPad = !string.IsNullOrWhiteSpace(cfg.PadHotkey);
+            if (!wantCapture && !wantPad) return;
 
             EnsureWindow();
             if (_source == null) return;
 
-            Register(cfg.CaptureHotkeyRegion, CaptureMode.Region);
-            Register(cfg.CaptureHotkeyWindow, CaptureMode.ActiveWindow);
-            Register(cfg.CaptureHotkeyFullScreen, CaptureMode.Screen);
+            if (wantCapture)
+            {
+                Register(cfg.CaptureHotkeyRegion, "capture", nameof(CaptureMode.Region),
+                    () => CaptureService.Start(CaptureMode.Region, _config(), _dispatcher));
+                Register(cfg.CaptureHotkeyWindow, "capture", nameof(CaptureMode.ActiveWindow),
+                    () => CaptureService.Start(CaptureMode.ActiveWindow, _config(), _dispatcher));
+                Register(cfg.CaptureHotkeyFullScreen, "capture", nameof(CaptureMode.Screen),
+                    () => CaptureService.Start(CaptureMode.Screen, _config(), _dispatcher));
+            }
+
+            // Queued, not called: the handler runs inside WndProc, and opening a window there would re-enter it.
+            if (wantPad) Register(cfg.PadHotkey, "pad", "MicaPad", () => _dispatcher.BeginInvoke(_openPad));
         }
 
         private void EnsureWindow()
@@ -71,35 +91,34 @@ namespace Kil0bitSystemMonitor.Services.Capture
             }
         }
 
-        private void Register(string? spec, CaptureMode mode)
+        private void Register(string? spec, string area, string label, Action action)
         {
             if (!HotkeyParser.TryParse(spec, out var mods, out uint vk))
             {
                 if (!string.IsNullOrWhiteSpace(spec))
-                    DiagnosticsLog.Warn("capture", $"Hotkey '{spec}' for {mode} is not a valid combination");
+                    DiagnosticsLog.Warn(area, $"Hotkey '{spec}' for {label} is not a valid combination");
                 return;
             }
 
             int id = _nextId++;
-            // NOREPEAT: holding the keys down must not fire a stream of captures.
+            // NOREPEAT: holding the keys down must not fire a stream of actions.
             if (RegisterHotKey(_source!.Handle, id, (uint)(mods | HotkeyModifiers.NoRepeat), vk))
             {
-                _registered[id] = mode;
-                DiagnosticsLog.Log("capture", $"Hotkey {HotkeyParser.Describe(mods, vk)} -> {mode}");
+                _registered[id] = action;
+                DiagnosticsLog.Log(area, $"Hotkey {HotkeyParser.Describe(mods, vk)} -> {label}");
             }
             else
             {
-                DiagnosticsLog.Warn("capture",
-                    $"Hotkey {spec} for {mode} is already taken by another application");
+                DiagnosticsLog.Warn(area, $"Hotkey {spec} for {label} is already taken by another application");
             }
         }
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == WM_HOTKEY && _registered.TryGetValue(wParam.ToInt32(), out var mode))
+            if (msg == WM_HOTKEY && _registered.TryGetValue(wParam.ToInt32(), out var action))
             {
                 handled = true;
-                CaptureService.Start(mode, _config(), _dispatcher);
+                action();
             }
             return IntPtr.Zero;
         }

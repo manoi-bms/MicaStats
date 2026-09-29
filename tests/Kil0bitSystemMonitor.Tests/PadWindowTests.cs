@@ -8,6 +8,7 @@ using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Pad;
 using Xunit;
+using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 
 namespace Kil0bitSystemMonitor.Tests
 {
@@ -99,6 +100,66 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(window.HandleShortcut(Key.Q, ModifierKeys.Control));
         });
 
+
+        [Fact]
+        public void Opening_a_file_shows_it_and_ctrl_s_writes_it() => WithWindow((window, env, config) =>
+        {
+            string path = env.FileOf("note.txt");
+            File.WriteAllText(path, "from disk");
+
+            window.OpenPath(path);
+            Assert.Equal("from disk", window.Editor.Document.Text);
+            Assert.Equal("UTF-8", window.EncodingButton.Content);
+            Assert.Equal("CRLF", window.EolButton.Content);
+
+            window.Editor.Document.Insert(window.Editor.Document.TextLength, "!");
+            Assert.True(window.HandleShortcut(Key.S, ModifierKeys.Control));
+
+            Assert.Equal("from disk!", File.ReadAllText(path));
+            Assert.False(env.Workspace.Active!.HasUnsavedEdits);
+        });
+
+        [Fact]
+        public void An_outside_change_to_an_edited_file_asks_and_reload_takes_it() => WithWindow((window, env, config) =>
+        {
+            string path = env.FileOf("shared.txt");
+            File.WriteAllText(path, "base");
+            window.OpenPath(path);
+            window.Editor.Document.Insert(0, "mine ");
+            File.WriteAllText(path, "theirs, longer");
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+
+            window.CheckShownNoteOnDisk();
+
+            Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
+            Assert.Equal("Reload from disk", window.InfoPrimary.Content);
+
+            window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+            Assert.Equal("theirs, longer", window.Editor.Document.Text);
+            Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+            Assert.False(env.Workspace.Active!.HasUnsavedEdits);
+        });
+
+        [Fact]
+        public void A_character_the_file_cannot_hold_offers_utf8() => WithWindow((window, env, config) =>
+        {
+            string path = env.FileOf("latin.txt");
+            File.WriteAllText(path, "plain");
+            window.OpenPath(path);
+            env.Workspace.SetEncoding(env.Workspace.Active!, PadEncoding.Ansi, 1252);
+            window.Editor.Document.Insert(window.Editor.Document.TextLength, " \u0E2A");
+
+            window.HandleShortcut(Key.S, ModifierKeys.Control);
+
+            Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
+            Assert.Equal("Save as UTF-8", window.InfoPrimary.Content);
+            Assert.Equal("plain", File.ReadAllText(path));
+
+            window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+            Assert.Equal("plain \u0E2A", File.ReadAllText(path));
+        });
         [Fact]
         public void The_micapad_icon_is_a_seven_size_ico()
         {

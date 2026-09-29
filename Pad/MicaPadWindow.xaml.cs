@@ -82,6 +82,7 @@ namespace Kil0bitSystemMonitor.Pad
             LoadIcon();
             SourceInitialized += OnSourceInitialized;
             Deactivated += (s, e) => _workspace.FlushPending();
+            Activated += (s, e) => CheckShownNoteOnDisk();
             Closed += OnClosedForReal;
         }
 
@@ -191,6 +192,9 @@ namespace Kil0bitSystemMonitor.Pad
             else if (ctrl && (key == Key.OemPlus || key == Key.Add)) Zoom(ZoomStep);
             else if (ctrl && (key == Key.OemMinus || key == Key.Subtract)) Zoom(-ZoomStep);
             else if (ctrl && (key == Key.D0 || key == Key.NumPad0)) SetZoom(1.0);
+            else if (ctrl && key == Key.O) OpenWithDialog();
+            else if (ctrl && key == Key.S) SaveShown();
+            else if (ctrlShift && key == Key.S) { if (_shown != null) SaveAs(_shown); }
             else return false;
             return true;
         }
@@ -282,6 +286,9 @@ namespace Kil0bitSystemMonitor.Pad
             UpdateCharsText();
             UpdateSaveText();
             ScrollTabIntoView(note);
+            UpdateFileText();
+            if (_infoNote != null && !ReferenceEquals(_infoNote, note)) HideInfo();
+            CheckDisk(note);
         }
 
         private void CloseActiveTab()
@@ -387,6 +394,269 @@ namespace Kil0bitSystemMonitor.Pad
             e.Handled = true;
         }
 
+        // ---- files --------------------------------------------------------------------------
+
+        private const string FileFilter =
+            "Text files|*.txt;*.log;*.ini;*.md;*.json;*.xml;*.csv;*.cfg;*.conf;*.yaml;*.yml|All files|*.*";
+
+        private Action? _infoPrimary;
+        private Action? _infoSecondary;
+        private OpenNote? _infoNote;
+
+        /// <summary>Opens a file in a tab, or reports in the info bar why it was not opened.</summary>
+        public void OpenPath(string path)
+        {
+            var result = _workspace.OpenFile(path);
+            string name = Path.GetFileName(path);
+            switch (result.Status)
+            {
+                case OpenFileStatus.Opened:
+                case OpenFileStatus.AlreadyOpen:
+                    ShowNote(result.Note!);
+                    if (result.Lossy) ShowLossyWarning(result.Note!);
+                    break;
+                case OpenFileStatus.NotFound:
+                    ShowInfo("File not found: " + path, null);
+                    break;
+                case OpenFileStatus.TooLarge:
+                    ShowInfo(name + " is larger than 50 MB and was not opened.", null);
+                    break;
+                case OpenFileStatus.Binary:
+                    ShowInfo(name + " looks like a binary file and was not opened.", null);
+                    break;
+                default:
+                    ShowInfo("Could not open " + path + ".", null);
+                    break;
+            }
+        }
+
+        /// <summary>Compares the shown note with its file; runs on every activation.</summary>
+        internal void CheckShownNoteOnDisk()
+        {
+            if (_shown != null) CheckDisk(_shown);
+        }
+
+        /// <summary>
+        /// Shows the info bar with a message and up to two actions. <paramref name="about"/> ties the
+        /// bar to a note so switching tabs hides a question that no longer applies.
+        /// </summary>
+        internal void ShowInfo(string message, OpenNote? about, string? primaryLabel = null, Action? primary = null,
+                               string? secondaryLabel = null, Action? secondary = null)
+        {
+            InfoText.Text = message;
+            _infoNote = about;
+            _infoPrimary = primary;
+            _infoSecondary = secondary;
+            InfoPrimary.Content = primaryLabel;
+            InfoPrimary.Visibility = primary == null ? Visibility.Collapsed : Visibility.Visible;
+            InfoSecondary.Content = secondaryLabel;
+            InfoSecondary.Visibility = secondary == null ? Visibility.Collapsed : Visibility.Visible;
+            InfoBar.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>Hides the info bar and forgets its actions.</summary>
+        internal void HideInfo()
+        {
+            InfoBar.Visibility = Visibility.Collapsed;
+            _infoPrimary = null;
+            _infoSecondary = null;
+            _infoNote = null;
+        }
+
+        private void OnInfoPrimaryClick(object sender, RoutedEventArgs e)
+        {
+            var action = _infoPrimary;
+            HideInfo();
+            action?.Invoke();
+        }
+
+        private void OnInfoSecondaryClick(object sender, RoutedEventArgs e)
+        {
+            var action = _infoSecondary;
+            HideInfo();
+            action?.Invoke();
+        }
+
+        private void OnInfoCloseClick(object sender, RoutedEventArgs e) => HideInfo();
+
+        private void CheckDisk(OpenNote note)
+        {
+            var action = _workspace.CheckDisk(note);
+            if (action == DiskChangeAction.None) return;
+            if (action == DiskChangeAction.ReloadSilently)
+            {
+                Reload(note);
+                return;
+            }
+
+            // The same question is already showing: do not flicker it on every activation.
+            if (InfoBar.Visibility == Visibility.Visible && ReferenceEquals(_infoNote, note)) return;
+
+            string name = Path.GetFileName(note.Meta.SourcePath) ?? note.Title;
+            if (action == DiskChangeAction.AskReloadOrKeep)
+            {
+                ShowInfo(name + " changed on disk.", note,
+                    "Reload from disk", () => Reload(note),
+                    "Keep mine", () => _workspace.KeepMine(note));
+            }
+            else
+            {
+                ShowInfo(name + " no longer exists.", note,
+                    "Save As…", () => SaveAs(note),
+                    "Keep as note", () => { _workspace.DetachFromFile(note); UpdateFileText(); });
+            }
+        }
+
+        private void Reload(OpenNote note)
+        {
+            string? text = _workspace.ReloadFromDisk(note, out var status, out bool lossy);
+            string name = Path.GetFileName(note.Meta.SourcePath) ?? note.Title;
+            if (text == null)
+            {
+                ShowInfo(status == OpenFileStatus.EditsWouldBeLost
+                    ? name + " changed on disk, but this note is too large to keep a copy of your version, so it was not reloaded. Use Save As to keep your version first."
+                    : "Could not reload " + name + " (" + status + ").", note);
+                return;
+            }
+            ReplaceText(note, text, markUnsaved: false);
+            UpdateFileText();
+            if (lossy) ShowLossyWarning(note);
+        }
+
+        /// <summary>
+        /// Warns that the file held bytes its encoding could not decode: they show as the
+        /// replacement character, and saving writes them that way.
+        /// </summary>
+        private void ShowLossyWarning(OpenNote note)
+        {
+            const char Replacement = (char)0xFFFD;
+            string name = Path.GetFileName(note.Meta.SourcePath) ?? note.Title;
+            ShowInfo(name + " has bytes that are not valid " + TextFileCodec.Describe(note.Meta.Encoding, note.Meta.CodePage) +
+                     ". They show as " + Replacement + ", and saving will write them that way.", note);
+        }
+
+        private void OpenWithDialog()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Filter = FileFilter };
+            if (dialog.ShowDialog(this) != true) return;
+            foreach (string file in dialog.FileNames) OpenPath(file);
+        }
+
+        private void SaveShown()
+        {
+            if (_shown != null) Save(_shown);
+        }
+
+        private void Save(OpenNote note) => HandleSaveResult(note, _workspace.SaveToSource(note), () => Save(note));
+
+        private void SaveAs(OpenNote note)
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = FileFilter,
+                AddExtension = true,
+                DefaultExt = ".txt",
+                FileName = note.Meta.IsFileBacked ? Path.GetFileName(note.Meta.SourcePath) : SafeFileName(note.Title) + ".txt",
+                InitialDirectory = note.Meta.IsFileBacked
+                    ? Path.GetDirectoryName(note.Meta.SourcePath)
+                    : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            };
+            if (dialog.ShowDialog(this) != true) return;
+            SaveAsPath(note, dialog.FileName);
+        }
+
+        private void SaveAsPath(OpenNote note, string path) =>
+            HandleSaveResult(note, _workspace.SaveAs(note, path), () => SaveAsPath(note, path));
+
+        private void HandleSaveResult(OpenNote note, SaveToFileResult result, Action retry)
+        {
+            switch (result.Status)
+            {
+                case SaveToFileStatus.Saved:
+                    if (ReferenceEquals(_infoNote, note)) HideInfo();
+                    UpdateFileText();
+                    UpdateSaveText();
+                    break;
+                case SaveToFileStatus.NeedsSaveAs:
+                    SaveAs(note);
+                    break;
+                case SaveToFileStatus.Lossy:
+                    ShowInfo(TextFileCodec.Describe(note.Meta.Encoding, note.Meta.CodePage) + " cannot store some characters in this note. Nothing was saved.",
+                        note,
+                        "Save as UTF-8", () =>
+                        {
+                            _workspace.SetEncoding(note, PadEncoding.Utf8, 0);
+                            UpdateFileText();
+                            retry();
+                        },
+                        "Cancel", () => { });
+                    break;
+                default:
+                    ShowInfo("Could not save: " + result.Error + " Your text is kept here.", note, "Save As…", () => SaveAs(note));
+                    break;
+            }
+        }
+
+        private static string SafeFileName(string title)
+        {
+            var invalid = Path.GetInvalidFileNameChars();
+            var chars = title.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+                if (Array.IndexOf(invalid, chars[i]) >= 0) chars[i] = '_';
+            string name = new string(chars).Trim();
+            return name.Length == 0 ? "Untitled" : name;
+        }
+
+        private void UpdateFileText()
+        {
+            if (_shown == null) return;
+            EncodingButton.Content = TextFileCodec.Describe(_shown.Meta.Encoding, _shown.Meta.CodePage);
+            EolButton.Content = TextFileCodec.Describe(_shown.Meta.LineEnding);
+        }
+
+        private void OnEncodingClick(object sender, RoutedEventArgs e)
+        {
+            if (_shown == null) return;
+            var note = _shown;
+            int ansi = TextFileCodec.SystemAnsiCodePage;
+            var menu = NewMenu(EncodingButton, PlacementMode.Top);
+            foreach (var (encoding, codePage) in new[]
+            {
+                (PadEncoding.Utf8, 0), (PadEncoding.Utf8Bom, 0), (PadEncoding.Utf16Le, 0), (PadEncoding.Utf16Be, 0), (PadEncoding.Ansi, ansi),
+            })
+            {
+                var chosen = encoding;
+                int chosenPage = codePage;
+                menu.Items.Add(Check(TextFileCodec.Describe(encoding, codePage), null, note.Meta.Encoding == encoding, () =>
+                {
+                    _workspace.SetEncoding(note, chosen, chosenPage);
+                    UpdateFileText();
+                }));
+            }
+            menu.IsOpen = true;
+        }
+
+        private void OnEolClick(object sender, RoutedEventArgs e)
+        {
+            if (_shown == null) return;
+            var note = _shown;
+            var menu = NewMenu(EolButton, PlacementMode.Top);
+            foreach (var ending in new[] { LineEnding.CrLf, LineEnding.Lf })
+            {
+                var chosen = ending;
+                menu.Items.Add(Check(TextFileCodec.Describe(ending), null, note.Meta.LineEnding == ending,
+                    () => ConvertLineEndings(note, chosen)));
+            }
+            menu.IsOpen = true;
+        }
+
+        private void ConvertLineEndings(OpenNote note, LineEnding ending)
+        {
+            string converted = _workspace.ConvertLineEndings(note, ending);
+            if (converted != EnsureDocument(note).Text) ReplaceText(note, converted, markUnsaved: true);
+            UpdateFileText();
+        }
+
         // ---- keys, menu, settings -----------------------------------------------------------
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -405,6 +675,9 @@ namespace Kil0bitSystemMonitor.Pad
         {
             var menu = NewMenu(MenuButton, PlacementMode.Bottom);
             menu.Items.Add(Item("New note", "Ctrl+N", NewTab));
+            menu.Items.Add(Item("Open…", "Ctrl+O", OpenWithDialog));
+            menu.Items.Add(Item("Save", "Ctrl+S", SaveShown));
+            menu.Items.Add(Item("Save As…", "Ctrl+Shift+S", () => { if (_shown != null) SaveAs(_shown); }));
             menu.Items.Add(Item("Close tab", "Ctrl+W", CloseActiveTab));
             menu.Items.Add(Item("Reopen closed tab", "Ctrl+Shift+T", ReopenClosed));
             menu.Items.Add(new Separator());

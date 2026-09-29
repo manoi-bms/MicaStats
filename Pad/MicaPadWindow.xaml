@@ -139,6 +139,19 @@
             </ScrollViewer>
         </DockPanel>
 
+        <Border x:Name="InfoBar" Grid.Row="1" Background="#2A2410" BorderBrush="#55FFC857" BorderThickness="0,0,0,1"
+                Padding="12,6" Visibility="Collapsed">
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right" Style="{StaticResource GlyphButton}" Content="&#xE711;" FontSize="9"
+                        ToolTip="Dismiss" Click="OnInfoCloseClick" />
+                <Button x:Name="InfoSecondary" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
+                        Margin="4,0,0,0" Click="OnInfoSecondaryClick" />
+                <Button x:Name="InfoPrimary" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
+                        Margin="8,0,0,0" Foreground="{StaticResource DataCyan}" Click="OnInfoPrimaryClick" />
+                <TextBlock x:Name="InfoText" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+            </DockPanel>
+        </Border>
+
         <Grid x:Name="EditorArea" Grid.Row="3">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -157,6 +170,10 @@
             <DockPanel LastChildFill="True">
                 <TextBlock x:Name="SaveText" DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="11.5"
                            Foreground="{StaticResource Muted}" Margin="12,0,4,0" />
+                <Button x:Name="EolButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" FontSize="11.5"
+                        ToolTip="Line ending" Click="OnEolClick" />
+                <Button x:Name="EncodingButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" FontSize="11.5"
+                        ToolTip="Encoding used when saving to the file" Click="OnEncodingClick" />
                 <TextBlock x:Name="CaretText" VerticalAlignment="Center" FontSize="11.5" Foreground="{StaticResource Muted}" />
                 <TextBlock x:Name="CharsText" VerticalAlignment="Center" FontSize="11.5" Foreground="{StaticResource Muted}" Margin="16,0,0,0" />
             </DockPanel>

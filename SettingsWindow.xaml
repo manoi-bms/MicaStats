@@ -59,6 +59,11 @@
                         <ui:FontIcon Glyph="&#xE722;" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="MicaPad" Tag="MicaPad">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:FontIcon Glyph="&#xE70B;" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
                 <ui:NavigationViewItem Content="Diagnostics" Tag="Diagnostics">
                     <ui:NavigationViewItem.Icon>
                         <ui:FontIcon Glyph="&#xE916;" />
@@ -978,6 +983,121 @@
                             </Grid>
                         </Border>
 
+                    </StackPanel>
+
+                    <!-- MicaPad -->
+                    <StackPanel x:Name="PadSection" Visibility="Collapsed">
+                        <TextBlock Text="MicaPad" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="A notepad that saves every note by itself and keeps its history. Nothing to name, and nothing to confirm when Windows restarts." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <Button Content="Open MicaPad" Click="OnOpenPad" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="Open notes folder" Click="OnOpenPadFolder" Padding="14,7"/>
+                        </StackPanel>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE765;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Shortcut" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock x:Name="PadHotkeyHint" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <TextBox Grid.Column="2" x:Name="PadHotkeyBox" Width="160" VerticalAlignment="Center" LostFocus="OnPadHotkeyChanged"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE72C;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Reopen after restart" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="If MicaPad was open when Windows shut down, it comes back after you sign in, with every tab." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="PadReopenToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE751;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Word wrap" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Wrap long lines to the window. Alt+Z switches it in MicaPad." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="PadWrapToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE8FD;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Line numbers" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Show line numbers beside the text." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="PadLineNumbersToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE8D2;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Font" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Font and size of the text. Ctrl+wheel zooms in MicaPad." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBox x:Name="PadFontBox" Width="160" Margin="0,0,8,0" LostFocus="OnPadFontChanged"/>
+                                    <ComboBox x:Name="PadFontSizeBox" Width="80" SelectionChanged="OnPadFontSizeChanged"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE81C;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Keep history for" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Older versions are thinned out over time; closed notes go to the Recycle Bin after this long." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ComboBox Grid.Column="2" x:Name="PadHistoryBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnPadHistoryChanged">
+                                    <ComboBoxItem Content="30 days"/>
+                                    <ComboBoxItem Content="90 days"/>
+                                    <ComboBoxItem Content="180 days"/>
+                                    <ComboBoxItem Content="1 year"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
                     </StackPanel>
 
                     <!-- Diagnostics -->

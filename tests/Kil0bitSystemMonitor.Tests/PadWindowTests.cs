@@ -249,6 +249,15 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Settings_has_a_micapad_section()
+        {
+            string xaml = File.ReadAllText(Path.Combine(RepoRoot(), "SettingsWindow.xaml"));
+
+            Assert.Contains("Tag=\"MicaPad\"", xaml);
+            Assert.Contains("x:Name=\"PadSection\"", xaml);
+        }
+
+        [Fact]
         public void The_micapad_icon_is_a_seven_size_ico()
         {
             byte[] ico = File.ReadAllBytes(Path.Combine(RepoRoot(), "Assets", "micapad.ico"));

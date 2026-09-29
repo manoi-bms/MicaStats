@@ -25,8 +25,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The file this note shadows, or null for a scratch note.</summary>
         public string? SourcePath { get; set; }
 
+        /// <summary>When the note was created.</summary>
         public DateTime CreatedUtc { get; set; }
 
+        /// <summary>When the note was last changed.</summary>
         public DateTime ModifiedUtc { get; set; }
 
         /// <summary>When the tab was closed; null while it is open.</summary>
@@ -56,11 +58,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Hash of the newest snapshot's text, so an unchanged note is never snapshotted twice.</summary>
         public string? LastSnapshotHash { get; set; }
 
+        /// <summary>When the newest snapshot was written.</summary>
         public DateTime? LastSnapshotUtc { get; set; }
 
+        /// <summary>True when this note shadows a file; false for scratch notes.</summary>
         [JsonIgnore]
         public bool IsFileBacked => SourcePath != null;
 
+        /// <summary>True when the note has been closed in MicaPad.</summary>
         [JsonIgnore]
         public bool IsClosed => ClosedAtUtc != null;
 
@@ -89,14 +94,19 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Null until the window has been placed once. Nullable rather than NaN: JSON cannot store NaN.</summary>
         public double? Left { get; set; }
 
+        /// <summary>Null until the window has been placed once.</summary>
         public double? Top { get; set; }
 
+        /// <summary>Window width in pixels; default 900.</summary>
         public double Width { get; set; } = 900;
 
+        /// <summary>Window height in pixels; default 640.</summary>
         public double Height { get; set; } = 640;
 
+        /// <summary>True when the window was maximized.</summary>
         public bool Maximized { get; set; }
 
+        /// <summary>True to keep the window above all others.</summary>
         public bool AlwaysOnTop { get; set; }
 
         /// <summary>Editor zoom factor, 0.5 to 4.</summary>
@@ -105,6 +115,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Open notes in tab order.</summary>
         public List<string> OpenNoteIds { get; set; } = new();
 
+        /// <summary>The currently selected note tab, or null if none.</summary>
         public string? ActiveNoteId { get; set; }
 
         /// <summary>Caret and scroll per open note.</summary>
@@ -114,11 +125,19 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// <summary>Where the user was in one tab.</summary>
     public sealed class TabViewState
     {
+        /// <summary>Caret position in the text, in Unicode codepoints.</summary>
         public int CaretOffset { get; set; }
 
+        /// <summary>Vertical scroll offset in the editor.</summary>
         public double VerticalOffset { get; set; }
     }
 
     /// <summary>One version in a note's history.</summary>
-    public sealed record SnapshotInfo(string FilePath, DateTime Stamp, long Size);
+    public sealed record SnapshotInfo(
+        /// <summary>Full path to the snapshot file.</summary>
+        string FilePath,
+        /// <summary>Local time when this version was taken, parsed from the file name.</summary>
+        DateTime Stamp,
+        /// <summary>File size in bytes.</summary>
+        long Size);
 }

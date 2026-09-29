@@ -244,6 +244,19 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_save_queued_before_a_delete_does_not_bring_the_note_back()
+        {
+            var meta = Note("");
+            long queuedBeforeDelete = _store.NextVersion();
+
+            _store.DeleteEmptyNote(meta.Id);
+
+            Assert.False(_store.SaveNote(meta, "late", queuedBeforeDelete));
+            Assert.False(Directory.Exists(_store.NoteDir(meta.Id)));
+            Assert.True(_store.SaveNote(meta, "reopened", _store.NextVersion()));
+        }
+
+        [Fact]
         public void A_source_write_replaces_the_file_and_leaves_no_temporary_file()
         {
             string file = _dir.PathOf("config.ini");

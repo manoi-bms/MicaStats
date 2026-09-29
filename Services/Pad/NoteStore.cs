@@ -42,6 +42,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private readonly Action<string> _warn;
         private long _version;
 
+        /// <summary>Initializes a note store rooted at the given folder.</summary>
         /// <param name="root">The MicaPad folder. Created if missing.</param>
         /// <param name="warn">Where recoverable problems are reported; the diagnostics log by default.</param>
         public NoteStore(string root, Action<string>? warn = null)
@@ -55,18 +56,25 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public static string DefaultRoot => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MicaStats", "MicaPad");
 
+        /// <summary>The root folder where all notes are stored.</summary>
         public string Root { get; }
 
+        /// <summary>The <c>notes</c> subfolder containing all note folders.</summary>
         public string NotesDir => Path.Combine(Root, "notes");
 
+        /// <summary>Path to <c>session.json</c>, the window and tab state.</summary>
         public string SessionPath => Path.Combine(Root, "session.json");
 
+        /// <summary>The folder for a specific note.</summary>
         public string NoteDir(string id) => Path.Combine(NotesDir, id);
 
+        /// <summary>Path to a note's <c>meta.json</c>.</summary>
         public string MetaPath(string id) => Path.Combine(NoteDir(id), "meta.json");
 
+        /// <summary>Path to a note's <c>current.txt</c>, its working text.</summary>
         public string CurrentPath(string id) => Path.Combine(NoteDir(id), "current.txt");
 
+        /// <summary>The <c>history</c> subfolder for a note's snapshots.</summary>
         public string HistoryDir(string id) => Path.Combine(NoteDir(id), "history");
 
         /// <summary>A new note's metadata. Nothing is written until the first <see cref="SaveNote"/>.</summary>
@@ -179,7 +187,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
             lock (LockFor(id))
             {
                 if (Directory.Exists(NoteDir(id))) Directory.Delete(NoteDir(id), recursive: true);
-                _written.TryRemove(id, out _);
+                // A tombstone, not a removal: a save queued before the delete carries a lower
+                // version and must not recreate the folder. Saves issued afterwards still pass.
+                _written[id] = NextVersion();
             }
         }
 

@@ -54,8 +54,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
             var closed = ClosedNotes().FirstOrDefault(m => SamePath(m.SourcePath, full));
             if (closed != null)
             {
+                bool lossy = false;
+                if (!closed.HasUnsavedEdits)
+                {
+                    // The file itself is what will be shown: check it exactly as a first open would.
+                    var probe = ReadSource(full, out var probeStatus);
+                    if (probe == null) return new OpenFileResult(probeStatus, null);
+                    lossy = !probe.Lossless;
+                }
+
                 var reopened = Reopen(closed.Id);
-                if (reopened != null) return new OpenFileResult(OpenFileStatus.Opened, reopened);
+                if (reopened != null) return new OpenFileResult(OpenFileStatus.Opened, reopened, lossy);
             }
 
             var stamp = SourceStamp.Read(full);
@@ -98,7 +107,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 return new SaveToFileResult(SaveToFileStatus.Failed, ex.Message);
             }
 
-            meta.SourceStamp = SourceStamp.Read(meta.SourcePath!);
+            meta.SourceStamp = SourceStamp.Read(meta.SourcePath!) ?? meta.SourceStamp;
             note.HasUnsavedEdits = false;
             EnqueueSave(note);
             return new SaveToFileResult(SaveToFileStatus.Saved);
@@ -177,17 +186,27 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// Reads the file again, after snapshotting the note's own text. Returns the file's text for
-        /// the window to put in the document, or null (with the reason) when it cannot be read.
+        /// the window to put in the document, or null (with the reason) when it cannot be read or
+        /// when the note has unsaved edits too large to snapshot (<see cref="OpenFileStatus.EditsWouldBeLost"/>,
+        /// nothing changed). <paramref name="lossy"/> is true when the file held undecodable bytes.
         /// </summary>
-        public string? ReloadFromDisk(OpenNote note, out OpenFileStatus status)
+        public string? ReloadFromDisk(OpenNote note, out OpenFileStatus status, out bool lossy)
         {
             var meta = note.Meta;
             status = OpenFileStatus.NotFound;
+            lossy = false;
             if (!meta.IsFileBacked) return null;
 
-            var stamp = SourceStamp.Read(meta.SourcePath!);
+            var stamp = SourceStamp.Read(meta.SourcePath!) ?? meta.SourceStamp;
             var decoded = ReadSource(meta.SourcePath!, out status);
             if (decoded == null) return null;
+
+            if (note.HasUnsavedEdits && note.TextProvider().Length > HistoryPolicy.MaxSnapshotChars)
+            {
+                status = OpenFileStatus.EditsWouldBeLost;
+                return null;
+            }
+            lossy = !decoded.Lossless;
 
             SnapshotNow(note, SnapshotReason.BeforeReplace);
             meta.Encoding = decoded.Encoding;
@@ -203,7 +222,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public void KeepMine(OpenNote note)
         {
             if (!note.Meta.IsFileBacked) return;
-            note.Meta.SourceStamp = SourceStamp.Read(note.Meta.SourcePath!);
+            note.Meta.SourceStamp = SourceStamp.Read(note.Meta.SourcePath!) ?? note.Meta.SourceStamp;
             EnqueueSave(note);
         }
 

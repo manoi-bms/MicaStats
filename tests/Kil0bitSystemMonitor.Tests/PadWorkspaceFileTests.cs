@@ -157,7 +157,8 @@ namespace Kil0bitSystemMonitor.Tests
             ChangeFile(path, "new content");
 
             Assert.Equal(DiskChangeAction.ReloadSilently, Ws.CheckDisk(note));
-            Assert.Equal("new content", Ws.ReloadFromDisk(note, out _));
+            Assert.Equal("new content", Ws.ReloadFromDisk(note, out _, out bool lossy));
+            Assert.False(lossy);
             Assert.False(note.HasUnsavedEdits);
             Assert.Equal(DiskChangeAction.None, Ws.CheckDisk(note));
         }
@@ -171,7 +172,8 @@ namespace Kil0bitSystemMonitor.Tests
             ChangeFile(path, "their edits");
 
             Assert.Equal(DiskChangeAction.AskReloadOrKeep, Ws.CheckDisk(note));
-            Assert.Equal("their edits", Ws.ReloadFromDisk(note, out _));
+            Assert.Equal("their edits", Ws.ReloadFromDisk(note, out _, out bool lossy));
+            Assert.False(lossy);
             _env.Flush();
 
             Assert.Contains(_env.Store.ListSnapshots(note.Id), s => _env.Store.ReadSnapshot(s) == "my edits");
@@ -250,6 +252,36 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(result.Lossy);
             Assert.Equal("a\uFFFDb", result.Note!.TextProvider());
             Assert.False(Ws.OpenFile(WriteFile("fine.txt", Encoding.UTF8.GetBytes("ok"))).Lossy);
+        }
+
+        [Fact]
+        public void Reopening_a_closed_file_that_became_binary_is_refused()
+        {
+            string path = WriteFile("was-text.txt", Encoding.UTF8.GetBytes("text"));
+            var note = Ws.OpenFile(path).Note!;
+            Ws.Close(note);
+            WriteFile("was-text.txt", new byte[] { 0x4D, 0x5A, 0x00, 0x01 });
+
+            var again = Ws.OpenFile(path);
+
+            Assert.Equal(OpenFileStatus.Binary, again.Status);
+            Assert.Null(again.Note);
+        }
+
+        [Fact]
+        public void A_failed_save_as_leaves_the_note_exactly_as_it_was()
+        {
+            var note = Ws.NewNote();
+            PadTestEnv.Type(Ws, note, "keep me");
+            string missingFolder = _env.FileOf(System.IO.Path.Combine("no-such-folder", "x.txt"));
+
+            var result = Ws.SaveAs(note, missingFolder);
+            _env.Flush();
+
+            Assert.Equal(SaveToFileStatus.Failed, result.Status);
+            Assert.False(note.Meta.IsFileBacked);
+            Assert.Null(_env.Store.LoadMeta(note.Id)!.SourcePath);
+            Assert.Equal("keep me", _env.DiskText(note));
         }
 
         [Theory]

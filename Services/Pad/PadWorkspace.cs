@@ -23,6 +23,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         Binary,
         /// <summary>The file could not be read (locked, no permission, bad path).</summary>
         Failed,
+        /// <summary>Reloading would discard unsaved edits too large to keep as a version; nothing was changed.</summary>
+        EditsWouldBeLost,
     }
 
     /// <summary>Collaborators for <see cref="PadWorkspace"/>; tests replace every one of them.</summary>

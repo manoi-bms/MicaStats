@@ -42,7 +42,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
     {
         /// <summary>
         /// Opens a file as a tab. A file already open switches to its tab; a file with a closed
-        /// note reopens that note, so its history and any unsaved edits continue.
+        /// note, or with a note skipped at <see cref="Restore"/>, reopens that note, so its history
+        /// and any unsaved edits continue.
         /// </summary>
         public OpenFileResult OpenFile(string path)
         {
@@ -62,6 +63,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 SetActive(open);
                 return new OpenFileResult(OpenFileStatus.AlreadyOpen, open);
             }
+
+            var skipped = OpenSkippedNote(full);
+            if (skipped != null) return skipped;
 
             var closed = ClosedNotes().FirstOrDefault(m => SamePath(m.SourcePath, full));
             if (closed != null)
@@ -97,6 +101,34 @@ namespace Kil0bitSystemMonitor.Services.Pad
             EnqueueSave(note);
             SaveSession();
             return new OpenFileResult(OpenFileStatus.Opened, note, Lossy: !decoded.Lossless);
+        }
+
+        /// <summary>
+        /// Opens the note for <paramref name="full"/> that <see cref="Restore"/> skipped because its
+        /// text could not be read. That note is neither open nor closed, yet it is still this file's
+        /// note and stays in the session: a fresh note beside it would leave two notes for one file,
+        /// both shown at the next launch, while its unsaved edits stayed out of sight. Once its text
+        /// can be read it opens as it is, so its edits and history continue, and nothing is written
+        /// back (as at <see cref="Restore"/>); while it cannot, nothing is opened
+        /// (<see cref="OpenFileStatus.ClosedNoteUnreadable"/>). Null when no skipped note names the file.
+        /// </summary>
+        private OpenFileResult? OpenSkippedNote(string full)
+        {
+            foreach (string id in _unreadable.ToList())
+            {
+                var meta = _store.LoadMeta(id);
+                if (meta == null || !SamePath(meta.SourcePath, full)) continue;
+
+                if (!TryLoadInitialText(meta, out string text))
+                    return new OpenFileResult(OpenFileStatus.ClosedNoteUnreadable, null);
+
+                _unreadable.Remove(id);
+                var note = AddOpen(meta, text, InsertIndexAfterActive());
+                SetActive(note);
+                SaveSession();
+                return new OpenFileResult(OpenFileStatus.Opened, note);
+            }
+            return null;
         }
 
         /// <summary>

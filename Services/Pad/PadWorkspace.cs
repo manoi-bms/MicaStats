@@ -26,7 +26,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Reloading would discard unsaved edits too large to keep as a version; nothing was changed.</summary>
         EditsWouldBeLost,
         /// <summary>
-        /// The file has a closed note with unsaved edits whose text cannot be read right now.
+        /// The file has a note whose text cannot be read right now: a closed note with unsaved
+        /// edits, or a note that could not be read at restore (see <see cref="PadWorkspace.Restore"/>).
         /// Opening the file fresh beside it would leave two notes for one file, so nothing was opened.
         /// </summary>
         ClosedNoteUnreadable,

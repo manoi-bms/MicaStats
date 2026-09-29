@@ -151,7 +151,7 @@ namespace Kil0bitSystemMonitor.Tests
             using (new FileStream(env.Store.CurrentPath(note.Id), FileMode.Open, FileAccess.Read, FileShare.None))
                 window.OpenPath(path);
 
-            Assert.Equal("draft.txt has unsaved edits in a closed note that cannot be read right now, so it was not opened. Try again in a moment.",
+            Assert.Equal("draft.txt has unsaved edits in a note that cannot be read right now, so it was not opened. Try again in a moment.",
                 window.InfoText.Text);
             Assert.DoesNotContain(env.Workspace.Open, n => n.Meta.IsFileBacked);
         });

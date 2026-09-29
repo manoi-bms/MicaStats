@@ -111,6 +111,36 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Opening_the_file_of_a_note_skipped_at_restore_brings_that_note_back_rather_than_a_second_one()
+        {
+            string path = WriteFile("skipped.txt", Encoding.UTF8.GetBytes("v1"));
+            var note = Ws.OpenFile(path).Note!;
+            PadTestEnv.Type(Ws, note, "v1 plus edits");
+            Assert.True(Ws.FlushAll(TimeSpan.FromSeconds(5)));
+
+            var restored = _env.NewWorkspace();
+            using (new FileStream(_env.Store.CurrentPath(note.Id), FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.Empty(restored.Restore());
+
+                var refused = restored.OpenFile(path);
+                Assert.Equal(OpenFileStatus.ClosedNoteUnreadable, refused.Status);
+                Assert.Null(refused.Note);
+                Assert.Empty(restored.Open);
+            }
+
+            var again = restored.OpenFile(path);
+            Assert.Equal(OpenFileStatus.Opened, again.Status);
+            Assert.Equal(note.Id, again.Note!.Id);
+            Assert.Equal("v1 plus edits", again.Note.TextProvider());
+            Assert.True(again.Note.HasUnsavedEdits);
+            Assert.Same(again.Note, restored.Active);
+
+            Assert.True(restored.FlushAll(TimeSpan.FromSeconds(5)));
+            Assert.Equal(new[] { note.Id }, _env.Store.LoadSession().OpenNoteIds);   // listed once, and no second note
+        }
+
+        [Fact]
         public void A_closed_note_whose_file_another_tab_now_holds_reopens_as_a_note_of_its_own()
         {
             string path = WriteFile("twice.txt", Encoding.UTF8.GetBytes("base"));

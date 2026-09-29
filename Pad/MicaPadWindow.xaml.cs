@@ -468,7 +468,7 @@ namespace Kil0bitSystemMonitor.Pad
                     ShowInfo(name + " looks like a binary file and was not opened.", null);
                     break;
                 case OpenFileStatus.ClosedNoteUnreadable:
-                    ShowInfo(name + " has unsaved edits in a closed note that cannot be read right now, so it was not opened. Try again in a moment.", null);
+                    ShowInfo(name + " has unsaved edits in a note that cannot be read right now, so it was not opened. Try again in a moment.", null);
                     break;
                 default:
                     ShowInfo("Could not open " + path + ".", null);

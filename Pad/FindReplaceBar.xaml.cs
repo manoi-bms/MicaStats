@@ -33,6 +33,7 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly DispatcherTimer _refresh;
         private TextEditor? _editor;
         private Regex? _regex;
+        private bool _timedOut;
         private IReadOnlyList<FindMatch> _matches = Array.Empty<FindMatch>();
 
         /// <summary>Raised just before Replace All rewrites the document, so the owner can snapshot first.</summary>
@@ -89,6 +90,8 @@ namespace Kil0bitSystemMonitor.Pad
         public void FindNext()
         {
             if (!EnsureSearch()) return;
+            // The same pattern would time out again, and each attempt blocks the UI thread for the full timeout.
+            if (_timedOut) { ShowTimedOut(); return; }
             Select(FindReplaceEngine.FindNext(_editor!.Document.Text, _regex!, _editor.SelectionStart + _editor.SelectionLength));
         }
 
@@ -96,6 +99,8 @@ namespace Kil0bitSystemMonitor.Pad
         public void FindPrevious()
         {
             if (!EnsureSearch()) return;
+            // The same pattern would time out again, and each attempt blocks the UI thread for the full timeout.
+            if (_timedOut) { ShowTimedOut(); return; }
             Select(FindReplaceEngine.FindPrevious(_editor!.Document.Text, _regex!, _editor.SelectionStart));
         }
 
@@ -108,15 +113,13 @@ namespace Kil0bitSystemMonitor.Pad
             if (FindReplaceEngine.TryBuild(FindBox.Text, Options, out _regex, out string? error))
             {
                 _matches = FindReplaceEngine.FindAll(_editor.Document.Text, _regex!, out bool timedOut);
+                _timedOut = timedOut;
                 UpdateCount();
-                if (timedOut)
-                {
-                    CountText.Text = FindReplaceEngine.TimedOutMessage;
-                    CountText.Foreground = AlertRed;
-                }
+                if (timedOut) ShowTimedOut();
             }
             else
             {
+                _timedOut = false;
                 _matches = Array.Empty<FindMatch>();
                 CountText.Text = error ?? "";
                 CountText.Foreground = AlertRed;
@@ -124,6 +127,12 @@ namespace Kil0bitSystemMonitor.Pad
 
             _highlighter.Matches = _matches;
             _editor.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+        }
+
+        private void ShowTimedOut()
+        {
+            CountText.Text = FindReplaceEngine.TimedOutMessage;
+            CountText.Foreground = AlertRed;
         }
 
         private FindOptions Options => new(CaseToggle.IsChecked == true, WordToggle.IsChecked == true, RegexToggle.IsChecked == true);
@@ -181,6 +190,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnReplaceClick(object sender, RoutedEventArgs e)
         {
             if (!EnsureSearch()) return;
+            if (_timedOut) { ShowTimedOut(); return; }
 
             var current = new FindMatch(_editor!.SelectionStart, _editor.SelectionLength);
             if (current.Length > 0)
@@ -200,6 +210,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnReplaceAllClick(object sender, RoutedEventArgs e)
         {
             if (!EnsureSearch()) return;
+            if (_timedOut) { ShowTimedOut(); return; }
 
             ReplacingAll?.Invoke();
             var document = _editor!.Document;

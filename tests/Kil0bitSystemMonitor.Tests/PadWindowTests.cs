@@ -193,6 +193,22 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_search_that_times_out_says_so_on_f3_too() => WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Text = new string('x', 40);
+            window.HandleShortcut(Key.F, ModifierKeys.Control);
+            window.FindBar.RegexToggle.IsChecked = true;
+            window.FindBar.FindBox.Text = "(x+x+)+y";
+            window.FindBar.Recompute();
+            Assert.Equal(FindReplaceEngine.TimedOutMessage, window.FindBar.CountText.Text);
+
+            window.HandleShortcut(Key.F3, ModifierKeys.None);
+
+            Assert.Equal(FindReplaceEngine.TimedOutMessage, window.FindBar.CountText.Text);
+            Assert.Equal(0, window.Editor.SelectionLength);
+        });
+
+        [Fact]
         public void Go_to_line_moves_the_caret_and_clamps() => WithWindow((window, env, config) =>
         {
             window.Editor.Document.Text = "a\nb\nc";

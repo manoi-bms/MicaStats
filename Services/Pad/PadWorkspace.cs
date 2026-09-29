@@ -616,6 +616,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// A note's text on restore or reopen: a file-backed note with no unsaved edits is read
         /// fresh from its file; every other note (and a file that cannot be read) from the store.
+        /// A clean file note read from the store is marked <see cref="SourceStamp.Unverified"/>.
         /// False when the store holds text that cannot be read right now; the note must then not
         /// be opened, or its next save would overwrite that text.
         /// </summary>
@@ -635,6 +636,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     text = decoded.Text;
                     return true;
                 }
+
+                // MicaPad's copy stands in for a file it cannot read now (an offline share, a lock).
+                // That copy may be older than the file, or empty, so it must never pass for it.
+                meta.SourceStamp = SourceStamp.Unverified;
             }
 
             if (!_store.TryLoadText(meta.Id, out string? stored))

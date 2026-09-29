@@ -227,6 +227,50 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_clean_file_note_restored_while_its_file_cannot_be_read_never_passes_for_the_file()
+        {
+            string path = WriteFile("offline.txt", Encoding.UTF8.GetBytes("the real text"));
+            Ws.OpenFile(path);
+            Assert.True(Ws.FlushAll(TimeSpan.FromSeconds(5)));
+
+            var restored = _env.NewWorkspace();
+            OpenNote note;
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                note = Assert.Single(restored.Restore());
+
+            Assert.Equal("", note.TextProvider());   // MicaPad keeps no copy of a clean file
+            Assert.Equal(DiskChangeAction.ReloadSilently, restored.CheckDisk(note));
+
+            PadTestEnv.Type(restored, note, "typed over the stand-in");
+            Assert.Equal(DiskChangeAction.AskReloadOrKeep, restored.CheckDisk(note));
+            Assert.Equal(SaveToFileStatus.ChangedOnDisk, restored.SaveToSource(note).Status);
+            Assert.Equal(Encoding.UTF8.GetBytes("the real text"), File.ReadAllBytes(path));
+
+            Assert.True(restored.FlushAll(TimeSpan.FromSeconds(5)));
+            var later = _env.NewWorkspace();
+            var again = Assert.Single(later.Restore());
+            Assert.Equal("typed over the stand-in", again.TextProvider());
+            Assert.Equal(DiskChangeAction.AskReloadOrKeep, later.CheckDisk(again));   // the mark survives a restart
+        }
+
+        [Fact]
+        public void Once_the_file_can_be_read_the_stand_in_is_replaced_by_the_file()
+        {
+            string path = WriteFile("back.txt", Encoding.UTF8.GetBytes("the real text"));
+            Ws.OpenFile(path);
+            Assert.True(Ws.FlushAll(TimeSpan.FromSeconds(5)));
+
+            var restored = _env.NewWorkspace();
+            OpenNote note;
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                note = Assert.Single(restored.Restore());
+
+            Assert.Equal("the real text", restored.ReloadFromDisk(note, out var status, out _));
+            Assert.Equal(OpenFileStatus.Opened, status);
+            Assert.Equal(DiskChangeAction.None, restored.CheckDisk(note));
+        }
+
+        [Fact]
         public void Converting_line_endings_takes_a_snapshot_first()
         {
             string path = WriteFile("unix.txt", Encoding.UTF8.GetBytes("a\nb\n"));

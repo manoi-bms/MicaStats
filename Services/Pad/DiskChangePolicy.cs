@@ -6,6 +6,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// <summary>What identifies one version of a file on disk: its write time and length.</summary>
     public readonly record struct SourceStamp(DateTime LastWriteTimeUtc, long Length)
     {
+        /// <summary>
+        /// Recorded for a clean file note whose text came from MicaPad's own copy because the file
+        /// could not be read. It never equals a real stamp, so the next check reloads the file (or
+        /// asks, once the note has edits) and Ctrl+S asks before writing over a file it never saw.
+        /// </summary>
+        public static readonly SourceStamp Unverified = new(DateTime.MinValue, -1);
+
         /// <summary>The file's current stamp, or null when it does not exist or cannot be read.</summary>
         public static SourceStamp? Read(string path)
         {

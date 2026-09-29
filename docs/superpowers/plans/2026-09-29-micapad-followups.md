@@ -7,11 +7,6 @@ merge are not listed.
 
 ## Saving and files
 
-- **Stale text for a clean file note restored while its file is unreachable.** Autosave does not
-  refresh `current.txt` for a clean file-backed note. If the file cannot be read at launch (an
-  offline share), the note shows the older `current.txt` as a clean copy. The History
-  "Saved to file" snapshot holds the right text. Refresh `current.txt` on Ctrl+S, or restore
-  from the newest SavedToFile snapshot.
 - **Two notes for one file.** Opening a file whose closed note cannot be read opens a second,
   clean note for the same file. `SaveAs` also checks only open tabs, so a closed note can share
   a path.

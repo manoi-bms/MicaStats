@@ -145,8 +145,10 @@ namespace Kil0bitSystemMonitor
             
             if (!createdNew)
             {
-                // Try to find the existing window to show settings before exiting
-                IntPtr existingWnd = FindWindow("Kil0bitOverlayWndClass_Main", null);
+                // Find the running instance's window to hand this launch to. It may still be starting
+                // (it takes the mutex before its window exists), so wait for it for up to five seconds.
+                IntPtr existingWnd = Kil0bitSystemMonitor.Services.Pad.PadIpc.FindWithRetry(
+                    () => FindWindow("Kil0bitOverlayWndClass_Main", null), attempts: 20, interval: TimeSpan.FromMilliseconds(250));
                 if (existingWnd != IntPtr.Zero)
                 {
                     // This launch came from the user (Start menu, taskbar, Explorer), so Windows let it
@@ -167,6 +169,12 @@ namespace Kil0bitSystemMonitor
                     {
                         SendMessage(existingWnd, WM_SHOW_SETTINGS, IntPtr.Zero, IntPtr.Zero);
                     }
+                }
+                else if (padRequested)
+                {
+                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("pad",
+                        "MicaStats is running but its window did not appear within five seconds; the request to open MicaPad" +
+                        (padPath != null ? " with " + padPath : "") + " was lost");
                 }
                 s_mutex.Dispose();
                 System.Environment.Exit(0);

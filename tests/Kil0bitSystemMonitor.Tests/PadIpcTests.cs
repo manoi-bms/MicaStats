@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Kil0bitSystemMonitor.Services.Pad;
 using Xunit;
@@ -75,6 +76,34 @@ namespace Kil0bitSystemMonitor.Tests
         public void A_null_message_is_rejected()
         {
             Assert.False(PadIpc.TryRead(IntPtr.Zero, out _));
+        }
+
+        [Fact]
+        public void The_running_window_is_waited_for_while_it_starts()
+        {
+            int calls = 0;
+            var waits = new List<TimeSpan>();
+
+            IntPtr found = PadIpc.FindWithRetry(() => ++calls < 3 ? IntPtr.Zero : new IntPtr(42),
+                                                20, TimeSpan.FromMilliseconds(250), waits.Add);
+
+            Assert.Equal(new IntPtr(42), found);
+            Assert.Equal(3, calls);
+            Assert.Equal(new[] { TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250) }, waits);
+        }
+
+        [Fact]
+        public void A_window_that_never_appears_gives_up_after_the_last_attempt()
+        {
+            int calls = 0;
+            var waits = new List<TimeSpan>();
+
+            IntPtr found = PadIpc.FindWithRetry(() => { calls++; return IntPtr.Zero; },
+                                                4, TimeSpan.FromMilliseconds(250), waits.Add);
+
+            Assert.Equal(IntPtr.Zero, found);
+            Assert.Equal(4, calls);
+            Assert.Equal(3, waits.Count);   // no wait after the last attempt
         }
     }
 }

@@ -60,6 +60,28 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         /// <summary>
+        /// Looks for the running instance's window, retrying while it is still starting: MicaStats
+        /// takes its single-instance mutex before its window exists, so a launch in that gap (a
+        /// pinned MicaPad button clicked right after sign-in) would otherwise find nothing.
+        /// </summary>
+        /// <param name="find">One lookup; <see cref="IntPtr.Zero"/> when the window is not there yet.</param>
+        /// <param name="attempts">How many lookups at most.</param>
+        /// <param name="interval">The pause between lookups; none follows the last one.</param>
+        /// <param name="sleep">How to pause; tests record the pauses instead.</param>
+        /// <returns>The window, or <see cref="IntPtr.Zero"/> when it never appeared.</returns>
+        public static IntPtr FindWithRetry(Func<IntPtr> find, int attempts, TimeSpan interval, Action<TimeSpan>? sleep = null)
+        {
+            sleep ??= pause => System.Threading.Thread.Sleep(pause);
+            for (int attempt = 1; attempt <= attempts; attempt++)
+            {
+                IntPtr found = find();
+                if (found != IntPtr.Zero) return found;
+                if (attempt < attempts) sleep(interval);
+            }
+            return IntPtr.Zero;
+        }
+
+        /// <summary>
         /// Reads a WM_COPYDATA message. False unless it carries MicaPad's tag and a whole UTF-16
         /// string of at most <see cref="MaxChars"/>; an empty string means "just open MicaPad".
         /// </summary>

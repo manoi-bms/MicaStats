@@ -53,8 +53,6 @@ merge are not listed.
 
 ## Window and integration
 
-- A `--pad` request is lost, without a log line, if the running instance has no overlay window
-  yet.
 - A MicaPad hotkey that equals a capture hotkey is logged as taken by another application, and
   the menu shows the hotkey even after registration failed.
 - Window placement is not per-monitor aware.

@@ -160,6 +160,50 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal("plain \u0E2A", File.ReadAllText(path));
         });
+
+        [Fact]
+        public void Find_counts_matches_f3_walks_them_and_replace_all_is_one_undo_step() => WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Text = "cat concat cat";
+
+            Assert.True(window.HandleShortcut(Key.H, ModifierKeys.Control));
+            Assert.True(window.FindBar.IsOpen);
+            window.FindBar.FindBox.Text = "cat";
+            window.FindBar.Recompute();
+            Assert.Equal("3 results", window.FindBar.CountText.Text);
+
+            window.Editor.CaretOffset = 0;
+            window.HandleShortcut(Key.F3, ModifierKeys.None);
+            Assert.Equal(0, window.Editor.SelectionStart);
+            Assert.Equal(3, window.Editor.SelectionLength);
+            Assert.Equal("1 of 3", window.FindBar.CountText.Text);
+            window.HandleShortcut(Key.F3, ModifierKeys.None);
+            Assert.Equal(7, window.Editor.SelectionStart);
+
+            window.FindBar.ReplaceBox.Text = "dog";
+            window.FindBar.ReplaceAllButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Equal("dog condog dog", window.Editor.Document.Text);
+            Assert.Equal("3 replaced", window.FindBar.CountText.Text);
+
+            window.Editor.Undo();
+            Assert.Equal("cat concat cat", window.Editor.Document.Text);
+
+            window.HandleShortcut(Key.Escape, ModifierKeys.None);
+            Assert.False(window.FindBar.IsOpen);
+        });
+
+        [Fact]
+        public void Go_to_line_moves_the_caret_and_clamps() => WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Text = "a\nb\nc";
+
+            window.GoToLine(2);
+            Assert.Equal(2, window.Editor.TextArea.Caret.Line);
+
+            window.GoToLine(99);
+            Assert.Equal(3, window.Editor.TextArea.Caret.Line);
+        });
+
         [Fact]
         public void The_micapad_icon_is_a_seven_size_ico()
         {

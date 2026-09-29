@@ -1,0 +1,252 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
+using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Rendering;
+using Kil0bitSystemMonitor.Services.Pad;
+
+using Brush = System.Windows.Media.Brush;
+using Color = System.Windows.Media.Color;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using UserControl = System.Windows.Controls.UserControl;
+
+namespace Kil0bitSystemMonitor.Pad
+{
+    /// <summary>
+    /// The find/replace bar. All matching is done by <see cref="FindReplaceEngine"/> over the
+    /// document text; this control only keeps the highlights and the count in step with typing,
+    /// refreshing 300 ms after the last change rather than on every keystroke.
+    /// </summary>
+    public partial class FindReplaceBar : UserControl
+    {
+        private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+        private static readonly Brush Muted = Frozen(Color.FromArgb(0x88, 0xED, 0xED, 0xF2));
+        private static readonly Brush AlertRed = Frozen(Color.FromRgb(0xFF, 0x6B, 0x6B));
+
+        private readonly MatchHighlighter _highlighter = new();
+        private readonly DispatcherTimer _refresh;
+        private TextEditor? _editor;
+        private Regex? _regex;
+        private IReadOnlyList<FindMatch> _matches = Array.Empty<FindMatch>();
+
+        /// <summary>Raised just before Replace All rewrites the document, so the owner can snapshot first.</summary>
+        public event Action? ReplacingAll;
+
+        /// <summary>Creates the bar collapsed; <see cref="Open"/> shows it.</summary>
+        public FindReplaceBar()
+        {
+            InitializeComponent();
+            Visibility = Visibility.Collapsed;
+            _refresh = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            _refresh.Tick += (s, e) => Recompute();
+        }
+
+        /// <summary>True while the bar is showing.</summary>
+        public bool IsOpen => Visibility == Visibility.Visible;
+
+        /// <summary>Connects the bar to the editor it searches; the highlights follow tab switches.</summary>
+        public void Attach(TextEditor editor)
+        {
+            _editor = editor;
+            editor.TextArea.TextView.BackgroundRenderers.Add(_highlighter);
+            editor.DocumentChanged += (s, e) => ScheduleRefresh();
+            editor.TextChanged += (s, e) => ScheduleRefresh();
+        }
+
+        /// <summary>Shows the bar, seeded with a single-line selection, and focuses the find box.</summary>
+        public void Open(bool replace)
+        {
+            Visibility = Visibility.Visible;
+            var replaceVisibility = replace ? Visibility.Visible : Visibility.Collapsed;
+            ReplaceBox.Visibility = replaceVisibility;
+            ReplaceButtons.Visibility = replaceVisibility;
+
+            if (_editor != null && _editor.SelectionLength > 0 && !_editor.SelectedText.Contains('\n'))
+                FindBox.Text = _editor.SelectedText;
+
+            FindBox.Focus();
+            FindBox.SelectAll();
+            Recompute();
+        }
+
+        /// <summary>Hides the bar, clears the highlights and returns focus to the editor.</summary>
+        public void Close()
+        {
+            Visibility = Visibility.Collapsed;
+            _refresh.Stop();
+            _highlighter.Matches = Array.Empty<FindMatch>();
+            _editor?.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+            _editor?.Focus();
+        }
+
+        /// <summary>F3: the next match after the selection. With the bar closed, opens it instead.</summary>
+        public void FindNext()
+        {
+            if (!EnsureSearch()) return;
+            Select(FindReplaceEngine.FindNext(_editor!.Document.Text, _regex!, _editor.SelectionStart + _editor.SelectionLength));
+        }
+
+        /// <summary>Shift+F3: the previous match before the selection.</summary>
+        public void FindPrevious()
+        {
+            if (!EnsureSearch()) return;
+            Select(FindReplaceEngine.FindPrevious(_editor!.Document.Text, _regex!, _editor.SelectionStart));
+        }
+
+        /// <summary>Rebuilds the pattern, the match list, the count and the highlights now.</summary>
+        internal void Recompute()
+        {
+            _refresh.Stop();
+            if (_editor == null) return;
+
+            if (FindReplaceEngine.TryBuild(FindBox.Text, Options, out _regex, out string? error))
+            {
+                _matches = FindReplaceEngine.FindAll(_editor.Document.Text, _regex!, out bool timedOut);
+                UpdateCount();
+                if (timedOut)
+                {
+                    CountText.Text = FindReplaceEngine.TimedOutMessage;
+                    CountText.Foreground = AlertRed;
+                }
+            }
+            else
+            {
+                _matches = Array.Empty<FindMatch>();
+                CountText.Text = error ?? "";
+                CountText.Foreground = AlertRed;
+            }
+
+            _highlighter.Matches = _matches;
+            _editor.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+        }
+
+        private FindOptions Options => new(CaseToggle.IsChecked == true, WordToggle.IsChecked == true, RegexToggle.IsChecked == true);
+
+        private bool EnsureSearch()
+        {
+            if (!IsOpen)
+            {
+                Open(replace: false);
+                return false;
+            }
+            if (_regex == null || _refresh.IsEnabled) Recompute();
+            return _editor != null && _regex != null;
+        }
+
+        private void ScheduleRefresh()
+        {
+            if (!IsOpen) return;
+            _refresh.Stop();
+            _refresh.Start();
+        }
+
+        private void UpdateCount()
+        {
+            CountText.Foreground = Muted;
+            if (_editor == null) return;
+            if (_matches.Count == 0)
+            {
+                CountText.Text = FindBox.Text.Length == 0 ? "" : "No results";
+                return;
+            }
+
+            string total = _matches.Count.ToString("N0", Inv) + (_matches.Count >= FindReplaceEngine.MaxHighlights ? "+" : "");
+            int index = _editor.SelectionLength > 0 ? FindReplaceEngine.IndexOf(_matches, _editor.SelectionStart) : -1;
+            CountText.Text = index >= 0
+                ? (index + 1).ToString("N0", Inv) + " of " + total
+                : total + (_matches.Count == 1 ? " result" : " results");
+        }
+
+        private void Select(FindMatch? match)
+        {
+            if (_editor == null) return;
+            if (match == null)
+            {
+                CountText.Text = "No results";
+                return;
+            }
+
+            _editor.Select(match.Value.Offset, match.Value.Length);
+            var location = _editor.Document.GetLocation(match.Value.Offset);
+            _editor.ScrollTo(location.Line, location.Column);
+            UpdateCount();
+        }
+
+        private void OnReplaceClick(object sender, RoutedEventArgs e)
+        {
+            if (!EnsureSearch()) return;
+
+            var current = new FindMatch(_editor!.SelectionStart, _editor.SelectionLength);
+            if (current.Length > 0)
+            {
+                string? replacement = FindReplaceEngine.ExpandAt(_editor.Document.Text, _regex!, current, ReplaceBox.Text, Options.UseRegex);
+                if (replacement != null)
+                {
+                    _editor.Document.Replace(current.Offset, current.Length, replacement);
+                    _editor.Select(current.Offset + replacement.Length, 0);
+                }
+            }
+
+            Recompute();
+            FindNext();
+        }
+
+        private void OnReplaceAllClick(object sender, RoutedEventArgs e)
+        {
+            if (!EnsureSearch()) return;
+
+            ReplacingAll?.Invoke();
+            var document = _editor!.Document;
+            if (!FindReplaceEngine.TryReplaceAll(document.Text, _regex!, ReplaceBox.Text, Options.UseRegex,
+                                                 out string result, out int count, out string? error))
+            {
+                CountText.Text = error ?? "";
+                CountText.Foreground = AlertRed;
+                return;
+            }
+
+            // One Replace call: one undo step, however many matches.
+            if (count > 0) document.Replace(0, document.TextLength, result);
+            Recompute();
+            CountText.Text = count.ToString("N0", Inv) + " replaced";
+        }
+
+        private void OnFindKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            if (Keyboard.Modifiers == ModifierKeys.Shift) FindPrevious();
+            else FindNext();
+            e.Handled = true;
+        }
+
+        private void OnReplaceKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            OnReplaceClick(sender, e);
+            e.Handled = true;
+        }
+
+        private void OnFindTextChanged(object sender, TextChangedEventArgs e) => ScheduleRefresh();
+
+        private void OnOptionChanged(object sender, RoutedEventArgs e) => Recompute();
+
+        private void OnPreviousClick(object sender, RoutedEventArgs e) => FindPrevious();
+
+        private void OnNextClick(object sender, RoutedEventArgs e) => FindNext();
+
+        private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
+
+        private static Brush Frozen(Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
+        }
+    }
+}

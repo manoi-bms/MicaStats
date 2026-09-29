@@ -66,6 +66,11 @@ namespace Kil0bitSystemMonitor.Pad
             _config = config;
 
             ConfigureEditor();
+            FindBar.Attach(Editor);
+            FindBar.ReplacingAll += () =>
+            {
+                if (_shown != null) _workspace.SnapshotNow(_shown, SnapshotReason.BeforeReplace);
+            };
 
             TabStrip.ItemsSource = _workspace.Open;
             _workspace.Open.CollectionChanged += OnOpenChanged;
@@ -195,6 +200,12 @@ namespace Kil0bitSystemMonitor.Pad
             else if (ctrl && key == Key.O) OpenWithDialog();
             else if (ctrl && key == Key.S) SaveShown();
             else if (ctrlShift && key == Key.S) { if (_shown != null) SaveAs(_shown); }
+            else if (ctrl && key == Key.F) FindBar.Open(replace: false);
+            else if (ctrl && key == Key.H) FindBar.Open(replace: true);
+            else if (modifiers == ModifierKeys.None && key == Key.F3) FindBar.FindNext();
+            else if (modifiers == ModifierKeys.Shift && key == Key.F3) FindBar.FindPrevious();
+            else if (ctrl && key == Key.G) ShowGoToLine();
+            else if (modifiers == ModifierKeys.None && key == Key.Escape && FindBar.IsOpen) FindBar.Close();
             else return false;
             return true;
         }
@@ -657,6 +668,49 @@ namespace Kil0bitSystemMonitor.Pad
             UpdateFileText();
         }
 
+        // ---- go to line ---------------------------------------------------------------------
+
+        /// <summary>Shows the go-to-line box over the editor, seeded with the current line.</summary>
+        internal void ShowGoToLine()
+        {
+            GoToLineInput.Text = Editor.TextArea.Caret.Line.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            GoToLineBox.Visibility = Visibility.Visible;
+            GoToLineInput.Focus();
+            GoToLineInput.SelectAll();
+        }
+
+        /// <summary>Moves the caret to the start of a line, clamped to the document.</summary>
+        internal void GoToLine(int line)
+        {
+            var document = Editor.Document;
+            line = Math.Clamp(line, 1, document.LineCount);
+            Editor.CaretOffset = document.GetLineByNumber(line).Offset;
+            Editor.ScrollToLine(line);
+        }
+
+        private void OnGoToLineKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (int.TryParse(GoToLineInput.Text.Trim(), System.Globalization.NumberStyles.Integer,
+                                 System.Globalization.CultureInfo.InvariantCulture, out int line))
+                {
+                    GoToLine(line);
+                }
+            }
+            else if (e.Key != Key.Escape)
+            {
+                return;
+            }
+
+            GoToLineBox.Visibility = Visibility.Collapsed;
+            Editor.Focus();
+            e.Handled = true;
+        }
+
+        private void OnGoToLineLostFocus(object sender, KeyboardFocusChangedEventArgs e) =>
+            GoToLineBox.Visibility = Visibility.Collapsed;
+
         // ---- keys, menu, settings -----------------------------------------------------------
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -680,6 +734,10 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Save As…", "Ctrl+Shift+S", () => { if (_shown != null) SaveAs(_shown); }));
             menu.Items.Add(Item("Close tab", "Ctrl+W", CloseActiveTab));
             menu.Items.Add(Item("Reopen closed tab", "Ctrl+Shift+T", ReopenClosed));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false)));
+            menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true)));
+            menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine));
             menu.Items.Add(new Separator());
             menu.Items.Add(Check("Word wrap", "Alt+Z", _config.PadWordWrap, ToggleWordWrap));
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,

@@ -152,6 +152,8 @@
             </DockPanel>
         </Border>
 
+        <local:FindReplaceBar x:Name="FindBar" Grid.Row="2" />
+
         <Grid x:Name="EditorArea" Grid.Row="3">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -164,6 +166,15 @@
                                ShowLineNumbers="True" WordWrap="True"
                                HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                Padding="6,4,0,0" />
+
+            <Border x:Name="GoToLineBox" Grid.Column="0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,8,24,0" Padding="10,6" Background="#1C1C24" BorderBrush="#33FFFFFF" BorderThickness="1"
+                    CornerRadius="6" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Go to line" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,8,0" />
+                    <TextBox x:Name="GoToLineInput" Width="90" KeyDown="OnGoToLineKeyDown" LostKeyboardFocus="OnGoToLineLostFocus" />
+                </StackPanel>
+            </Border>
         </Grid>
 
         <Border Grid.Row="4" Background="{StaticResource Chrome}" BorderBrush="#1AFFFFFF" BorderThickness="0,1,0,0" Padding="10,3">

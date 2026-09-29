@@ -85,13 +85,20 @@ A corrupt or missing `meta.json` is rebuilt from what exists (title derived from
 `created`/`modified` from file times). A corrupt or missing `session.json` is rebuilt from the
 notes whose `closedAt` is null, ordered by `modified`.
 
-**Which text a note starts with on restore.**
+**Which text a note starts with on restore or reopen.**
 
 - Scratch note: `current.txt` (via the order above).
 - File-backed note with `hasUnsavedEdits = true`: `current.txt`, then the disk-change check (§3).
 - File-backed note with `hasUnsavedEdits = false`: read fresh from `sourcePath`. `current.txt`
   is authoritative only while `hasUnsavedEdits` is true, and is not written for a file-backed
   note until its first edit.
+  - When the file cannot be read (an offline share, a lock), MicaPad's own copy (via the order
+    above) is shown instead and its source stamp is marked *unverified*. That copy may be older
+    than the file, or empty, so the mark never matches a real stamp: the next disk-change check
+    reloads the file (or asks, once the note has edits), and Ctrl+S asks before writing.
+- A note whose text cannot be read at all is not opened, so its next autosave cannot overwrite
+  that text. On restore it is skipped and stays in the session, to return at the next launch;
+  on reopen it stays in the closed list.
 
 ## 2. Autosave and shutdown
 
@@ -126,6 +133,13 @@ with `DiagnosticsLog.Error("pad", …)`. The text stays in memory and the UI nev
 
 - If any note, open or closed, has the same `sourcePath` (full path, case-insensitive), that
   note is opened (reopened if closed) instead of creating a new one, so its history continues.
+  This includes a note skipped on restore because its text could not be read.
+  - One file never ends up in two notes. If that note's text cannot be read right now (a closed
+    note with unsaved edits, or a note skipped on restore), the file is not opened and an info
+    bar says so, rather than a fresh note being created beside it.
+  - A closed note whose file another tab now holds (a Save As onto that file while the note was
+    closed) reopens as a note of its own: a scratch note under the file's name, keeping its
+    text and history.
 - Files over 50 MB are refused with a message. Files whose first 8 KB contain a NUL byte and no
   UTF-16 BOM are refused as binary.
 - **Encoding detection:** BOM first (UTF-8, UTF-16 LE, UTF-16 BE). Without a BOM: strict UTF-8
@@ -147,11 +161,20 @@ time). Then `hasUnsavedEdits = false` and the source stamp is updated.
 
 - If the encoding cannot represent a character in the text (checked with an exception-fallback
   encoder before writing), an info bar offers `[Save as UTF-8] [Cancel]`.
+- If the file's stamp no longer matches the source stamp (another program changed it, or the
+  note shows an *unverified* copy, §1), nothing is written and an info bar offers
+  `[Overwrite] [Reload from disk]`. The check runs on every Ctrl+S, because the check on
+  activation misses a change made while MicaPad kept the focus. *Overwrite* first keeps the
+  file's outside version in History, so it can still be restored. When that version cannot be
+  kept (it cannot be read, is not text, or is too large for History), nothing is written and
+  the info bar says why and offers `[Overwrite anyway] [Reload from disk]`.
 - If the write fails (access denied, path gone), an info bar shows the reason with
   `[Save As…]`. The shadow copy keeps the edits.
 
 **Ctrl+S on a scratch note** opens Save As (default UTF-8 without BOM, CRLF). The note then
-becomes file-backed and keeps its id and history.
+becomes file-backed and keeps its id and history. Save As onto another file asks nothing more
+(the Save dialog confirmed replacing it); Save As onto the note's own file is checked as Ctrl+S
+is.
 
 **Status bar encoding and line ending** are clickable. Encoding: UTF-8, UTF-8 with BOM, UTF-16
 LE, UTF-16 BE, ANSI (system code page). Line ending: CRLF, LF. Changing the line ending converts
@@ -165,6 +188,10 @@ the source stamp:
 | Source changed, note has no unsaved edits | Reload silently. On activation the text in memory is snapshotted first; on restore there is nothing to snapshot, because the note loads straight from the file. |
 | Source changed, note has unsaved edits | Info bar: `[Reload from disk] [Keep mine]`. Reload snapshots the user's version first. *Keep mine* updates the stamp so the bar does not return until the next outside change. |
 | Source deleted | Info bar: `[Save As…] [Keep as note]`. *Keep as note* clears `sourcePath`, making it a scratch note. |
+
+A note showing an *unverified* copy (§1) counts as changed: it reloads silently while it has no
+edits of its own, and once it has, the info bar says the file could not be read when the tab
+was restored, so the tab may not match the file, rather than that the file changed.
 
 ## 4. History and closed notes
 
@@ -290,6 +317,10 @@ snapshot first and applies as one undoable edit. Matching is done by the pure
     if MicaStats was started elevated, the overlay calls
     `ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW)` so that an unelevated
     Explorer *Open with* still reaches it.
+  - The running instance takes its single-instance mutex before its window exists, so a launch
+    right after sign-in may find no window yet. A second launch waits up to five seconds for
+    the window of a running instance that is still starting; a `--pad` request that still finds
+    none is logged.
   - First instance: normal startup, then `App.OpenPad(path)`. The automatic Settings window is
     skipped when `--pad` is present.
   - Without `--pad`, a second instance behaves as today (shows Settings).

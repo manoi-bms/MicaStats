@@ -125,5 +125,25 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(1, FindReplaceEngine.FirstAtOrAfter(matches, 5));
             Assert.Equal(2, FindReplaceEngine.FirstAtOrAfter(matches, 20));
         }
+
+        [Fact]
+        public void A_regex_that_is_only_valid_once_wrapped_is_still_an_error()
+        {
+            Assert.False(FindReplaceEngine.TryBuild("a)(b", new FindOptions(false, WholeWord: true, UseRegex: true), out var regex, out string? error));
+            Assert.Null(regex);
+            Assert.False(string.IsNullOrEmpty(error));
+        }
+
+        [Fact]
+        public void A_search_that_runs_too_long_reports_a_timeout()
+        {
+            var slow = new Regex("(x+x+)+y", RegexOptions.None, TimeSpan.FromMilliseconds(1));
+
+            FindReplaceEngine.FindAll(new string('x', 40), slow, out bool timedOut);
+
+            Assert.True(timedOut);
+            Assert.False(FindReplaceEngine.FindAll("abc", Build("b"), out bool quick).Count == 0);
+            Assert.False(quick);
+        }
     }
 }

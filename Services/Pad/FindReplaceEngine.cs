@@ -13,7 +13,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// <summary>
     /// Find and replace over a string. Every mode is compiled to one regex, so literal, whole-word
     /// and regex search share a single code path. Every regex carries a timeout: a pathological
-    /// pattern stops with a message instead of freezing the window.
+    /// pattern stops with a message instead of freezing the window. FindAll and TryReplaceAll
+    /// report timeouts to the caller; the single-match helpers (FindNext, FindPrevious, ExpandAt)
+    /// treat a timed-out search as no match.
     /// </summary>
     public static class FindReplaceEngine
     {
@@ -23,7 +25,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Most matches highlighted at once; beyond it the count shows "10,000+".</summary>
         public const int MaxHighlights = 10_000;
 
-        private const string TooSlow = "The search took too long and was stopped.";
+        /// <summary>Message shown in the find bar when a search times out.</summary>
+        public const string TimedOutMessage = "The search took too long and was stopped.";
 
         /// <summary>
         /// Compiles the pattern. False with a null error for an empty pattern (nothing to search
@@ -35,16 +38,21 @@ namespace Kil0bitSystemMonitor.Services.Pad
             error = null;
             if (string.IsNullOrEmpty(pattern)) return false;
 
-            string body = options.UseRegex ? pattern : Regex.Escape(pattern);
-
-            // Look-arounds instead of \b, so whole word also works for terms that start or end with punctuation.
-            if (options.WholeWord) body = @"(?<!\w)(?:" + body + @")(?!\w)";
-
             var flags = RegexOptions.CultureInvariant | RegexOptions.Multiline;
             if (!options.MatchCase) flags |= RegexOptions.IgnoreCase;
 
             try
             {
+                // In regex mode, validate the raw pattern first: wrapping can make an unbalanced ")" or
+                // a trailing backslash valid, so we compile the user's pattern to report its error, not the wrapper's.
+                if (options.UseRegex)
+                    _ = new Regex(pattern, flags, MatchTimeout);
+
+                string body = options.UseRegex ? pattern : Regex.Escape(pattern);
+
+                // Look-arounds instead of \b, so whole word also works for terms that start or end with punctuation.
+                if (options.WholeWord) body = @"(?<!\w)(?:" + body + @")(?!\w)";
+
                 regex = new Regex(body, flags, MatchTimeout);
                 return true;
             }
@@ -55,10 +63,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
         }
 
-        /// <summary>Every non-empty match, up to <paramref name="max"/>, in order.</summary>
-        public static IReadOnlyList<FindMatch> FindAll(string text, Regex regex, int max = MaxHighlights)
+        /// <summary>Every non-empty match, up to <paramref name="max"/>, in order, delegating to the overload that reports timeouts.</summary>
+        public static IReadOnlyList<FindMatch> FindAll(string text, Regex regex, int max = MaxHighlights) =>
+            FindAll(text, regex, out _, max);
+
+        /// <summary>
+        /// Every non-empty match, up to <paramref name="max"/>, in order. Sets <paramref name="timedOut"/> to true
+        /// if the search ran too long and was stopped, false otherwise.
+        /// </summary>
+        public static IReadOnlyList<FindMatch> FindAll(string text, Regex regex, out bool timedOut, int max = MaxHighlights)
         {
             var matches = new List<FindMatch>();
+            timedOut = false;
             try
             {
                 for (Match m = regex.Match(text); m.Success && matches.Count < max; m = m.NextMatch())
@@ -66,6 +82,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
             catch (RegexMatchTimeoutException)
             {
+                timedOut = true;
                 // Return what was found before the timeout.
             }
             return matches;
@@ -143,8 +160,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         /// <summary>
-        /// Replaces every match. In regex mode <c>$1</c> and friends expand; in literal mode the
-        /// replacement is inserted exactly as typed.
+        /// Replaces every match, including zero-length matches (unlike FindAll, which skips them).
+        /// In regex mode <c>$1</c> and friends expand; in literal mode the replacement is inserted exactly as typed.
+        /// Returns false and sets <paramref name="error"/> to <see cref="TimedOutMessage"/> if the search times out.
         /// </summary>
         public static bool TryReplaceAll(string text, Regex regex, string replacement, bool useRegex,
                                          out string result, out int count, out string? error)
@@ -165,7 +183,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 result = text;
                 count = 0;
-                error = TooSlow;
+                error = TimedOutMessage;
                 return false;
             }
         }

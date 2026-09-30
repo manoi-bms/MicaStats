@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Runtime.InteropServices;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.History;
@@ -33,8 +35,28 @@ namespace Kil0bitSystemMonitor.Ai
         public Func<AppConfig, SecretStore, AiClientResult> CreateClient { get; init; } =
             (config, secrets) => AiProviderFactory.Create(config, secrets);
 
-        /// <summary>Puts text on the clipboard (tests record it instead).</summary>
+        /// <summary>
+        /// Puts text on the clipboard (tests record it instead). Throws <see cref="ExternalException"/>
+        /// while another program holds the clipboard; the panel catches that.
+        /// </summary>
         public Action<string> CopyText { get; init; } = text => System.Windows.Clipboard.SetText(text);
+
+        /// <summary>
+        /// Puts a secret (the MCP token, or a command that contains it) on the clipboard marked to be
+        /// left out of Windows clipboard history (Win+V), cloud clipboard sync and clipboard monitors.
+        /// Throws <see cref="ExternalException"/> like <see cref="CopyText"/>.
+        /// </summary>
+        public Action<string> CopySensitive { get; init; } = CopyExcludedFromHistory;
+
+        private static void CopyExcludedFromHistory(string text)
+        {
+            var data = new System.Windows.DataObject();
+            data.SetText(text);
+            data.SetData("ExcludeClipboardContentFromMonitorProcessing", new MemoryStream(new byte[] { 1, 0, 0, 0 }));
+            data.SetData("CanIncludeInClipboardHistory", new MemoryStream(new byte[4]));
+            data.SetData("CanUploadToCloudClipboard", new MemoryStream(new byte[4]));
+            System.Windows.Clipboard.SetDataObject(data, true);
+        }
 
         /// <summary>The full path to MicaStats.exe, for the MCP snippets.</summary>
         public string ExePath { get; init; } = Environment.ProcessPath ?? "MicaStats.exe";

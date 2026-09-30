@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -29,6 +30,9 @@ namespace Kil0bitSystemMonitor.Ai
 
         /// <summary>Suppresses change handlers while the panel is being filled from the config.</summary>
         private bool _loading;
+
+        /// <summary>Counts Test connection runs; a result from an earlier run is dropped.</summary>
+        private int _testRun;
 
         /// <summary>Builds the panel; nothing shows until <see cref="Load"/>.</summary>
         public AiSettingsPanel()
@@ -90,7 +94,9 @@ namespace Kil0bitSystemMonitor.Ai
             if (_loading || _host == null || ProviderBox.SelectedIndex < 0) return;
             _host.Config.AiProvider = ProviderBox.SelectedIndex == 1 ? AiProviders.OpenAiCompatible : AiProviders.Claude;
             _host.Save();
+            _testRun++;   // a Test connection still running belongs to the other provider
             TestResultText.Text = "";
+            TestButton.IsEnabled = true;
             RefreshProvider();
         }
 
@@ -122,6 +128,7 @@ namespace Kil0bitSystemMonitor.Ai
         private void RefreshProvider()
         {
             if (_host == null) return;
+            KeyHint.Visibility = Visibility.Collapsed;   // it spoke about the other provider key
             bool compatible = _host.Config.AiProvider == AiProviders.OpenAiCompatible;
             ClaudePanel.Visibility = compatible ? Visibility.Collapsed : Visibility.Visible;
             CompatiblePanel.Visibility = compatible ? Visibility.Visible : Visibility.Collapsed;
@@ -143,9 +150,9 @@ namespace Kil0bitSystemMonitor.Ai
         {
             if (_host == null) return;
             string key = box.Password.Trim();
-            box.Clear();
             if (key.Length == 0)
             {
+                box.Clear();
                 ShowKeyHint("Paste the key into the box first, then press Save.");
                 return;
             }
@@ -153,12 +160,22 @@ namespace Kil0bitSystemMonitor.Ai
             try
             {
                 _host.Secrets.Set(name, key);
-                ShowKeyHint("Saved. The key is stored encrypted for your Windows account and is not shown again.");
             }
             catch (Exception ex)
             {
-                ShowKeyHint("The key could not be stored (" + ex.GetType().Name + ").");
+                ShowKeyHint("The key could not be stored (" + ex.GetType().Name + "). It is still in the box; press Save to try again.");
+                return;
             }
+
+            // The store never throws for a locked or unwritable file, so believe only what it reads back.
+            if (!string.Equals(_host.Secrets.Get(name), key, StringComparison.Ordinal))
+            {
+                ShowKeyHint("The key could not be stored. It is still in the box; press Save to try again.");
+                return;
+            }
+
+            box.Clear();
+            ShowKeyHint("Saved. The key is stored encrypted for your Windows account and is not shown again.");
             RefreshKeys();
         }
 
@@ -166,7 +183,11 @@ namespace Kil0bitSystemMonitor.Ai
         {
             if (_host == null) return;
             _host.Secrets.Remove(name);
-            ShowKeyHint("Removed.");
+            // Has is also false while the file is locked, so the file must be readable too.
+            if (!_host.Secrets.CanRead() || _host.Secrets.Has(name))
+                ShowKeyHint("The key could not be removed. The file that holds it is not available; try again.");
+            else
+                ShowKeyHint("Removed.");
             RefreshKeys();
         }
 
@@ -200,6 +221,7 @@ namespace Kil0bitSystemMonitor.Ai
         internal async Task TestConnectionAsync()
         {
             if (_host == null) return;
+            int run = ++_testRun;
             TestButton.IsEnabled = false;
             TestResultText.Text = "Testing\u2026";
 
@@ -210,15 +232,13 @@ namespace Kil0bitSystemMonitor.Ai
             }
             catch (Exception ex)
             {
-                TestResultText.Text = AiErrorText.Describe(ex);
-                TestButton.IsEnabled = true;
+                Report(run, AiErrorText.Describe(ex));
                 return;
             }
 
             if (result.Client is not { } client)
             {
-                TestResultText.Text = result.Problem ?? "The provider could not be set up.";
-                TestButton.IsEnabled = true;
+                Report(run, result.Problem ?? "The provider could not be set up.");
                 return;
             }
 
@@ -230,19 +250,26 @@ namespace Kil0bitSystemMonitor.Ai
                     new ChatOptions { MaxOutputTokens = 32 },
                     timeout.Token));
                 string text = reply.Text.Trim();
-                TestResultText.Text = text.Length == 0
+                Report(run, text.Length == 0
                     ? "Connected, but the model sent back no text."
-                    : "Connected. The model replied: " + (text.Length > 60 ? text.Substring(0, 60) + "\u2026" : text);
+                    : "Connected. The model replied: " + (text.Length > 60 ? text.Substring(0, 60) + "\u2026" : text));
             }
             catch (Exception ex)
             {
-                TestResultText.Text = AiErrorText.Describe(ex);
+                Report(run, AiErrorText.Describe(ex));
             }
             finally
             {
                 client.Dispose();
-                TestButton.IsEnabled = true;
             }
+        }
+
+        /// <summary>Shows a Test connection outcome and re-enables the button, unless a newer run or a provider switch replaced this run.</summary>
+        private void Report(int run, string text)
+        {
+            if (run != _testRun) return;
+            TestResultText.Text = text;
+            TestButton.IsEnabled = true;
         }
 
         // ---- shortcut and limit --------------------------------------------------------------
@@ -315,7 +342,10 @@ namespace Kil0bitSystemMonitor.Ai
             if (_host?.History == null) return;
             _host.History.DeleteAll();
             RefreshHistory();
-            HistoryHint.Text = "History deleted. " + HistoryHint.Text;
+            // DeleteAll swallows I/O errors, so the size afterwards is the truth.
+            HistoryHint.Text = (_host.History.SizeBytes() == 0
+                ? "History deleted. "
+                : "History could not be deleted completely. ") + HistoryHint.Text;
         }
 
         private void RefreshHistory()
@@ -372,44 +402,78 @@ namespace Kil0bitSystemMonitor.Ai
         private void OnCopyToken(object sender, RoutedEventArgs e)
         {
             if (_host == null) return;
-            _host.CopyText(EnsureToken());
-            McpStatusText.Text = "Token copied.";
+            string? token = EnsureToken();
+            if (token == null) return;
+            TryCopy(token, sensitive: true, "Token copied.");
         }
 
         private void OnRegenerateToken(object sender, RoutedEventArgs e)
         {
             if (_host == null) return;
-            _host.Secrets.Set(SecretNames.McpToken, SecretStore.NewToken());
-            McpStatusText.Text = "New token made. Copy the Claude Code command again: the old token no longer works.";
+            string token = SecretStore.NewToken();
+            _host.Secrets.Set(SecretNames.McpToken, token);
+            McpStatusText.Text = string.Equals(_host.Secrets.Get(SecretNames.McpToken), token, StringComparison.Ordinal)
+                ? "New token made. Copy the Claude Code command again: the old token no longer works."
+                : "The token could not be changed; the old one still works.";
         }
 
         private void OnCopyDesktopConfig(object sender, RoutedEventArgs e)
         {
             if (_host == null) return;
-            _host.CopyText(McpConfigSnippets.ClaudeDesktopJson(_host.ExePath));
-            McpStatusText.Text = "Copied. In Claude Desktop open Settings > Developer > Edit Config, merge it into claude_desktop_config.json, then restart Claude Desktop.";
+            TryCopy(McpConfigSnippets.ClaudeDesktopJson(_host.ExePath), sensitive: false,
+                "Copied. In Claude Desktop open Settings > Developer > Edit Config, merge it into claude_desktop_config.json, then restart Claude Desktop.");
         }
 
         private void OnCopyCodeCommand(object sender, RoutedEventArgs e)
         {
             if (_host == null) return;
-            bool http = _host.Config.AiMcpMode == AiMcpModes.Http;
-            _host.CopyText(http
-                ? McpConfigSnippets.ClaudeCodeHttpCommand(_host.Config.AiMcpHttpPort, EnsureToken())
-                : McpConfigSnippets.ClaudeCodeStdioCommand(_host.ExePath));
-            McpStatusText.Text = "Copied. Run it in a terminal where Claude Code is installed.";
+            if (_host.Config.AiMcpMode == AiMcpModes.Http)
+            {
+                string? token = EnsureToken();
+                if (token == null) return;
+                TryCopy(McpConfigSnippets.ClaudeCodeHttpCommand(_host.Config.AiMcpHttpPort, token), sensitive: true,
+                    "Copied. Run it in a terminal where Claude Code is installed.");
+            }
+            else
+            {
+                TryCopy(McpConfigSnippets.ClaudeCodeStdioCommand(_host.ExePath), sensitive: false,
+                    "Copied. Run it in a terminal where Claude Code is installed.");
+            }
         }
 
-        /// <summary>The MCP HTTP token, made and stored on first use.</summary>
-        private string EnsureToken()
+        /// <summary>
+        /// Copies text and says so. A busy clipboard (another program holds it) is an everyday event,
+        /// not a crash: it becomes a sentence. The text may hold the token, so it is never logged.
+        /// </summary>
+        private void TryCopy(string text, bool sensitive, string done)
+        {
+            try
+            {
+                if (sensitive) _host!.CopySensitive(text);
+                else _host!.CopyText(text);
+                McpStatusText.Text = done;
+            }
+            catch (ExternalException)
+            {
+                McpStatusText.Text = "The clipboard is busy. Try again.";
+            }
+        }
+
+        /// <summary>
+        /// The MCP HTTP token, made and stored on first use. Null, after saying so, when it could
+        /// not be stored: a token that was never saved would be copied into a command that fails.
+        /// </summary>
+        private string? EnsureToken()
         {
             string? token = _host!.Secrets.Get(SecretNames.McpToken);
-            if (string.IsNullOrEmpty(token))
-            {
-                token = SecretStore.NewToken();
-                _host.Secrets.Set(SecretNames.McpToken, token);
-            }
-            return token;
+            if (!string.IsNullOrEmpty(token)) return token;
+
+            token = SecretStore.NewToken();
+            _host.Secrets.Set(SecretNames.McpToken, token);
+            if (string.Equals(_host.Secrets.Get(SecretNames.McpToken), token, StringComparison.Ordinal)) return token;
+
+            McpStatusText.Text = "The token could not be stored, so nothing was copied. Try again.";
+            return null;
         }
 
         private void RefreshMcp()

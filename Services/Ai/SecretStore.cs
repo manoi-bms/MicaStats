@@ -58,6 +58,15 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// <summary>Whether a value is saved under <paramref name="name"/>; Settings shows "Saved" from this.</summary>
         public bool Has(string name) => Get(name) != null;
 
+        /// <summary>
+        /// Whether the file can be read right now. <see cref="Has"/> is false both for "nothing
+        /// saved" and for a locked file, so Settings asks this before it believes a removal worked.
+        /// </summary>
+        public bool CanRead()
+        {
+            lock (_gate) return Load() != null;
+        }
+
         /// <summary>The saved value, or null when there is none or the file cannot be read.</summary>
         public string? Get(string name)
         {

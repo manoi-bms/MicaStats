@@ -36,6 +36,8 @@ namespace Kil0bitSystemMonitor.Tests
             public readonly HistoryStore History;
             public readonly UsageMeter Usage;
             public readonly List<string> Copied = new();
+            public readonly List<string> CopiedSensitive = new();
+            public Exception? CopyFailure;
             public int Saves;
             public string? McpProblem;
             public Func<AppConfig, SecretStore, AiClientResult> ClientFactory =
@@ -57,7 +59,17 @@ namespace Kil0bitSystemMonitor.Tests
                 Usage = () => Usage,
                 McpHttpProblem = () => McpProblem,
                 CreateClient = (config, secrets) => ClientFactory(config, secrets),
-                CopyText = Copied.Add,
+                CopyText = text =>
+                {
+                    if (CopyFailure != null) throw CopyFailure;
+                    Copied.Add(text);
+                },
+                CopySensitive = text =>
+                {
+                    if (CopyFailure != null) throw CopyFailure;
+                    Copied.Add(text);
+                    CopiedSensitive.Add(text);
+                },
                 ExePath = Exe,
             };
 
@@ -152,7 +164,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2, panel.McpModeBox.SelectedIndex);
             Assert.Equal(Visibility.Visible, panel.McpHttpPanel.Visibility);
             Assert.Equal("50000", panel.McpPortBox.Text);
-            Assert.Contains("stays on this PC", panel.PrivacyText.Text);
+            Assert.Contains("stays on this PC", panel.PrivacyText.Text, StringComparison.Ordinal);
             Assert.Equal(0, rig.Saves);
         });
 
@@ -169,7 +181,7 @@ namespace Kil0bitSystemMonitor.Tests
             panel.CompatibleUrlBox.Text = "  https://openrouter.ai/api/v1 ";
             LoseFocus(panel.CompatibleUrlBox);
             Assert.Equal("https://openrouter.ai/api/v1", rig.Config.AiCompatibleBaseUrl);
-            Assert.Contains("openrouter.ai", panel.PrivacyText.Text);
+            Assert.Contains("openrouter.ai", panel.PrivacyText.Text, StringComparison.Ordinal);
 
             panel.HistoryToggle.IsOn = true;
             Assert.True(rig.Config.AiHistoryEnabled);
@@ -202,12 +214,12 @@ namespace Kil0bitSystemMonitor.Tests
             panel.HotkeyBox.Text = "Banana";
             LoseFocus(panel.HotkeyBox);
             Assert.Equal("Ctrl+Alt+Q", rig.Config.AiHotkey);
-            Assert.StartsWith("Not a valid shortcut", panel.HotkeyHint.Text);
+            Assert.StartsWith("Not a valid shortcut", panel.HotkeyHint.Text, StringComparison.Ordinal);
 
             panel.HotkeyBox.Text = "";
             LoseFocus(panel.HotkeyBox);
             Assert.Equal("", rig.Config.AiHotkey);
-            Assert.StartsWith("Shortcut off", panel.HotkeyHint.Text);
+            Assert.StartsWith("Shortcut off", panel.HotkeyHint.Text, StringComparison.Ordinal);
         });
 
         [Fact]
@@ -224,14 +236,22 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Visibility.Collapsed, panel.ClaudeKeyEntry.Visibility);
             Assert.Equal(Visibility.Visible, panel.ClaudeKeySaved.Visibility);
             Assert.DoesNotContain(AllText(panel), text => text.Contains(key, StringComparison.Ordinal));
-            Assert.DoesNotContain(key, System.Text.Json.JsonSerializer.Serialize(rig.Config));
+            Assert.DoesNotContain(key, System.Text.Json.JsonSerializer.Serialize(rig.Config), StringComparison.Ordinal);
+
+            rig.Secrets.Set(SecretNames.CompatibleKey, "compatible-key-value");
+            rig.Secrets.Set(SecretNames.McpToken, "mcp-token-value");
+            panel.Load(rig.Host());
 
             Click(panel.RemoveClaudeKeyButton);
 
             Assert.False(rig.Secrets.Has(SecretNames.ClaudeKey));
+            Assert.Equal("compatible-key-value", rig.Secrets.Get(SecretNames.CompatibleKey));
+            Assert.Equal("mcp-token-value", rig.Secrets.Get(SecretNames.McpToken));
+            Assert.StartsWith("Removed.", panel.KeyHint.Text, StringComparison.Ordinal);
             Assert.Equal(Visibility.Visible, panel.ClaudeKeyEntry.Visibility);
             Assert.Equal(Visibility.Collapsed, panel.ClaudeKeySaved.Visibility);
 
+            rig.Secrets.Remove(SecretNames.CompatibleKey);
             Click(panel.SaveCompatibleKeyButton);   // nothing typed
 
             Assert.False(rig.Secrets.Has(SecretNames.CompatibleKey));
@@ -368,7 +388,7 @@ namespace Kil0bitSystemMonitor.Tests
             Click(panel.DeleteHistoryButton);
 
             Assert.Equal(0, rig.History.SizeBytes());
-            Assert.StartsWith("History deleted.", panel.HistoryHint.Text);
+            Assert.StartsWith("History deleted.", panel.HistoryHint.Text, StringComparison.Ordinal);
         });
 
         [Fact]
@@ -377,17 +397,206 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(rig.Usage.TryConsume(100));
             panel.Load(rig.Host());
 
-            Assert.StartsWith("Used today: 1 of 100.", panel.LimitHint.Text);
+            Assert.StartsWith("Used today: 1 of 100.", panel.LimitHint.Text, StringComparison.Ordinal);
         });
+
+        /// <summary>Holds a file open and unshareable, the way another program (or a scanner) can.</summary>
+        private static FileStream Lock(string path) =>
+            new(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        [Fact]
+        public void A_busy_clipboard_becomes_a_sentence_not_a_crash() => WithPanel((panel, rig) =>
+        {
+            rig.CopyFailure = new System.Runtime.InteropServices.COMException("CLIPBRD_E_CANT_OPEN", unchecked((int)0x800401D0));
+            panel.McpModeBox.SelectedIndex = 2;
+
+            Click(panel.CopyTokenButton);
+            Assert.Equal("The clipboard is busy. Try again.", panel.McpStatusText.Text);
+
+            panel.McpStatusText.Text = "";
+            Click(panel.CopyCodeButton);
+            Assert.Equal("The clipboard is busy. Try again.", panel.McpStatusText.Text);
+
+            panel.McpModeBox.SelectedIndex = 1;
+            panel.McpStatusText.Text = "";
+            Click(panel.CopyDesktopButton);
+            Assert.Equal("The clipboard is busy. Try again.", panel.McpStatusText.Text);
+
+            rig.CopyFailure = new System.Runtime.InteropServices.ExternalException("busy");
+            panel.McpStatusText.Text = "";
+            Click(panel.CopyCodeButton);
+            Assert.Equal("The clipboard is busy. Try again.", panel.McpStatusText.Text);
+            Assert.Empty(rig.Copied);
+        });
+
+        [Fact]
+        public void Only_the_token_and_the_http_command_take_the_sensitive_clipboard_path() => WithPanel((panel, rig) =>
+        {
+            panel.McpModeBox.SelectedIndex = 1;
+            Click(panel.CopyDesktopButton);
+            Click(panel.CopyCodeButton);
+            Assert.Equal(2, rig.Copied.Count);
+            Assert.Empty(rig.CopiedSensitive);
+
+            panel.McpModeBox.SelectedIndex = 2;
+            Click(panel.CopyTokenButton);
+            Click(panel.CopyCodeButton);
+
+            string token = rig.Secrets.Get(SecretNames.McpToken)!;
+            Assert.Equal(new[] { token, McpConfigSnippets.ClaudeCodeHttpCommand(47831, token) }, rig.CopiedSensitive);
+        });
+
+        [Fact]
+        public void A_key_that_could_not_be_stored_is_not_called_saved_and_stays_in_the_box() => WithPanel((panel, rig) =>
+        {
+            rig.Secrets.Set(SecretNames.CompatibleKey, "existing");   // makes the file exist so it can be locked
+            panel.Load(rig.Host());
+            const string key = "sk-ant-test-0123456789abcdef";
+            panel.ClaudeKeyBox.Password = key;
+
+            using (Lock(rig.Env.PathOf("secrets.bin")))
+            {
+                Click(panel.SaveClaudeKeyButton);
+            }
+
+            Assert.StartsWith("The key could not be stored.", panel.KeyHint.Text, StringComparison.Ordinal);
+            Assert.Equal(key, panel.ClaudeKeyBox.Password);
+            Assert.Equal(Visibility.Visible, panel.ClaudeKeyEntry.Visibility);
+
+            Click(panel.SaveClaudeKeyButton);   // the file is free again
+
+            Assert.Equal(key, rig.Secrets.Get(SecretNames.ClaudeKey));
+            Assert.StartsWith("Saved.", panel.KeyHint.Text, StringComparison.Ordinal);
+            Assert.Equal("", panel.ClaudeKeyBox.Password);
+        });
+
+        [Fact]
+        public void A_key_that_could_not_be_removed_is_not_called_removed() => WithPanel((panel, rig) =>
+        {
+            rig.Secrets.Set(SecretNames.ClaudeKey, "sk-ant-test-0123456789abcdef");
+            panel.Load(rig.Host());
+
+            using (Lock(rig.Env.PathOf("secrets.bin")))
+            {
+                Click(panel.RemoveClaudeKeyButton);
+            }
+
+            Assert.StartsWith("The key could not be removed.", panel.KeyHint.Text, StringComparison.Ordinal);
+            Assert.True(rig.Secrets.Has(SecretNames.ClaudeKey));
+        });
+
+        [Fact]
+        public void A_token_that_could_not_be_changed_or_stored_is_reported() => WithPanel((panel, rig) =>
+        {
+            panel.McpModeBox.SelectedIndex = 2;
+            Click(panel.CopyTokenButton);
+            string first = rig.Secrets.Get(SecretNames.McpToken)!;
+            rig.Copied.Clear();
+
+            using (Lock(rig.Env.PathOf("secrets.bin")))
+            {
+                Click(panel.RegenerateTokenButton);
+            }
+
+            Assert.Equal("The token could not be changed; the old one still works.", panel.McpStatusText.Text);
+            Assert.Equal(first, rig.Secrets.Get(SecretNames.McpToken));
+
+            // With no saved token and the file locked, a token cannot be made and kept, so nothing
+            // is copied (a Claude key keeps the file in existence so it can be locked).
+            rig.Secrets.Remove(SecretNames.McpToken);
+            rig.Secrets.Set(SecretNames.ClaudeKey, "sk-ant-test-0123456789abcdef");
+            using (Lock(rig.Env.PathOf("secrets.bin")))
+            {
+                Click(panel.CopyTokenButton);
+                Assert.Equal("The token could not be stored, so nothing was copied. Try again.", panel.McpStatusText.Text);
+                panel.McpStatusText.Text = "";
+                Click(panel.CopyCodeButton);
+                Assert.Equal("The token could not be stored, so nothing was copied. Try again.", panel.McpStatusText.Text);
+            }
+
+            Assert.Empty(rig.Copied);
+        });
+
+        [Fact]
+        public void History_that_could_not_be_deleted_is_not_called_deleted() => WithPanel((panel, rig) =>
+        {
+            rig.History.Append(new HistoryRow
+            {
+                Utc = new DateTime(2026, 9, 30, 5, 0, 0, DateTimeKind.Utc),
+                Seconds = 60,
+                CpuAvg = 12.5f,
+                CpuMax = 40f,
+            });
+            string file = Directory.GetFiles(rig.History.Folder)[0];
+
+            using (Lock(file))
+            {
+                Click(panel.DeleteHistoryButton);
+            }
+
+            Assert.StartsWith("History could not be deleted completely.", panel.HistoryHint.Text, StringComparison.Ordinal);
+            Assert.True(rig.History.SizeBytes() > 0);
+        });
+
+        [Fact]
+        public void A_test_result_that_arrives_after_a_provider_switch_is_dropped() => WithPanel((panel, rig) =>
+        {
+            var gate = new TaskCompletionSource<bool>();
+            rig.ClientFactory = (config, secrets) => new AiClientResult(new SlowClient(gate.Task), null, true);
+
+            Task running = panel.TestConnectionAsync();
+            panel.ProviderBox.SelectedIndex = 1;
+            Assert.Equal("", panel.TestResultText.Text);
+            Assert.True(panel.TestButton.IsEnabled);
+
+            gate.SetResult(true);
+            UiPump.Wait(running);
+
+            Assert.Equal("", panel.TestResultText.Text);
+        });
+
+        [Fact]
+        public void The_key_hint_about_one_provider_is_hidden_after_switching_to_the_other() => WithPanel((panel, rig) =>
+        {
+            panel.ClaudeKeyBox.Password = "sk-ant-test-0123456789abcdef";
+            Click(panel.SaveClaudeKeyButton);
+            Assert.Equal(Visibility.Visible, panel.KeyHint.Visibility);
+
+            panel.ProviderBox.SelectedIndex = 1;
+
+            Assert.Equal(Visibility.Collapsed, panel.KeyHint.Visibility);
+        });
+
+        /// <summary>A client whose reply waits for a gate.</summary>
+        private sealed class SlowClient : IChatClient
+        {
+            private readonly Task _gate;
+            public SlowClient(Task gate) => _gate = gate;
+
+            public async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+                CancellationToken cancellationToken = default)
+            {
+                await _gate.ConfigureAwait(false);
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "OK"));
+            }
+
+            public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,
+                ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+                throw new NotSupportedException();
+
+            public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+            public void Dispose() { }
+        }
 
         [Fact]
         public void Settings_has_an_ai_section()
         {
             string xaml = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml"));
 
-            Assert.Contains("Tag=\"AI\"", xaml);
-            Assert.Contains("x:Name=\"AiSection\"", xaml);
-            Assert.Contains("<ai:AiSettingsPanel x:Name=\"AiPanel\"", xaml);
+            Assert.Contains("Tag=\"AI\"", xaml, StringComparison.Ordinal);
+            Assert.Contains("x:Name=\"AiSection\"", xaml, StringComparison.Ordinal);
+            Assert.Contains("<ai:AiSettingsPanel x:Name=\"AiPanel\"", xaml, StringComparison.Ordinal);
         }
     }
 
@@ -410,6 +619,23 @@ namespace Kil0bitSystemMonitor.Tests
         public void A_loopback_server_stays_on_this_pc(string url, string host)
         {
             Assert.Equal("Everything stays on this PC (" + host + ").", AiPrivacyNote.Describe(AiProviders.OpenAiCompatible, url));
+        }
+
+        [Theory]
+        [InlineData("http://localhost.evil.com/v1", "localhost.evil.com")]
+        [InlineData("http://127.0.0.1.nip.io/v1", "127.0.0.1.nip.io")]
+        [InlineData("http://localhost@evil.com/v1", "evil.com")]
+        public void A_lookalike_host_is_named_not_trusted(string url, string host)
+        {
+            Assert.Equal("Questions and the PC data they need go to " + host + "." + Removed,
+                AiPrivacyNote.Describe(AiProviders.OpenAiCompatible, url));
+        }
+
+        [Fact]
+        public void An_ipv4_mapped_loopback_stays_on_this_pc()
+        {
+            Assert.Equal("Everything stays on this PC ([::ffff:127.0.0.1]).",
+                AiPrivacyNote.Describe(AiProviders.OpenAiCompatible, "http://[::ffff:127.0.0.1]:8080/v1"));
         }
 
         [Fact]

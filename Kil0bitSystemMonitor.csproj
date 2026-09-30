@@ -52,6 +52,11 @@
         <InternalsVisibleTo Include="Kil0bitSystemMonitor.Tests" />
     </ItemGroup>
 
+    <ItemGroup>
+        <!-- MicaPad's own highlighting definitions, loaded by Pad/PadHighlighting.cs. -->
+        <EmbeddedResource Include="Pad\Highlighting\*.xshd" LogicalName="MicaPad.Highlighting.%(Filename)%(Extension)" />
+    </ItemGroup>
+
     <!--
       This project lives at the repository root, so the SDK's default **/*.cs glob would compile
       the test project's sources into the application assembly. Exclude them explicitly.

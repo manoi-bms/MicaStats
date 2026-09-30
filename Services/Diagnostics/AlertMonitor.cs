@@ -96,6 +96,12 @@ namespace Kil0bitSystemMonitor.Services.Diagnostics
         private bool _running;
         private bool _disposed;
 
+        /// <summary>How many raised alerts <see cref="Recent"/> keeps.</summary>
+        private const int RecentCapacity = 50;
+
+        private readonly object _recentGate = new();
+        private readonly List<AlertEvent> _recent = new();
+
         public AlertMonitor(MetricsHistory history, BatteryMonitor? battery)
         {
             _history = history ?? throw new ArgumentNullException(nameof(history));
@@ -111,6 +117,26 @@ namespace Kil0bitSystemMonitor.Services.Diagnostics
 
         /// <summary>Whether a given rule is currently breached.</summary>
         public bool IsFiring(string ruleId) => _evaluator.IsFiring(ruleId);
+
+        /// <summary>
+        /// The last 50 alerts raised, newest first, for the AI <c>list_alerts</c> tool. A copy taken
+        /// under a lock: alerts are raised on the UI thread while the tool pipe and the MCP server
+        /// read from their own threads. Memory only, so it starts empty at each launch.
+        /// </summary>
+        public IReadOnlyList<AlertEvent> Recent
+        {
+            get { lock (_recentGate) return _recent.ToArray(); }
+        }
+
+        /// <summary>Adds a raised alert to <see cref="Recent"/>, dropping the oldest beyond 50.</summary>
+        internal void Remember(AlertEvent alert)
+        {
+            lock (_recentGate)
+            {
+                _recent.Insert(0, alert);
+                if (_recent.Count > RecentCapacity) _recent.RemoveRange(RecentCapacity, _recent.Count - RecentCapacity);
+            }
+        }
 
         public void SetRules(IReadOnlyList<AlertRule> rules)
         {
@@ -153,6 +179,7 @@ namespace Kil0bitSystemMonitor.Services.Diagnostics
                     if (_evaluator.Feed(rule, value, now) != AlertTransition.Raised) continue;
 
                     var alert = new AlertEvent(rule, value, detail, now);
+                    Remember(alert);
                     DiagnosticsLog.Warn("alert", rule.Describe() + " — " + alert.Message);
                     Raised?.Invoke(alert);
                 }

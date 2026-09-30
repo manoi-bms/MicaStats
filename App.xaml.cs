@@ -263,6 +263,9 @@ namespace Kil0bitSystemMonitor
 
             StartDiagnostics(config);
 
+            // The 7-day history now, and the assistant and the MCP servers as they are added (App.Ai.cs).
+            StartAi(config, m_telemetry, m_history, Dispatcher);
+
             // Windows is shutting down or signing out: every MicaPad note reaches disk now, and
             // nothing is asked. Cancel is never set.
             SessionEnding += (s, ending) => FlushPad();
@@ -713,6 +716,9 @@ namespace Kil0bitSystemMonitor
                 m_padMaintenanceTimer?.Stop();
                 s_pad?.Dispose();
                 m_captureHotkeys?.Dispose();
+                // Before anything the AI tools read, and before the shared sampler: the history
+                // recorder may hold a sampler lease for its once-a-minute top process.
+                StopAi();
                 // The watchdog owns nothing else here — its scans are a static kernel snapshot,
                 // not a lease on m_history or SharedProcessSampler — so stopping it first just
                 // silences its timer earliest; it does not have to precede anything below it.

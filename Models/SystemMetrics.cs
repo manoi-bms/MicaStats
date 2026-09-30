@@ -590,6 +590,16 @@ namespace Kil0bitSystemMonitor.Models
         /// <summary>Auto-close brackets and quotes in MicaPad.</summary>
         public bool PadAutoClose { get => _padAutoClose; set { Set(ref _padAutoClose, value); } }
 
+        private bool _useGpuRendering;
+
+        /// <summary>
+        /// Draw MicaStats' windows with the GPU (WPF's Direct3D 9 path). Off by default: on the
+        /// owner's machine that path got stuck rebuilding its swap chain every frame, and each
+        /// rebuild enumerates the display devices under Windows' display lock, which froze Explorer
+        /// and the taskbar (2026-09-30 and 2026-10-01). Read at startup; a change needs a restart.
+        /// </summary>
+        public bool UseGpuRendering { get => _useGpuRendering; set { Set(ref _useGpuRendering, value); } }
+
         // ----- AI ---------------------------------------------------------------------------
         // Everything is off by default. No key or token is ever stored here: config.json is the
         // file people attach to bug reports, so secrets live in SecretStore (DPAPI) instead.

@@ -207,7 +207,16 @@ namespace Kil0bitSystemMonitor
                 " starting — " + Environment.OSVersion.VersionString);
             DispatcherUnhandledException += (s, ex) =>
                 Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("app", "Unhandled dispatcher exception", ex.Exception);
-            
+
+            // Software drawing for every WPF window, before the first one exists. WPF's Direct3D 9
+            // path was caught rebuilding a swap chain on every frame; each rebuild enumerates the
+            // display devices under Windows' display lock, and at 60 frames a second that froze
+            // Explorer and the taskbar. MicaStats' windows are light enough to draw on the CPU.
+            if (!config.Config.UseGpuRendering)
+                System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("app",
+                "Drawing windows " + (config.Config.UseGpuRendering ? "with the GPU" : "in software"));
+
             m_dummyWindow = new Window();
             m_dummyWindow.Title = "MicaStats Host";
             m_dummyWindow.Width = 0;

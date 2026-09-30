@@ -123,5 +123,24 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(JsonSerializer.Deserialize<AppConfig>("{\"ShowCpu\": false}")!.PadAutoClose);
             Assert.False(JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { PadAutoClose = false }))!.PadAutoClose);
         }
+
+        [Fact]
+        public void Gpu_drawing_is_off_by_default_and_round_trips()
+        {
+            Assert.False(new AppConfig().UseGpuRendering);
+            Assert.False(JsonSerializer.Deserialize<AppConfig>("{\"ShowCpu\": false}")!.UseGpuRendering);
+            Assert.True(JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { UseGpuRendering = true }))!.UseGpuRendering);
+        }
+
+        [Fact]
+        public void Startup_switches_wpf_to_software_drawing_unless_the_gpu_is_asked_for()
+        {
+            string app = System.IO.File.ReadAllText(System.IO.Path.Combine(PadWindowTests.RepoRoot(), "App.xaml.cs"));
+            int render = app.IndexOf("RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly", System.StringComparison.Ordinal);
+            int firstWindow = app.IndexOf("m_dummyWindow = new Window()", System.StringComparison.Ordinal);
+            Assert.True(render > 0, "App.OnStartup must switch WPF to software drawing");
+            Assert.True(render < firstWindow, "the switch must come before the first WPF window is created");
+            Assert.Contains("if (!config.Config.UseGpuRendering)", app, System.StringComparison.Ordinal);
+        }
     }
 }

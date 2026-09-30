@@ -138,6 +138,79 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(fold.IsFolded);
         });
 
+        private static void Find(Kil0bitSystemMonitor.Pad.MicaPadWindow window, string what, bool previous = false)
+        {
+            window.FindBar.Open(replace: false);
+            window.FindBar.FindBox.Text = what;
+            window.FindBar.Recompute();
+            if (previous) window.FindBar.FindPrevious();
+            else window.FindBar.FindNext();
+            Assert.Equal(what, window.Editor.SelectedText);
+        }
+
+        [Fact]
+        public void Find_opens_a_heading_fold_its_match_ends_at() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Text = "# A\ntext here\n# B";
+            var folding = window.LanguageView.Folding!;
+            folding.Update();
+            var section = folding.Manager!.AllFoldings.Single();
+            Assert.Equal(window.Editor.Document.Text.IndexOf("\n#", System.StringComparison.Ordinal), section.EndOffset);
+            section.IsFolded = true;
+
+            Find(window, "here");
+
+            Assert.False(section.IsFolded);
+        });
+
+        [Fact]
+        public void Find_previous_opens_a_brace_fold_its_match_ends_at() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            PadLanguageWindowTests.OpenFile(window, env, "a.json", "{\n  \"a\": 1\n}");
+            var folding = window.LanguageView.Folding!;
+            folding.Update();
+            var section = folding.Manager!.AllFoldings.Single();
+            section.IsFolded = true;
+
+            Find(window, "}", previous: true);
+
+            Assert.False(section.IsFolded);
+        });
+
+        [Fact]
+        public void Replace_then_find_opens_the_fold_the_next_match_ends_at() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Text = "# A\none\n# B\none";
+            var folding = window.LanguageView.Folding!;
+            folding.Update();
+            var second = folding.Manager!.AllFoldings.Last();
+            second.IsFolded = true;
+            window.Editor.CaretOffset = 0;
+            Find(window, "one");
+
+            window.FindBar.Open(replace: true);
+            window.FindBar.ReplaceBox.Text = "two";
+            window.FindBar.ReplaceButton.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+
+            Assert.Equal("# A\ntwo\n# B\none", window.Editor.Document.Text);
+            Assert.Equal("one", window.Editor.SelectedText);
+            Assert.False(second.IsFolded);
+        });
+
+        [Fact]
+        public void Selecting_up_to_a_fold_end_without_find_leaves_it_folded() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Text = "# A\ntext here\n# B";
+            var folding = window.LanguageView.Folding!;
+            folding.Update();
+            var section = folding.Manager!.AllFoldings.Single();
+            section.IsFolded = true;
+
+            window.Editor.Select(section.EndOffset - 4, 4);
+
+            Assert.True(section.IsFolded);
+        });
+
         [Fact]
         public void Saving_keeps_what_is_folded() => PadLanguageWindowTests.WithWindow((window, env, config) =>
         {

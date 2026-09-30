@@ -439,15 +439,15 @@ namespace Kil0bitSystemMonitor.Pad
         {
             FrameworkElement target = anchor ?? TabStrip;
             var menu = NewMenu(target, PlacementMode.MousePoint);
-            menu.Items.Add(Item("Rename…", null, () => BeginRename(note, target)));
-            menu.Items.Add(Item("Close", null, () => CloseTab(note)));
+            menu.Items.Add(Item("Rename…", null, () => BeginRename(note, target), icon: "\uE8AC"));
+            menu.Items.Add(Item("Close", null, () => CloseTab(note), icon: "\uE711"));
             menu.Items.Add(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.Open.Count > 1));
 
             if (note.Meta.SourcePath is string path)
             {
                 menu.Items.Add(new Separator());
-                menu.Items.Add(Item("Copy file path", null, () => CopyFilePath(path)));
-                menu.Items.Add(Item("Show in folder", null, () => ShowInFolder(path)));
+                menu.Items.Add(Item("Copy file path", null, () => CopyFilePath(path), icon: "\uE8C8"));
+                menu.Items.Add(Item("Show in folder", null, () => ShowInFolder(path), icon: "\uE838"));
             }
             return menu;
         }
@@ -1094,33 +1094,34 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnMenuButtonClick(object sender, RoutedEventArgs e)
         {
             var menu = NewMenu(MenuButton, PlacementMode.Bottom);
-            menu.Items.Add(Item("New note", "Ctrl+N", NewTab));
-            menu.Items.Add(Item("Open…", "Ctrl+O", OpenWithDialog));
-            menu.Items.Add(Item("Save", "Ctrl+S", SaveShown));
-            menu.Items.Add(Item("Save As…", "Ctrl+Shift+S", () => { if (_shown != null) SaveAs(_shown); }));
-            menu.Items.Add(Item("Close tab", "Ctrl+W", CloseActiveTab));
+            menu.Items.Add(Item("New note", "Ctrl+N", NewTab, icon: "\uE710"));
+            menu.Items.Add(Item("Open…", "Ctrl+O", OpenWithDialog, icon: "\uE8E5"));
+            menu.Items.Add(Item("Save", "Ctrl+S", SaveShown, icon: "\uE74E"));
+            menu.Items.Add(Item("Save As…", "Ctrl+Shift+S", () => { if (_shown != null) SaveAs(_shown); }, icon: "\uE792"));
+            menu.Items.Add(Item("Close tab", "Ctrl+W", CloseActiveTab, icon: "\uE711"));
             menu.Items.Add(Item("Reopen closed tab", "Ctrl+Shift+T", ReopenClosed));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false)));
-            menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true)));
-            menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine));
-            menu.Items.Add(Item("History", "Ctrl+Shift+H", ToggleHistory));
+            menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));
+            menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true), icon: "\uE8AB"));
+            menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine, icon: "\uE8AD"));
+            menu.Items.Add(Item("History", "Ctrl+Shift+H", ToggleHistory, icon: "\uE81C"));
             menu.Items.Add(new Separator());
             menu.Items.Add(Check("Word wrap", "Alt+Z", _config.PadWordWrap, ToggleWordWrap));
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,
                 () => _config.PadShowLineNumbers = !_config.PadShowLineNumbers));
             menu.Items.Add(Check("Markdown formatting", null, _config.PadMarkdown, () => _config.PadMarkdown = !_config.PadMarkdown));
             menu.Items.Add(Check("Always on top", null, Topmost, ToggleTopmost));
-            menu.Items.Add(Item("Font…", null, ChooseFont));
+            menu.Items.Add(Item("Font…", null, ChooseFont, icon: "\uE8D2"));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Open notes folder", null, OpenNotesFolder));
-            menu.Items.Add(Item("Settings", null, () => OpenSettingsRequested?.Invoke()));
+            menu.Items.Add(Item("Open notes folder", null, OpenNotesFolder, icon: "\uE838"));
+            menu.Items.Add(Item("Settings", null, () => OpenSettingsRequested?.Invoke(), icon: "\uE713"));
             menu.IsOpen = true;
         }
 
         internal ContextMenu NewMenu(UIElement target, PlacementMode placement)
         {
             var menu = new ContextMenu { PlacementTarget = target, Placement = placement };
+            EditorMenus.Style(menu, _palette);
             ModernWpf.ThemeManager.SetRequestedTheme(menu, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
             return menu;
         }
@@ -1146,6 +1147,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void FillEditorMenu(ContextMenu menu, ICSharpCode.AvalonEdit.TextEditor editor, bool readOnly)
         {
             menu.Items.Clear();
+            EditorMenus.Style(menu, _palette);
             ModernWpf.ThemeManager.SetRequestedTheme(menu, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
 
             AddEditGroup(menu, editor, readOnly);
@@ -1158,9 +1160,9 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false)));
-            menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true)));
-            menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine));
+            menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));
+            menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true), icon: "\uE8AB"));
+            menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine, icon: "\uE8AD"));
         }
 
         private void OnEditorRightButtonDown(object sender, MouseButtonEventArgs e)

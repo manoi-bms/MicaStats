@@ -339,5 +339,63 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(question, window.InfoText.Text);
             Assert.Equal(Visibility.Visible, window.InfoPrimary.Visibility);
         });
+
+        [Fact]
+        public void Every_menu_uses_micapads_own_style() => WithWindow((window, env) =>
+        {
+            window.RefreshEditorMenu();
+            window.RefreshPreviewMenu();
+            var other = window.NewMenu(window.Editor, System.Windows.Controls.Primitives.PlacementMode.Bottom);
+
+            foreach (var menu in new[] { window.EditorMenu, window.PreviewMenu, other })
+            {
+                Assert.Same(EditorMenus.MenuStyle, menu.Style);
+                Assert.Equal(System.Windows.Media.TextRenderingMode.Grayscale, System.Windows.Media.TextOptions.GetTextRenderingMode(menu));
+                Assert.False(menu.HasDropShadow);          // the card draws its own shadow
+            }
+        });
+
+        [Fact]
+        public void The_menu_is_painted_with_the_pad_palette_and_follows_the_theme() => WithWindow((window, env) =>
+        {
+            window.RefreshEditorMenu();
+            Assert.Equal(PadThemeApplier.ToColor(PadPalette.Dark.Popup),
+                         ((System.Windows.Media.SolidColorBrush)window.EditorMenu.Resources["Pad.Popup"]).Color);
+
+            window.ToggleTheme();
+            window.RefreshEditorMenu();
+            Assert.Equal(PadThemeApplier.ToColor(PadPalette.Light.Popup),
+                         ((System.Windows.Media.SolidColorBrush)window.EditorMenu.Resources["Pad.Popup"]).Color);
+        });
+
+        [Fact]
+        public void Common_commands_have_icons() => WithWindow((window, env) =>
+        {
+            window.RefreshEditorMenu();
+            Assert.Equal("\uE8C6", ItemOf(window.EditorMenu, "Cut").Icon);
+            Assert.Equal("\uE8C8", ItemOf(window.EditorMenu, "Copy").Icon);
+            Assert.Equal("\uE77F", ItemOf(window.EditorMenu, "Paste").Icon);
+            Assert.Equal("\uE721", ItemOf(window.EditorMenu, "Find").Icon);
+        });
+
+        [Fact]
+        public void The_card_lands_where_the_menu_is_placed()
+        {
+            // The card sits inside a transparent margin that holds its shadow (10 left, 8 top,
+            // 14 bottom); the offsets move that margin out of the way.
+            UiThread.Run(() =>
+            {
+                var below = new System.Windows.Controls.ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+                EditorMenus.Style(below, PadPalette.Dark);
+                Assert.Equal((-10.0, -8.0), (below.HorizontalOffset, below.VerticalOffset));
+
+                var above = new System.Windows.Controls.ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.Top };
+                EditorMenus.Style(above, PadPalette.Dark);
+                Assert.Equal((-10.0, 14.0), (above.HorizontalOffset, above.VerticalOffset));
+
+                EditorMenus.Style(above, PadPalette.Light);   // restyling (every open) does not stack dictionaries
+                Assert.Single(above.Resources.MergedDictionaries);
+            });
+        }
     }
 }

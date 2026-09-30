@@ -172,6 +172,45 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Null(body["max_tokens"]);
         }
 
+        /// <summary>
+        /// The design (section 10): a busy or rate-limited service is retried twice by the SDK
+        /// before the Ask window says it is busy, so three attempts in all. The reply carries a
+        /// tiny retry-after so the test does not wait out the SDK backoff.
+        /// </summary>
+        [Theory]
+        [InlineData(429)]
+        [InlineData(529)]
+        public async Task Claude_tries_a_busy_service_three_times_then_reports_busy(int status)
+        {
+            using var env = new AiTestEnv();
+            var handler = new ScriptedHttpHandler(_ => ((HttpStatusCode)status, "application/json",
+                "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}"));
+            handler.ResponseHeaders["retry-after-ms"] = "1";
+            handler.ResponseHeaders["retry-after"] = "0";
+            IChatClient claude = AiProviderFactory.Create(new AppConfig(), Secrets(env, claudeKey: "sk-ant-test"), handler).Client!;
+
+            Exception error = await Assert.ThrowsAnyAsync<Exception>(() => claude.GetResponseAsync("hi"));
+
+            Assert.Equal(3, handler.Requests.Count);
+            Assert.Equal(AiErrorText.Busy, AiErrorText.Describe(error));
+        }
+
+        [Fact]
+        public async Task An_openai_compatible_service_that_stays_rate_limited_is_tried_three_times_then_reports_busy()
+        {
+            using var env = new AiTestEnv();
+            var handler = new ScriptedHttpHandler(_ => ((HttpStatusCode)429, "application/json",
+                "{\"error\":{\"message\":\"Rate limit reached\",\"type\":\"rate_limit_error\"}}"));
+            handler.ResponseHeaders["retry-after-ms"] = "1";
+            handler.ResponseHeaders["retry-after"] = "0";
+            IChatClient local = AiProviderFactory.Create(Compatible("http://localhost:11434/v1", "llama3.2"), Secrets(env), handler).Client!;
+
+            Exception error = await Assert.ThrowsAnyAsync<Exception>(() => local.GetResponseAsync("hi"));
+
+            Assert.Equal(3, handler.Requests.Count);
+            Assert.Equal(AiErrorText.Busy, AiErrorText.Describe(error));
+        }
+
         [Fact]
         public async Task A_rejected_key_reads_as_such_for_both_providers()
         {

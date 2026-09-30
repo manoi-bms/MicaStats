@@ -28,6 +28,9 @@ namespace Kil0bitSystemMonitor.Tests
 
         public List<Sent> Requests { get; } = new();
 
+        /// <summary>Headers added to every reply, e.g. a tiny retry-after so a retry test does not wait out the SDK backoff.</summary>
+        public Dictionary<string, string> ResponseHeaders { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             string body = request.Content == null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
@@ -38,7 +41,10 @@ namespace Kil0bitSystemMonitor.Tests
             var sent = new Sent(request.RequestUri!.ToString(), auth, body, request.Headers.Authorization?.ToString() ?? "", headers);
             lock (Requests) Requests.Add(sent);
             (HttpStatusCode status, string contentType, string text) = _respond(sent);
-            return new HttpResponseMessage(status) { Content = new StringContent(text, Encoding.UTF8, contentType) };
+            var response = new HttpResponseMessage(status) { Content = new StringContent(text, Encoding.UTF8, contentType) };
+            foreach (KeyValuePair<string, string> header in ResponseHeaders)
+                response.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            return response;
         }
 
         // ----- Canned provider replies -------------------------------------------------------

@@ -49,6 +49,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The line ending recorded at open, or chosen by the user.</summary>
         public LineEnding LineEnding { get; set; } = LineEnding.CrLf;
 
+        /// <summary>
+        /// The language chosen for this note in the status bar (a <see cref="PadLanguage.Id"/>), or
+        /// null for Auto: by file type, Markdown for notes. Older meta.json files have none.
+        /// </summary>
+        public string? Language { get; set; }
+
         /// <summary>The source file's write time at the last load or save.</summary>
         public DateTime? SourceWriteTimeUtc { get; set; }
 

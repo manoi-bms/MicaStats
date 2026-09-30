@@ -106,5 +106,14 @@ namespace Kil0bitSystemMonitor.Tests
             var config = JsonSerializer.Deserialize<AppConfig>("{\"PadTheme\": " + json + "}")!;
             Assert.Equal(expected, config.PadTheme);
         }
+
+        [Fact]
+        public void Markdown_formatting_is_on_by_default_and_round_trips()
+        {
+            Assert.True(new AppConfig().PadMarkdown);
+            Assert.True(JsonSerializer.Deserialize<AppConfig>("{\"ShowCpu\": false}")!.PadMarkdown);
+            var back = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { PadMarkdown = false }))!;
+            Assert.False(back.PadMarkdown);
+        }
     }
 }

@@ -491,6 +491,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
             EnqueueSave(note);
         }
 
+        /// <summary>
+        /// Sets the language a note is shown in; null or an unknown id returns it to Auto. Saved with
+        /// the note like a rename: it is not an edit of a file.
+        /// </summary>
+        public void SetLanguage(OpenNote note, string? languageId)
+        {
+            note.Meta.Language = PadLanguages.ById(languageId)?.Id;
+            EnqueueSave(note);
+        }
+
         /// <summary>The note's versions, newest first.</summary>
         public IReadOnlyList<SnapshotInfo> History(OpenNote note) => _store.ListSnapshots(note.Id);
 

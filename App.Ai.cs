@@ -183,9 +183,18 @@ public partial class App
         {
             if (s_toolPipe != null)
             {
-                s_toolPipe.Dispose();
+                // Guarded like StopAi: this runs from the queued ApplyAiSettings, and a throw there
+                // reaches the dispatcher handler, which only logs, so the app would end.
+                try
+                {
+                    s_toolPipe.Dispose();
+                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("mcp", "Tool pipe for the stdio bridge stopped");
+                }
+                catch (Exception ex)
+                {
+                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping the tool pipe failed", ex);
+                }
                 s_toolPipe = null;
-                Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("mcp", "Tool pipe for the stdio bridge stopped");
             }
             return;
         }
@@ -234,9 +243,17 @@ public partial class App
 
         if (s_mcpHttp != null && (!wanted || port != s_mcpHttpPort))
         {
-            s_mcpHttp.Dispose();
+            // Guarded like StopAi, for the same reason as the tool pipe in ApplyToolPipe.
+            try
+            {
+                s_mcpHttp.Dispose();
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("mcp", "Local HTTP MCP stopped");
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping local HTTP MCP failed", ex);
+            }
             s_mcpHttp = null;
-            Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("mcp", "Local HTTP MCP stopped");
         }
         if (!wanted || tools == null)
         {

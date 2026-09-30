@@ -210,7 +210,7 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
-        public void Move_to_new_window_takes_the_tab_with_its_undo() => WithWindows((first, env, shown) =>
+        public void Move_to_new_window_takes_the_tab_and_starts_its_undo_afresh() => WithWindows((first, env, shown) =>
         {
             first.Editor.Document.Insert(0, "stays");
             first.NewTab();
@@ -224,8 +224,9 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { leaving }, env.Workspace.TabsOf(second.WindowId));
             Assert.DoesNotContain(leaving, env.Workspace.TabsOf(first.WindowId));
             Assert.Same(document, second.Editor.Document);
-            Assert.True(second.Editor.CanUndo);
+            Assert.False(second.Editor.CanUndo);                      // the source window stays open: no undo step may reach it
             Assert.Equal("stays", first.Editor.Document.Text);        // the neighbour is shown here now
+            Assert.True(first.Editor.CanUndo);                        // the source window's own notes keep theirs
         });
 
         [Fact]
@@ -356,9 +357,9 @@ namespace Kil0bitSystemMonitor.Tests
             first.Editor.Select(2, 4);
             int caret = first.Editor.CaretOffset;
 
-            second.Editor.Undo();                                     // the moved tab's undo runs in its new window
+            Assert.False(second.Editor.Undo());                       // the moved tab's history stayed behind: nothing to undo
 
-            Assert.Equal("", second.Editor.Document.Text);
+            Assert.Equal("leaves", second.Editor.Document.Text);
             Assert.Equal("stays put", first.Editor.Document.Text);
             Assert.Equal(2, first.Editor.SelectionStart);
             Assert.Equal(4, first.Editor.SelectionLength);

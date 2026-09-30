@@ -599,7 +599,6 @@ namespace Kil0bitSystemMonitor.Pad
             _statusTimer?.Stop();
             _config.PropertyChanged -= OnConfigChanged;
             _workspace.Open.CollectionChanged -= OnOpenChanged;
-            foreach (var document in _releaseHooks.Keys.ToList()) DropReleaseHooks(document);
             s_windows.Remove(this);
         }
 
@@ -624,7 +623,6 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         private void Attach(OpenNote note, TextDocument document)
         {
-            DropReleaseHooks(document);
             EventHandler<DocumentChangeEventArgs> changed = (s, e) =>
             {
                 _workspace.NotifyChanged(note, markUnsaved: !_suppressDirty);
@@ -652,8 +650,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// Lets go of a note's document because its tab is moving to another window: its bookmarks
         /// go to the session, and its change handler and bookmark anchors come off. Returns the
-        /// document, undo history and all, for <see cref="AdoptDocument"/>; null when this window
-        /// never built one.
+        /// document with its undo history, for <see cref="AdoptDocument"/>; null when this window
+        /// never built one. Keeping that history is safe only when this window is closing
+        /// (<see cref="MergeInto"/>): <see cref="LetGoOf"/> clears it for a window that stays open.
         /// </summary>
         internal TextDocument? ReleaseDocument(OpenNote note)
         {
@@ -663,66 +662,16 @@ namespace Kil0bitSystemMonitor.Pad
             _bookmarks.Forget(document);
             if (_docHandlers.Remove(document, out var changed)) document.Changed -= changed;
             _docs.Remove(note.Id);
-            HookRelease(document);
             return document;
         }
 
-        /// <summary>Takes over a document another window released, undo history and all. False when this window already had one for the note (the handed-over one is dropped).</summary>
+        /// <summary>Takes over a document another window released, with whatever undo history it kept. False when this window already had one for the note (the handed-over one is dropped).</summary>
         internal bool AdoptDocument(OpenNote note, TextDocument document)
         {
             // Create hands a document over before LoadSession, when only the requested id is known.
             if (note.WindowId != (_requestedWindowId ?? _windowId) || _docs.ContainsKey(note.Id)) return false;
             Attach(note, document);
             return true;
-        }
-
-        private readonly Dictionary<TextDocument, (EventHandler Started, EventHandler Finished)> _releaseHooks = new();
-
-        /// <summary>
-        /// Every edit leaves an undo action holding a weak reference to the text area that made it;
-        /// undo or redo in the window that adopted the document sets that text area's caret and
-        /// selection, whatever it shows now. While this window is not showing a released document,
-        /// its caret and selection are put back after each update of it.
-        /// </summary>
-        private void HookRelease(TextDocument document)
-        {
-            DropReleaseHooks(document);
-            ICSharpCode.AvalonEdit.TextViewPosition? caret = null;
-            ICSharpCode.AvalonEdit.Editing.Selection? selection = null;
-            EventHandler started = (s, e) =>
-            {
-                if (ReferenceEquals(Editor.Document, document)) return;
-                caret = Editor.TextArea.Caret.Position;
-                selection = Editor.TextArea.Selection;
-            };
-            EventHandler finished = (s, e) =>
-            {
-                if (caret is not { } savedCaret || selection is not { } savedSelection) return;
-                caret = null;
-                selection = null;
-                if (ReferenceEquals(Editor.Document, document)) return;
-                try
-                {
-                    Editor.TextArea.Selection = savedSelection;
-                    Editor.TextArea.Caret.Position = savedCaret;
-                }
-                catch (ArgumentOutOfRangeException)
-                {
-                    // This window's own document changed under the saved position: fall back to the start, never throw from an undo.
-                    Editor.TextArea.ClearSelection();
-                    Editor.CaretOffset = 0;
-                }
-            };
-            document.UpdateStarted += started;
-            document.UpdateFinished += finished;
-            _releaseHooks[document] = (started, finished);
-        }
-
-        private void DropReleaseHooks(TextDocument document)
-        {
-            if (!_releaseHooks.Remove(document, out var hooks)) return;
-            document.UpdateStarted -= hooks.Started;
-            document.UpdateFinished -= hooks.Finished;
         }
 
         /// <summary>
@@ -1006,7 +955,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>A window's name in Move to ▸: the title of its active tab.</summary>
         private string ActiveTitle => _workspace.ActiveIn(_windowId)?.Title ?? "MicaPad";
 
-        /// <summary>Tab menu → Move to new window: the tab moves to a new window of its own, with its undo history and bookmarks.</summary>
+        /// <summary>Tab menu → Move to new window: the tab moves to a new window of its own, with its bookmarks; its undo history starts afresh (<see cref="LetGoOf"/>).</summary>
         internal void MoveToNewWindow(OpenNote note)
         {
             if (note.WindowId != _windowId || _workspace.TabsOf(_windowId).Count < 2) return;
@@ -1022,7 +971,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
             catch
             {
-                // No window shows it: the tab comes back here, undo history and all.
+                // No window shows it: the tab comes back here, with its bookmarks.
                 _workspace.CloseWindow(state.Id, _windowId);
                 if (document != null) AdoptDocument(note, document);
                 throw;
@@ -1032,7 +981,8 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>
         /// Tab menu → Move to ▸ (spec 5.3): the tab moves to <paramref name="target"/> and is shown
-        /// there. Moving this window's only tab closes this window into that one.
+        /// there, its undo history starting afresh (<see cref="LetGoOf"/>). Moving this window's only
+        /// tab closes this window into that one, undo history and all, as × does.
         /// </summary>
         internal void MoveToWindow(OpenNote note, MicaPadWindow target)
         {
@@ -1054,7 +1004,15 @@ namespace Kil0bitSystemMonitor.Pad
             target.Present();
         }
 
-        /// <summary>A tab leaving this window: a neighbour is shown first if it was the shown one, then its document is released.</summary>
+        /// <summary>
+        /// A tab leaving this window while the window stays open (Move to, Move to new window): a
+        /// neighbour is shown first if it was the shown one, then its document is released with its
+        /// undo history cleared. Each undo step holds the text area that made it and puts that text
+        /// area's caret and selection back, whatever it shows by then (a redo does so before the
+        /// document even starts its update): undo or redo in the other window could leave a
+        /// selection here past the end of this window's note (a crash while drawing) or over its
+        /// text (the next key replaces it). Closing a window by × keeps the history: its text area goes with it.
+        /// </summary>
         private TextDocument? LetGoOf(OpenNote note)
         {
             if (ReferenceEquals(_shown, note))
@@ -1063,7 +1021,9 @@ namespace Kil0bitSystemMonitor.Pad
                 int index = tabs.IndexOf(note);
                 ShowNote(tabs[index + 1 < tabs.Count ? index + 1 : index - 1]);
             }
-            return ReleaseDocument(note);
+            var document = ReleaseDocument(note);
+            document?.UndoStack.ClearAll();
+            return document;
         }
 
         /// <summary>

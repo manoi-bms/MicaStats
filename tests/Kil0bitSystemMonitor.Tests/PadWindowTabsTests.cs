@@ -15,13 +15,16 @@ namespace Kil0bitSystemMonitor.Tests
     {
         /// <summary>
         /// A window over the workspace's first window, and a second one over a window made in the
-        /// model with one note (placed by <paramref name="place"/> first). Never shown; both closed at the end.
+        /// model with one note (placed by <paramref name="place"/> first). Never shown (showing is
+        /// replaced); every window loaded over the workspace is closed at the end.
         /// </summary>
         private static void WithTwoWindows(Action<MicaPadWindow, MicaPadWindow, PadTestEnv> test, Action<PadWindowState>? place = null) => UiThread.Run(() =>
         {
             var dispatcher = Dispatcher.CurrentDispatcher;
             using var env = new PadTestEnv(post: action => dispatcher.BeginInvoke(action));
             var config = new AppConfig();
+            var previous = MicaPadWindow.ShowWindow;
+            MicaPadWindow.ShowWindow = _ => { };
             var first = new MicaPadWindow(env.Workspace, config);
             MicaPadWindow? second = null;
             try
@@ -36,9 +39,97 @@ namespace Kil0bitSystemMonitor.Tests
             }
             finally
             {
+                MicaPadWindow.ShowWindow = previous;
                 second?.CloseForExit();
                 first.CloseForExit();
+                foreach (var open in MicaPadWindow.WindowsOf(env.Workspace).ToList()) open.CloseForExit();
             }
+        });
+
+        /// <summary>Runs an editing command the way its key does, in <paramref name="window"/>'s editor, then lets the dispatcher catch up.</summary>
+        private static void Execute(RoutedCommand command, MicaPadWindow window)
+        {
+            command.Execute(null, window.Editor.TextArea);
+            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
+        }
+
+        /// <summary>Lays out and renders <paramref name="window"/>'s editor, selection layer included (it is never shown).</summary>
+        private static void Arrange(MicaPadWindow window)
+        {
+            window.Editor.Measure(new System.Windows.Size(600, 400));
+            window.Editor.Arrange(new System.Windows.Rect(0, 0, 600, 400));
+            window.Editor.UpdateLayout();
+        }
+
+        /// <summary>
+        /// The window a tab went to: the given one for Move to, the new one for Move to new window.
+        /// </summary>
+        private static MicaPadWindow MoveTab(MicaPadWindow from, OpenNote note, MicaPadWindow to, bool newWindow, PadWorkspace workspace)
+        {
+            if (!newWindow)
+            {
+                from.MoveToWindow(note, to);
+                return to;
+            }
+            from.MoveToNewWindow(note);
+            return MicaPadWindow.WindowsOf(workspace).Single(w => w.WindowId == note.WindowId);
+        }
+
+        [Fact]
+        public void Undo_and_redo_in_the_window_a_tab_moved_to_never_reach_the_source_windows_selection() => WithTwoWindows((first, second, env) =>
+        {
+            var note = env.Workspace.ActiveIn(first.WindowId)!;
+            var area = first.Editor.TextArea;
+            foreach (char c in "hello world, this is a long first line\nsecond line here") area.PerformTextInput(c.ToString());
+            first.Editor.Select(6, 30);
+            area.PerformTextInput("W");                                  // typed over a selection: the undo step remembers this window's selection
+            first.Editor.Select(0, 5);
+            area.PerformTextInput("H");
+            first.NewTab();
+            var other = env.Workspace.ActiveIn(first.WindowId)!;
+            area.PerformTextInput("h");
+            area.PerformTextInput("i");
+            first.Editor.CaretOffset = 1;
+            string moved = note.TextProvider();
+
+            first.MoveToWindow(note, second);
+            for (int i = 0; i < 3; i++) Execute(ApplicationCommands.Undo, second);
+            for (int i = 0; i < 3; i++) Execute(ApplicationCommands.Redo, second);
+
+            Arrange(first);                                              // a selection past the end of "hi" throws while rendering
+            Assert.Equal("hi", other.TextProvider());
+            Assert.Equal(1, first.Editor.CaretOffset);
+            Assert.Equal(0, first.Editor.SelectionLength);
+            area.PerformTextInput("Z");                                  // a live selection there would throw, or be replaced
+            Assert.Equal("hZi", other.TextProvider());
+            Assert.Equal(moved, note.TextProvider());
+        });
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Redo_in_the_window_a_tab_moved_to_never_selects_text_in_the_source_windows_other_note(bool newWindow) => WithTwoWindows((first, second, env) =>
+        {
+            const string OtherText = "0123456789 other note, long enough to hold the old selection";
+            var note = env.Workspace.ActiveIn(first.WindowId)!;
+            first.Editor.Document.Insert(0, "hello world, a long line of text");
+            first.Editor.Document.UndoStack.ClearAll();
+            first.Editor.Select(6, 5);
+            first.Editor.TextArea.PerformTextInput("W");
+            first.NewTab();
+            var other = env.Workspace.ActiveIn(first.WindowId)!;
+            first.Editor.Document.Insert(0, OtherText);
+            first.Editor.CaretOffset = 1;
+
+            var target = MoveTab(first, note, second, newWindow, env.Workspace);
+            Execute(ApplicationCommands.Undo, target);
+            Execute(ApplicationCommands.Redo, target);
+
+            Assert.Equal(1, first.Editor.CaretOffset);
+            Assert.Equal(0, first.Editor.SelectionLength);
+            first.Editor.TextArea.PerformTextInput("Z");                 // replacing a selection here would edit this note silently
+            Assert.Equal(OtherText.Insert(1, "Z"), other.TextProvider());
+            Assert.Equal("hello W, a long line of text", note.TextProvider());
         });
 
         [Fact]
@@ -125,6 +216,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(firstTabs, env.Workspace.TabsOf(first.WindowId));
         });
 
+        /// <summary>The hand-over itself, as a window closing by × uses it (MergeInto): undo comes along, since the releasing window goes.</summary>
         [Fact]
         public void A_document_handed_to_another_window_keeps_its_undo_and_bookmarks() => WithTwoWindows((first, second, env) =>
         {
@@ -150,7 +242,7 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
-        public void Undo_in_the_adopting_window_leaves_the_releasing_windows_caret_and_text_alone() => WithTwoWindows((first, second, env) =>
+        public void Move_to_starts_the_moved_notes_undo_afresh_so_undo_there_leaves_the_source_window_alone() => WithTwoWindows((first, second, env) =>
         {
             var note = env.Workspace.ActiveIn(first.WindowId)!;
             first.Editor.Document.Insert(0, "hello world, a long line of text");
@@ -162,19 +254,21 @@ namespace Kil0bitSystemMonitor.Tests
             first.Editor.Document.Insert(0, "hi");
             first.Editor.CaretOffset = 2;
 
-            var released = first.ReleaseDocument(note);
-            env.Workspace.MoveToWindow(note, second.WindowId);
-            Assert.True(second.AdoptDocument(note, released!));
-            second.SelectTab(env.Workspace.TabsOf(second.WindowId).IndexOf(note));
-            second.Editor.Undo();
+            first.MoveToWindow(note, second);
 
-            Assert.Equal("hello world, a long line of text", note.TextProvider());
+            Assert.Same(note, env.Workspace.ActiveIn(second.WindowId));
+            Assert.False(second.Editor.CanUndo);
+            Assert.False(second.Editor.CanRedo);
+            Execute(ApplicationCommands.Undo, second);
+            Execute(ApplicationCommands.Redo, second);
+            Assert.Equal("hello , a long line of text", note.TextProvider());
             Assert.Equal("hi", other.TextProvider());
             Assert.Equal(2, first.Editor.CaretOffset);
             Assert.Equal(0, first.Editor.SelectionLength);
             first.Editor.TextArea.PerformTextInput("Z");                 // no exception, and only this window's note changes
             Assert.Equal("hiZ", other.TextProvider());
-            Assert.Equal("hello world, a long line of text", note.TextProvider());
+            second.Editor.TextArea.PerformTextInput("B");
+            Assert.True(second.Editor.CanUndo);                          // the moved note's own undo starts from here
         });
 
         [Fact]
@@ -207,37 +301,7 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
-        public void Undo_then_redo_in_the_adopting_window_leave_the_releasing_windows_caret_and_text_alone() => WithTwoWindows((first, second, env) =>
-        {
-            var note = env.Workspace.ActiveIn(first.WindowId)!;
-            first.Editor.Document.Insert(0, "hello world, a long line of text");
-            first.Editor.Document.UndoStack.ClearAll();
-            first.Editor.Select(6, 5);
-            first.Editor.SelectedText = "";
-            first.NewTab();
-            var other = env.Workspace.ActiveIn(first.WindowId)!;
-            first.Editor.Document.Insert(0, "hi");
-            first.Editor.CaretOffset = 2;
-
-            var released = first.ReleaseDocument(note);
-            env.Workspace.MoveToWindow(note, second.WindowId);
-            Assert.True(second.AdoptDocument(note, released!));
-            second.SelectTab(env.Workspace.TabsOf(second.WindowId).IndexOf(note));
-            second.Editor.Undo();
-            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
-            second.Editor.Redo();
-            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
-
-            Assert.Equal("hello , a long line of text", note.TextProvider());
-            Assert.Equal("hi", other.TextProvider());
-            Assert.Equal(2, first.Editor.CaretOffset);
-            Assert.Equal(0, first.Editor.SelectionLength);
-            first.Editor.TextArea.PerformTextInput("Z");
-            Assert.Equal("hiZ", other.TextProvider());
-        });
-
-        [Fact]
-        public void Redo_in_the_adopting_window_of_an_edit_undone_in_the_releasing_window_leaves_it_alone() => WithTwoWindows((first, second, env) =>
+        public void Move_to_drops_the_redo_of_an_edit_undone_in_the_source_window() => WithTwoWindows((first, second, env) =>
         {
             var note = env.Workspace.ActiveIn(first.WindowId)!;
             first.Editor.Document.Insert(0, "hello world, a long line of text");
@@ -251,15 +315,11 @@ namespace Kil0bitSystemMonitor.Tests
             first.Editor.Document.Insert(0, "hi");
             first.Editor.CaretOffset = 2;
 
-            var released = first.ReleaseDocument(note);
-            env.Workspace.MoveToWindow(note, second.WindowId);
-            Assert.True(second.AdoptDocument(note, released!));
-            second.SelectTab(env.Workspace.TabsOf(second.WindowId).IndexOf(note));
-            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
-            second.Editor.Redo();
-            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
+            first.MoveToWindow(note, second);
 
-            Assert.Equal("hello , a long line of text", note.TextProvider());
+            Assert.False(second.Editor.CanRedo);
+            Execute(ApplicationCommands.Redo, second);
+            Assert.Equal("hello world, a long line of text", note.TextProvider());
             Assert.Equal("hi", other.TextProvider());
             Assert.Equal(2, first.Editor.CaretOffset);
             Assert.Equal(0, first.Editor.SelectionLength);

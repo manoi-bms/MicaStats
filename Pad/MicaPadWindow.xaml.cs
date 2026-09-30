@@ -120,6 +120,9 @@ namespace Kil0bitSystemMonitor.Pad
             };
 
             TabStrip.ItemsSource = _workspace.Open;
+            _tabDrag = new TabDragController(TabStrip, TabScroller, () => _workspace.Open,
+                (note, index) => _workspace.MoveTab(note, index),
+                () => _workspace.SaveSession());
             _workspace.Open.CollectionChanged += OnOpenChanged;
             _config.PropertyChanged += OnConfigChanged;
             Editor.TextArea.Caret.PositionChanged += (s, e) => UpdateCaretText();
@@ -448,8 +451,12 @@ namespace Kil0bitSystemMonitor.Pad
             if (marked.Count > 0) _bookmarks.Load(document, marked);   // same line numbers; past the end dropped
         }
 
+        private TabDragController _tabDrag = null!;
+        internal TabDragController TabDrag => _tabDrag;
+
         private void OnOpenChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
+            if (e.Action == NotifyCollectionChangedAction.Move) return;   // a moved tab keeps its document, bookmarks and folds
             if (e.NewItems != null)
                 foreach (OpenNote note in e.NewItems) EnsureDocument(note);
             if (e.OldItems != null)
@@ -598,7 +605,11 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if ((sender as FrameworkElement)?.Tag is not OpenNote note) return;
             if (e.ClickCount == 2) BeginRename(note, (FrameworkElement)sender);
-            else ShowNote(note);
+            else
+            {
+                _tabDrag.Press(note, e.GetPosition(TabStrip));
+                ShowNote(note);
+            }
             e.Handled = true;
         }
 

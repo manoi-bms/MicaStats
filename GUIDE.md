@@ -261,6 +261,8 @@ spaces or punctuation).
 in your browser or mail program. Nothing else in a note is ever opened — not files, paths or other
 protocols.
 
+**Tabs**: drag a tab to move it; the order is kept after a restart.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

@@ -175,6 +175,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return Open.ToList();
         }
 
+        /// <summary>Moves an open note's tab to <paramref name="index"/> (clamped). The caller saves the session when the drag ends.</summary>
+        public void MoveTab(OpenNote note, int index)
+        {
+            int from = Open.IndexOf(note);
+            if (from < 0) return;
+            int to = Math.Clamp(index, 0, Open.Count - 1);
+            if (to != from) Open.Move(from, to);
+        }
+
         /// <summary>A new empty scratch note, opened after the active tab and made active.</summary>
         public OpenNote NewNote()
         {

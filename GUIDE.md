@@ -255,6 +255,12 @@ only) gets a soft box; the status bar counts them (`5 matches`, up to `10,000+`)
 underscores, so a word inside unspaced Thai text is only marked where it stands alone (between
 spaces or punctuation).
 
+### Links, tabs and view
+
+**Links**: `http://`, `https://` and `mailto:` addresses are underlined; **Ctrl+Click** opens them
+in your browser or mail program. Nothing else in a note is ever opened — not files, paths or other
+protocols.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

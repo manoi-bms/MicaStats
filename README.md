@@ -278,6 +278,7 @@ Inside MicaPad:
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | Go to line · word wrap · history |
 | **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | Duplicate line · move lines · join lines |
 | **Ctrl+F2** · **F2** / **Shift+F2** | Toggle bookmark · next / previous bookmark |
+| **Ctrl+Click** a link | Open it (web and mail links only) |
 | **Ctrl+Tab** · **Ctrl+1…9** | Next tab · jump to a tab |
 | **Ctrl+wheel** · **Ctrl+0** | Zoom · reset zoom |
 
@@ -892,6 +893,7 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | ไปยังบรรทัด · ตัดบรรทัดอัตโนมัติ · ประวัติ |
 | **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | ทำซ้ำบรรทัด · ย้ายบรรทัด · รวมบรรทัด |
 | **Ctrl+F2** · **F2** / **Shift+F2** | เพิ่ม/ลบบุ๊กมาร์ก · บุ๊กมาร์กถัดไป / ก่อนหน้า |
+| **Ctrl+Click** ลิงก์ | เปิดลิงก์ (เฉพาะเว็บและอีเมล) |
 | **Ctrl+Tab** · **Ctrl+1…9** | แท็บถัดไป · ไปยังแท็บ |
 | **Ctrl+ล้อเมาส์** · **Ctrl+0** | ซูม · รีเซ็ตซูม |
 

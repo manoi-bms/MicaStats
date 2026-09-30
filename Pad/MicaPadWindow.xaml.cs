@@ -7,10 +7,12 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit.Document;
 using Kil0bitSystemMonitor.Helpers;
@@ -78,6 +80,10 @@ namespace Kil0bitSystemMonitor.Pad
             _config = config;
 
             ConfigureEditor();
+            // Handled always, so AvalonEdit never starts a process itself.
+            Editor.AddHandler(Hyperlink.RequestNavigateEvent, new RequestNavigateEventHandler((s, e) => { e.Handled = true; OnLinkRequested(e.Uri); }));
+            Editor.TextArea.TextView.MouseHover += OnEditorMouseHover;
+            Editor.TextArea.TextView.MouseHoverStopped += (s, e) => _linkTip.IsOpen = false;
             FindBar.Attach(Editor);
             _language = new EditorLanguage(Editor, () => _palette, folds: true);
             _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette, folds: false);
@@ -380,6 +386,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             _tick.Stop();
             _occurrenceTimer?.Stop();
+            _statusTimer?.Stop();
             _config.PropertyChanged -= OnConfigChanged;
             _workspace.Open.CollectionChanged -= OnOpenChanged;
             if (ReferenceEquals(s_current, this)) s_current = null;
@@ -1457,11 +1464,70 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
+        private DispatcherTimer? _statusTimer;
+
+        /// <summary>A short message in the status bar for 5 s (a link that failed, a busy clipboard, a tool that cannot apply).</summary>
+        internal void ShowStatus(string message)
+        {
+            StatusMessage.Text = message;
+            StatusMessage.Visibility = Visibility.Visible;
+            _statusTimer ??= new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(5) };
+            _statusTimer.Tick -= OnStatusTimer;
+            _statusTimer.Tick += OnStatusTimer;
+            _statusTimer.Stop();
+            _statusTimer.Start();
+        }
+
+        private void OnStatusTimer(object? sender, EventArgs e)
+        {
+            _statusTimer?.Stop();
+            StatusMessage.Visibility = Visibility.Collapsed;
+        }
+
+        // ---- links ---------------------------------------------------------------------------
+
+        /// <summary>Opens an allowed link in the default browser or mail program; false when that failed. Tests replace it.</summary>
+        internal Func<Uri, bool> OpenLink { get; set; } = uri =>
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+                return true;
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or PlatformNotSupportedException)
+            {
+                DiagnosticsLog.Warn("pad", "A link could not be opened: " + ex.Message);
+                return false;
+            }
+        };
+
+        /// <summary>Ctrl+Click on a link. Anything but http, https or mailto is ignored, whatever asked for it.</summary>
+        internal void OnLinkRequested(Uri uri)
+        {
+            if (!SafeLinks.IsAllowed(uri)) return;
+            if (!OpenLink(uri)) ShowStatus("That link could not be opened.");
+        }
+
+        private readonly System.Windows.Controls.ToolTip _linkTip = new() { Content = "Ctrl+Click to open", Placement = PlacementMode.Mouse };
+
+        private void OnEditorMouseHover(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
+            if (position is not { } at || Editor.Document == null) return;
+            var line = Editor.Document.GetLineByNumber(at.Line);
+            if (line.Length > 4000) return;
+            if (SafeLinks.LinkAt(Editor.Document.GetText(line), at.Column - 1) == null) return;
+            _linkTip.PlacementTarget = Editor.TextArea.TextView;
+            _linkTip.IsOpen = true;
+            e.Handled = true;
+        }
+
         private void ConfigureEditor()
         {
             var options = Editor.Options;
             options.EnableHyperlinks = false;
             options.EnableEmailHyperlinks = false;
+            Editor.TextArea.TextView.ElementGenerators.Add(new SafeLinkGenerator());
             options.HighlightCurrentLine = true;
             options.EnableRectangularSelection = true;
             options.ConvertTabsToSpaces = false;
@@ -1491,6 +1557,8 @@ namespace Kil0bitSystemMonitor.Pad
             area.SelectionBrush = PadThemeApplier.ToBrush(_palette.Selection);
             area.Caret.CaretBrush = PadThemeApplier.ToBrush(_palette.Caret);
             area.TextView.CurrentLineBackground = PadThemeApplier.ToBrush(_palette.CurrentLine);
+            area.TextView.LinkTextForegroundBrush = PadThemeApplier.ToBrush(_palette.MdLink);
+            ModernWpf.ThemeManager.SetRequestedTheme(_linkTip, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
             Editor.LineNumbersForeground = PadThemeApplier.ToBrush(_palette.LineNumbers);
             PreviewEditor.LineNumbersForeground = Editor.LineNumbersForeground;
             _bookmarkMargin?.InvalidateVisual();

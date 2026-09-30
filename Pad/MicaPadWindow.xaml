@@ -215,6 +215,8 @@
                 <TextBlock x:Name="CharsText" VerticalAlignment="Center" FontSize="11.5" Foreground="{DynamicResource Pad.Muted}" Margin="16,0,0,0" />
                 <TextBlock x:Name="OccurrenceText" VerticalAlignment="Center" FontSize="11.5" Foreground="{DynamicResource Pad.Muted}"
                            Margin="16,0,0,0" Visibility="Collapsed" />
+                <TextBlock x:Name="StatusMessage" VerticalAlignment="Center" FontSize="11.5" Foreground="{DynamicResource Pad.Accent}"
+                           Margin="16,0,0,0" Visibility="Collapsed" TextTrimming="CharacterEllipsis" />
             </DockPanel>
         </Border>
 

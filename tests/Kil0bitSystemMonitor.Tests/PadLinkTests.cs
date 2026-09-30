@@ -35,6 +35,31 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void The_history_preview_has_the_same_safe_setup() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var generators = window.PreviewEditor.TextArea.TextView.ElementGenerators;
+            Assert.Single(generators.OfType<SafeLinkGenerator>());
+            Assert.DoesNotContain(generators, g => g.GetType() == typeof(LinkElementGenerator));
+            Assert.False(window.PreviewEditor.Options.EnableHyperlinks);
+            Assert.False(window.PreviewEditor.Options.EnableEmailHyperlinks);
+        });
+
+        [Fact]
+        public void A_preview_request_is_handled_and_a_file_link_opens_nothing() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.PreviewEditor.Measure(new System.Windows.Size(300, 200)); // not shown, so build the visual tree the event bubbles through
+            var opened = new List<Uri>();
+            window.OpenLink = uri => { opened.Add(uri); return true; };
+            var args = new System.Windows.Navigation.RequestNavigateEventArgs(new Uri("file:///C:/x.exe"), null)
+            {
+                RoutedEvent = Hyperlink.RequestNavigateEvent,
+            };
+            window.PreviewEditor.TextArea.TextView.RaiseEvent(args);
+            Assert.True(args.Handled);
+            Assert.Empty(opened);
+        });
+
+        [Fact]
         public void A_web_link_opens_through_the_opener() => PadLanguageWindowTests.WithWindow((window, env, config) =>
         {
             var opened = new List<Uri>();

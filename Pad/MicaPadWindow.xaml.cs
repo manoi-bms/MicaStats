@@ -80,8 +80,8 @@ namespace Kil0bitSystemMonitor.Pad
             _config = config;
 
             ConfigureEditor();
-            // Handled always, so AvalonEdit never starts a process itself.
-            Editor.AddHandler(Hyperlink.RequestNavigateEvent, new RequestNavigateEventHandler((s, e) => { e.Handled = true; OnLinkRequested(e.Uri); }));
+            ConfigureLinks(Editor);
+            ConfigureLinks(PreviewEditor);
             Editor.TextArea.TextView.MouseHover += OnEditorMouseHover;
             Editor.TextArea.TextView.MouseHoverStopped += (s, e) => _linkTip.IsOpen = false;
             FindBar.Attach(Editor);
@@ -1522,12 +1522,24 @@ namespace Kil0bitSystemMonitor.Pad
             e.Handled = true;
         }
 
+        /// <summary>
+        /// One link setup for the note editor and the history preview: AvalonEdit's own hyperlinks off
+        /// (they would shell-open ftp: and www.), the safe generator on, and RequestNavigate always
+        /// handled so AvalonEdit never starts a process itself. The hover tooltip is on the note editor only.
+        /// </summary>
+        private void ConfigureLinks(ICSharpCode.AvalonEdit.TextEditor editor)
+        {
+            editor.Options.EnableHyperlinks = false;
+            editor.Options.EnableEmailHyperlinks = false;
+            editor.TextArea.TextView.ElementGenerators.Add(new SafeLinkGenerator());
+            editor.AddHandler(Hyperlink.RequestNavigateEvent, new RequestNavigateEventHandler((s, e) => { e.Handled = true; OnLinkRequested(e.Uri); }));
+        }
+
         private void ConfigureEditor()
         {
             var options = Editor.Options;
             options.EnableHyperlinks = false;
             options.EnableEmailHyperlinks = false;
-            Editor.TextArea.TextView.ElementGenerators.Add(new SafeLinkGenerator());
             options.HighlightCurrentLine = true;
             options.EnableRectangularSelection = true;
             options.ConvertTabsToSpaces = false;
@@ -1558,6 +1570,7 @@ namespace Kil0bitSystemMonitor.Pad
             area.Caret.CaretBrush = PadThemeApplier.ToBrush(_palette.Caret);
             area.TextView.CurrentLineBackground = PadThemeApplier.ToBrush(_palette.CurrentLine);
             area.TextView.LinkTextForegroundBrush = PadThemeApplier.ToBrush(_palette.MdLink);
+            PreviewEditor.TextArea.TextView.LinkTextForegroundBrush = area.TextView.LinkTextForegroundBrush;
             ModernWpf.ThemeManager.SetRequestedTheme(_linkTip, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
             Editor.LineNumbersForeground = PadThemeApplier.ToBrush(_palette.LineNumbers);
             PreviewEditor.LineNumbersForeground = Editor.LineNumbersForeground;

@@ -50,6 +50,31 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { link }, Matches(text));
         }
 
+        [Theory]
+        [InlineData("https://user@example.com")]
+        [InlineData("https://example.com/..%2f..")]
+        public void Uri_edge_cases_stay_https_links(string text)
+        {
+            var uri = SafeLinks.TryCreate(text);
+            Assert.NotNull(uri);
+            Assert.Equal("https", uri!.Scheme);
+            Assert.True(SafeLinks.IsAllowed(uri));
+            // Trailing dots are sentence punctuation, so the match may stop before them; it is still one https link.
+            var found = Matches(text);
+            Assert.Single(found);
+            Assert.StartsWith(found[0], text);
+        }
+
+        [Fact]
+        public void A_very_long_link_matches_as_one_quickly()
+        {
+            string text = "https://example.com/" + new string('a', 4980);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var found = Matches(text);
+            Assert.True(watch.ElapsedMilliseconds < 1000);
+            Assert.Equal(new[] { text }, found);
+        }
+
         [Fact]
         public void Other_schemes_are_not_even_matched()
         {

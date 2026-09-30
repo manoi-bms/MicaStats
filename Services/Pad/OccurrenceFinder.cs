@@ -5,8 +5,9 @@ using System.Globalization;
 namespace Kil0bitSystemMonitor.Services.Pad
 {
     /// <summary>
-    /// Every whole-word, case-sensitive occurrence of a selected word (spec 3.4). A word is letters,
-    /// digits and underscores; the selection must be exactly one whole word.
+    /// Every whole-word, case-sensitive occurrence of a selected word (spec 3.4). A word is
+    /// <see cref="WordChars"/> (letters, digits, underscores and combining marks); the selection
+    /// must be exactly one whole word.
     /// </summary>
     public static class OccurrenceFinder
     {
@@ -20,9 +21,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public static bool IsWholeWordSelection(string text, int start, int length)
         {
             if (length <= 0 || length > MaxWordLength || start < 0 || start + length > text.Length) return false;
-            for (int i = start; i < start + length; i++) if (!IsWordChar(text[i])) return false;
-            bool leftOk = start == 0 || !IsWordChar(text[start - 1]);
-            bool rightOk = start + length >= text.Length || !IsWordChar(text[start + length]);
+            for (int i = start; i < start + length; i++) if (!WordChars.IsWordChar(text[i])) return false;
+            bool leftOk = start == 0 || !WordChars.IsWordChar(text[start - 1]);
+            bool rightOk = start + length >= text.Length || !WordChars.IsWordChar(text[start + length]);
             return leftOk && rightOk;
         }
 
@@ -34,7 +35,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             while ((i = text.IndexOf(word, i, StringComparison.Ordinal)) >= 0)
             {
                 int end = i + word.Length;
-                bool whole = (i == 0 || !IsWordChar(text[i - 1])) && (end >= text.Length || !IsWordChar(text[end]));
+                bool whole = (i == 0 || !WordChars.IsWordChar(text[i - 1])) && (end >= text.Length || !WordChars.IsWordChar(text[end]));
                 if (whole)
                 {
                     if (offsets.Count == Cap) return (offsets, true);
@@ -50,14 +51,6 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
             if (capped) return Cap.ToString("N0", CultureInfo.InvariantCulture) + "+ matches";
             return count == 1 ? "1 match" : count.ToString("N0", CultureInfo.InvariantCulture) + " matches";
-        }
-
-        // Combining marks (Thai vowels and tone marks) belong to the word they sit on.
-        private static bool IsWordChar(char c)
-        {
-            if (char.IsLetterOrDigit(c) || c == '_') return true;
-            var category = char.GetUnicodeCategory(c);
-            return category == UnicodeCategory.NonSpacingMark || category == UnicodeCategory.SpacingCombiningMark;
         }
     }
 }

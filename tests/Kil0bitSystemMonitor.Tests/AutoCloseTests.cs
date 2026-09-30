@@ -39,6 +39,38 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Theory]
+        [InlineData('"', '่')]      // Thai tone mark (mai ek), as in ใช่
+        [InlineData('"', 'ิ')]      // Thai vowel sara i, as in ที่
+        [InlineData('\'', '์')]     // Thai thanthakhat
+        [InlineData('"', '_')]
+        public void Quotes_do_not_pair_after_a_thai_mark_or_underscore(char quote, char before)
+        {
+            Assert.Equal(AutoCloseAction.Insert, AutoClosePolicy.OnType(quote, before, null, hasSelection: false));
+        }
+
+        [Fact]
+        public void Brackets_keep_their_rule_after_a_word_character()
+        {
+            Assert.Equal(AutoCloseAction.Pair, AutoClosePolicy.OnType('(', '่', null, hasSelection: false));
+            Assert.Equal(AutoCloseAction.Pair, AutoClosePolicy.OnType('[', 'a', null, hasSelection: false));
+        }
+
+        [Theory]
+        [InlineData('a', true)]
+        [InlineData('7', true)]
+        [InlineData('_', true)]
+        [InlineData('ก', true)]     // ก
+        [InlineData('่', true)]     // tone mark: NonSpacingMark
+        [InlineData('ำ', true)]     // sara am: a letter in .NET
+        [InlineData(' ', false)]
+        [InlineData('"', false)]
+        [InlineData('.', false)]
+        public void Word_characters(char c, bool expected)
+        {
+            Assert.Equal(expected, WordChars.IsWordChar(c));
+        }
+
+        [Theory]
         [InlineData('(', 'w')]
         [InlineData('"', 'w')]
         [InlineData('[', '1')]
@@ -112,6 +144,14 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Quotes_in_thai_prose_type_normally() => WithWindow(true, window =>
+        {
+            const string prose = "คำว่า\"ใช่\" และ";
+            foreach (char c in prose) window.Editor.TextArea.PerformTextInput(c.ToString());
+            Assert.Equal(prose, window.Editor.Document.Text);
+        });
+
+        [Fact]
         public void An_opener_wraps_the_selection() => WithWindow(true, window =>
         {
             window.Editor.Document.Text = "word";
@@ -119,6 +159,9 @@ namespace Kil0bitSystemMonitor.Tests
             window.Editor.TextArea.PerformTextInput("\"");
             Assert.Equal("\"word\"", window.Editor.Document.Text);
             Assert.Equal("word", window.Editor.SelectedText);
+
+            window.Editor.Undo();                       // the wrap is one undo step
+            Assert.Equal("word", window.Editor.Document.Text);
         });
 
         [Fact]

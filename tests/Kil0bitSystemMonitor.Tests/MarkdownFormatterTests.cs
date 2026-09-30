@@ -43,6 +43,62 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("hello", Selected("**hello** x", edit));
         }
 
+        [Theory]
+        [InlineData("line one\nline two", 9, "**line one**\nline two", "line one")]          // Home, Shift+Down
+        [InlineData("line one\r\nline two", 10, "**line one**\r\nline two", "line one")]
+        [InlineData("line one\r\n", 10, "**line one**\r\n", "line one")]
+        [InlineData("one\n\ntwo", 5, "**one**\n\ntwo", "one")]                              // a line and an empty line
+        public void Wrap_leaves_a_trailing_line_break_outside(string text, int length, string expected, string selected)
+        {
+            var edit = MarkdownFormatter.Wrap(text, 0, length, "**");
+            Assert.Equal(expected, Apply(text, edit));
+            Assert.Equal(selected, Selected(text, edit));
+        }
+
+        [Theory]
+        [InlineData("one\ntwo", 7, "**one**\n**two**")]
+        [InlineData("one\r\ntwo\r\nthree", 10, "**one**\r\n**two**\r\nthree")]
+        [InlineData("one\n\ntwo", 8, "**one**\n\n**two**")]
+        [InlineData("one\n  \ntwo", 10, "**one**\n  \n**two**")]
+        [InlineData("  one\n  two", 11, "  **one**\n  **two**")]
+        [InlineData("**one**\ntwo", 11, "**one**\n**two**")]
+        public void Wrap_across_lines_wraps_each_line_on_its_own(string text, int length, string expected)
+        {
+            var edit = MarkdownFormatter.Wrap(text, 0, length, "**");
+            Assert.Equal(expected, Apply(text, edit));
+            string block = expected.Substring(0, expected.Length - (text.Length - length)).TrimEnd('\r', '\n');
+            Assert.Equal(block, Selected(text, edit));
+        }
+
+        [Fact]
+        public void Wrap_across_lines_takes_just_the_selected_part_of_each_line()
+        {
+            string text = "hello world\nnext line";
+            var edit = MarkdownFormatter.Wrap(text, 6, 10, "`");   // "world\nnext"
+            Assert.Equal("hello `world`\n`next` line", Apply(text, edit));
+            Assert.Equal("`world`\n`next`", Selected(text, edit));
+        }
+
+        [Theory]
+        [InlineData("**one**\n**two**\n", "one\ntwo\n")]
+        [InlineData("**one**\r\n\r\n**two**", "one\r\n\r\ntwo")]
+        [InlineData("~~one~~\n~~two~~", "one\ntwo")]
+        public void Wrap_across_lines_again_unwraps_each_line(string text, string expected)
+        {
+            string marker = text.StartsWith("~", System.StringComparison.Ordinal) ? "~~" : "**";
+            var edit = MarkdownFormatter.Wrap(text, 0, text.Length, marker);
+            Assert.Equal(expected, Apply(text, edit));
+            Assert.Equal(expected.TrimEnd('\r', '\n'), Selected(text, edit));
+        }
+
+        [Fact]
+        public void Italic_across_bold_lines_adds_italics_to_each()
+        {
+            string text = "**one**\n**two**";
+            var edit = MarkdownFormatter.Wrap(text, 0, text.Length, "*");
+            Assert.Equal("***one***\n***two***", Apply(text, edit));
+        }
+
         [Fact]
         public void Link_wraps_the_text_and_selects_the_address()
         {

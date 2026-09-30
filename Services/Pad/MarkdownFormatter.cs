@@ -38,10 +38,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// Wraps the selection in <paramref name="marker"/>, or unwraps it when the selection already
         /// starts and ends with it, or has it just outside. With nothing selected, inserts the pair and
-        /// puts the caret between.
+        /// puts the caret between. A line break at the end of the selection (Home, Shift+Down) is left
+        /// outside; a selection across lines wraps each line on its own (<see cref="WrapLines"/>).
         /// </summary>
         public static TextEdit Wrap(string text, int start, int length, string marker)
         {
+            while (length > 0 && (text[start + length - 1] == '\r' || text[start + length - 1] == '\n')) length--;
+            if (text.IndexOfAny(LineBreaks, start, length) >= 0) return WrapLines(text, start, length, marker);
+
             string selected = text.Substring(start, length);
             int m = marker.Length;
 
@@ -76,6 +80,54 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
 
             return new TextEdit(start, length, marker + selected + marker, start + m, length);
+        }
+
+        /// <summary>
+        /// Wrap for a selection across lines, as one edit. Markdown formatting never crosses a line,
+        /// so each line's selected part is wrapped on its own; blank lines are left alone, and
+        /// indentation and trailing spaces stay outside the markers. If every line already has the
+        /// marker it is removed from each; otherwise it is added to those that lack it. Line breaks
+        /// are kept, and the whole block is selected afterwards.
+        /// </summary>
+        private static TextEdit WrapLines(string text, int start, int length, string marker)
+        {
+            int m = marker.Length;
+            var (lines, breaks) = SplitLines(text.Substring(start, length));
+            var parts = lines.Select(SplitSpaces).ToList();
+            bool unwrap = parts.All(p => p.Core.Length == 0 || IsWrapped(p.Core, marker));
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                var (lead, core, trail) = parts[i];
+                if (core.Length == 0) continue;
+                if (unwrap) core = core.Substring(m, core.Length - 2 * m);
+                else if (!IsWrapped(core, marker)) core = marker + core + marker;
+                lines[i] = lead + core + trail;
+            }
+
+            string block = Join(lines, breaks);
+            return new TextEdit(start, length, block, start, block.Length);
+        }
+
+        /// <summary>
+        /// True when <paramref name="content"/> starts and ends with the marker. A one-character
+        /// marker followed by the same character is not it: <c>**x**</c> is bold, not italic.
+        /// </summary>
+        private static bool IsWrapped(string content, string marker)
+        {
+            int m = marker.Length;
+            return content.Length >= 2 * m
+                && content.StartsWith(marker, StringComparison.Ordinal)
+                && content.EndsWith(marker, StringComparison.Ordinal)
+                && !(m == 1 && content.Length > m && content[m] == marker[0]);
+        }
+
+        /// <summary>A line's leading spaces and tabs, the rest up to its trailing ones, and those; a blank line is all lead.</summary>
+        private static (string Lead, string Core, string Trail) SplitSpaces(string line)
+        {
+            var (lead, rest) = Split(line);
+            string core = rest.TrimEnd(' ', '\t');
+            return (lead, core, rest.Substring(core.Length));
         }
 
         /// <summary>Turns the selection into <c>[selection](url)</c> and selects <c>url</c> to type over.</summary>

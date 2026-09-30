@@ -235,5 +235,36 @@ namespace Kil0bitSystemMonitor.Tests
             first.Editor.TextArea.PerformTextInput("Z");
             Assert.Equal("hiZ", other.TextProvider());
         });
+
+        [Fact]
+        public void Redo_in_the_adopting_window_of_an_edit_undone_in_the_releasing_window_leaves_it_alone() => WithTwoWindows((first, second, env) =>
+        {
+            var note = env.Workspace.ActiveIn(first.WindowId)!;
+            first.Editor.Document.Insert(0, "hello world, a long line of text");
+            first.Editor.Document.UndoStack.ClearAll();
+            first.Editor.Select(6, 5);
+            first.Editor.SelectedText = "";
+            first.Editor.Undo();                                         // undone here, so the redo stack holds this window's action pair
+            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
+            first.NewTab();
+            var other = env.Workspace.ActiveIn(first.WindowId)!;
+            first.Editor.Document.Insert(0, "hi");
+            first.Editor.CaretOffset = 2;
+
+            var released = first.ReleaseDocument(note);
+            env.Workspace.MoveToWindow(note, second.WindowId);
+            Assert.True(second.AdoptDocument(note, released!));
+            second.SelectTab(env.Workspace.TabsOf(second.WindowId).IndexOf(note));
+            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
+            second.Editor.Redo();
+            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
+
+            Assert.Equal("hello , a long line of text", note.TextProvider());
+            Assert.Equal("hi", other.TextProvider());
+            Assert.Equal(2, first.Editor.CaretOffset);
+            Assert.Equal(0, first.Editor.SelectionLength);
+            first.Editor.TextArea.PerformTextInput("Z");
+            Assert.Equal("hiZ", other.TextProvider());
+        });
     }
 }

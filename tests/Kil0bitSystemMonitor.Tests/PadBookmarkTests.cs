@@ -89,6 +89,22 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Enter_at_the_start_of_a_bookmarked_line_moves_the_mark_with_the_text() => WithEnv((env, open) =>
+        {
+            var window = open();
+            window.Editor.Document.Text = "one\ntwo\nthree";
+            GoToLine(window, 2);
+            window.ToggleBookmark();
+
+            window.Editor.Document.Insert(window.Editor.Document.GetLineByNumber(2).Offset, "\n");   // Home, Enter
+            Assert.Equal(new[] { 3 }, window.BookmarkLines);
+            Assert.Equal("two", window.Editor.Document.GetText(window.Editor.Document.GetLineByNumber(3)));
+
+            window.Editor.Document.Insert(window.Editor.Document.GetLineByNumber(3).Offset, "x");    // typing at column 0
+            Assert.Equal(new[] { 3 }, window.BookmarkLines);
+        });
+
+        [Fact]
         public void A_deleted_bookmarked_line_does_not_duplicate_another() => WithEnv((env, open) =>
         {
             var window = open();

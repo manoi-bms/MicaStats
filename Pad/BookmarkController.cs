@@ -76,7 +76,9 @@ namespace Kil0bitSystemMonitor.Pad
         private static TextAnchor AnchorAt(TextDocument document, int line)
         {
             var anchor = document.CreateAnchor(document.GetLineByNumber(line).Offset);
-            anchor.MovementType = AnchorMovementType.BeforeInsertion;
+            // Text inserted at the line start goes before the mark: Home then Enter moves the mark
+            // down with its text, and typing at column 0 stays on the marked line.
+            anchor.MovementType = AnchorMovementType.AfterInsertion;
             anchor.SurviveDeletion = true;
             return anchor;
         }

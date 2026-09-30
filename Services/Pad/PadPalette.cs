@@ -69,6 +69,37 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The box behind each find match.</summary>
         public PadColor FindMatch { get; private init; }
 
+        /// <summary>Syntax colors (spec 2.2): one per category, each at least 4.5:1 on the background.</summary>
+        public PadColor SyntaxComment { get; private init; }
+        public PadColor SyntaxString { get; private init; }
+        public PadColor SyntaxKeyword { get; private init; }
+        public PadColor SyntaxNumber { get; private init; }
+        public PadColor SyntaxType { get; private init; }
+        public PadColor SyntaxPreprocessor { get; private init; }
+        public PadColor SyntaxTag { get; private init; }
+        public PadColor SyntaxAttribute { get; private init; }
+        public PadColor SyntaxOperator { get; private init; }
+        /// <summary>Log levels (MicaPad's Log.xshd).</summary>
+        public PadColor LogError { get; private init; }
+        public PadColor LogWarning { get; private init; }
+        public PadColor LogInfo { get; private init; }
+        public PadColor LogDebug { get; private init; }
+        /// <summary>Added and removed lines (Diff files; Part 5's history compare).</summary>
+        public PadColor DiffAdded { get; private init; }
+        public PadColor DiffRemoved { get; private init; }
+        /// <summary>Markdown styled source (spec 2.3).</summary>
+        public PadColor MdHeading { get; private init; }
+        /// <summary>The dimmed # ** ` > markers.</summary>
+        public PadColor MdMarker { get; private init; }
+        /// <summary>Behind inline code and fenced blocks.</summary>
+        public PadColor MdCodeBackground { get; private init; }
+        public PadColor MdLink { get; private init; }
+        public PadColor MdQuoteBar { get; private init; }
+        public PadColor MdQuoteText { get; private init; }
+        public PadColor MdListMarker { get; private init; }
+        public PadColor MdTaskDone { get; private init; }
+        public PadColor MdRule { get; private init; }
+
         /// <summary>Today's MicaPad colors.</summary>
         public static PadPalette Dark { get; } = new()
         {
@@ -99,6 +130,30 @@ namespace Kil0bitSystemMonitor.Services.Pad
             Caret = PadColor.Parse("#3FD2E4"),
             CurrentLine = PadColor.Parse("#0FFFFFFF"),
             FindMatch = PadColor.Parse("#40FFC857"),
+            SyntaxComment = PadColor.Parse("#6A9955"),
+            SyntaxString = PadColor.Parse("#CE9178"),
+            SyntaxKeyword = PadColor.Parse("#569CD6"),
+            SyntaxNumber = PadColor.Parse("#B5CEA8"),
+            SyntaxType = PadColor.Parse("#4EC9B0"),
+            SyntaxPreprocessor = PadColor.Parse("#C586C0"),
+            SyntaxTag = PadColor.Parse("#4FC1FF"),
+            SyntaxAttribute = PadColor.Parse("#9CDCFE"),
+            SyntaxOperator = PadColor.Parse("#D4D4D4"),
+            LogError = PadColor.Parse("#FF6B6B"),
+            LogWarning = PadColor.Parse("#E8A53C"),
+            LogInfo = PadColor.Parse("#3FD2E4"),
+            LogDebug = PadColor.Parse("#88EDEDF2"),
+            DiffAdded = PadColor.Parse("#6BD968"),
+            DiffRemoved = PadColor.Parse("#FF7B72"),
+            MdHeading = PadColor.Parse("#7FE3F0"),
+            MdMarker = PadColor.Parse("#66EDEDF2"),
+            MdCodeBackground = PadColor.Parse("#1B1B24"),
+            MdLink = PadColor.Parse("#3FD2E4"),
+            MdQuoteBar = PadColor.Parse("#663FD2E4"),
+            MdQuoteText = PadColor.Parse("#B0EDEDF2"),
+            MdListMarker = PadColor.Parse("#3FD2E4"),
+            MdTaskDone = PadColor.Parse("#88EDEDF2"),
+            MdRule = PadColor.Parse("#33FFFFFF"),
         };
 
         /// <summary>
@@ -134,6 +189,30 @@ namespace Kil0bitSystemMonitor.Services.Pad
             Caret = PadColor.Parse("#06707C"),
             CurrentLine = PadColor.Parse("#0A000000"),
             FindMatch = PadColor.Parse("#66FFC857"),
+            SyntaxComment = PadColor.Parse("#1E7A1E"),
+            SyntaxString = PadColor.Parse("#A31515"),
+            SyntaxKeyword = PadColor.Parse("#0000E0"),
+            SyntaxNumber = PadColor.Parse("#07704A"),
+            SyntaxType = PadColor.Parse("#1D6B80"),
+            SyntaxPreprocessor = PadColor.Parse("#8A00B0"),
+            SyntaxTag = PadColor.Parse("#800000"),
+            SyntaxAttribute = PadColor.Parse("#B00000"),
+            SyntaxOperator = PadColor.Parse("#3B3B3B"),
+            LogError = PadColor.Parse("#C62828"),
+            LogWarning = PadColor.Parse("#8A5200"),
+            LogInfo = PadColor.Parse("#06707C"),
+            LogDebug = PadColor.Parse("#666670"),
+            DiffAdded = PadColor.Parse("#1A7F37"),
+            DiffRemoved = PadColor.Parse("#C62828"),
+            MdHeading = PadColor.Parse("#0B4F59"),
+            MdMarker = PadColor.Parse("#8A8A94"),
+            MdCodeBackground = PadColor.Parse("#EEEEF3"),
+            MdLink = PadColor.Parse("#06707C"),
+            MdQuoteBar = PadColor.Parse("#6606707C"),
+            MdQuoteText = PadColor.Parse("#55555F"),
+            MdListMarker = PadColor.Parse("#06707C"),
+            MdTaskDone = PadColor.Parse("#666670"),
+            MdRule = PadColor.Parse("#26000000"),
         };
 
         /// <summary>The palette for a stored theme name; see <see cref="PadThemes.Normalize"/>.</summary>
@@ -167,6 +246,30 @@ namespace Kil0bitSystemMonitor.Services.Pad
             Pair(nameof(Caret), Caret),
             Pair(nameof(CurrentLine), CurrentLine),
             Pair(nameof(FindMatch), FindMatch),
+            Pair(nameof(SyntaxComment), SyntaxComment),
+            Pair(nameof(SyntaxString), SyntaxString),
+            Pair(nameof(SyntaxKeyword), SyntaxKeyword),
+            Pair(nameof(SyntaxNumber), SyntaxNumber),
+            Pair(nameof(SyntaxType), SyntaxType),
+            Pair(nameof(SyntaxPreprocessor), SyntaxPreprocessor),
+            Pair(nameof(SyntaxTag), SyntaxTag),
+            Pair(nameof(SyntaxAttribute), SyntaxAttribute),
+            Pair(nameof(SyntaxOperator), SyntaxOperator),
+            Pair(nameof(LogError), LogError),
+            Pair(nameof(LogWarning), LogWarning),
+            Pair(nameof(LogInfo), LogInfo),
+            Pair(nameof(LogDebug), LogDebug),
+            Pair(nameof(DiffAdded), DiffAdded),
+            Pair(nameof(DiffRemoved), DiffRemoved),
+            Pair(nameof(MdHeading), MdHeading),
+            Pair(nameof(MdMarker), MdMarker),
+            Pair(nameof(MdCodeBackground), MdCodeBackground),
+            Pair(nameof(MdLink), MdLink),
+            Pair(nameof(MdQuoteBar), MdQuoteBar),
+            Pair(nameof(MdQuoteText), MdQuoteText),
+            Pair(nameof(MdListMarker), MdListMarker),
+            Pair(nameof(MdTaskDone), MdTaskDone),
+            Pair(nameof(MdRule), MdRule),
         };
 
         private static KeyValuePair<string, PadColor> Pair(string name, PadColor color) => new("Pad." + name, color);

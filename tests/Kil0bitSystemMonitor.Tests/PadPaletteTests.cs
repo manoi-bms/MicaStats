@@ -63,6 +63,18 @@ namespace Kil0bitSystemMonitor.Tests
                 ("Accent", "InfoBar", 4.5), ("Accent", "Banner", 4.5), ("Accent", "TabActive", 4.5),
                 ("AlertRed", "Background", 4.5), ("AlertRed", "Chrome", 4.5),
                 ("LineNumbers", "Background", 3),
+                ("SyntaxComment", "Background", 4.5), ("SyntaxString", "Background", 4.5),
+                ("SyntaxKeyword", "Background", 4.5), ("SyntaxNumber", "Background", 4.5),
+                ("SyntaxType", "Background", 4.5), ("SyntaxPreprocessor", "Background", 4.5),
+                ("SyntaxTag", "Background", 4.5), ("SyntaxAttribute", "Background", 4.5),
+                ("SyntaxOperator", "Background", 4.5),
+                ("LogError", "Background", 4.5), ("LogWarning", "Background", 4.5),
+                ("LogInfo", "Background", 4.5), ("LogDebug", "Background", 4.5),
+                ("DiffAdded", "Background", 4.5), ("DiffRemoved", "Background", 4.5),
+                ("MdHeading", "Background", 4.5), ("MdLink", "Background", 4.5),
+                ("MdQuoteText", "Background", 4.5), ("MdListMarker", "Background", 4.5),
+                ("MdTaskDone", "Background", 4.5), ("MdMarker", "Background", 3),
+                ("Text", "MdCodeBackground", 7),
             };
             foreach (string theme in new[] { PadThemes.Dark, PadThemes.Light })
                 foreach (var rule in rules)
@@ -88,7 +100,7 @@ namespace Kil0bitSystemMonitor.Tests
                 .Where(p => p.PropertyType == typeof(PadColor)).ToList();
             var resources = palette.Resources();
 
-            Assert.Equal(25, properties.Count);
+            Assert.Equal(49, properties.Count);
             Assert.Equal(properties.Count, resources.Count);
             Assert.Equal(resources.Count, resources.Select(r => r.Key).Distinct().Count());
             foreach (var property in properties)

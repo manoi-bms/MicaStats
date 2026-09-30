@@ -47,6 +47,29 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
         }
 
+        /// <summary>
+        /// This color painted on <paramref name="background"/>, or the first mix of it toward
+        /// <paramref name="toward"/> (in tenths) that reaches <paramref name="minimum"/> contrast —
+        /// the hue survives as far as readability allows. Always opaque; ends at
+        /// <paramref name="toward"/> itself when no mix is enough.
+        /// </summary>
+        public PadColor EnsureContrast(PadColor background, PadColor toward, double minimum)
+        {
+            var solid = background with { A = 255 };
+            PadColor from = Over(solid);
+            PadColor to = toward.Over(solid);
+            for (int step = 0; step <= 10; step++)
+            {
+                double t = step / 10.0;
+                var mixed = new PadColor(255, Lerp(from.R, to.R, t), Lerp(from.G, to.G, t), Lerp(from.B, to.B, t));
+                if (Contrast(mixed, solid) >= minimum) return mixed;
+            }
+            return to;
+        }
+
+        private static byte Lerp(byte a, byte b, double t) =>
+            (byte)Math.Round(a + (b - a) * t, MidpointRounding.AwayFromZero);
+
         private static byte Mix(byte front, byte back, double alpha) =>
             (byte)Math.Round(alpha * front + (1 - alpha) * back, MidpointRounding.AwayFromZero);
 

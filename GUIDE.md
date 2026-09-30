@@ -235,18 +235,20 @@ Moving to text inside a fold (Find, Go to line) opens it.
 
 **Auto-close**: typing `(`, `[`, `{` or a quote adds the closing one after the caret; typing it
 again steps over it, and Backspace right after the opening one removes both. With text selected,
-an opening bracket or quote wraps the selection. It stays out of the way in prose — `don't` types
-normally, and nothing is added in front of a word. Turn it off in **☰** or **Settings → MicaPad**.
+an opening bracket or quote wraps the selection. It stays out of the way in prose — `don't` and
+`คำว่า"ใช่"` type normally, and nothing is added in front of a word. Turn it off in **☰** or **Settings → MicaPad**.
 
-**Lines**: **Ctrl+D** duplicates the line (or the selection), **Ctrl+Shift+↑/↓** moves the
-selected lines, **Ctrl+J** joins them with one space. Right-click → **Lines** also sorts
+**Lines**: **Ctrl+D** duplicates the line (or the selection; with a rectangular **Alt**+drag
+selection, every line it touches), **Ctrl+Shift+↑/↓** moves the selected lines, **Ctrl+J** joins
+them with one space. Right-click → **Lines** also sorts
 (ascending or descending, ignoring case), removes duplicate lines (keeping the first; blank lines
 stay) and trims trailing spaces — on the selected lines, or the whole note when nothing is
 selected. Line endings are kept, and each is a single **Ctrl+Z**.
 
 **Bookmarks**: **Ctrl+F2** marks the caret line with a dot in the margin (again to remove it);
 **F2** / **Shift+F2** jump to the next / previous one, wrapping around. They move with the text as
-you edit, and each tab keeps its own across restarts. **☰ → Clear bookmarks** removes them.
+you edit — moved lines take theirs along, and trimming or **Replace all** leaves them on their
+lines — and each tab keeps its own across restarts. **☰ → Clear bookmarks** removes them.
 
 **Occurrences**: select a whole word and every other place it appears (same case, whole words
 only) gets a soft box; the status bar counts them (`5 matches`, up to `10,000+`). Words are letters, digits and

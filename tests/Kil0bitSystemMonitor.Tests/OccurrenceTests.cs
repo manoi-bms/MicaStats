@@ -22,6 +22,31 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(expected, OccurrenceFinder.IsWholeWordSelection(text, start, length));
         }
 
+        [Theory]
+        [InlineData("ที่ นี่", 0, 3, true)]
+        [InlineData("ที่", 0, 1, false)]
+        public void Thai_marks_belong_to_the_word(string text, int start, int length, bool expected)
+        {
+            Assert.Equal(expected, OccurrenceFinder.IsWholeWordSelection(text, start, length));
+        }
+
+        [Fact]
+        public void An_edit_clears_the_marks_at_once() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Text = "cat cat";
+            window.Editor.Select(0, 3);
+            window.RefreshOccurrences();
+            Assert.Equal(2, window.OccurrenceMarks.Offsets.Count);
+
+            window.Editor.Document.Insert(0, "x ");
+            Assert.Empty(window.OccurrenceMarks.Offsets);
+            Assert.Equal(Visibility.Collapsed, window.OccurrenceText.Visibility);
+
+            window.Editor.Select(2, 3);
+            window.RefreshOccurrences();
+            Assert.Equal(new[] { 2, 6 }, window.OccurrenceMarks.Offsets);
+        });
+
         [Fact]
         public void Occurrences_are_whole_words_and_case_sensitive()
         {

@@ -85,8 +85,10 @@ namespace Kil0bitSystemMonitor.Pad
             _bookmarkMargin = new BookmarkMargin(() => _bookmarks.Lines(Editor.Document), () => _palette);
             Editor.TextArea.LeftMargins.Insert(0, _bookmarkMargin);
             _bookmarks.Changed += OnBookmarksChanged;
-            // Index 0: below the find-match renderer (FindBar.Attach added it with Add), so matches draw on top.
+            // Background layer: find matches draw on the Selection layer (MatchHighlighter), so they are above these boxes whatever the order here.
             Editor.TextArea.TextView.BackgroundRenderers.Insert(0, _occurrences);
+            Editor.DocumentChanged += (s, e) => HookOccurrenceDocument();
+            HookOccurrenceDocument();
             _occurrenceTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(150) };
             _occurrenceTimer.Tick += (s, e) =>
             {
@@ -295,6 +297,26 @@ namespace Kil0bitSystemMonitor.Pad
 
         // ---- occurrences ---------------------------------------------------------------------
 
+        private TextDocument? _occurrenceDoc;
+
+        /// <summary>Follows the shown document: any edit (undo, Replace All, reload) makes the boxes stale, so clear them and recompute shortly.</summary>
+        private void HookOccurrenceDocument()
+        {
+            if (_occurrenceDoc != null) _occurrenceDoc.Changed -= OnOccurrenceDocumentChanged;
+            _occurrenceDoc = Editor.Document;
+            if (_occurrenceDoc != null) _occurrenceDoc.Changed += OnOccurrenceDocumentChanged;
+        }
+
+        private void OnOccurrenceDocumentChanged(object? sender, DocumentChangeEventArgs e)
+        {
+            _occurrences.Offsets = Array.Empty<int>();
+            _occurrences.Length = 0;
+            OccurrenceText.Visibility = Visibility.Collapsed;
+            Editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
+            _occurrenceTimer.Stop();
+            _occurrenceTimer.Start();
+        }
+
         /// <summary>The occurrence boxes; for tests.</summary>
         internal OccurrenceHighlighter OccurrenceMarks => _occurrences;
 
@@ -308,7 +330,8 @@ namespace Kil0bitSystemMonitor.Pad
             string word = "";
             (IReadOnlyList<int> Offsets, bool Capped) found = (Array.Empty<int>(), false);
 
-            if (document != null && document.TextLength <= PadLanguages.MaxFormattedChars && Editor.SelectionLength > 0)
+            if (document != null && document.TextLength <= PadLanguages.MaxFormattedChars
+                && Editor.SelectionLength > 0 && Editor.SelectionLength <= OccurrenceFinder.MaxWordLength)
             {
                 string text = document.Text;
                 if (OccurrenceFinder.IsWholeWordSelection(text, Editor.SelectionStart, Editor.SelectionLength))

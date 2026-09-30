@@ -100,7 +100,7 @@ namespace Kil0bitSystemMonitor.Tests
                 .Where(p => p.PropertyType == typeof(PadColor)).ToList();
             var resources = palette.Resources();
 
-            Assert.Equal(50,properties.Count);
+            Assert.Equal(50, properties.Count);
             Assert.Equal(properties.Count, resources.Count);
             Assert.Equal(resources.Count, resources.Select(r => r.Key).Distinct().Count());
             foreach (var property in properties)

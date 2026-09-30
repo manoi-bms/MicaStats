@@ -52,6 +52,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return count == 1 ? "1 match" : count.ToString("N0", CultureInfo.InvariantCulture) + " matches";
         }
 
-        private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+        // Combining marks (Thai vowels and tone marks) belong to the word they sit on.
+        private static bool IsWordChar(char c)
+        {
+            if (char.IsLetterOrDigit(c) || c == '_') return true;
+            var category = char.GetUnicodeCategory(c);
+            return category == UnicodeCategory.NonSpacingMark || category == UnicodeCategory.SpacingCombiningMark;
+        }
     }
 }

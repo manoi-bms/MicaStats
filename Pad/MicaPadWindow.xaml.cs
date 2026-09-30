@@ -61,6 +61,8 @@ namespace Kil0bitSystemMonitor.Pad
         private EditorLanguage _language = null!;
         private EditorLanguage _previewLanguage = null!;
         private AutoCloseHandler _autoClose = null!;
+        private readonly BookmarkController _bookmarks = new();
+        private BookmarkMargin _bookmarkMargin = null!;
         private ResolvedLanguage _resolved = new(PadLanguages.Plain, false);
 
         /// <summary>The note whose tab is being renamed, or null; for tests (the popup itself needs a shown window).</summary>
@@ -78,6 +80,9 @@ namespace Kil0bitSystemMonitor.Pad
             _language = new EditorLanguage(Editor, () => _palette, folds: true);
             _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette, folds: false);
             _autoClose = new AutoCloseHandler(Editor, () => _config.PadAutoClose);
+            _bookmarkMargin = new BookmarkMargin(() => _bookmarks.Lines(Editor.Document), () => _palette);
+            Editor.TextArea.LeftMargins.Insert(0, _bookmarkMargin);
+            _bookmarks.Changed += OnBookmarksChanged;
             ApplyTheme();
             Editor.ContextMenu = EditorMenu;
             Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu();
@@ -237,6 +242,9 @@ namespace Kil0bitSystemMonitor.Pad
             else if (ctrl && key == Key.G) ShowGoToLine();
             else if (modifiers == ModifierKeys.None && key == Key.Escape && FindBar.IsOpen) FindBar.Close();
             else if (ctrlShift && key == Key.H) ToggleHistory();
+            else if (ctrl && key == Key.F2) ToggleBookmark();
+            else if (modifiers == ModifierKeys.None && key == Key.F2) NextBookmark();
+            else if (modifiers == ModifierKeys.Shift && key == Key.F2) PreviousBookmark();
             else if (EditingKeysAllowed && ctrl && key == Key.D) Run(Editor, (t, s, l) => LineOperations.Duplicate(t, s, l));
             else if (EditingKeysAllowed && ctrlShift && key == Key.Up) Run(Editor, LineOperations.MoveUp);
             else if (EditingKeysAllowed && ctrlShift && key == Key.Down) Run(Editor, LineOperations.MoveDown);
@@ -305,6 +313,8 @@ namespace Kil0bitSystemMonitor.Pad
             };
             note.TextProvider = () => document.Text;
             _docs[note.Id] = document;
+            if (_workspace.Session.Tabs.TryGetValue(note.Id, out var view) && view.Bookmarks != null)
+                _bookmarks.Load(document, view.Bookmarks);
             return document;
         }
 
@@ -319,6 +329,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void ReplaceText(OpenNote note, string text, bool markUnsaved)
         {
             var document = EnsureDocument(note);
+            var marked = _bookmarks.Lines(document);
             bool previous = _suppressDirty;
             _suppressDirty = !markUnsaved;
             try
@@ -329,6 +340,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 _suppressDirty = previous;
             }
+            if (marked.Count > 0) _bookmarks.Load(document, marked);   // same line numbers; past the end dropped
         }
 
         private void OnOpenChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -336,7 +348,11 @@ namespace Kil0bitSystemMonitor.Pad
             if (e.NewItems != null)
                 foreach (OpenNote note in e.NewItems) EnsureDocument(note);
             if (e.OldItems != null)
-                foreach (OpenNote note in e.OldItems) _docs.Remove(note.Id);
+                foreach (OpenNote note in e.OldItems)
+                {
+                    if (_docs.TryGetValue(note.Id, out var gone)) _bookmarks.Forget(gone);
+                    _docs.Remove(note.Id);
+                }
         }
 
         private void ShowNote(OpenNote note)
@@ -386,8 +402,47 @@ namespace Kil0bitSystemMonitor.Pad
             ShowNote(_workspace.Open[((index + delta) % count + count) % count]);
         }
 
-        private void SaveViewState(OpenNote note) =>
+        // ---- bookmarks -----------------------------------------------------------------------
+
+        /// <summary>The shown tab bookmarked lines; for tests.</summary>
+        internal IReadOnlyList<int> BookmarkLines => _bookmarks.Lines(Editor.Document);
+
+        /// <summary>Ctrl+F2: bookmark the caret line, or remove its bookmark.</summary>
+        internal void ToggleBookmark() => _bookmarks.Toggle(Editor.Document, Editor.TextArea.Caret.Line);
+
+        /// <summary>F2: the next bookmark, wrapping.</summary>
+        internal void NextBookmark() => GoToBookmark(_bookmarks.Next(Editor.Document, Editor.TextArea.Caret.Line));
+
+        /// <summary>Shift+F2: the previous bookmark, wrapping.</summary>
+        internal void PreviousBookmark() => GoToBookmark(_bookmarks.Previous(Editor.Document, Editor.TextArea.Caret.Line));
+
+        /// <summary>Clear bookmarks, for the shown tab.</summary>
+        internal void ClearBookmarks() => _bookmarks.Clear(Editor.Document);
+
+        /// <summary>Replaces the shown note whole text as an edit; for tests.</summary>
+        internal void ReplaceShownText(string text)
+        {
+            if (_shown != null) ReplaceText(_shown, text, markUnsaved: true);
+        }
+
+        private void GoToBookmark(int? line)
+        {
+            if (line is int l) GoToLine(l);
+        }
+
+        private void OnBookmarksChanged()
+        {
+            _bookmarkMargin.InvalidateVisual();
+            if (_shown == null) return;
+            _workspace.SetBookmarks(_shown, _bookmarks.Lines(Editor.Document));
+            _workspace.SaveSession();
+        }
+
+        private void SaveViewState(OpenNote note)
+        {
             _workspace.SetTabViewState(note, Editor.CaretOffset, Editor.VerticalOffset);
+            _workspace.SetBookmarks(note, _bookmarks.Lines(EnsureDocument(note)));
+        }
 
         private void RestoreViewState(OpenNote note)
         {
@@ -1119,6 +1174,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true), icon: "\uE8AB"));
             menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine, icon: "\uE8AD"));
             menu.Items.Add(Item("History", "Ctrl+Shift+H", ToggleHistory, icon: "\uE81C"));
+            menu.Items.Add(Item("Clear bookmarks", null, ClearBookmarks));
             menu.Items.Add(new Separator());
             menu.Items.Add(Check("Word wrap", "Alt+Z", _config.PadWordWrap, ToggleWordWrap));
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,
@@ -1309,6 +1365,7 @@ namespace Kil0bitSystemMonitor.Pad
             area.TextView.CurrentLineBackground = PadThemeApplier.ToBrush(_palette.CurrentLine);
             Editor.LineNumbersForeground = PadThemeApplier.ToBrush(_palette.LineNumbers);
             PreviewEditor.LineNumbersForeground = Editor.LineNumbersForeground;
+            _bookmarkMargin?.InvalidateVisual();
             PreviewEditor.TextArea.SelectionBrush = area.SelectionBrush;
             FindBar.ApplyPalette(_palette);
 

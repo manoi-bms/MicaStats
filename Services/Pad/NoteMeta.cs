@@ -139,6 +139,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>Vertical scroll offset in the editor.</summary>
         public double VerticalOffset { get; set; }
+
+        /// <summary>Bookmarked lines (1-based), or null when there are none. Older sessions have none.</summary>
+        public List<int>? Bookmarks { get; set; }
     }
 
     /// <summary>One version in a note's history.</summary>

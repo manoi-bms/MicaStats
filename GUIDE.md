@@ -244,6 +244,10 @@ selected lines, **Ctrl+J** joins them with one space. Right-click → **Lines** 
 stay) and trims trailing spaces — on the selected lines, or the whole note when nothing is
 selected. Line endings are kept, and each is a single **Ctrl+Z**.
 
+**Bookmarks**: **Ctrl+F2** marks the caret line with a dot in the margin (again to remove it);
+**F2** / **Shift+F2** jump to the next / previous one, wrapping around. They move with the text as
+you edit, and each tab keeps its own across restarts. **☰ → Clear bookmarks** removes them.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

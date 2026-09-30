@@ -203,7 +203,21 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Remembers where the user was in a tab, for the next switch back or the next launch.</summary>
         public void SetTabViewState(OpenNote note, int caretOffset, double verticalOffset)
         {
-            Session.Tabs[note.Id] = new TabViewState { CaretOffset = caretOffset, VerticalOffset = verticalOffset };
+            Session.Tabs.TryGetValue(note.Id, out var previous);
+            Session.Tabs[note.Id] = new TabViewState
+            {
+                CaretOffset = caretOffset,
+                VerticalOffset = verticalOffset,
+                Bookmarks = previous?.Bookmarks,
+            };
+        }
+
+        /// <summary>Records a tab's bookmarked lines (1-based) for the session; none clears them.</summary>
+        public void SetBookmarks(OpenNote note, IReadOnlyList<int> lines)
+        {
+            if (!Session.Tabs.TryGetValue(note.Id, out var view))
+                Session.Tabs[note.Id] = view = new TabViewState();
+            view.Bookmarks = lines.Count == 0 ? null : lines.ToList();
         }
 
         /// <summary>

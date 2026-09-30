@@ -58,6 +58,19 @@ public partial class App
         {
             DiagnosticsLog.Error("ai", "Starting the history failed", ex);
         }
+        try
+        {
+            // Live readings go through the UI dispatcher, process rankings take a short lease on the
+            // shared sampler, and the alert and battery monitors are looked up on each call.
+            AiTools = new Services.Ai.Tools.MicaTools(
+                new Services.Ai.Tools.LiveMicaData(history, ui, SharedProcessSampler, History,
+                    () => AlertMonitorForAi, () => Battery, () => DateTime.UtcNow),
+                Services.Ai.Tools.Redactor.ForCurrentUser());
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("ai", "Starting the data tools failed", ex);
+        }
         // AI anchor: start
     }
 
@@ -112,6 +125,12 @@ public partial class App
     /// questions, answers, tool data and secrets never go to the log.
     /// </summary>
     private static Action<string> AiWarn(string area) => message => DiagnosticsLog.Warn(area, message);
+
+    /// <summary>
+    /// The read-only data tools over the running app, shared by the assistant and the tool pipe;
+    /// null until <see cref="StartAi"/> has built them, or if building them failed (logged).
+    /// </summary>
+    public static Services.Ai.Tools.MicaTools? AiTools { get; private set; }
 
     // AI anchor: members
 }

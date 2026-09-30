@@ -88,6 +88,18 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
                         ArgText(args, "to") ?? "now", ArgInt(args, "maxPoints", 200), ct).ConfigureAwait(false);
                 case ToolNames.GetTopProcesses:
                     return await GetTopProcessesAsync(ArgText(args, "by") ?? "cpu", ArgInt(args, "count", 10), ct).ConfigureAwait(false);
+                case ToolNames.ListSlowdownReports:
+                    return await ListSlowdownReportsAsync(ArgInt(args, "limit", 10), ct).ConfigureAwait(false);
+                case ToolNames.GetSlowdownReport:
+                    return await GetSlowdownReportAsync(ArgText(args, "id") ?? "", ct).ConfigureAwait(false);
+                case ToolNames.ListAlerts:
+                    return await ListAlertsAsync(ArgText(args, "since"), ct).ConfigureAwait(false);
+                case ToolNames.GetHardware:
+                    return await GetHardwareAsync(ct).ConfigureAwait(false);
+                case ToolNames.GetBattery:
+                    return await GetBatteryAsync(ct).ConfigureAwait(false);
+                case ToolNames.GetBootSummary:
+                    return await GetBootSummaryAsync(ct).ConfigureAwait(false);
                 default:
                     return _redactor.RedactJson(ToolJson.Error("Unknown tool '" + tool + "'. MicaStats offers: " +
                         string.Join(", ", ToolNames.ReadOnly) + "."))!;

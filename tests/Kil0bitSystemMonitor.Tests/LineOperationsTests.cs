@@ -122,6 +122,44 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Null(LineOperations.TrimTrailing("clean\nlines", 0, 0));
         }
 
+
+        [Fact]
+        public void Join_skips_the_separator_after_an_empty_first_line() =>
+            Assert.Equal("b", Apply("\nb", LineOperations.Join("\nb", 0, 0)));
+
+        [Fact]
+        public void Sorting_keeps_every_trailing_empty_line_last() =>
+            Assert.Equal("a\nb\n\n", Apply("b\na\n\n", LineOperations.Sort("b\na\n\n", 0, 0, false, En)));
+
+        [Fact]
+        public void Move_down_handles_lone_cr_and_mixed_endings()
+        {
+            Assert.Equal("b\ra\rc", Apply("a\rb\rc", LineOperations.MoveDown("a\rb\rc", 0, 0)));
+            Assert.Equal("b\r\na\nc", Apply("a\r\nb\nc", LineOperations.MoveDown("a\r\nb\nc", 0, 0)));
+        }
+
+        [Fact]
+        public void A_selection_ending_right_after_a_line_break_does_not_take_the_next_line()
+        {
+            Assert.Equal("2\n1\n3", Apply("1\n2\n3", LineOperations.MoveDown("1\n2\n3", 0, 2)));
+            var edit = LineOperations.Duplicate("1\n2\n3", 0, 2);
+            Assert.Equal("1\n1\n2\n3", Apply("1\n2\n3", edit));
+        }
+
+        [Fact]
+        public void Remove_duplicates_works_on_crlf_text() =>
+            Assert.Equal("a\r\nb\r\n", Apply("a\r\nb\r\na\r\n", LineOperations.RemoveDuplicates("a\r\nb\r\na\r\n", 0, 0)));
+
+        [Fact]
+        public void Moving_keeps_a_multi_line_selection_on_the_same_text()
+        {
+            string text = "1\n2\n3\n4";
+            var edit = LineOperations.MoveDown(text, 2, 3);
+            string result = Apply(text, edit);
+            Assert.Equal("2\n3", result.Substring(edit!.Value.SelectionStart, edit.Value.SelectionLength));
+            var up = LineOperations.MoveUp(text, 2, 3);
+            Assert.Equal("2\n3", Apply(text, up).Substring(up!.Value.SelectionStart, up.Value.SelectionLength));
+        }
         [Fact]
         public void A_whole_document_operation_keeps_the_caret_on_its_line()
         {

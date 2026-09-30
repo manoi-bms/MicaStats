@@ -247,9 +247,11 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>
         /// Shortcuts that edit the note run only while no text box (find, replace, go to line,
-        /// rename) has the keyboard focus, so Ctrl+D there never duplicates a line of the note.
+        /// rename) has the keyboard focus, and not while the history preview covers the note, so a
+        /// shortcut never edits a line of the note the user cannot see.
         /// </summary>
-        private static bool EditingKeysAllowed => Keyboard.FocusedElement is not System.Windows.Controls.TextBox;
+        private bool EditingKeysAllowed =>
+            Keyboard.FocusedElement is not System.Windows.Controls.TextBox && PreviewPanel.Visibility != Visibility.Visible;
 
         /// <summary>Turns the close button into a hide unless the window is really exiting.</summary>
         protected override void OnClosing(CancelEventArgs e)

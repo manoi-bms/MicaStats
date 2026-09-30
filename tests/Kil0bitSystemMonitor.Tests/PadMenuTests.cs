@@ -92,6 +92,19 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Editing_shortcuts_ignore_the_note_while_the_history_preview_covers_it() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Text = "one\ntwo";
+            window.Editor.CaretOffset = 0;
+            // Set directly: showing a real version needs a snapshot and the history panel's selection.
+            window.PreviewPanel.Visibility = Visibility.Visible;
+
+            Assert.False(window.HandleShortcut(Key.D, ModifierKeys.Control));
+            Assert.False(window.HandleShortcut(Key.J, ModifierKeys.Control));
+            Assert.Equal("one\ntwo", window.Editor.Document.Text);
+        });
+
+        [Fact]
         public void A_markdown_note_has_the_format_menu_and_a_json_file_does_not() => WithWindow((window, env) =>
         {
             window.RefreshEditorMenu();

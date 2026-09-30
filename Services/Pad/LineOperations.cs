@@ -75,7 +75,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
             foreach (string line in lines.Skip(1))
             {
                 string part = line.Trim();
-                if (part.Length > 0) joined += " " + part;
+                if (part.Length == 0) continue;
+                joined += joined.Length == 0 ? part : " " + part;
             }
             return length > 0
                 ? new TextEdit(blockStart, blockEnd - blockStart, joined, blockStart, joined.Length)
@@ -84,17 +85,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// Sorts lines, case-insensitive in <paramref name="culture"/>, stable (equal lines keep their
-        /// order). A final empty line (the text's last newline) stays last. Null when already sorted.
+        /// order). Trailing empty lines (the text's last newlines) stay last. Null when already sorted.
         /// </summary>
         public static TextEdit? Sort(string text, int start, int length, bool descending, CultureInfo culture)
         {
             var comparer = StringComparer.Create(culture, ignoreCase: true);
             return Rewrite(text, start, length, lines =>
             {
-                bool keepLast = lines.Count > 1 && lines[^1].Length == 0;
-                var body = keepLast ? lines.Take(lines.Count - 1) : lines;
+                int keep = 0;
+                while (keep < lines.Count - 1 && lines[lines.Count - 1 - keep].Length == 0) keep++;
+                var body = lines.Take(lines.Count - keep);
                 var sorted = (descending ? body.OrderByDescending(l => l, comparer) : body.OrderBy(l => l, comparer)).ToList();
-                if (keepLast) sorted.Add("");
+                for (int i = 0; i < keep; i++) sorted.Add("");
                 return sorted;
             });
         }

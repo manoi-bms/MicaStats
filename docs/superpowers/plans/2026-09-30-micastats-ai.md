@@ -16036,8 +16036,8 @@ These need the real machine, real keys and real MCP clients, so the owner runs t
 13. **Explain buttons live.** Toggling the assistant on and off shows and hides the **Explain** buttons live, in Diagnostics (slowdown reports) and in the process window. The process-window **Explain** button is enabled only with exactly one process selected.
 14. **Clipboard.** **Copy token** and **Copy Claude Code command** (Local HTTP mode) put the text on the clipboard, and it does NOT appear in Windows clipboard history (Win+V). With another app holding the clipboard, Copy shows "The clipboard is busy. Try again." instead of crashing.
 15. **Gateway environment variables.** With a variable such as `ANTHROPIC_BASE_URL` set in the user environment (as Claude Code gateways do), a Claude question in MicaStats still goes to Anthropic and works with the key saved in Settings.
-16. **Local models.** A local model without tool support (for example a small Ollama model) answers in "limited mode"; a model that stops sending data shows the timeout message after about 60 seconds.
-17. **The log stays clean.** After all of the above, open `%APPDATA%\MicaStats\logs\micastats.log`: no question text, no answer text, no key, no token.
+16. **Local models.** A local model without tool support (for example `gemma:2b` in Ollama) answers in "limited mode"; a model that stops sending data shows the timeout message after about 60 seconds.
+17. **The log stays clean.** After all of the above, open `%APPDATA%\MicaStats\logs\micastats.log` and the bridge's own `mcp-bridge.log` beside it: no question text, no answer text, no key, no token.
 
 - [ ] **Step 6: Finish the branch**
 

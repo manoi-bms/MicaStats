@@ -186,6 +186,20 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void The_bookmark_margin_stays_left_of_the_line_numbers() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            Assert.IsType<BookmarkMargin>(window.Editor.TextArea.LeftMargins[0]);
+
+            // AvalonEdit puts its line-number margin back at the front when line numbers come on.
+            config.PadShowLineNumbers = !config.PadShowLineNumbers;
+            config.PadShowLineNumbers = !config.PadShowLineNumbers;
+            config.PadShowLineNumbers = true;
+
+            Assert.IsType<BookmarkMargin>(window.Editor.TextArea.LeftMargins[0]);
+            Assert.Contains(window.Editor.TextArea.LeftMargins, m => m is ICSharpCode.AvalonEdit.Editing.LineNumberMargin);
+        });
+
+        [Fact]
         public void Enter_at_the_start_of_a_bookmarked_line_moves_the_mark_with_the_text() => WithEnv((env, open) =>
         {
             var window = open();

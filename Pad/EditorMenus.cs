@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Editing;
+using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 
 using Clipboard = System.Windows.Clipboard;
@@ -41,11 +43,40 @@ namespace Kil0bitSystemMonitor.Pad
             menu.VerticalOffset = menu.Placement == PlacementMode.Top ? 14 : -8;
         }
 
+        /// <summary>Where a failed menu command or shortcut is logged. Tests replace it (and put it back), so they never write the real log.</summary>
+        internal static Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("pad", message);
+
+        /// <summary>
+        /// Runs a menu command or a shortcut so a failure is logged instead of thrown: MicaStats has
+        /// no dispatcher exception handler, so one exception out of MicaPad would close the whole
+        /// app. False when it threw.
+        /// </summary>
+        internal static bool Guard(string what, Action action)
+        {
+            try
+            {
+                action();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    Warn(what + " failed (" + ex.GetType().Name + ": " + ex.Message + ")");
+                }
+                catch (Exception)
+                {
+                    // Logging is best effort; it must not throw either.
+                }
+                return false;
+            }
+        }
+
         /// <summary>A menu item; <paramref name="icon"/> is one Segoe Fluent Icons glyph shown left of the header.</summary>
         public static MenuItem Item(string header, string? gesture, Action action, bool enabled = true, string? icon = null)
         {
             var item = new MenuItem { Header = header, InputGestureText = gesture ?? "", IsEnabled = enabled, Icon = icon };
-            item.Click += (s, e) => action();
+            item.Click += (s, e) => Guard("The menu command " + header, action);
             return item;
         }
 
@@ -116,14 +147,22 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         public static MenuItem LinesMenu(TextEditor editor, Action<bool> moveLines)
         {
-            var lines = new MenuItem { Header = "Lines", Icon = "\uE8A4" };
-            void Add(string header, string? gesture, Func<string, int, int, TextEdit?> operation, string? icon = null) =>
-                lines.Items.Add(Item(header, gesture, () => Run(editor, operation), icon: icon));
+            // Move and Join are checked cheaply from the block's edges; the whole-note items (sort,
+            // dedupe, trim) stay enabled, since checking them would mean sorting on every open.
+            string text = editor.Document.Text;
+            var (blockStart, blockEnd) = TextLines.Block(text, editor.SelectionStart, editor.SelectionLength);
+            bool firstLine = blockStart == 0;
+            bool lastLine = blockEnd >= text.Length;
+            bool oneLine = text.IndexOfAny(new[] { '\r', '\n' }, blockStart, blockEnd - blockStart) < 0;
 
-            Add("Duplicate", "Ctrl+D", (t, s, l) => LineOperations.Duplicate(t, s, l), "\uE8C8");
-            lines.Items.Add(Item("Move up", "Ctrl+Shift+Up", () => moveLines(false), icon: "\uE74A"));
-            lines.Items.Add(Item("Move down", "Ctrl+Shift+Down", () => moveLines(true), icon: "\uE74B"));
-            Add("Join lines", "Ctrl+J", LineOperations.Join);
+            var lines = new MenuItem { Header = "Lines", Icon = "\uE8A4" };
+            void Add(string header, string? gesture, Func<string, int, int, TextEdit?> operation, string? icon = null, bool enabled = true) =>
+                lines.Items.Add(Item(header, gesture, () => RunLineOperation(editor, operation), enabled, icon));
+
+            lines.Items.Add(Item("Duplicate", "Ctrl+D", () => Duplicate(editor), icon: "\uE8C8"));
+            lines.Items.Add(Item("Move up", "Ctrl+Shift+Up", () => moveLines(false), !firstLine, "\uE74A"));
+            lines.Items.Add(Item("Move down", "Ctrl+Shift+Down", () => moveLines(true), !lastLine, "\uE74B"));
+            Add("Join lines", "Ctrl+J", LineOperations.Join, enabled: !(oneLine && lastLine));
             lines.Items.Add(new Separator());
             Add("Sort ascending", null, (t, s, l) => LineOperations.Sort(t, s, l, false, System.Globalization.CultureInfo.CurrentCulture), "\uE8CB");
             Add("Sort descending", null, (t, s, l) => LineOperations.Sort(t, s, l, true, System.Globalization.CultureInfo.CurrentCulture));
@@ -132,8 +171,18 @@ namespace Kil0bitSystemMonitor.Pad
             return lines;
         }
 
+        /// <summary>
+        /// Ctrl+D and Lines ▸ Duplicate: the selection, or the caret line. A rectangular selection
+        /// duplicates every line it touches instead: its flat span would be garbage.
+        /// </summary>
+        public static void Duplicate(TextEditor editor)
+        {
+            if (editor.TextArea.Selection is RectangleSelection) RunLineOperation(editor, (t, s, l) => LineOperations.DuplicateLines(t, s, l));
+            else RunLineOperation(editor, (t, s, l) => LineOperations.Duplicate(t, s, l));
+        }
+
         /// <summary>Runs a line operation on the editor's text and selection; a null result changes nothing. True when it edited.</summary>
-        public static bool Run(TextEditor editor, Func<string, int, int, TextEdit?> operation)
+        public static bool RunLineOperation(TextEditor editor, Func<string, int, int, TextEdit?> operation)
         {
             if (editor.IsReadOnly) return false;
             if (operation(editor.Document.Text, editor.SelectionStart, editor.SelectionLength) is not TextEdit edit) return false;

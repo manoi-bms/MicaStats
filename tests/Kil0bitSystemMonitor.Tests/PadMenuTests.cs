@@ -108,28 +108,111 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void Editing_shortcuts_ignore_a_focused_text_box() => WithWindow((window, env) =>
         {
-            window.Editor.Document.Text = "one";
-            window.FindBar.Open(replace: false);
-            System.Windows.Input.Keyboard.Focus(window.FindBar.FindBox);
+            // The rule itself: a headless window never really moves the keyboard focus.
+            Assert.False(window.EditingKeysAllowedFor(new System.Windows.Controls.TextBox()));
+            Assert.False(window.EditingKeysAllowedFor(window.FindBar.FindBox));
+            Assert.True(window.EditingKeysAllowedFor(window.Editor.TextArea));
+            Assert.True(window.EditingKeysAllowedFor(null));
 
-            if (System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.TextBox)
-            {
-                Assert.False(window.HandleShortcut(Key.D, ModifierKeys.Control));
-                Assert.Equal("one", window.Editor.Document.Text);
-            }
+            window.PreviewPanel.Visibility = Visibility.Visible;
+            Assert.False(window.EditingKeysAllowedFor(window.Editor.TextArea));
         });
 
         [Fact]
-        public void Editing_shortcuts_ignore_the_note_while_the_history_preview_covers_it() => WithWindow((window, env) =>
+        public void Editing_and_bookmark_keys_are_swallowed_while_the_history_preview_covers_the_note() => WithWindow((window, env) =>
         {
             window.Editor.Document.Text = "one\ntwo";
             window.Editor.CaretOffset = 0;
             // Set directly: showing a real version needs a snapshot and the history panel's selection.
             window.PreviewPanel.Visibility = Visibility.Visible;
 
-            Assert.False(window.HandleShortcut(Key.D, ModifierKeys.Control));
-            Assert.False(window.HandleShortcut(Key.J, ModifierKeys.Control));
+            var ctrlShift = ModifierKeys.Control | ModifierKeys.Shift;
+            foreach (var (key, modifiers) in new[] { (Key.D, ModifierKeys.Control), (Key.J, ModifierKeys.Control), (Key.Down, ctrlShift),
+                                                     (Key.Up, ctrlShift), (Key.F2, ModifierKeys.Control), (Key.F2, ModifierKeys.None), (Key.F2, ModifierKeys.Shift) })
+            {
+                // Handled, so AvalonEdit's own Ctrl+D (delete line) never reaches the hidden note either.
+                Assert.True(window.HandleShortcut(key, modifiers), key + " " + modifiers);
+            }
             Assert.Equal("one\ntwo", window.Editor.Document.Text);
+            Assert.Empty(window.BookmarkLines);
+            Assert.Equal(0, window.Editor.CaretOffset);
+        });
+
+        [Fact]
+        public void Ctrl_d_on_a_rectangle_duplicates_the_lines_it_touches() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Text = "123456\n789012\n345678";
+            var area = window.Editor.TextArea;
+            // An unshown window has no layout, and a rectangle is measured in visual columns.
+            window.Measure(new System.Windows.Size(800, 600));
+            window.Arrange(new System.Windows.Rect(0, 0, 800, 600));
+            window.UpdateLayout();
+            area.TextView.EnsureVisualLines();
+            area.Selection = new ICSharpCode.AvalonEdit.Editing.RectangleSelection(
+                area, new ICSharpCode.AvalonEdit.TextViewPosition(1, 2), new ICSharpCode.AvalonEdit.TextViewPosition(2, 5));
+
+            Assert.True(window.HandleShortcut(Key.D, ModifierKeys.Control));
+            Assert.Equal("123456\n789012\n123456\n789012\n345678", window.Editor.Document.Text);
+        });
+
+        [Fact]
+        public void Move_and_join_are_disabled_where_they_cannot_apply() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Text = "one\ntwo\nthree";
+            MenuItem Lines(string header)
+            {
+                window.RefreshEditorMenu();
+                return ItemOf(window.EditorMenu, "Lines").Items.OfType<MenuItem>().Single(m => (string)m.Header == header);
+            }
+
+            window.Editor.CaretOffset = 0;                                        // first line
+            Assert.False(Lines("Move up").IsEnabled);
+            Assert.True(Lines("Move down").IsEnabled);
+            Assert.True(Lines("Join lines").IsEnabled);
+            Assert.True(Lines("Sort ascending").IsEnabled);                       // whole-note items stay on
+
+            window.Editor.CaretOffset = window.Editor.Document.TextLength;        // last line
+            Assert.True(Lines("Move up").IsEnabled);
+            Assert.False(Lines("Move down").IsEnabled);
+            Assert.False(Lines("Join lines").IsEnabled);
+            Assert.True(Lines("Trim trailing whitespace").IsEnabled);
+
+            window.Editor.Select(4, 9);                                           // "two\nthree": two lines still join
+            Assert.True(Lines("Join lines").IsEnabled);
+            Assert.False(Lines("Move down").IsEnabled);
+        });
+
+        [Fact]
+        public void Clear_bookmarks_is_disabled_when_the_note_has_none() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Text = "a\nb";
+            Assert.False(ItemOf(window.BuildMainMenu(), "Clear bookmarks").IsEnabled);
+
+            window.ToggleBookmark();
+            Assert.True(ItemOf(window.BuildMainMenu(), "Clear bookmarks").IsEnabled);
+        });
+
+        [Fact]
+        public void A_menu_command_that_throws_is_logged_instead_of_closing_micastats() => UiThread.Run(() =>
+        {
+            var messages = new System.Collections.Generic.List<string>();
+            var previous = EditorMenus.Warn;
+            EditorMenus.Warn = messages.Add;
+            try
+            {
+                var item = EditorMenus.Item("Boom", null, () => throw new InvalidOperationException("kaboom"));
+                Click(item);                                                      // does not throw
+                Assert.Contains("kaboom", Assert.Single(messages));
+
+                // The same guard wraps the window's shortcuts: false tells the caller it threw.
+                Assert.False(EditorMenus.Guard("A shortcut", () => throw new InvalidOperationException("again")));
+                Assert.True(EditorMenus.Guard("A shortcut", () => { }));
+                Assert.Equal(2, messages.Count);
+            }
+            finally
+            {
+                EditorMenus.Warn = previous;
+            }
         });
 
         [Fact]

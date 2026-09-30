@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Rendering;
+using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 
 using Brush = System.Windows.Media.Brush;
@@ -25,7 +26,45 @@ namespace Kil0bitSystemMonitor.Pad
 
         public KnownLayer Layer => KnownLayer.Background;
 
+        /// <summary>Where a marking failure is logged, once. Tests replace it, so they never write the real log.</summary>
+        internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("pad", message);
+
+        private bool _warned;
+
+        /// <summary>Draws the boxes; a failure clears them and is logged (spec "Error handling"), never thrown into rendering.</summary>
         public void Draw(TextView textView, DrawingContext drawingContext)
+        {
+            try
+            {
+                DrawBoxes(textView, drawingContext);
+            }
+            catch (Exception ex)
+            {
+                ReportFailure(ex);
+            }
+        }
+
+        /// <summary>
+        /// Occurrence marking failed: the marks are cleared and the first failure is logged. Also
+        /// used by the window when finding the occurrences fails.
+        /// </summary>
+        internal void ReportFailure(Exception ex)
+        {
+            Offsets = Array.Empty<int>();
+            Length = 0;
+            if (_warned) return;
+            _warned = true;
+            try
+            {
+                Warn("Marking occurrences failed (" + ex.GetType().Name + ": " + ex.Message + "); the marks were cleared");
+            }
+            catch (Exception)
+            {
+                // Logging is best effort; it must not throw into rendering either.
+            }
+        }
+
+        private void DrawBoxes(TextView textView, DrawingContext drawingContext)
         {
             if (Offsets.Count == 0 || !textView.VisualLinesValid || textView.Document == null) return;
             var lines = textView.VisualLines;

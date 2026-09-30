@@ -36,6 +36,19 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal((2, 2), (edit.SelectionStart, edit.SelectionLength));
         }
 
+        [Fact]
+        public void Duplicate_lines_copies_every_line_a_rectangle_touches_below_them()
+        {
+            string text = "abcd\nefgh\nijkl";
+            var edit = LineOperations.DuplicateLines(text, 1, 7);             // line 1 column 2 to line 2 column 4
+            string result = Apply(text, edit);
+            Assert.Equal("abcd\nefgh\nabcd\nefgh\nijkl", result);
+            Assert.Equal("abcd\nefgh", result.Substring(edit.SelectionStart, edit.SelectionLength));
+
+            // Ending at the start of the last line still takes that line; no break after it: the note's own.
+            Assert.Equal("a\r\nb\r\na\r\nb", Apply("a\r\nb", LineOperations.DuplicateLines("a\r\nb", 0, 3)));
+        }
+
         [Theory]
         [InlineData("a\nb\nc", 2, 0, "b\na\nc", 0)]
         [InlineData("a\r\nb\r\nc", 3, 0, "b\r\na\r\nc", 0)]

@@ -238,6 +238,9 @@ namespace Kil0bitSystemMonitor.Pad
             bool ctrl = modifiers == ModifierKeys.Control;
             bool ctrlShift = modifiers == (ModifierKeys.Control | ModifierKeys.Shift);
             bool alt = modifiers == ModifierKeys.Alt;
+            // Keys that act on the note's lines or its bookmarks.
+            bool noteKey = (ctrl && key is Key.D or Key.J or Key.F2) || (ctrlShift && key is Key.Up or Key.Down)
+                           || (modifiers is ModifierKeys.None or ModifierKeys.Shift && key == Key.F2);
 
             if (ctrl && key == Key.N) NewTab();
             else if (ctrl && key == Key.W) CloseActiveTab();
@@ -259,13 +262,16 @@ namespace Kil0bitSystemMonitor.Pad
             else if (ctrl && key == Key.G) ShowGoToLine();
             else if (modifiers == ModifierKeys.None && key == Key.Escape && FindBar.IsOpen) FindBar.Close();
             else if (ctrlShift && key == Key.H) ToggleHistory();
+            // Under the history preview the note keys do nothing: swallowed, so AvalonEdit's own
+            // Ctrl+D (delete line) cannot reach the hidden editor either. A focused text box keeps them.
+            else if (noteKey && PreviewPanel.Visibility == Visibility.Visible) return Keyboard.FocusedElement is not System.Windows.Controls.TextBox;
             else if (ctrl && key == Key.F2) ToggleBookmark();
             else if (modifiers == ModifierKeys.None && key == Key.F2) NextBookmark();
             else if (modifiers == ModifierKeys.Shift && key == Key.F2) PreviousBookmark();
-            else if (EditingKeysAllowed && ctrl && key == Key.D) Run(Editor, (t, s, l) => LineOperations.Duplicate(t, s, l));
+            else if (EditingKeysAllowed && ctrl && key == Key.D) Duplicate(Editor);
             else if (EditingKeysAllowed && ctrlShift && key == Key.Up) MoveLines(down: false);
             else if (EditingKeysAllowed && ctrlShift && key == Key.Down) MoveLines(down: true);
-            else if (EditingKeysAllowed && ctrl && key == Key.J) Run(Editor, LineOperations.Join);
+            else if (EditingKeysAllowed && ctrl && key == Key.J) RunLineOperation(Editor, LineOperations.Join);
             else return false;
             return true;
         }
@@ -275,8 +281,11 @@ namespace Kil0bitSystemMonitor.Pad
         /// rename) has the keyboard focus, and not while the history preview covers the note, so a
         /// shortcut never edits a line of the note the user cannot see.
         /// </summary>
-        private bool EditingKeysAllowed =>
-            Keyboard.FocusedElement is not System.Windows.Controls.TextBox && PreviewPanel.Visibility != Visibility.Visible;
+        private bool EditingKeysAllowed => EditingKeysAllowedFor(Keyboard.FocusedElement);
+
+        /// <summary>The rule behind <see cref="EditingKeysAllowed"/>, for a given focused element; for tests.</summary>
+        internal bool EditingKeysAllowedFor(object? focused) =>
+            focused is not System.Windows.Controls.TextBox && PreviewPanel.Visibility != Visibility.Visible;
 
         /// <summary>Turns the close button into a hide unless the window is really exiting.</summary>
         protected override void OnClosing(CancelEventArgs e)
@@ -330,15 +339,25 @@ namespace Kil0bitSystemMonitor.Pad
             string word = "";
             (IReadOnlyList<int> Offsets, bool Capped) found = (Array.Empty<int>(), false);
 
-            if (document != null && document.TextLength <= PadLanguages.MaxFormattedChars
-                && Editor.SelectionLength > 0 && Editor.SelectionLength <= OccurrenceFinder.MaxWordLength)
+            try
             {
-                string text = document.Text;
-                if (OccurrenceFinder.IsWholeWordSelection(text, Editor.SelectionStart, Editor.SelectionLength))
+                if (document != null && document.TextLength <= PadLanguages.MaxFormattedChars
+                    && Editor.SelectionLength > 0 && Editor.SelectionLength <= OccurrenceFinder.MaxWordLength)
                 {
-                    word = Editor.SelectedText;
-                    found = OccurrenceFinder.FindAll(text, word);
+                    string text = document.Text;
+                    if (OccurrenceFinder.IsWholeWordSelection(text, Editor.SelectionStart, Editor.SelectionLength))
+                    {
+                        word = Editor.SelectedText;
+                        found = OccurrenceFinder.FindAll(text, word);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                // Spec "Error handling": marking never throws into the UI; the marks clear, logged once.
+                _occurrences.ReportFailure(ex);
+                word = "";
+                found = (Array.Empty<int>(), false);
             }
 
             _occurrences.Offsets = found.Offsets;
@@ -523,7 +542,7 @@ namespace Kil0bitSystemMonitor.Pad
             int first = document.GetLineByOffset(blockStart).LineNumber;
             int last = document.GetLineByOffset(blockEnd).LineNumber;
 
-            if (!Run(Editor, down ? LineOperations.MoveDown : LineOperations.MoveUp) || marked.Count == 0) return;
+            if (!RunLineOperation(Editor, down ? LineOperations.MoveDown : LineOperations.MoveUp) || marked.Count == 0) return;
             _bookmarks.Remap(document, marked, down
                 ? line => line >= first && line <= last ? line + 1 : line == last + 1 ? first : line
                 : line => line >= first && line <= last ? line - 1 : line == first - 1 ? last : line);
@@ -532,7 +551,9 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnBookmarksChanged()
         {
             _bookmarkMargin.InvalidateVisual();
-            if (_shown == null) return;
+            // Inside ShowNote the shown note is set before the editor gets its document: never save
+            // one note's bookmarks under another.
+            if (_shown == null || !_docs.TryGetValue(_shown.Id, out var shownDocument) || !ReferenceEquals(shownDocument, Editor.Document)) return;
             _workspace.SetBookmarks(_shown, _bookmarks.Lines(Editor.Document));
             _workspace.SaveSession();
         }
@@ -1249,7 +1270,12 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (HandleShortcut(e.Key == Key.System ? e.SystemKey : e.Key, Keyboard.Modifiers)) e.Handled = true;
+            Key key = e.Key == Key.System ? e.SystemKey : e.Key;
+            var modifiers = Keyboard.Modifiers;
+            bool handled = false;
+            // A shortcut that throws is logged and its key handled, never thrown into MicaStats.
+            if (!Guard("The shortcut " + modifiers + "+" + key, () => handled = HandleShortcut(key, modifiers))) handled = true;
+            if (handled) e.Handled = true;
         }
 
         private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -1259,7 +1285,10 @@ namespace Kil0bitSystemMonitor.Pad
             e.Handled = true;
         }
 
-        private void OnMenuButtonClick(object sender, RoutedEventArgs e)
+        private void OnMenuButtonClick(object sender, RoutedEventArgs e) => BuildMainMenu().IsOpen = true;
+
+        /// <summary>The ☰ menu, built fresh for each open; for tests (opening it needs a shown window).</summary>
+        internal ContextMenu BuildMainMenu()
         {
             var menu = NewMenu(MenuButton, PlacementMode.Bottom);
             menu.Items.Add(Item("New note", "Ctrl+N", NewTab, icon: "\uE710"));
@@ -1273,7 +1302,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true), icon: "\uE8AB"));
             menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine, icon: "\uE8AD"));
             menu.Items.Add(Item("History", "Ctrl+Shift+H", ToggleHistory, icon: "\uE81C"));
-            menu.Items.Add(Item("Clear bookmarks", null, ClearBookmarks));
+            menu.Items.Add(Item("Clear bookmarks", null, ClearBookmarks, enabled: BookmarkLines.Count > 0));
             menu.Items.Add(new Separator());
             menu.Items.Add(Check("Word wrap", "Alt+Z", _config.PadWordWrap, ToggleWordWrap));
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,
@@ -1285,7 +1314,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Open notes folder", null, OpenNotesFolder, icon: "\uE838"));
             menu.Items.Add(Item("Settings", null, () => OpenSettingsRequested?.Invoke(), icon: "\uE713"));
-            menu.IsOpen = true;
+            return menu;
         }
 
         internal ContextMenu NewMenu(UIElement target, PlacementMode placement)
@@ -1493,6 +1522,10 @@ namespace Kil0bitSystemMonitor.Pad
             Editor.FontSize = _config.PadFontSize * _workspace.Session.Zoom;
             Editor.WordWrap = _config.PadWordWrap;
             Editor.ShowLineNumbers = _config.PadShowLineNumbers;
+            // Turning line numbers on puts AvalonEdit's margin at the front: the dots stay left of them.
+            var margins = Editor.TextArea.LeftMargins;
+            int at = margins.IndexOf(_bookmarkMargin);
+            if (at > 0) margins.Move(at, 0);
         }
 
         // ---- status bar ---------------------------------------------------------------------

@@ -28,6 +28,21 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return new TextEdit(lineEnd, 0, newline + line, lineEnd + newline.Length + (start - lineStart), 0);
         }
 
+        /// <summary>
+        /// Copies every whole line from <paramref name="start"/>'s to the end's, both included, below
+        /// them and selects the copy. For a rectangular selection, whose end may sit at the start of
+        /// the last line it touches.
+        /// </summary>
+        public static TextEdit DuplicateLines(string text, int start, int length)
+        {
+            int blockStart = TextLines.LineStart(text, start);
+            int blockEnd = TextLines.LineEnd(text, start + length);
+            string block = text.Substring(blockStart, blockEnd - blockStart);
+            int breakLength = TextLines.BreakLength(text, blockEnd);
+            string newline = breakLength > 0 ? text.Substring(blockEnd, breakLength) : TextLines.NewlineOf(text);
+            return new TextEdit(blockEnd, 0, newline + block, blockEnd + newline.Length, block.Length);
+        }
+
         /// <summary>Moves the selected lines above the line before them; null on the first line.</summary>
         public static TextEdit? MoveUp(string text, int start, int length)
         {

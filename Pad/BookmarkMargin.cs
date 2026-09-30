@@ -46,7 +46,8 @@ namespace Kil0bitSystemMonitor.Pad
             foreach (var visual in view.VisualLines)
             {
                 if (!lines.Contains(visual.FirstDocumentLine.LineNumber)) continue;
-                double y = visual.VisualTop - view.VerticalOffset + visual.Height / 2;
+                // The first row: a wrapped line's number sits there, not halfway down the paragraph.
+                double y = visual.VisualTop - view.VerticalOffset + visual.TextLines[0].Height / 2;
                 drawingContext.DrawEllipse(brush, null, new Point(6, y), 3.5, 3.5);
             }
         }

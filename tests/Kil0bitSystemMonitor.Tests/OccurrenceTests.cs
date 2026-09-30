@@ -101,6 +101,34 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Visibility.Collapsed, window.OccurrenceText.Visibility);
         });
 
+        /// <summary>Offsets that fail when read, standing in for any bug in the drawing.</summary>
+        private sealed class BrokenOffsets : System.Collections.Generic.IReadOnlyList<int>
+        {
+            public int this[int index] => throw new InvalidOperationException("broken");
+            public int Count => throw new InvalidOperationException("broken");
+            public System.Collections.Generic.IEnumerator<int> GetEnumerator() => throw new InvalidOperationException("broken");
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        }
+
+        [Fact]
+        public void A_failure_while_drawing_the_marks_clears_them_and_is_logged_once() => UiThread.Run(() =>
+        {
+            var messages = new System.Collections.Generic.List<string>();
+            var marks = new OccurrenceHighlighter { Warn = messages.Add, Offsets = new BrokenOffsets(), Length = 3 };
+            var editor = new ICSharpCode.AvalonEdit.TextEditor { Text = "cat cat" };
+            var visual = new System.Windows.Media.DrawingVisual();
+
+            using (var context = visual.RenderOpen())
+            {
+                marks.Draw(editor.TextArea.TextView, context);                // does not throw
+                Assert.Empty(marks.Offsets);
+
+                marks.Offsets = new BrokenOffsets();
+                marks.Draw(editor.TextArea.TextView, context);
+            }
+            Assert.Contains("broken", Assert.Single(messages));
+        });
+
         [Fact]
         public void The_marks_follow_the_theme() => PadLanguageWindowTests.WithWindow((window, env, config) =>
         {

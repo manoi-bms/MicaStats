@@ -178,6 +178,10 @@
                         <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Copy all" Click="OnPreviewCopyClick" />
                         <Button x:Name="RestoreButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Restore"
                                 Foreground="{DynamicResource Pad.Accent}" Click="OnPreviewRestoreClick" />
+                        <Button x:Name="CompareButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Compare with current"
+                                ToolTip="Show what changed between this version and the note as it is now" Click="OnCompareClick" />
+                        <TextBlock x:Name="DiffSummary" DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="12"
+                                   Margin="8,0" Visibility="Collapsed" />
                         <TextBlock x:Name="PreviewText" VerticalAlignment="Center" FontSize="12" />
                     </DockPanel>
                 </Border>

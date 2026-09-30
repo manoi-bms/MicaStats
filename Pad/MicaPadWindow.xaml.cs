@@ -88,6 +88,7 @@ namespace Kil0bitSystemMonitor.Pad
             FindBar.Attach(Editor);
             _language = new EditorLanguage(Editor, () => _palette, folds: true);
             _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette, folds: false);
+            _diff = new DiffPreview(PreviewEditor, () => _palette);
             _autoClose = new AutoCloseHandler(Editor, () => _config.PadAutoClose);
             _bookmarkMargin = new BookmarkMargin(() => _bookmarks.Lines(Editor.Document), () => _palette);
             Editor.TextArea.LeftMargins.Insert(0, _bookmarkMargin);
@@ -390,6 +391,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Stops the timer and unhooks from long-lived objects. Safe to call twice.</summary>
         private void Detach()
         {
+            _previewGeneration++;
             _tick.Stop();
             _occurrenceTimer?.Stop();
             _statusTimer?.Stop();
@@ -1196,18 +1198,26 @@ namespace Kil0bitSystemMonitor.Pad
                 return;
             }
 
+            _previewVersion = text;
             PreviewEditor.FontFamily = Editor.FontFamily;
             PreviewEditor.FontSize = Editor.FontSize;
             PreviewEditor.WordWrap = Editor.WordWrap;
-            PreviewEditor.Text = text;
-            _previewLanguage.Apply(PadLanguages.Resolve(_shown?.Meta.Language, _shown?.Meta.SourcePath, _config.PadMarkdown, text.Length).Effective);
             PreviewText.Text = "Viewing " + HistoryRows.When(snapshot.Stamp, DateTime.Now);
             PreviewPanel.Visibility = Visibility.Visible;
+            // Compare stays on while the user walks through versions.
+            if (_comparing) StartCompare();
+            else ShowPreviewVersion();
         }
 
         private void EndPreview()
         {
+            _previewGeneration++;
+            _comparing = false;
+            _diff.Hide();
+            CompareButton.Content = "Compare with current";
+            DiffSummary.Visibility = Visibility.Collapsed;
             PreviewPanel.Visibility = Visibility.Collapsed;
+            _previewVersion = "";
             PreviewEditor.Text = "";
             HistoryPanel.ClearSelection();
         }
@@ -1220,10 +1230,10 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnPreviewCopyClick(object sender, RoutedEventArgs e)
         {
-            if (PreviewEditor.Text.Length == 0) return;
+            if (_previewVersion.Length == 0) return;
             try
             {
-                Clipboard.SetText(PreviewEditor.Text);
+                Clipboard.SetText(_previewVersion);
             }
             catch (System.Runtime.InteropServices.ExternalException ex)
             {
@@ -1236,11 +1246,105 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (_shown == null || PreviewPanel.Visibility != Visibility.Visible) return;
 
-            string text = PreviewEditor.Text;
+            string text = _previewVersion;
             _workspace.SnapshotNow(_shown, SnapshotReason.BeforeReplace);
             ReplaceText(_shown, text, markUnsaved: true);
             ShowHistory();
             Editor.Focus();
+        }
+
+        // ---- history compare -----------------------------------------------------------------
+
+        private DiffPreview _diff = null!;
+
+        /// <summary>The previewed version's own text: Restore and Copy all use it, whatever the preview shows.</summary>
+        private string _previewVersion = "";
+
+        /// <summary>Bumped whenever what the preview should show changes, so a compare that finishes late is dropped.</summary>
+        private int _previewGeneration;
+
+        private bool _comparing;
+
+        /// <summary>The compare running off the UI thread, or a finished task; for tests.</summary>
+        internal Task CompareTask { get; private set; } = Task.CompletedTask;
+
+        /// <summary>The compare view of the preview; for tests.</summary>
+        internal DiffPreview Diff => _diff;
+
+        private void OnCompareClick(object sender, RoutedEventArgs e) => ToggleCompare();
+
+        /// <summary>Compare with current (spec 5.2): the preview shows the version, or its line diff against the note now.</summary>
+        internal void ToggleCompare()
+        {
+            if (PreviewPanel.Visibility != Visibility.Visible) return;
+            _comparing = !_comparing;
+            if (_comparing) StartCompare();
+            else ShowPreviewVersion();
+        }
+
+        /// <summary>The preview shows the version itself, and the banner offers the compare.</summary>
+        private void ShowPreviewVersion()
+        {
+            _previewGeneration++;
+            ShowVersionText();
+            CompareButton.Content = "Compare with current";
+            DiffSummary.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>The version's own text in the preview, in the note's language.</summary>
+        private void ShowVersionText()
+        {
+            _diff.Hide();
+            PreviewEditor.Text = _previewVersion;
+            _previewLanguage.Apply(PadLanguages.Resolve(_shown?.Meta.Language, _shown?.Meta.SourcePath, _config.PadMarkdown, _previewVersion.Length).Effective);
+        }
+
+        /// <summary>
+        /// Diffs the version against the note off the UI thread (up to a second for 1 MB) and shows
+        /// the result on the dispatcher, unless the preview moved on meanwhile: another version,
+        /// Back, compare turned off, or the window closing.
+        /// </summary>
+        private void StartCompare()
+        {
+            int generation = ++_previewGeneration;
+            ShowVersionText();                        // the version stays on screen until the diff is ready
+            CompareButton.Content = "Show this version";
+            DiffSummary.Text = "Comparing…";
+            DiffSummary.Visibility = Visibility.Visible;
+
+            string version = _previewVersion;
+            string current = Editor.Document.Text;
+            var dispatcher = Dispatcher;
+            CompareTask = Task.Run(() =>
+            {
+                DiffOutcome? outcome = null;
+                string? failure = null;
+                try
+                {
+                    outcome = HistoryDiff.Compare(version, current);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex.GetType().Name + ": " + ex.Message;
+                }
+                // Guarded: MicaStats has no dispatcher exception handler, so nothing here may throw.
+                dispatcher.BeginInvoke(new Action(() => Guard("Showing a compare", () => ShowCompare(generation, outcome, failure))));
+            });
+        }
+
+        private void ShowCompare(int generation, DiffOutcome? outcome, string? failure)
+        {
+            if (generation != _previewGeneration || !_comparing || PreviewPanel.Visibility != Visibility.Visible) return;
+            if (outcome == null)
+            {
+                DiagnosticsLog.Warn("pad", "Comparing a version failed (" + failure + ")");
+                DiffSummary.Text = "Could not compare";
+                return;
+            }
+            DiffSummary.Text = outcome.Summary;
+            if (outcome.TooLarge) return;             // the version itself stays on screen
+            _previewLanguage.Apply(PadLanguages.Plain);
+            _diff.Show(outcome.Rows);
         }
 
         private void OnClosedNotesClick(object sender, RoutedEventArgs e)

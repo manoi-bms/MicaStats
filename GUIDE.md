@@ -175,6 +175,12 @@ that replaces the whole text (reload, restore, Replace All, a line-ending change
 or **History** in the status bar lists them by day. Pick one to preview it, then **Restore**,
 **Copy all** or **Back**. Restoring is one step: **Ctrl+Z** undoes it.
 
+**Compare with current** shows the version against the note as it is now: removed lines on red,
+added lines on green, with both line numbers and − or + in the margin, and a count such as
+`+12 −3 lines`. Click it again (**Show this version**) for the version itself; **Restore** always
+restores the version. Notes or versions over 1 MB, or that differ on tens of thousands of lines,
+say *Too large to compare*.
+
 Every version from the last day is kept; then one per hour for a week; then one per day up to the
 limit in **Settings → MicaPad** (90 days by default). The newest version is always kept.
 

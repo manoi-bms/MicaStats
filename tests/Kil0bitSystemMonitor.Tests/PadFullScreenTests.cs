@@ -60,12 +60,81 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Entering_from_maximized_saves_maximized() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.WindowState = WindowState.Maximized;
+            window.ToggleFullScreen();
+            window.PrepareForExit();
+            Assert.True(env.Workspace.Session.Maximized);
+        });
+
+        [Fact]
         public void The_menu_offers_full_screen_with_its_key() => PadLanguageWindowTests.WithWindow((window, env, config) =>
         {
             var menu = window.BuildMainMenu();
             var item = menu.Items.OfType<System.Windows.Controls.MenuItem>().Single(m => (string)m.Header == "Full screen");
             Assert.Equal("F11", item.InputGestureText);
             Assert.False(item.IsChecked);
+        });
+
+        [Fact]
+        public void The_menu_item_reads_checked_while_full_screen() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.ToggleFullScreen();
+            var item = PadMenuTests.ItemOf(window.BuildMainMenu(), "Full screen");
+            Assert.True(item.IsChecked);
+        });
+
+        [Fact]
+        public void Leaving_maximized_for_normal_ends_full_screen_with_its_frame() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.WindowState = WindowState.Normal;
+            window.Left = 120;
+            window.Top = 80;
+            window.Width = 820;
+            window.Height = 560;
+            var style = window.WindowStyle;
+            var resize = window.ResizeMode;
+            window.ToggleFullScreen();
+
+            window.WindowState = WindowState.Normal;          // Win+Down, a restore, or a reopen from the tray
+            window.FollowWindowState();                       // what StateChanged runs; WPF raises it only once shown
+
+            Assert.False(window.IsFullScreen);
+            Assert.Equal(style, window.WindowStyle);
+            Assert.Equal(resize, window.ResizeMode);
+            Assert.Equal(WindowState.Normal, window.WindowState);
+            Assert.Equal((120.0, 80.0, 820.0, 560.0), (window.Left, window.Top, window.Width, window.Height));
+        });
+
+        [Fact]
+        public void Minimizing_keeps_full_screen() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.ToggleFullScreen();
+            window.WindowState = WindowState.Minimized;
+            window.FollowWindowState();
+            Assert.True(window.IsFullScreen);
+
+            window.WindowState = WindowState.Maximized;       // back from the taskbar
+            window.FollowWindowState();
+            Assert.True(window.IsFullScreen);
+            Assert.Equal(WindowStyle.None, window.WindowStyle);
+        });
+
+        [Fact]
+        public void Closing_hides_the_window_windowed() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.WindowState = WindowState.Normal;
+            var style = window.WindowStyle;
+            window.ToggleFullScreen();
+
+            window.Close();                                    // not exiting: Alt+F4 or the close button hides MicaPad
+
+            Assert.False(env.Workspace.Session.WindowOpen);   // hidden, not closed
+            Assert.False(window.IsFullScreen);
+            Assert.Equal(style, window.WindowStyle);
+            Assert.Equal(WindowState.Normal, window.WindowState);
+            Assert.False(env.Workspace.Session.Maximized);
         });
     }
 }

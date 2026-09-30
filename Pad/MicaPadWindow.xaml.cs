@@ -304,7 +304,8 @@ namespace Kil0bitSystemMonitor.Pad
             if (!_exiting)
             {
                 e.Cancel = true;
-                CaptureViewState();
+                CaptureViewState();                    // the placement from before full screen, if any
+                if (IsFullScreen) ToggleFullScreen();  // so MicaPad comes back windowed (GUIDE)
                 _workspace.Session.WindowOpen = false;
                 _workspace.FlushPending();
                 _workspace.SaveSession();
@@ -1584,9 +1585,11 @@ namespace Kil0bitSystemMonitor.Pad
         {
             StatusMessage.Text = message;
             StatusMessage.Visibility = Visibility.Visible;
-            _statusTimer ??= new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(5) };
-            _statusTimer.Tick -= OnStatusTimer;
-            _statusTimer.Tick += OnStatusTimer;
+            if (_statusTimer == null)
+            {
+                _statusTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(5) };
+                _statusTimer.Tick += OnStatusTimer;
+            }
             _statusTimer.Stop();
             _statusTimer.Start();
         }
@@ -1806,6 +1809,9 @@ namespace Kil0bitSystemMonitor.Pad
 
         internal bool IsFullScreen => _beforeFullScreen != null;
 
+        /// <summary>True while entering full screen passes through Normal on its way to Maximized.</summary>
+        private bool _enteringFullScreen;
+
         /// <summary>
         /// F11 (spec 4.3): no title bar, the whole monitor (a borderless maximized WPF window covers
         /// the taskbar), tabs, find bar and status bar kept. Again: the previous placement. Never
@@ -1815,16 +1821,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (_beforeFullScreen is { } before)
             {
-                _beforeFullScreen = null;
-                WindowState = WindowState.Normal;
-                WindowStyle = before.Style;
-                ResizeMode = before.Resize;
-                if (!double.IsNaN(before.Bounds.Left)) Left = before.Bounds.Left;
-                if (!double.IsNaN(before.Bounds.Top)) Top = before.Bounds.Top;
-                if (!double.IsNaN(before.Bounds.Width)) Width = before.Bounds.Width;
-                if (!double.IsNaN(before.Bounds.Height)) Height = before.Bounds.Height;
-                WindowState = before.State;
-                PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
+                LeaveFullScreen(before.State);
                 return;
             }
 
@@ -1832,10 +1829,52 @@ namespace Kil0bitSystemMonitor.Pad
                 ? new Rect(Left, Top, Width, Height)
                 : RestoreBounds;
             _beforeFullScreen = (WindowStyle, ResizeMode, WindowState, bounds);
-            WindowState = WindowState.Normal;      // style changes apply cleanly from Normal
-            WindowStyle = WindowStyle.None;
-            ResizeMode = ResizeMode.NoResize;
-            WindowState = WindowState.Maximized;
+            _enteringFullScreen = true;
+            try
+            {
+                WindowState = WindowState.Normal;      // style changes apply cleanly from Normal
+                WindowStyle = WindowStyle.None;
+                ResizeMode = ResizeMode.NoResize;
+                WindowState = WindowState.Maximized;
+            }
+            finally
+            {
+                _enteringFullScreen = false;
+            }
+        }
+
+        /// <summary>Puts back the frame and bounds from before full screen, in <paramref name="state"/>.</summary>
+        private void LeaveFullScreen(WindowState state)
+        {
+            if (_beforeFullScreen is not { } before) return;
+            _beforeFullScreen = null;
+            WindowState = WindowState.Normal;
+            WindowStyle = before.Style;
+            ResizeMode = before.Resize;
+            if (!double.IsNaN(before.Bounds.Left)) Left = before.Bounds.Left;
+            if (!double.IsNaN(before.Bounds.Top)) Top = before.Bounds.Top;
+            if (!double.IsNaN(before.Bounds.Width)) Width = before.Bounds.Width;
+            if (!double.IsNaN(before.Bounds.Height)) Height = before.Bounds.Height;
+            WindowState = state;
+            PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
+        }
+
+        protected override void OnStateChanged(EventArgs e)
+        {
+            base.OnStateChanged(e);
+            FollowWindowState();
+        }
+
+        /// <summary>
+        /// Win+Down, a restore, or a reopen from the tray (which un-minimizes to Normal) takes a full
+        /// screen window out of Maximized. Full screen ends with it; otherwise the window would stay
+        /// borderless at Normal size, with no title bar to move or resize it. Minimizing keeps it.
+        /// Runs on StateChanged, which WPF raises only for a shown window; tests call it directly.
+        /// </summary>
+        internal void FollowWindowState()
+        {
+            if (!_enteringFullScreen && IsFullScreen && WindowState == WindowState.Normal)
+                LeaveFullScreen(WindowState.Normal);
         }
 
         private void ApplyPlacement()

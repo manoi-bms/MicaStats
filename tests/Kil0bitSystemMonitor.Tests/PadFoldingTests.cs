@@ -77,6 +77,36 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Empty(BraceFolding.Compute(stray, BraceSyntax.For("javascript")));
         }
 
+        [Theory]
+        [InlineData("var p = @\"C:\\dir\\\"; {\n}")]
+        [InlineData("var p = $@\"{a}\\\"; {\n}")]
+        [InlineData("var p = @$\"{a}\\\"; {\n}")]
+        [InlineData("var q = @\"say \"\"{\"\" \\\"; {\n}")]
+        public void CSharp_verbatim_strings_take_backslash_literally_and_double_their_quotes(string cs)
+        {
+            var folds = BraceFolding.Compute(cs, BraceSyntax.For("csharp"));
+            Assert.Equal(new[] { "{\n}" }, Folded(cs, folds));
+        }
+
+        [Fact]
+        public void A_CSharp_verbatim_string_may_span_lines()
+        {
+            string cs = "var s = @\"\n{\n}\n\";";
+            Assert.Empty(BraceFolding.Compute(cs, BraceSyntax.For("csharp")));
+            // Other C-like languages have no verbatim strings: there the braces are code.
+            Assert.Single(BraceFolding.Compute(cs, BraceSyntax.For("java")));
+        }
+
+        [Theory]
+        [InlineData("if ($a -eq 'x`') {\n  1\n}")]
+        [InlineData("$s = 'it''s {'; if ($x) {\n  1\n}")]
+        [InlineData("$p = 'C:\\dir\\'; if ($x) {\n  1\n}")]
+        public void PowerShell_single_quoted_strings_take_the_backtick_literally(string ps)
+        {
+            var folds = BraceFolding.Compute(ps, BraceSyntax.For("powershell"));
+            Assert.Equal(new[] { "{\n  1\n}" }, Folded(ps, folds));
+        }
+
         [Fact]
         public void PHP_hash_comments_are_ignored()
         {

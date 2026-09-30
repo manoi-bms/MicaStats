@@ -10,28 +10,34 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// What a brace-folding language calls comments and strings, so braces inside them are skipped.
     /// <see cref="MultiLineStrings"/> are spans such as PowerShell here-strings that run across lines;
     /// <see cref="Escape"/> is the character that escapes the next one inside a quoted string.
+    /// <see cref="LiteralStrings"/> open strings in which nothing escapes and a doubled quote stands
+    /// for one (the quote is the opener's last character): C# verbatim strings, which may span lines,
+    /// and PowerShell single-quoted strings.
     /// </summary>
     public sealed record BraceSyntax(
         IReadOnlyList<string> LineComments,
         IReadOnlyList<(string Open, string Close)> BlockComments,
         IReadOnlyList<char> Quotes,
         char Escape = '\\',
-        IReadOnlyList<(string Open, string Close)>? MultiLineStrings = null)
+        IReadOnlyList<(string Open, string Close)>? MultiLineStrings = null,
+        IReadOnlyList<(string Open, bool MultiLine)>? LiteralStrings = null)
     {
         private static readonly (string, string)[] None = Array.Empty<(string, string)>();
 
         public static BraceSyntax CLike { get; } = new(new[] { "//" }, new[] { ("/*", "*/") }, new[] { '"', '\'' });
+        public static BraceSyntax CSharp { get; } = CLike with { LiteralStrings = new[] { ("@\"", true), ("$@\"", true), ("@$\"", true) } };
         public static BraceSyntax JavaScript { get; } = new(new[] { "//" }, new[] { ("/*", "*/") }, new[] { '"', '\'', '`' });
         public static BraceSyntax Php { get; } = new(new[] { "//", "#" }, new[] { ("/*", "*/") }, new[] { '"', '\'' });
         public static BraceSyntax Json { get; } = new(Array.Empty<string>(), None, new[] { '"' });
         public static BraceSyntax Css { get; } = new(Array.Empty<string>(), new[] { ("/*", "*/") }, new[] { '"', '\'' });
-        public static BraceSyntax PowerShell { get; } = new(new[] { "#" }, new[] { ("<#", "#>") }, new[] { '"', '\'' }, '`',
-            new[] { ("@\"", "\n\"@"), ("@'", "\n'@") });
+        public static BraceSyntax PowerShell { get; } = new(new[] { "#" }, new[] { ("<#", "#>") }, new[] { '"' }, '`',
+            new[] { ("@\"", "\n\"@"), ("@'", "\n'@") }, new[] { ("'", false) });
 
         /// <summary>The syntax of a brace-folding language (spec 2.5).</summary>
         public static BraceSyntax For(string languageId) => languageId switch
         {
             "json" => Json,
+            "csharp" => CSharp,
             "css" => Css,
             "powershell" => PowerShell,
             "javascript" => JavaScript,
@@ -74,6 +80,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 {
                     int newline = text.IndexOf('\n', i);
                     i = newline < 0 ? text.Length : newline;
+                    continue;
+                }
+                if (syntax.LiteralStrings != null && TryLiteral(text, i, syntax.LiteralStrings, out int literalEnd))
+                {
+                    line += CountLines(text, i, literalEnd);
+                    i = literalEnd;
                     continue;
                 }
                 if (Contains(syntax.Quotes, c))
@@ -147,6 +159,37 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 j++;
             }
             return text.Length;
+        }
+
+        /// <summary>
+        /// When a literal string opens at <paramref name="i"/>, the offset just past it: a doubled
+        /// quote is one quote and nothing else escapes. An unclosed one that may not span lines ends
+        /// at the line's end.
+        /// </summary>
+        private static bool TryLiteral(string text, int i, IReadOnlyList<(string Open, bool MultiLine)> openers, out int end)
+        {
+            foreach (var (openMark, multiLine) in openers)
+            {
+                if (string.CompareOrdinal(text, i, openMark, 0, openMark.Length) != 0) continue;
+                char quote = openMark[openMark.Length - 1];
+                int j = i + openMark.Length;
+                while (j < text.Length)
+                {
+                    char c = text[j];
+                    if (c == quote)
+                    {
+                        if (j + 1 < text.Length && text[j + 1] == quote) { j += 2; continue; }
+                        j++;
+                        break;
+                    }
+                    if (c == '\n' && !multiLine) break;
+                    j++;
+                }
+                end = j;
+                return true;
+            }
+            end = i;
+            return false;
         }
 
         private static int CountLines(string text, int from, int to)

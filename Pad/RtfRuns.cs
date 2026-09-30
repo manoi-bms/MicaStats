@@ -12,7 +12,9 @@ namespace Kil0bitSystemMonitor.Pad
     /// The styled runs MicaPad shows for a stretch of a document, in the <b>light</b> palette
     /// (spec 4.4: RTF is pasted onto white pages). Syntax colors come from the language's
     /// highlighting definition through <see cref="SyntaxColors"/>; Markdown from the tokenizer and
-    /// <see cref="MarkdownStyles"/>. Plain text has none. Offsets are relative to <c>start</c>.
+    /// <see cref="MarkdownStyles"/>, with fenced code lines shaded as the editor paints them. Bare
+    /// links get the link color in every language, as the editor underlines them. Offsets are
+    /// relative to <c>start</c>.
     /// </summary>
     internal static class RtfRuns
     {
@@ -26,26 +28,45 @@ namespace Kil0bitSystemMonitor.Pad
             int first = document.GetLineByOffset(start).LineNumber;
             int last = document.GetLineByOffset(end).LineNumber;
 
-            if (markdown)
-            {
-                var lines = Enumerable.Range(1, document.LineCount).Select(n => document.GetText(document.GetLineByNumber(n))).ToList();
-                var fences = FenceTracker.Classify(lines);
-                for (int n = first; n <= last; n++)
-                {
-                    var line = document.GetLineByNumber(n);
-                    var tokens = MarkdownLineTokenizer.Tokenize(lines[n - 1], fences[n - 1]);
-                    foreach (var span in tokens.Spans)
-                    {
-                        var look = MarkdownStyles.LookOf(span.Style, palette);
-                        Add(runs, line.Offset + span.Start, span.Length, start, end,
-                            look.Foreground, look.Background, look.Weight == MdWeight.Bold || look.Weight == MdWeight.SemiBold,
-                            look.Italic, look.Strike, look.SizeFactor);
-                    }
-                }
-                return runs;
-            }
+            if (markdown) AddMarkdown(runs, document, start, end, first, last, palette);
+            else AddSyntax(runs, document, start, end, first, last, language, palette);
 
-            if (PadHighlighting.For(language) is not { } definition) return runs;
+            // Last, so the link color wins over what the language gave the same text.
+            for (int n = first; n <= last; n++)
+            {
+                var line = document.GetLineByNumber(n);
+                foreach (var (at, count) in SafeLinks.LinksIn(document.GetText(line)))
+                    Add(runs, line.Offset + at, count, start, end, palette.MdLink, null, false, false, false, 1);
+            }
+            return runs;
+        }
+
+        private static void AddMarkdown(List<RtfRun> runs, TextDocument document, int start, int end, int first, int last, PadPalette palette)
+        {
+            var lines = Enumerable.Range(1, document.LineCount).Select(n => document.GetText(document.GetLineByNumber(n))).ToList();
+            var fences = FenceTracker.Classify(lines);
+            for (int n = first; n <= last; n++)
+            {
+                var line = document.GetLineByNumber(n);
+                // The editor paints a fenced line's whole width (MarkdownBackgroundRenderer); RTF shades its text.
+                if (fences[n - 1] != MdFence.None)
+                    Add(runs, line.Offset, line.Length, start, end, null, palette.MdCodeBackground, false, false, false, 1);
+
+                var tokens = MarkdownLineTokenizer.Tokenize(lines[n - 1], fences[n - 1]);
+                foreach (var span in tokens.Spans)
+                {
+                    var look = MarkdownStyles.LookOf(span.Style, palette);
+                    Add(runs, line.Offset + span.Start, span.Length, start, end,
+                        look.Foreground, look.Background, look.Weight == MdWeight.Bold || look.Weight == MdWeight.SemiBold,
+                        look.Italic, look.Strike, look.SizeFactor);
+                }
+            }
+        }
+
+        private static void AddSyntax(List<RtfRun> runs, TextDocument document, int start, int end, int first, int last,
+                                      PadLanguage language, PadPalette palette)
+        {
+            if (PadHighlighting.For(language) is not { } definition) return;
             var highlighter = new DocumentHighlighter(document, definition);
             try
             {
@@ -68,7 +89,6 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 highlighter.Dispose();
             }
-            return runs;
         }
 
         private static void Add(List<RtfRun> runs, int offset, int length, int start, int end,

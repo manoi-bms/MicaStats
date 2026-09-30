@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
 namespace Kil0bitSystemMonitor.Services.Pad
@@ -47,12 +48,20 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The link covering <paramref name="column"/> (zero-based) in a line, or null.</summary>
         public static (int Start, int Length)? LinkAt(string line, int column)
         {
-            foreach (Match m in Rx.Matches(line))
+            foreach (var link in LinksIn(line))
             {
-                if (column >= m.Index && column < m.Index + m.Length && TryCreate(m.Value) != null)
-                    return (m.Index, m.Length);
+                if (column >= link.Start && column < link.Start + link.Length) return link;
             }
             return null;
+        }
+
+        /// <summary>Every allowed link in a line, in order: what the editor underlines.</summary>
+        public static IEnumerable<(int Start, int Length)> LinksIn(string line)
+        {
+            foreach (Match m in Rx.Matches(line))
+            {
+                if (TryCreate(m.Value) != null) yield return (m.Index, m.Length);
+            }
         }
     }
 }

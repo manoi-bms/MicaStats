@@ -1315,7 +1315,8 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Open…", "Ctrl+O", OpenWithDialog, icon: "\uE8E5"));
             menu.Items.Add(Item("Save", "Ctrl+S", SaveShown, icon: "\uE74E"));
             menu.Items.Add(Item("Save As…", "Ctrl+Shift+S", () => { if (_shown != null) SaveAs(_shown); }, icon: "\uE792"));
-            menu.Items.Add(Item("Copy as RTF", null, CopyAsRtf));
+            // Off while a history version covers the note: it would copy the hidden note, not what is shown.
+            menu.Items.Add(Item("Copy as RTF", null, CopyAsRtf, enabled: PreviewPanel.Visibility != Visibility.Visible));
             menu.Items.Add(Item("Close tab", "Ctrl+W", CloseActiveTab, icon: "\uE711"));
             menu.Items.Add(Item("Reopen closed tab", "Ctrl+Shift+T", ReopenClosed));
             menu.Items.Add(new Separator());
@@ -1393,12 +1394,19 @@ namespace Kil0bitSystemMonitor.Pad
 
         // ---- copy as RTF ---------------------------------------------------------------------
 
-        /// <summary>Puts data on the clipboard; false when the clipboard is busy. Tests replace it.</summary>
-        internal Func<System.Windows.IDataObject, bool> TrySetClipboard { get; set; } = data =>
+        /// <summary>
+        /// Puts RTF and plain text on the clipboard; false when it stays busy. The WinForms call
+        /// tries again three times, 100 ms apart (spec 4.4). WPF's own call would retry ten times
+        /// on each of its two steps, about 4 s on a locked clipboard. Tests replace it.
+        /// </summary>
+        internal Func<string, string, bool> TrySetClipboard { get; set; } = (rtf, text) =>
         {
+            var data = new System.Windows.Forms.DataObject();
+            data.SetData(System.Windows.Forms.DataFormats.Rtf, rtf);
+            data.SetData(System.Windows.Forms.DataFormats.UnicodeText, text);
             try
             {
-                Clipboard.SetDataObject(data, copy: true);
+                System.Windows.Forms.Clipboard.SetDataObject(data, copy: true, retryTimes: 3, retryDelay: 100);
                 return true;
             }
             catch (System.Runtime.InteropServices.ExternalException)
@@ -1409,7 +1417,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>
         /// Copies the selection (or the whole note) as RTF and plain text, styled as shown, in the
-        /// light palette (spec 4.4). A busy clipboard is tried again three times over 300 ms.
+        /// light palette (spec 4.4). A rectangular (Alt+drag) selection copies its box, unstyled.
         /// </summary>
         internal void CopyAsRtf()
         {
@@ -1427,38 +1435,52 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Where unexpected failures are logged; tests replace it.</summary>
         internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("pad", message);
 
-        /// <summary>The most characters Copy as RTF will build in one go.</summary>
+        /// <summary>The most characters Copy as RTF will take in one go.</summary>
         internal const int MaxRtfChars = 10_000_000;
+
+        /// <summary>The longest RTF, estimated by <see cref="RtfWriter.EstimatedLength"/>, Copy as RTF will build.</summary>
+        internal const long MaxRtfEstimate = 40_000_000;
 
         private void CopyAsRtfCore()
         {
             var document = Editor.Document;
-            int start = Editor.SelectionLength > 0 ? Editor.SelectionStart : 0;
-            int length = Editor.SelectionLength > 0 ? Editor.SelectionLength : document.TextLength;
-            if (length > MaxRtfChars)
+            var selection = Editor.TextArea.Selection;
+            // A box selection's own start and length are those of the lines around it, not the box.
+            bool box = selection is ICSharpCode.AvalonEdit.Editing.RectangleSelection && !selection.IsEmpty;
+            int start = 0, length = document.TextLength;
+            string text;
+            if (box)
+            {
+                text = selection.GetText();
+            }
+            else
+            {
+                if (!selection.IsEmpty)
+                {
+                    start = Editor.SelectionStart;
+                    length = Editor.SelectionLength;
+                }
+                if (length > MaxRtfChars)
+                {
+                    ShowStatus("Too large to copy as RTF");
+                    return;
+                }
+                text = document.GetText(start, length);
+            }
+            if (text.Length > MaxRtfChars || RtfWriter.EstimatedLength(text) > MaxRtfEstimate)
             {
                 ShowStatus("Too large to copy as RTF");
                 return;
             }
-            string text = document.GetText(start, length);
 
             var effective = _resolved.Effective;
             bool markdown = ReferenceEquals(effective, PadLanguages.Markdown);
-            var runs = RtfRuns.For(document, start, length, effective, markdown);
+            IReadOnlyList<RtfRun> runs = box ? Array.Empty<RtfRun>() : RtfRuns.For(document, start, length, effective, markdown);
             // The editor font at its own size: Editor.FontSize includes the window's zoom.
             string font = _config.PadFontFamily.Split(',')[0].Trim();
             string rtf = RtfWriter.Write(text, runs, font, _config.PadFontSize, PadPalette.Light.Text);
 
-            var data = new System.Windows.DataObject();
-            data.SetData(System.Windows.DataFormats.Rtf, rtf);
-            data.SetData(System.Windows.DataFormats.UnicodeText, text);
-
-            for (int attempt = 0; attempt < 4; attempt++)
-            {
-                if (TrySetClipboard(data)) return;
-                if (attempt < 3) System.Threading.Thread.Sleep(100);
-            }
-            ShowStatus("Clipboard busy, try again");
+            if (!TrySetClipboard(rtf, text)) ShowStatus("Clipboard busy, try again");
         }
 
         private void OnEditorRightButtonDown(object sender, MouseButtonEventArgs e)

@@ -539,6 +539,7 @@ namespace Kil0bitSystemMonitor.Models
         private bool _padShowLineNumbers = true;
         private int _padHistoryDays = 90;
         private bool _padReopenAtLogin = true;
+        private string _padTheme = Kil0bitSystemMonitor.Services.Pad.PadThemes.Dark;
 
         /// <summary>Global shortcut that shows MicaPad, in <c>HotkeyParser</c> syntax. Empty turns it off.</summary>
         public string PadHotkey { get => _padHotkey; set { Set(ref _padHotkey, value ?? ""); } }
@@ -567,6 +568,16 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>Reopen MicaPad at login when it was open at shutdown.</summary>
         public bool PadReopenAtLogin { get => _padReopenAtLogin; set { Set(ref _padReopenAtLogin, value); } }
+
+        /// <summary>
+        /// MicaPad's own theme, "Dark" or "Light"; any other value reads as Dark. Nothing else in
+        /// MicaStats follows it.
+        /// </summary>
+        public string PadTheme
+        {
+            get => _padTheme;
+            set { Set(ref _padTheme, Kil0bitSystemMonitor.Services.Pad.PadThemes.Normalize(value)); }
+        }
 
         // ----- AI ---------------------------------------------------------------------------
         // Everything is off by default. No key or token is ever stored here: config.json is the

@@ -80,5 +80,31 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(HotkeyModifiers.Control | HotkeyModifiers.Alt, modifiers);
             Assert.Equal((uint)'N', key);
         }
+
+        [Fact]
+        public void The_theme_defaults_to_dark()
+        {
+            Assert.Equal("Dark", new AppConfig().PadTheme);
+            Assert.Equal("Dark", JsonSerializer.Deserialize<AppConfig>("{\"ShowCpu\": false}")!.PadTheme);
+        }
+
+        [Fact]
+        public void The_theme_survives_a_round_trip()
+        {
+            var back = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { PadTheme = "Light" }))!;
+            Assert.Equal("Light", back.PadTheme);
+        }
+
+        [Theory]
+        [InlineData("\"light\"", "Light")]
+        [InlineData("\"LIGHT\"", "Light")]
+        [InlineData("\"blue\"", "Dark")]
+        [InlineData("\"\"", "Dark")]
+        [InlineData("null", "Dark")]
+        public void A_hand_edited_theme_reads_as_dark_or_light(string json, string expected)
+        {
+            var config = JsonSerializer.Deserialize<AppConfig>("{\"PadTheme\": " + json + "}")!;
+            Assert.Equal(expected, config.PadTheme);
+        }
     }
 }

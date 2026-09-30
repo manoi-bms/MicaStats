@@ -67,7 +67,7 @@ A behaviour-preserving refactor: no user-visible change, every existing test sta
 
 **Files:**
 - Create: `Services/Pad/TextLines.cs`
-- Modify: `Services/Pad/MarkdownFormatter.cs` (delete its private `LineBlock`, `SplitLines`, `Join`, `NewlineOf` and `LineBreaks`; call `TextLines`)
+- Modify: `Services/Pad/MarkdownFormatter.cs` (delete its private `LineBlock`, `SplitLines`, `Join`, `NewlineOf`; call `TextLines`)
 - Create: `Pad/EditorMenus.cs`
 - Modify: `Pad/MicaPadWindow.xaml.cs` (`using static Kil0bitSystemMonitor.Pad.EditorMenus;`; remove `Item`, `Check`, `ClipboardHasText`, `BuildFormatMenu`, `ApplyEdit`; `FillEditorMenu` calls `EditorMenus`)
 - Create: `tests/Kil0bitSystemMonitor.Tests/TextLinesTests.cs`
@@ -259,7 +259,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
 - [ ] **Step 4: `MarkdownFormatter` uses `TextLines`**
 
-In `Services/Pad/MarkdownFormatter.cs`: delete the private `LineBreaks` field and the private `LineBlock`, `SplitLines`, `Join` and `NewlineOf` methods. Replace their calls: `LineBlock(` → `TextLines.Block(`, `SplitLines(` → `TextLines.Split(`, `Join(` → `TextLines.Join(`, `NewlineOf(` → `TextLines.NewlineOf(`. Behaviour is unchanged (`TextLines.Block` computes the block start through `LineStart`, which is the same expression). Remove usings that become unused.
+In `Services/Pad/MarkdownFormatter.cs`: delete the private `LineBlock`, `SplitLines`, `Join` and `NewlineOf` methods (keep the `LineBreaks` field: `Wrap` still uses it to spot a multi-line selection). Replace their calls: `LineBlock(` → `TextLines.Block(`, `SplitLines(` → `TextLines.Split(`, `Join(` → `TextLines.Join(`, `NewlineOf(` → `TextLines.NewlineOf(`. Behaviour is unchanged (`TextLines.Block` computes the block start through `LineStart`, which is the same expression). Remove usings that become unused.
 
 - [ ] **Step 5: Write `Pad/EditorMenus.cs`**
 

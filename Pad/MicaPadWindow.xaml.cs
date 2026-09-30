@@ -4,6 +4,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -1314,6 +1315,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Open…", "Ctrl+O", OpenWithDialog, icon: "\uE8E5"));
             menu.Items.Add(Item("Save", "Ctrl+S", SaveShown, icon: "\uE74E"));
             menu.Items.Add(Item("Save As…", "Ctrl+Shift+S", () => { if (_shown != null) SaveAs(_shown); }, icon: "\uE792"));
+            menu.Items.Add(Item("Copy as RTF", null, CopyAsRtf));
             menu.Items.Add(Item("Close tab", "Ctrl+W", CloseActiveTab, icon: "\uE711"));
             menu.Items.Add(Item("Reopen closed tab", "Ctrl+Shift+T", ReopenClosed));
             menu.Items.Add(new Separator());
@@ -1372,6 +1374,12 @@ namespace Kil0bitSystemMonitor.Pad
             AddEditGroup(menu, editor, readOnly);
             if (readOnly) return;
 
+            if (ReferenceEquals(editor, Editor))
+            {
+                int copyAt = menu.Items.Cast<object>().ToList().FindIndex(i => i is MenuItem { Header: "Copy" });
+                if (copyAt >= 0) menu.Items.Insert(copyAt + 1, Item("Copy as RTF", null, CopyAsRtf));
+            }
+
             menu.Items.Add(new Separator());
             if (ReferenceEquals(editor, Editor) && ReferenceEquals(_resolved.Effective, PadLanguages.Markdown))
                 menu.Items.Add(FormatMenu(editor));
@@ -1381,6 +1389,52 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));
             menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true), icon: "\uE8AB"));
             menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine, icon: "\uE8AD"));
+        }
+
+        // ---- copy as RTF ---------------------------------------------------------------------
+
+        /// <summary>Puts data on the clipboard; false when the clipboard is busy. Tests replace it.</summary>
+        internal Func<System.Windows.IDataObject, bool> TrySetClipboard { get; set; } = data =>
+        {
+            try
+            {
+                Clipboard.SetDataObject(data, copy: true);
+                return true;
+            }
+            catch (System.Runtime.InteropServices.ExternalException)
+            {
+                return false;
+            }
+        };
+
+        /// <summary>
+        /// Copies the selection (or the whole note) as RTF and plain text, styled as shown, in the
+        /// light palette (spec 4.4). A busy clipboard is tried again three times over 300 ms.
+        /// </summary>
+        internal void CopyAsRtf()
+        {
+            var document = Editor.Document;
+            int start = Editor.SelectionLength > 0 ? Editor.SelectionStart : 0;
+            int length = Editor.SelectionLength > 0 ? Editor.SelectionLength : document.TextLength;
+            string text = document.GetText(start, length);
+
+            var effective = _resolved.Effective;
+            bool markdown = ReferenceEquals(effective, PadLanguages.Markdown);
+            var runs = RtfRuns.For(document, start, length, effective, markdown);
+            // The editor font at its own size: Editor.FontSize includes the window's zoom.
+            string font = _config.PadFontFamily.Split(',')[0].Trim();
+            string rtf = RtfWriter.Write(text, runs, font, _config.PadFontSize, PadPalette.Light.Text);
+
+            var data = new System.Windows.DataObject();
+            data.SetData(System.Windows.DataFormats.Rtf, rtf);
+            data.SetData(System.Windows.DataFormats.UnicodeText, text);
+
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                if (TrySetClipboard(data)) return;
+                if (attempt < 3) System.Threading.Thread.Sleep(100);
+            }
+            ShowStatus("Clipboard busy, try again");
         }
 
         private void OnEditorRightButtonDown(object sender, MouseButtonEventArgs e)

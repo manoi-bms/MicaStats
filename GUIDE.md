@@ -265,6 +265,8 @@ protocols.
 
 **Full screen**: **F11** hides the title bar and fills the screen; **F11** again brings the window back. MicaPad always reopens windowed.
 
+**Copy as RTF** (right-click or **☰**): copies the selection — or the whole note — with its colors, bold, italic and heading sizes, ready to paste into Word or Outlook. It always uses light-theme colors, for white pages.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

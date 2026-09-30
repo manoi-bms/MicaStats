@@ -205,6 +205,8 @@
                         Content="History" ToolTip="Versions of this note (Ctrl+Shift+H)" Click="OnHistoryClick" />
                 <TextBlock x:Name="SaveText" DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="11.5"
                            Foreground="{DynamicResource Pad.Muted}" Margin="12,0,4,0" />
+                <Button x:Name="LanguageButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" FontSize="11.5"
+                        ToolTip="Language of this tab: colors and formatting" Click="OnLanguageClick" />
                 <Button x:Name="EolButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" FontSize="11.5"
                         ToolTip="Line ending" Click="OnEolClick" />
                 <Button x:Name="EncodingButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" FontSize="11.5"

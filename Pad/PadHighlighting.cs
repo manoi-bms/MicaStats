@@ -12,7 +12,7 @@ namespace Kil0bitSystemMonitor.Pad
     /// <summary>
     /// The highlighting definition of a language: AvalonEdit's built-in ones by name, MicaPad's own
     /// (INI, YAML, Batch, Log) from embedded .xshd files. Loaded once and shared; never modified,
-    /// the themed colorizer repaints them at draw time.
+    /// <see cref="ThemedHighlightingColorizer"/> repaints them at draw time.
     /// </summary>
     internal static class PadHighlighting
     {

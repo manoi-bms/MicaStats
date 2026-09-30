@@ -57,6 +57,9 @@ namespace Kil0bitSystemMonitor.Pad
         private bool _suppressDirty;
         private bool _exiting;
         private PadPalette _palette = PadPalette.Dark;
+        private EditorLanguage _language = null!;
+        private EditorLanguage _previewLanguage = null!;
+        private ResolvedLanguage _resolved = new(PadLanguages.Plain, false);
 
         /// <summary>The note whose tab is being renamed, or null; for tests (the popup itself needs a shown window).</summary>
         internal OpenNote? RenamingNote => _renaming;
@@ -70,6 +73,8 @@ namespace Kil0bitSystemMonitor.Pad
 
             ConfigureEditor();
             FindBar.Attach(Editor);
+            _language = new EditorLanguage(Editor, () => _palette);
+            _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette);
             ApplyTheme();
             Editor.ContextMenu = EditorMenu;
             Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu();
@@ -271,6 +276,9 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 _workspace.NotifyChanged(note, markUnsaved: !_suppressDirty);
                 if (ReferenceEquals(_shown, note)) UpdateCharsText();
+                // A big paste crosses the 2 MB limit: formatting switches off (and back on) at once.
+                if (ReferenceEquals(_shown, note) && (document.TextLength > PadLanguages.MaxFormattedChars) != _resolved.TooLarge)
+                    ApplyLanguage();
             };
             note.TextProvider = () => document.Text;
             _docs[note.Id] = document;
@@ -315,6 +323,7 @@ namespace Kil0bitSystemMonitor.Pad
             _shown = note;
             _workspace.SetActive(note);
             Editor.Document = EnsureDocument(note);
+            ApplyLanguage();
             RestoreViewState(note);
             UpdateCaretText();
             UpdateCharsText();
@@ -959,6 +968,7 @@ namespace Kil0bitSystemMonitor.Pad
             PreviewEditor.FontSize = Editor.FontSize;
             PreviewEditor.WordWrap = Editor.WordWrap;
             PreviewEditor.Text = text;
+            _previewLanguage.Apply(PadLanguages.Resolve(_shown?.Meta.Language, _shown?.Meta.SourcePath, _config.PadMarkdown, text.Length).Effective);
             PreviewText.Text = "Viewing " + HistoryRows.When(snapshot.Stamp, DateTime.Now);
             PreviewPanel.Visibility = Visibility.Visible;
         }
@@ -1257,6 +1267,11 @@ namespace Kil0bitSystemMonitor.Pad
                 if (Dispatcher.CheckAccess()) ApplyTheme();
                 else Dispatcher.BeginInvoke(new Action(ApplyTheme));
             }
+            else if (e.PropertyName == nameof(AppConfig.PadMarkdown))
+            {
+                if (Dispatcher.CheckAccess()) ApplyLanguage();
+                else Dispatcher.BeginInvoke(new Action(ApplyLanguage));
+            }
         }
 
         private void ConfigureEditor()
@@ -1302,6 +1317,8 @@ namespace Kil0bitSystemMonitor.Pad
             ThemeButton.Content = _palette.IsDark ? "\uE706" : "\uE708";
             ThemeButton.ToolTip = _palette.IsDark ? "Switch to light theme" : "Switch to dark theme";
             PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
+            _language.Redraw();
+            _previewLanguage.Redraw();
         }
 
         /// <summary>The theme button: switches between dark and light, remembered in the config.</summary>
@@ -1326,6 +1343,50 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         private void UpdateCharsText() => CharsText.Text = PadText.CharCount(Editor.Document?.TextLength ?? 0);
+
+        // ---- language ------------------------------------------------------------------------
+
+        /// <summary>The shown tab's language, after Auto and the size limit.</summary>
+        internal ResolvedLanguage ShownLanguage => _resolved;
+
+        /// <summary>What the shown tab's language installed in the editor.</summary>
+        internal EditorLanguage LanguageView => _language;
+
+        /// <summary>Shows the current tab in its language (spec 2.1) and names it in the status bar.</summary>
+        private void ApplyLanguage()
+        {
+            if (_shown == null) return;
+            _resolved = PadLanguages.Resolve(_shown.Meta.Language, _shown.Meta.SourcePath, _config.PadMarkdown, Editor.Document.TextLength);
+            LanguageButton.Content = _resolved.DisplayName;
+            _language.Apply(_resolved.Effective);
+        }
+
+        private void OnLanguageClick(object sender, RoutedEventArgs e)
+        {
+            if (_shown == null) return;
+            BuildLanguageMenu(_shown).IsOpen = true;
+        }
+
+        /// <summary>The status-bar language menu: Auto, then every language, the tab's choice checked.</summary>
+        internal ContextMenu BuildLanguageMenu(OpenNote note)
+        {
+            var menu = NewMenu(LanguageButton, PlacementMode.Top);
+            menu.Items.Add(Check("Auto (by file type)", null, note.Meta.Language == null, () => ChooseLanguage(note, null)));
+            menu.Items.Add(new Separator());
+            foreach (var language in PadLanguages.All)
+            {
+                string id = language.Id;
+                menu.Items.Add(Check(language.Name, null, note.Meta.Language == id, () => ChooseLanguage(note, id)));
+            }
+            return menu;
+        }
+
+        /// <summary>Sets a tab's language (null for Auto), saves it with the note and repaints.</summary>
+        internal void ChooseLanguage(OpenNote note, string? languageId)
+        {
+            _workspace.SetLanguage(note, languageId);
+            if (ReferenceEquals(note, _shown)) ApplyLanguage();
+        }
 
         private void UpdateSaveText()
         {

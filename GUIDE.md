@@ -207,6 +207,13 @@ Right-click a tab for **Rename**, **Close** and **Close other tabs** (closed tab
 as usual — nothing is deleted). A tab that is a real file also has **Copy file path** and
 **Show in folder**.
 
+### Colors for code, logs and settings files
+
+JSON, XML, HTML, C#, JavaScript, CSS, PowerShell, Python, SQL, C/C++, Java, PHP, VB, diff, INI,
+YAML, batch and log files open colored, in both themes. The language shows in the status bar;
+click it to pick another for that tab (or **Auto** to go back to the file type). Notes and
+`.md`/`.txt` files are Markdown. Text over 2 MB is shown plain, so huge files stay fast.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

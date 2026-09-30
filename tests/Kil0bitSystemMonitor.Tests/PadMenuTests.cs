@@ -243,7 +243,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             Click(ItemOf(window.BuildTabMenu(note, null), "Rename…"));
 
-            Assert.True(window.RenamePopup.IsOpen);
+            Assert.Same(note, window.RenamingNote);
             Assert.Equal(note.Title, window.RenameBox.Text);
         });
 

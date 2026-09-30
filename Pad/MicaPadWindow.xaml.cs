@@ -58,6 +58,9 @@ namespace Kil0bitSystemMonitor.Pad
         private bool _exiting;
         private PadPalette _palette = PadPalette.Dark;
 
+        /// <summary>The note whose tab is being renamed, or null; for tests (the popup itself needs a shown window).</summary>
+        internal OpenNote? RenamingNote => _renaming;
+
         /// <summary>Builds the window over a workspace; call <see cref="LoadSession"/> before showing it.</summary>
         public MicaPadWindow(PadWorkspace workspace, AppConfig config)
         {

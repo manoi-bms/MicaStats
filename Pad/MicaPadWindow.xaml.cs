@@ -60,6 +60,7 @@ namespace Kil0bitSystemMonitor.Pad
         private PadPalette _palette = PadPalette.Dark;
         private EditorLanguage _language = null!;
         private EditorLanguage _previewLanguage = null!;
+        private AutoCloseHandler _autoClose = null!;
         private ResolvedLanguage _resolved = new(PadLanguages.Plain, false);
 
         /// <summary>The note whose tab is being renamed, or null; for tests (the popup itself needs a shown window).</summary>
@@ -76,6 +77,7 @@ namespace Kil0bitSystemMonitor.Pad
             FindBar.Attach(Editor);
             _language = new EditorLanguage(Editor, () => _palette, folds: true);
             _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette, folds: false);
+            _autoClose = new AutoCloseHandler(Editor, () => _config.PadAutoClose);
             ApplyTheme();
             Editor.ContextMenu = EditorMenu;
             Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu();
@@ -1110,6 +1112,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,
                 () => _config.PadShowLineNumbers = !_config.PadShowLineNumbers));
             menu.Items.Add(Check("Markdown formatting", null, _config.PadMarkdown, () => _config.PadMarkdown = !_config.PadMarkdown));
+            menu.Items.Add(Check("Auto-close brackets and quotes", null, _config.PadAutoClose, () => _config.PadAutoClose = !_config.PadAutoClose));
             menu.Items.Add(Check("Always on top", null, Topmost, ToggleTopmost));
             menu.Items.Add(Item("Font…", null, ChooseFont, icon: "\uE8D2"));
             menu.Items.Add(new Separator());
@@ -1340,6 +1343,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>What the shown tab's language installed in the editor.</summary>
         internal EditorLanguage LanguageView => _language;
+        internal AutoCloseHandler AutoClose => _autoClose;
 
         /// <summary>Shows the current tab in its language (spec 2.1) and names it in the status bar.</summary>
         private void ApplyLanguage()

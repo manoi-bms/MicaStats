@@ -115,5 +115,13 @@ namespace Kil0bitSystemMonitor.Tests
             var back = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { PadMarkdown = false }))!;
             Assert.False(back.PadMarkdown);
         }
+
+        [Fact]
+        public void Auto_close_is_on_by_default_and_round_trips()
+        {
+            Assert.True(new AppConfig().PadAutoClose);
+            Assert.True(JsonSerializer.Deserialize<AppConfig>("{\"ShowCpu\": false}")!.PadAutoClose);
+            Assert.False(JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { PadAutoClose = false }))!.PadAutoClose);
+        }
     }
 }

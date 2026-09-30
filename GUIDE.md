@@ -231,6 +231,13 @@ JSON, C#, JavaScript, CSS, C/C++, Java, PHP and PowerShell fold at braces, XML a
 and Markdown at headings and code blocks: click the ⊟ box in the margin to fold, ⊞ to open again.
 Moving to text inside a fold (Find, Go to line) opens it.
 
+### Editing helpers
+
+**Auto-close**: typing `(`, `[`, `{` or a quote adds the closing one after the caret; typing it
+again steps over it, and Backspace right after the opening one removes both. With text selected,
+an opening bracket or quote wraps the selection. It stays out of the way in prose — `don't` types
+normally, and nothing is added in front of a word. Turn it off in **☰** or **Settings → MicaPad**.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

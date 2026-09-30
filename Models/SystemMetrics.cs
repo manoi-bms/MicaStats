@@ -541,6 +541,7 @@ namespace Kil0bitSystemMonitor.Models
         private bool _padReopenAtLogin = true;
         private string _padTheme = Kil0bitSystemMonitor.Services.Pad.PadThemes.Dark;
         private bool _padMarkdown = true;
+        private bool _padAutoClose = true;
 
         /// <summary>Global shortcut that shows MicaPad, in <c>HotkeyParser</c> syntax. Empty turns it off.</summary>
         public string PadHotkey { get => _padHotkey; set { Set(ref _padHotkey, value ?? ""); } }
@@ -585,6 +586,9 @@ namespace Kil0bitSystemMonitor.Models
         /// A language chosen for a tab still wins.
         /// </summary>
         public bool PadMarkdown { get => _padMarkdown; set { Set(ref _padMarkdown, value); } }
+
+        /// <summary>Auto-close brackets and quotes in MicaPad.</summary>
+        public bool PadAutoClose { get => _padAutoClose; set { Set(ref _padAutoClose, value); } }
 
         // ----- AI ---------------------------------------------------------------------------
         // Everything is off by default. No key or token is ever stored here: config.json is the

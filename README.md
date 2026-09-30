@@ -163,6 +163,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Colors for code and logs**: JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch and log files are colored in both themes; the status bar shows the language and changes it per tab
 * **Markdown as you type**: headings, bold, italic, code, lists, tasks and quotes are formatted in place, with the markers still visible; the file stays plain text
 * **Folding**: collapse braces, tags, Markdown sections and code blocks from the margin
+* **Editing helpers**: auto-closing brackets and quotes, notepad4-style line operations, bookmarks, and every occurrence of the selected word marked
 * Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
 
 ### Ask MicaStats: answers about your PC
@@ -774,6 +775,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **สีสำหรับโค้ดและล็อก**: ไฟล์ JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch และไฟล์ล็อก แสดงสีได้ทั้งธีมสว่างและมืด ภาษาแสดงที่แถบสถานะและเปลี่ยนได้ทีละแท็บ
 * **Markdown ขณะพิมพ์**: หัวข้อ ตัวหนา ตัวเอียง โค้ด รายการ งานที่ต้องทำ และข้อความอ้างอิง แสดงผลตามรูปแบบทันที โดยยังเห็นเครื่องหมาย และไฟล์ยังเป็นข้อความธรรมดา
 * **ย่อ/ขยายโค้ด**: ย่อส่วนในวงเล็บปีกกา แท็ก หัวข้อ Markdown และบล็อกโค้ดได้จากขอบซ้าย
+* **ตัวช่วยแก้ไข**: ปิดวงเล็บและเครื่องหมายคำพูดอัตโนมัติ คำสั่งจัดการบรรทัดแบบ notepad4 บุ๊กมาร์ก และไฮไลต์คำเดียวกันทั้งหมดเมื่อเลือกคำ
 * โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา

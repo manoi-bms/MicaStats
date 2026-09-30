@@ -169,6 +169,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Copy as RTF** pastes the note, or the selection, into Word or Outlook with its colors, bold and heading sizes
 * **Tools**: Base64, number bases, GUIDs, timestamps, and a calculator that works the sum out itself — nothing in a note is ever run; each is one **Ctrl+Z**
 * **Compare with current**: see what changed since a history version, line by line — removed lines in red, added in green
+* **More than one window** (**Ctrl+Shift+N**), each with its own tabs, place and zoom; closing one moves its tabs into another, so no note is ever closed that way
 * Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
 
 ### Ask MicaStats: answers about your PC
@@ -278,6 +279,7 @@ Inside MicaPad:
 | Key | Action |
 | --- | --- |
 | **Ctrl+N** · **Ctrl+W** · **Ctrl+Shift+T** | New note · close tab · reopen closed tab |
+| **Ctrl+Shift+N** | New window |
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | Open file · save to its file · save as |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | Find · replace · next / previous |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | Go to line · word wrap · history |
@@ -790,6 +792,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **Copy as RTF** คัดลอกโน้ตหรือส่วนที่เลือกไปวางใน Word หรือ Outlook พร้อมสี ตัวหนา และขนาดหัวข้อ
 * **เครื่องมือ**: Base64 แปลงเลขฐาน GUID เวลาปัจจุบัน และเครื่องคิดเลขที่คำนวณเอง ไม่มีสิ่งใดในโน้ตถูกรันเลย ทุกคำสั่งย้อนกลับได้ด้วย **Ctrl+Z** ครั้งเดียว
 * **Compare with current**: ดูว่าอะไรเปลี่ยนไปจากเวอร์ชันในประวัติทีละบรรทัด บรรทัดที่ถูกลบเป็นสีแดง บรรทัดที่เพิ่มเป็นสีเขียว
+* **หลายหน้าต่าง** (**Ctrl+Shift+N**) แต่ละหน้าต่างมีแท็บ ตำแหน่ง และการซูมของตัวเอง เมื่อปิดหน้าต่างหนึ่ง แท็บจะย้ายไปอยู่อีกหน้าต่าง จึงไม่มีโน้ตใดถูกปิดไปด้วย
 * โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา
@@ -899,6 +902,7 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | ปุ่ม | การทำงาน |
 | --- | --- |
 | **Ctrl+N** · **Ctrl+W** · **Ctrl+Shift+T** | โน้ตใหม่ · ปิดแท็บ · เปิดแท็บที่ปิดไปกลับมา |
+| **Ctrl+Shift+N** | หน้าต่างใหม่ |
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | เปิดไฟล์ · บันทึกลงไฟล์ · บันทึกเป็น |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | ค้นหา · แทนที่ · ถัดไป / ก่อนหน้า |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | ไปยังบรรทัด · ตัดบรรทัดอัตโนมัติ · ประวัติ |

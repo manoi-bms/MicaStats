@@ -50,7 +50,6 @@ namespace Kil0bitSystemMonitor.Pad
     public partial class MicaPadWindow : Window
     {
         private const double ZoomStep = 0.1;
-        private static MicaPadWindow? s_current;
 
         private readonly PadWorkspace _workspace;
         private readonly AppConfig _config;
@@ -175,42 +174,191 @@ namespace Kil0bitSystemMonitor.Pad
             Closed += OnClosedForReal;
         }
 
-        /// <summary>The window, when one exists (shown or hidden).</summary>
-        public static MicaPadWindow? Current => s_current;
-
         /// <summary>Opens MicaStats' settings on the MicaPad section; set by the app.</summary>
         public Action? OpenSettingsRequested { get; set; }
 
-        /// <summary>Shows MicaPad, creating it on first use, and brings it to the front.</summary>
-        public static MicaPadWindow ShowOrActivate(PadWorkspace workspace, AppConfig config, Action? openSettings)
+        // ---- windows (spec 5.3) --------------------------------------------------------------
+
+        /// <summary>Every loaded MicaPad window, shown or hidden, in load order. Changed on the UI thread only.</summary>
+        private static readonly List<MicaPadWindow> s_windows = new();
+
+        /// <summary>True once <see cref="CloseForExit"/> ran: a window closes once.</summary>
+        private bool _closedForExit;
+
+        /// <summary>Shows a window and brings it to the front. Tests replace it: tests never show windows.</summary>
+        internal static Action<MicaPadWindow> ShowWindow { get; set; } = window =>
         {
-            var window = s_current;
-            if (window == null)
-            {
-                window = new MicaPadWindow(workspace, config) { OpenSettingsRequested = openSettings };
-                try
-                {
-                    window.LoadSession();
-                }
-                catch
-                {
-                    // Cached only once built: a half-loaded window must not be the one the next show reuses.
-                    window._hidden = true;   // never shown: its entry must not reopen at login
-                    window.CloseForExit();
-                    throw;
-                }
-                s_current = window;
-            }
-
-            window._hidden = false;
-            window._state!.Open = true;
-            workspace.SaveSession();
-
             if (!window.IsVisible) window.Show();
             if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
             window.Activate();
             window.Editor.Focus();
+        };
+
+        /// <summary>The loaded windows over <paramref name="workspace"/>, in load order.</summary>
+        internal static IReadOnlyList<MicaPadWindow> WindowsOf(PadWorkspace workspace) =>
+            s_windows.Where(w => ReferenceEquals(w._workspace, workspace)).ToList();
+
+        /// <summary>The loaded window showing <paramref name="windowId"/>, or null.</summary>
+        private static MicaPadWindow? Registered(PadWorkspace workspace, string windowId) =>
+            s_windows.FirstOrDefault(w => ReferenceEquals(w._workspace, workspace) && w._windowId == windowId);
+
+        /// <summary>The most recently active MicaPad window (shown or hidden), or null when none is loaded.</summary>
+        public static MicaPadWindow? Current => s_windows.Count == 0 ? null : CurrentOf(s_windows[s_windows.Count - 1]._workspace);
+
+        /// <summary>
+        /// The most recently active loaded window over <paramref name="workspace"/>, or null. Tests
+        /// ask per workspace: the shared UI test thread can run another test's windows in between.
+        /// </summary>
+        internal static MicaPadWindow? CurrentOf(PadWorkspace workspace)
+        {
+            foreach (string id in workspace.ActivationOrder)
+                if (Registered(workspace, id) is { } window) return window;
+            return WindowsOf(workspace).FirstOrDefault();
+        }
+
+        /// <summary>True while this window is hidden by its close button (it was the last one); for tests.</summary>
+        internal bool IsHiddenByClose => _hidden;
+
+        /// <summary>
+        /// Shows MicaPad (the hotkey, the overlay menu, the Start menu): the most recently active
+        /// window comes to the front. The first show in a run brings back every window of the
+        /// session, each where it was (spec 5.3: reopen at login restores every window), so no tab
+        /// can wait in a window nobody shows; the most recently active ends up in front.
+        /// </summary>
+        public static MicaPadWindow ShowOrActivate(PadWorkspace workspace, AppConfig config, Action? openSettings)
+        {
+            workspace.Restore();
+            string targetId = workspace.MostRecentWindowId;
+            if (WindowsOf(workspace).Count == 0)
+            {
+                // Least recently active first, so each later one comes up in front of it.
+                foreach (string id in workspace.ActivationOrder.Reverse().Where(id => id != targetId).ToList())
+                    Create(workspace, config, id, openSettings).Present();
+            }
+            var window = Registered(workspace, targetId) ?? Create(workspace, config, targetId, openSettings);
+            window.Present();
             return window;
+        }
+
+        /// <summary>Builds and loads a window for a session window. A half-loaded one is closed, never reused.</summary>
+        private static MicaPadWindow Create(PadWorkspace workspace, AppConfig config, string windowId, Action? openSettings,
+                                            Action<MicaPadWindow>? beforeLoad = null)
+        {
+            var window = new MicaPadWindow(workspace, config, windowId) { OpenSettingsRequested = openSettings };
+            try
+            {
+                beforeLoad?.Invoke(window);
+                window.LoadSession();
+            }
+            catch
+            {
+                // Never shown: its entry must not reopen at login.
+                window._hidden = true;
+                window.CloseForExit();
+                throw;
+            }
+            return window;
+        }
+
+        /// <summary>Shows this window in front: it counts as open for the next login and as the most recently active.</summary>
+        private void Present()
+        {
+            _hidden = false;
+            if (_state != null) _state.Open = true;
+            _workspace.ActivateWindow(_windowId);
+            _workspace.SaveSession();
+            ShowWindow(this);
+        }
+
+        /// <summary>This workspace's other loaded windows, most recently active first; none that is closing.</summary>
+        private List<MicaPadWindow> OtherWindows()
+        {
+            var others = new List<MicaPadWindow>();
+            foreach (string id in _workspace.ActivationOrder)
+            {
+                if (id == _windowId) continue;
+                if (Registered(_workspace, id) is { } window && !window._exiting) others.Add(window);
+            }
+            return others;
+        }
+
+        /// <summary>Ctrl+Shift+N and ☰ → New window: another window with one new note (spec 5.3), a little below and right of this one.</summary>
+        internal MicaPadWindow NewWindow()
+        {
+            CaptureViewState();                   // the cascade starts from where this window is now
+            var state = _workspace.NewWindow(_windowId);
+            _workspace.NewNote(state.Id);
+            MicaPadWindow window;
+            try
+            {
+                window = Create(_workspace, _config, state.Id, OpenSettingsRequested);
+            }
+            catch
+            {
+                // No window shows it: its note comes back here rather than wait unseen for the next start.
+                _workspace.CloseWindow(state.Id, _windowId);
+                throw;
+            }
+            window.Present();
+            return window;
+        }
+
+        /// <summary>
+        /// The close button (spec 5.3). With another MicaPad window open, this window's tabs move to
+        /// the most recently active of them — documents, undo history and bookmarks with them — and
+        /// this window closes for real: no note is closed. The last window hides instead, keeping its tabs.
+        /// </summary>
+        internal void CloseByUser()
+        {
+            // Posted from OnClosing: by now the window may be exiting, or closed for good (Detach).
+            if (_exiting || !s_windows.Contains(this)) return;
+            var target = OtherWindows().FirstOrDefault();
+            if (target == null)
+            {
+                HideKeepingTabs();
+                return;
+            }
+            MergeInto(target);
+            CloseForExit();
+            target.Present();
+        }
+
+        /// <summary>Hides the last window, keeping its tabs for the next show.</summary>
+        private void HideKeepingTabs()
+        {
+            CaptureViewState();                    // the placement from before full screen, if any
+            if (IsFullScreen) ToggleFullScreen();  // so MicaPad comes back windowed (GUIDE; Part 4 fix wave)
+            _hidden = true;
+            if (_state != null) _state.Open = false;
+            _workspace.FlushPending();
+            _workspace.SaveSession();
+            if (IsVisible) Hide();
+        }
+
+        /// <summary>Hands every tab of this window to <paramref name="target"/> and takes this window out of the session.</summary>
+        private void MergeInto(MicaPadWindow target)
+        {
+            CaptureViewState();
+            _workspace.FlushPending();
+            var moving = new List<(OpenNote Note, TextDocument? Document)>();
+            foreach (var note in _workspace.TabsOf(_windowId).ToList()) moving.Add((note, ReleaseDocument(note)));
+            _workspace.CloseWindow(_windowId, target._windowId);
+            foreach (var (note, document) in moving)
+                if (document != null && !target.AdoptDocument(note, document))
+                    Debug.WriteLine("MicaPad: window " + target._windowId + " already had a document for note " + note.Id + "; the handed-over one was dropped");
+            _workspace.SaveSession();
+        }
+
+        /// <summary>
+        /// Records every window's tabs, placement and open state and lets them all close for real:
+        /// before application exit or session end. After this, WPF closing them merges nothing.
+        /// <paramref name="only"/> limits it to one workspace's windows (tests: the shared UI test
+        /// thread can run another test's windows in between).
+        /// </summary>
+        public static void PrepareAllForExit(PadWorkspace? only = null)
+        {
+            foreach (var window in s_windows.ToList())
+                if (only == null || ReferenceEquals(window._workspace, only)) window.PrepareForExit();
         }
 
         /// <summary>
@@ -233,6 +381,7 @@ namespace Kil0bitSystemMonitor.Pad
             ApplyPlacement();
             ApplyEditorSettings();
             ShowNote(_workspace.ActiveIn(_windowId) ?? tabs[0]);
+            if (!s_windows.Contains(this)) s_windows.Add(this);   // registered only once fully loaded
             _tick.Start();
         }
 
@@ -248,9 +397,11 @@ namespace Kil0bitSystemMonitor.Pad
             if (_state != null) _state.Open = !_hidden;
         }
 
-        /// <summary>Closes the window for real (tests and application exit).</summary>
+        /// <summary>Closes the window for real: tests, a window merged into another, application exit. Safe to call twice.</summary>
         public void CloseForExit()
         {
+            if (_closedForExit) return;
+            _closedForExit = true;
             PrepareForExit();
             // Detach first: a window that was never shown may not raise Closed.
             Detach();
@@ -293,6 +444,7 @@ namespace Kil0bitSystemMonitor.Pad
                            || (modifiers is ModifierKeys.None or ModifierKeys.Shift && key == Key.F2);
 
             if (ctrl && key == Key.N) NewTab();
+            else if (ctrlShift && key == Key.N) NewWindow();
             else if (ctrl && key == Key.W) CloseActiveTab();
             else if (ctrlShift && key == Key.T) ReopenClosed();
             else if (ctrl && key == Key.Tab) CycleTab(+1);
@@ -338,19 +490,15 @@ namespace Kil0bitSystemMonitor.Pad
         internal bool EditingKeysAllowedFor(object? focused) =>
             focused is not System.Windows.Controls.TextBox && PreviewPanel.Visibility != Visibility.Visible;
 
-        /// <summary>Turns the close button into a hide unless the window is really exiting.</summary>
+        /// <summary>The close button becomes <see cref="CloseByUser"/> unless the window is really exiting.</summary>
         protected override void OnClosing(CancelEventArgs e)
         {
             if (!_exiting)
             {
                 e.Cancel = true;
-                CaptureViewState();                    // the placement from before full screen, if any
-                if (IsFullScreen) ToggleFullScreen();  // so MicaPad comes back windowed (GUIDE)
-                _hidden = true;
-                if (_state != null) _state.Open = false;
-                _workspace.FlushPending();
-                _workspace.SaveSession();
-                Hide();
+                // Closing for real cannot start inside Closing: the merge runs right after it.
+                if (OtherWindows().Count > 0) Dispatcher.BeginInvoke(new Action(() => Guard("Closing a MicaPad window", CloseByUser)));
+                else HideKeepingTabs();
             }
             base.OnClosing(e);
         }
@@ -438,7 +586,7 @@ namespace Kil0bitSystemMonitor.Pad
             _config.PropertyChanged -= OnConfigChanged;
             _workspace.Open.CollectionChanged -= OnOpenChanged;
             foreach (var document in _releaseHooks.Keys.ToList()) DropReleaseHooks(document);
-            if (ReferenceEquals(s_current, this)) s_current = null;
+            s_windows.Remove(this);
         }
 
         // ---- documents and tabs -------------------------------------------------------------
@@ -1573,6 +1721,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             var menu = NewMenu(MenuButton, PlacementMode.Bottom);
             menu.Items.Add(Item("New note", "Ctrl+N", NewTab, icon: "\uE710"));
+            menu.Items.Add(Item("New window", "Ctrl+Shift+N", () => NewWindow(), icon: "\uE8A7"));
             menu.Items.Add(Item("Open…", "Ctrl+O", OpenWithDialog, icon: "\uE8E5"));
             menu.Items.Add(Item("Save", "Ctrl+S", SaveShown, icon: "\uE74E"));
             menu.Items.Add(Item("Save As…", "Ctrl+Shift+S", () => { if (_shown != null) SaveAs(_shown); }, icon: "\uE792"));

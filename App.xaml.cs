@@ -647,7 +647,7 @@ namespace Kil0bitSystemMonitor
         {
             try
             {
-                Kil0bitSystemMonitor.Pad.MicaPadWindow.Current?.PrepareForExit();
+                Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit();
                 s_pad?.FlushAll(TimeSpan.FromSeconds(2));
             }
             catch (Exception ex)
@@ -764,7 +764,7 @@ namespace Kil0bitSystemMonitor
         public static void Quit()
         {
             // Record whether MicaPad is showing before shutdown closes it, so it reopens at next login.
-            Kil0bitSystemMonitor.Pad.MicaPadWindow.Current?.PrepareForExit();
+            Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit();
             Current.Shutdown();
         }
     }

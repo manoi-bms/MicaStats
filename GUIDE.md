@@ -289,6 +289,14 @@ Right-click → **Tools** (also in **☰**):
 The selection tools work on the selected text; when one cannot (not a number, not Base64,
 division by zero), the text is left alone and the status bar says why. Each is a single **Ctrl+Z**.
 
+### More than one window
+
+**Ctrl+Shift+N** (or **☰ → New window**) opens another MicaPad window with a new note. Each window
+has its own tabs, size and place, zoom, **Always on top** and full screen; the theme, the font and
+the other switches are shared. Closing a window while another one is open moves its tabs into the
+window you used last — no note is closed. Closing the last window only hides it, as before, and
+every window comes back after you sign in.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

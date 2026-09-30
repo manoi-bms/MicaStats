@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.ViewModels;
 
@@ -54,6 +55,15 @@ namespace Kil0bitSystemMonitor
             };
 
             Loaded += (s, e) => SearchBox.Focus();
+
+            // Explain exists only while the assistant is on, and follows the switch live.
+            ExplainButton.Visibility = ExplainActions.ButtonVisibility;
+            var config = App.ConfigService?.Config;
+            if (config != null)
+            {
+                config.PropertyChanged += OnConfigChanged;
+                Closed += (s, e) => config.PropertyChanged -= OnConfigChanged;
+            }
         }
 
         /// <summary>Shows the window, or brings the existing one forward. Returns either.</summary>
@@ -80,6 +90,7 @@ namespace Kil0bitSystemMonitor
             int count = ProcessList.SelectedItems.Count;
 
             EndTaskButton.IsEnabled = count > 0;
+            ExplainButton.IsEnabled = count == 1;
             EndTaskButton.Content = count > 1
                 ? "End " + count.ToString(CultureInfo.InvariantCulture) + " tasks"
                 : "End task";
@@ -154,6 +165,19 @@ namespace Kil0bitSystemMonitor
                     _model.Refresh();
                 }));
             });
+        }
+
+        /// <summary>Asks Ask MicaStats what the one selected process is doing.</summary>
+        private void OnExplain(object sender, RoutedEventArgs e)
+        {
+            if (ProcessList.SelectedItems.Count == 1 && ProcessList.SelectedItem is ProcessRow row)
+                ExplainActions.ExplainProcess(row.Name, row.Pid);
+        }
+
+        private void OnConfigChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.AiAssistantEnabled))
+                Dispatcher.BeginInvoke(new Action(() => ExplainButton.Visibility = ExplainActions.ButtonVisibility));
         }
 
         private void OnEndTask(object sender, RoutedEventArgs e)

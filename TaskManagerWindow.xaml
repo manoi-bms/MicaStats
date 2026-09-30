@@ -288,6 +288,11 @@
                 <Button x:Name="RetryElevated" Style="{StaticResource ActionButton}"
                         Content="Retry as administrator" Visibility="Collapsed"
                         Click="OnRetryElevated" />
+                <!-- Acts on the one selected process; shown only while the assistant is on. -->
+                <Button x:Name="ExplainButton" Style="{StaticResource ActionButton}"
+                        Content="Explain" IsEnabled="False" Visibility="Collapsed"
+                        ToolTip="Ask MicaStats what the selected process is doing"
+                        Click="OnExplain" />
             </StackPanel>
 
             <TextBlock Grid.Column="1" Text="{Binding Footer}" Margin="6,0,2,0"

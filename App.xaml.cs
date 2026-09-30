@@ -330,12 +330,14 @@ namespace Kil0bitSystemMonitor
                             0, true, 0, true);
                         AlertToastWindow.ShowFor(
                             new Kil0bitSystemMonitor.Services.Diagnostics.AlertEvent(rule, 0, headline, DateTime.Now),
-                            () => DiagnosticsWindow.ShowDiagnostics(0));
+                            () => DiagnosticsWindow.ShowDiagnostics(0),
+                            Kil0bitSystemMonitor.Ai.ExplainActions.ForSlowdownReport(path, DateTime.Now));
                     }));
 
                 s_alerts = new Kil0bitSystemMonitor.Services.Diagnostics.AlertMonitor(m_history!, Battery);
                 s_alerts.Raised += alert =>
-                    AlertToastWindow.ShowFor(alert, () => DiagnosticsWindow.ShowDiagnostics(3));
+                    AlertToastWindow.ShowFor(alert, () => DiagnosticsWindow.ShowDiagnostics(3),
+                        Kil0bitSystemMonitor.Ai.ExplainActions.ForAlert(alert));
 
                 // The watchdog reports; it never ends anything by itself. The click that does
                 // is on the card. Found is raised on a timer thread, so the card is built on

@@ -42,7 +42,7 @@ namespace Kil0bitSystemMonitor
         /// <summary>Raised when the user asks to see the detail.</summary>
         public event Action? OpenRequested;
 
-        private AlertToastWindow(AlertEvent alert)
+        private AlertToastWindow(AlertEvent alert, Action? onExplain)
         {
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.NoResize;
@@ -54,7 +54,7 @@ namespace Kil0bitSystemMonitor
             ShowActivated = false;           // must never steal focus from what the user is doing
             Title = "MicaStats Alert";
 
-            Content = BuildCard(alert);
+            Content = BuildCard(alert, onExplain);
 
             Loaded += (s, e) => { ToastStack.Restack(); ToastStack.PlayEntrance(this); };
 
@@ -69,13 +69,24 @@ namespace Kil0bitSystemMonitor
             Closed += (s, e) => { _dismiss.Stop(); ToastStack.Remove(this); };
         }
 
-        /// <summary>Shows a notice for one breached rule.</summary>
-        public static AlertToastWindow ShowFor(AlertEvent alert, Action onOpen)
+        /// <summary>
+        /// Shows a notice for one breached rule. <paramref name="onExplain"/>, when given, adds an
+        /// Explain button that asks the assistant about it; callers pass null while the assistant
+        /// is off, so the button is simply not there.
+        /// </summary>
+        public static AlertToastWindow ShowFor(AlertEvent alert, Action onOpen, Action? onExplain = null)
         {
-            var toast = new AlertToastWindow(alert);
-            toast.OpenRequested += onOpen;
+            var toast = Create(alert, onOpen, onExplain);
             ToastStack.Add(toast, MaxOnScreen);
             toast.Show();
+            return toast;
+        }
+
+        /// <summary>Builds a notice without showing it; <see cref="ShowFor"/> shows it, tests do not.</summary>
+        internal static AlertToastWindow Create(AlertEvent alert, Action onOpen, Action? onExplain)
+        {
+            var toast = new AlertToastWindow(alert, onExplain);
+            toast.OpenRequested += onOpen;
             return toast;
         }
 
@@ -85,7 +96,7 @@ namespace Kil0bitSystemMonitor
             ToastStack.CloseAll<AlertToastWindow>();
         }
 
-        private UIElement BuildCard(AlertEvent alert)
+        private UIElement BuildCard(AlertEvent alert, Action? onExplain)
         {
             var stack = new StackPanel { Margin = new Thickness(16, 13, 16, 13) };
 
@@ -135,6 +146,14 @@ namespace Kil0bitSystemMonitor
                 OpenRequested?.Invoke();
                 Close();
             }));
+            if (onExplain != null)
+            {
+                buttons.Children.Add(ToastButton.Create("Explain", Amber, primary: false, Color.FromRgb(0x2A, 0x18, 0x06), () =>
+                {
+                    onExplain();
+                    Close();
+                }));
+            }
             buttons.Children.Add(ToastButton.Create("Dismiss", Amber, primary: false, Color.FromRgb(0x2A, 0x18, 0x06), Close));
             stack.Children.Add(buttons);
 

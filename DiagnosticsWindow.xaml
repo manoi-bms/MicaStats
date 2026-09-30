@@ -6,6 +6,7 @@
     xmlns:hw="clr-namespace:Kil0bitSystemMonitor.Services.HardwareInfo"
     xmlns:dg="clr-namespace:Kil0bitSystemMonitor.Services.Diagnostics"
     xmlns:hlp="clr-namespace:Kil0bitSystemMonitor.Helpers"
+    xmlns:ai="clr-namespace:Kil0bitSystemMonitor.Ai"
     Title="MicaStats Diagnostics"
     Width="620" Height="700" MinWidth="600" MinHeight="500"
     WindowStartupLocation="CenterScreen"
@@ -348,10 +349,11 @@
                                 </StackPanel>
                                 <ItemsControl x:Name="ReportList">
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="{x:Type dg:SavedReport}">
+                                        <DataTemplate DataType="{x:Type ai:ExplainableReport}">
                                             <Grid Margin="0,0,0,4">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel>
@@ -359,7 +361,12 @@
                                                                TextTrimming="CharacterEllipsis" />
                                                     <TextBlock Style="{StaticResource SubLabel}" Text="{Binding WhenText}" />
                                                 </StackPanel>
+                                                <!-- Slowdown reports only, and only while the assistant is on. -->
                                                 <Button Grid.Column="1" Style="{StaticResource QuickButton}"
+                                                        Content="Explain" Click="OnExplainReport"
+                                                        Tag="{Binding Path}" Visibility="{Binding ExplainVisibility}"
+                                                        VerticalAlignment="Center" />
+                                                <Button Grid.Column="2" Style="{StaticResource QuickButton}"
                                                         Content="Open" Click="OnOpenReport"
                                                         Tag="{Binding Path}" VerticalAlignment="Center" />
                                             </Grid>

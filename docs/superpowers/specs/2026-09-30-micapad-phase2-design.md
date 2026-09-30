@@ -144,20 +144,27 @@ AvalonEdit's definitions carry colors chosen for a white background. MicaPad loa
 of each definition (`HighlightingLoader` over the embedded `.xshd` stream, never the shared
 `HighlightingManager.Instance` objects) per theme, and replaces each named color's foreground by
 category. Rows are tried top to bottom and the first match wins, so `KeywordX` is a keyword before
-`Key` can make it an attribute:
+`Key` can make it an attribute, `AttributeValue` is a string before `Value` can make it a keyword,
+and `DocType` is a preprocessor-like declaration before `Type` can make it a type (the Preprocessor
+row sits above Type on purpose). The table is `SyntaxColors.Rows`, in its order:
 
 | Category | Matched color names (case-insensitive substring) |
 |---|---|
 | Comment | `Comment` |
-| String | `String`, `Char`, `Verbatim` |
+| String | `String`, `Char`, `Verbatim`, `Regex`, `AttributeValue` |
 | Keyword | `Keyword`, `Modifier`, `Visibility`, `Access`, `This`, `Null`, `True`, `False`, `Bool`, `Value` |
-| Number | `Number`, `Digit` |
+| Number | `Number`, `Digit`, `Timestamp` |
+| Preprocessor | `Preprocessor`, `Directive`, `Region`, `DocType`, `XmlDeclaration`, `Header`, `Position` |
 | Type | `Type`, `Class`, `Reference` |
-| Preprocessor | `Preprocessor`, `Directive`, `Region` |
-| Tag | `Tag`, `Element` |
-| Attribute | `Attribute`, `Property`, `Key` |
+| Tag | `Tag`, `Element`, `Selector`, `Section` |
+| Attribute | `Attribute`, `Property`, `Key`, `FieldName`, `Variable` |
 | Operator | `Operator`, `Punctuation`, `Brace` |
-| Error / Warning / Info / Debug | the four level names in `Log.xshd` |
+| Error | `Error`, `Fatal` |
+| Warning | `Warn` |
+| Info | `Info` |
+| Debug | `Debug`, `Trace` |
+| Added | `Added` |
+| Removed | `Removed` |
 | Anything else | the palette's text color |
 
 Font weight and style from the definition are kept; backgrounds are dropped. Every category color

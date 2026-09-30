@@ -217,8 +217,8 @@ or in **Settings → MicaPad**.
 
 Right-click → **Format** wraps the selection in bold, italic, strikethrough, code or a link, or
 turns the selected lines into headings, lists, tasks, quotes or a code block — choose bold, italic,
-strikethrough, code, a list, a task or a quote again to take it off; a heading item switches the level.
-Each is a single **Ctrl+Z**.
+strikethrough, code, a list, a task or a quote again to take it off; a heading item switches the level,
+and choosing the level a line already has removes the heading. Each is a single **Ctrl+Z**.
 
 ### Colors for code, logs and settings files
 
@@ -228,8 +228,8 @@ click it to pick another for that tab (or **Auto** to go back to the file type).
 `.md`/`.txt` files are Markdown. Text over 2 MB is shown plain, so huge files stay fast.
 
 JSON, C#, JavaScript, CSS, C/C++, Java, PHP and PowerShell fold at braces, XML and HTML at tags,
-and Markdown at headings and code blocks: click the arrows in the margin. Moving to text inside a
-fold (Find, Go to line) opens it.
+and Markdown at headings and code blocks: click the ⊟ box in the margin to fold, ⊞ to open again.
+Moving to text inside a fold (Find, Go to line) opens it.
 
 ### Where notes live
 

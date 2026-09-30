@@ -33,7 +33,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// Tried top to bottom; the first row with a name contained in the color name (ignoring case)
         /// wins, so "KeywordX" is a keyword before "Key" could make it an attribute, and
-        /// "AttributeValue" a string before "Value" could make it a keyword.
+        /// "AttributeValue" a string before "Value" could make it a keyword. Row order decides every
+        /// such overlap: the Preprocessor row sits above Type on purpose, so "DocType" (which contains
+        /// "Type") gets the preprocessor-like color of a declaration rather than the type color.
+        /// Reorder rows only with the overlaps in mind; spec 2.2 lists this table as it is.
         /// </summary>
         private static readonly (SyntaxCategory Category, string[] Names)[] Rows =
         {

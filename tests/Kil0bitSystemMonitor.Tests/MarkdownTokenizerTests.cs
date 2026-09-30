@@ -197,6 +197,21 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { MdFence.None, MdFence.None }, FenceTracker.Classify(new[] { line, "x" }));
         }
 
+        [Theory]
+        [InlineData("```", true)]
+        [InlineData("   ~~~ info", true)]
+        [InlineData("    ```", true)]      // passes the cheap test; the full match still says no
+        [InlineData("`x`", true)]
+        [InlineData("text ```", false)]
+        [InlineData("\t```", false)]
+        [InlineData("   ", false)]
+        [InlineData("", false)]
+        public void Only_a_line_starting_with_a_backtick_or_tilde_may_be_a_delimiter(string line, bool expected)
+        {
+            Assert.Equal(expected, FenceTracker.MayBeDelimiter(line));
+            if (!expected) Assert.Equal(MdFence.None, FenceTracker.Classify(new[] { line })[0]);
+        }
+
         [Fact]
         public void Heading_sizes_and_looks_follow_the_spec()
         {

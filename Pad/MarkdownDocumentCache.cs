@@ -7,8 +7,8 @@ namespace Kil0bitSystemMonitor.Pad
     /// <summary>
     /// Which lines of the shown document are fenced code, shared by the Markdown colorizer, the
     /// background renderer and the bullet generator. Rescans only after an edit that can move a
-    /// fence (a backtick or tilde, a new or removed line, or an edit on a delimiter line), so
-    /// ordinary typing never walks the whole note.
+    /// fence (a backtick or tilde, a new or removed line, or an edit on a line that was or may now
+    /// be a delimiter), so ordinary typing never walks the whole note.
     /// </summary>
     internal sealed class MarkdownDocumentCache
     {
@@ -78,8 +78,19 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (document.LineCount != _kinds.Length) return true;
             if (e.InsertedText.Text.IndexOfAny(FenceChars) >= 0 || e.RemovedText.Text.IndexOfAny(FenceChars) >= 0) return true;
-            int line = document.GetLineByOffset(Math.Min(e.Offset, document.TextLength)).LineNumber;
-            return _kinds[line - 1] == MdFence.Delimiter;
+
+            // Each line the edit left text on: a delimiter before it, or one now. Removing the
+            // indent or a character before ``` makes a fence without any backtick typed.
+            int first = document.GetLineByOffset(Math.Min(e.Offset, document.TextLength)).LineNumber;
+            int last = document.GetLineByOffset(Math.Min(e.Offset + e.InsertionLength, document.TextLength)).LineNumber;
+            for (int number = first; number <= last; number++)
+            {
+                if (_kinds[number - 1] == MdFence.Delimiter) return true;
+                var line = document.GetLineByNumber(number);
+                // A delimiter has at most three spaces before its first backtick or tilde.
+                if (FenceTracker.MayBeDelimiter(document.GetText(line.Offset, Math.Min(line.Length, 4)))) return true;
+            }
+            return false;
         }
 
         private void Recompute()

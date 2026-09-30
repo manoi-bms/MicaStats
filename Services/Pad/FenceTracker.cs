@@ -23,6 +23,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 string line = lines[i] ?? "";
                 if (fenceLength == 0)
                 {
+                    if (!MayBeDelimiter(line)) continue;   // most lines: no regex run at all
                     Match m = OpenRx.Match(line);
                     // A backtick fence's info string cannot contain a backtick (that is inline code).
                     if (m.Success && !(m.Groups[1].Value[0] == '`' && m.Groups[2].Value.Contains('`')))
@@ -43,6 +44,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 }
             }
             return kinds;
+        }
+
+        /// <summary>
+        /// The cheap test before the full match: only a line whose first non-space character is a
+        /// backtick or tilde can be a fence delimiter. The start of a line is enough to ask it.
+        /// </summary>
+        public static bool MayBeDelimiter(string line)
+        {
+            int i = 0;
+            while (i < line.Length && line[i] == ' ') i++;
+            return i < line.Length && line[i] is '`' or '~';
         }
 
         private static bool IsClose(string line, char c, int length)

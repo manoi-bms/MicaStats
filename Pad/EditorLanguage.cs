@@ -78,7 +78,8 @@ namespace Kil0bitSystemMonitor.Pad
                 _markdownBackground = new MarkdownBackgroundRenderer(_markdownCache, _palette, ReportFailure);
                 _bullets = new BulletGenerator(_markdownCache, ReportFailure);
                 view.LineTransformers.Add(_markdown);
-                view.BackgroundRenderers.Add(_markdownBackground);
+                // First, so the fence shading is drawn under AvalonEdit's current-line highlight.
+                view.BackgroundRenderers.Insert(0, _markdownBackground);
                 view.ElementGenerators.Add(_bullets);
             }
             else if (PadHighlighting.For(language) is { } definition)

@@ -46,6 +46,25 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Removing_the_indent_before_backticks_makes_a_fence_without_a_backtick_typed() => UiThread.Run(() =>
+        {
+            var document = new TextDocument("    ```\ncode\n    ```");
+            var cache = new MarkdownDocumentCache();
+            Assert.Equal(MdFence.None, cache.KindOf(document, 1));
+            Assert.Equal(MdFence.None, cache.KindOf(document, 2));
+
+            document.Remove(document.GetLineByNumber(3).Offset, 4);
+            document.Remove(0, 4);
+
+            Assert.Equal(MdFence.Delimiter, cache.KindOf(document, 1));
+            Assert.Equal(MdFence.Inside, cache.KindOf(document, 2));
+            Assert.Equal(MdFence.Delimiter, cache.KindOf(document, 3));
+
+            document.Insert(0, "x");   // a character before ``` undoes it
+            Assert.Equal(MdFence.None, cache.KindOf(document, 2));
+        });
+
+        [Fact]
         public void A_cache_detached_by_an_earlier_handler_of_the_same_change_ignores_it() => UiThread.Run(() =>
         {
             var document = new TextDocument("a\n```\nx\n```\nb");
@@ -139,6 +158,18 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Single(view.LineTransformers.OfType<MarkdownColorizer>());
             Assert.Single(view.BackgroundRenderers.OfType<MarkdownBackgroundRenderer>());
             Assert.Single(view.ElementGenerators.OfType<BulletGenerator>());
+        });
+
+        [Fact]
+        public void Fence_shading_draws_under_the_current_line_highlight() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var renderers = window.Editor.TextArea.TextView.BackgroundRenderers.ToList();
+            int shading = renderers.FindIndex(r => r is MarkdownBackgroundRenderer);
+            int currentLine = renderers.FindIndex(r => r.GetType().Name == "CurrentLineHighlightRenderer");
+
+            Assert.True(window.Editor.Options.HighlightCurrentLine);
+            Assert.True(currentLine >= 0);
+            Assert.True(shading >= 0 && shading < currentLine, "the fence shading must be drawn first");
         });
 
         [Fact]

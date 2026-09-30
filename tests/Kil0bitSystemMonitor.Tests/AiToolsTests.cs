@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Kil0bitSystemMonitor.Services.Ai.Mcp;
 using Kil0bitSystemMonitor.Services.Ai.Tools;
 using Kil0bitSystemMonitor.Services.History;
 using Kil0bitSystemMonitor.Services.Sensors;
@@ -82,6 +84,32 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("[computer] Wi-Fi", result["network"]!["adapter"]!.GetValue<string>());
             Assert.Equal(@"%USERPROFILE%\tools\probe.exe", result["sensors"]![0]!["source"]!.GetValue<string>());
             Assert.Equal(45.6, Number(result["sensors"]![0]!["value"]));
+        }
+
+        /// <summary>
+        /// NaN or infinity cannot be written as JSON: one such sensor made the tool text and the
+        /// tool pipe frame throw, so no live status reached the model or an MCP client at all.
+        /// </summary>
+        [Fact]
+        public async Task A_reading_that_is_not_a_finite_number_is_unavailable_and_the_result_still_serialises()
+        {
+            var data = new FakeMicaData();
+            data.Metrics!.CpuUsage = float.NaN;
+            data.Metrics.Sensors = new[] { new SensorReading("x", "Bad", SensorCategory.Temperature, double.NaN, "C", "HWiNFO") };
+            data.Stats["cpu"] = new SeriesStats(float.NegativeInfinity, 1f, float.PositiveInfinity, 3);
+
+            JsonNode result = await Tools(data).GetLiveStatusAsync();
+
+            string text = ToolJson.ToText(result);
+            await ToolPipeProtocol.WriteAsync(new MemoryStream(),
+                new JsonObject { ["v"] = 1, ["ok"] = true, ["result"] = result.DeepClone() }, CancellationToken.None);
+            JsonObject usage = Assert.IsType<JsonObject>(result["cpu"]!["usagePercent"]);
+            Assert.True(usage["unavailable"]!.GetValue<bool>());
+            Assert.Equal("Not a finite reading.", usage["reason"]!.GetValue<string>());
+            Assert.True(result["sensors"]![0]!["value"]!["unavailable"]!.GetValue<bool>());
+            Assert.True(result["recent"]!["cpu"]!["max"]!["unavailable"]!.GetValue<bool>());
+            Assert.Equal(1.0, Number(result["recent"]!["cpu"]!["avg"]));
+            Assert.Contains("Not a finite reading.", text, StringComparison.Ordinal);
         }
 
         [Fact]

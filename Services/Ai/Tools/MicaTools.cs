@@ -158,9 +158,13 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
             return fallback;
         }
 
-        /// <summary>A number rounded to one decimal.</summary>
-        private static JsonNode Num(double value) =>
-            JsonValue.Create(Math.Round(value, 1, MidpointRounding.AwayFromZero));
+        /// <summary>
+        /// A number rounded to one decimal, or <see cref="ToolJson.Unavailable"/> for NaN or an
+        /// infinity: JSON cannot carry those, and one would fail the whole result as it is written.
+        /// </summary>
+        private static JsonNode Num(double value) => double.IsFinite(value)
+            ? JsonValue.Create(Math.Round(value, 1, MidpointRounding.AwayFromZero))
+            : ToolJson.Unavailable("Not a finite reading.");
 
         /// <summary>A number when it was measured, otherwise <see cref="ToolJson.Unavailable"/> with the reason.</summary>
         private static JsonNode Reading(bool measured, double value, string reason) =>

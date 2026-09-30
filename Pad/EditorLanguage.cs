@@ -7,7 +7,7 @@ namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
     /// Everything a language adds to one editor, installed and removed together: syntax colors, or
-    /// Markdown formatting (colorizer, background, bullets); folding comes in Task 8.
+    /// Markdown formatting (colorizer, background, bullets), and folding.
     /// <see cref="Apply"/> always removes the previous language first, so switching tabs never
     /// piles anything up.
     /// </summary>
@@ -20,12 +20,17 @@ namespace Kil0bitSystemMonitor.Pad
         private MarkdownColorizer? _markdown;
         private MarkdownBackgroundRenderer? _markdownBackground;
         private BulletGenerator? _bullets;
+        private readonly FoldingController? _folding;
 
-        public EditorLanguage(TextEditor editor, Func<PadPalette> palette)
+        public EditorLanguage(TextEditor editor, Func<PadPalette> palette, bool folds)
         {
             _editor = editor;
             _palette = palette;
+            _folding = folds ? new FoldingController(editor) : null;
         }
+
+        /// <summary>The folding of this editor, or null when it never folds (the history preview).</summary>
+        internal FoldingController? Folding => _folding;
 
         /// <summary>The language applied now.</summary>
         public PadLanguage Current { get; private set; } = PadLanguages.Plain;
@@ -59,6 +64,7 @@ namespace Kil0bitSystemMonitor.Pad
                 _syntax = new ThemedHighlightingColorizer(definition, _palette);
                 view.LineTransformers.Add(_syntax);
             }
+            _folding?.Attach(language);
             Redraw();
         }
 
@@ -71,6 +77,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void Clear()
         {
+            _folding?.Detach();
             var view = _editor.TextArea.TextView;
             if (_syntax != null)
             {

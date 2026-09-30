@@ -227,6 +227,10 @@ YAML, batch and log files open colored, in both themes. The language shows in th
 click it to pick another for that tab (or **Auto** to go back to the file type). Notes and
 `.md`/`.txt` files are Markdown. Text over 2 MB is shown plain, so huge files stay fast.
 
+JSON, C#, JavaScript, CSS, C/C++, Java, PHP and PowerShell fold at braces, XML and HTML at tags,
+and Markdown at headings and code blocks: click the arrows in the margin. Moving to text inside a
+fold (Find, Go to line) opens it.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

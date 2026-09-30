@@ -73,8 +73,8 @@ namespace Kil0bitSystemMonitor.Pad
 
             ConfigureEditor();
             FindBar.Attach(Editor);
-            _language = new EditorLanguage(Editor, () => _palette);
-            _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette);
+            _language = new EditorLanguage(Editor, () => _palette, folds: true);
+            _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette, folds: false);
             ApplyTheme();
             Editor.ContextMenu = EditorMenu;
             Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu();
@@ -1366,6 +1366,10 @@ namespace Kil0bitSystemMonitor.Pad
             ThemeButton.Content = _palette.IsDark ? "\uE706" : "\uE708";
             ThemeButton.ToolTip = _palette.IsDark ? "Switch to light theme" : "Switch to dark theme";
             PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
+            Editor.SetValue(ICSharpCode.AvalonEdit.Folding.FoldingMargin.FoldingMarkerBrushProperty, PadThemeApplier.ToBrush(_palette.LineNumbers));
+            Editor.SetValue(ICSharpCode.AvalonEdit.Folding.FoldingMargin.FoldingMarkerBackgroundBrushProperty, PadThemeApplier.ToBrush(_palette.Background));
+            Editor.SetValue(ICSharpCode.AvalonEdit.Folding.FoldingMargin.SelectedFoldingMarkerBrushProperty, PadThemeApplier.ToBrush(_palette.Accent));
+            Editor.SetValue(ICSharpCode.AvalonEdit.Folding.FoldingMargin.SelectedFoldingMarkerBackgroundBrushProperty, PadThemeApplier.ToBrush(_palette.Background));
             _language.Redraw();
             _previewLanguage.Redraw();
         }

@@ -16,7 +16,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// <summary>
     /// The auto-close rules (spec 3.1). Pure: the handler passes the characters around the caret.
     /// Brackets and quotes pair only in front of whitespace, the end of the line or a closing
-    /// character, never in front of a word; quotes also never right after a letter or digit, so
+    /// character, never in front of a word; quotes also never right after a letter, digit or the same quote (``` and """ type as typed), so
     /// "don't" types normally. <c>*</c> and <c>_</c> are never paired (Markdown).
     /// </summary>
     public static class AutoClosePolicy
@@ -44,7 +44,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (!openBracket && !quote) return AutoCloseAction.Insert;
             if (after is char a && !char.IsWhiteSpace(a) && a is not (')' or ']' or '}' or ',' or ';' or ':' or '.'))
                 return AutoCloseAction.Insert;
-            if (quote && before is char b && char.IsLetterOrDigit(b)) return AutoCloseAction.Insert;
+            if (quote && before is char b && (char.IsLetterOrDigit(b) || b == typed)) return AutoCloseAction.Insert;
             return AutoCloseAction.Pair;
         }
 

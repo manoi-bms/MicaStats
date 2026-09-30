@@ -62,7 +62,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Back && Keyboard.Modifiers == ModifierKeys.None && TryDeletePair()) e.Handled = true;
+            if (e.Key == Key.Back && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift && TryDeletePair()) e.Handled = true;
         }
 
         /// <summary>Backspace between an empty pair: removes both halves as one edit. Returns false when it does not apply.</summary>

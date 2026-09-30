@@ -22,6 +22,8 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData('*', ' ', null, AutoCloseAction.Insert)]
         [InlineData('_', ' ', null, AutoCloseAction.Insert)]
         [InlineData(')', 'a', null, AutoCloseAction.Insert)]
+        [InlineData('`', '`', null, AutoCloseAction.Insert)]
+        [InlineData('"', '"', null, AutoCloseAction.Insert)]
         public void The_rules(char typed, char? before, char? after, AutoCloseAction expected)
         {
             Assert.Equal(expected, AutoClosePolicy.OnType(typed, before, after, hasSelection: false));
@@ -92,6 +94,14 @@ namespace Kil0bitSystemMonitor.Tests
             window.Editor.TextArea.PerformTextInput(")");
             Assert.Equal("f(x)", window.Editor.Document.Text);
             Assert.Equal(4, window.Editor.CaretOffset);
+        });
+
+        [Fact]
+        public void A_code_fence_types_as_three_backticks() => WithWindow(true, window =>
+        {
+            for (int i = 0; i < 3; i++) window.Editor.TextArea.PerformTextInput("`");
+            Assert.Equal("```", window.Editor.Document.Text);
+            Assert.Equal(3, window.Editor.CaretOffset);
         });
 
         [Fact]

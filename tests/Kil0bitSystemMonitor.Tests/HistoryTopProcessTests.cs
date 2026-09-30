@@ -84,5 +84,18 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Null(sample);
             Assert.False(sampler.Enabled);
         }
+
+        [Fact]
+        public async Task A_failure_while_reading_propagates_and_the_lease_still_goes_back()
+        {
+            using var sampler = new ProcessSampler();
+            var source = new SamplerTopProcessSource(sampler, TimeSpan.FromSeconds(8),
+                _ => throw new InvalidOperationException("path lookup broke"));
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => source.SampleAsync(CancellationToken.None));
+
+            Assert.Equal("path lookup broke", ex.Message);
+            Assert.False(sampler.Enabled);
+        }
     }
 }

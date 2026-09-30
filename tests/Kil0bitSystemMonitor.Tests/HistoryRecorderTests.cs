@@ -210,7 +210,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.All(rows, r => Assert.Null(r.TopCpuName));
             Assert.Equal(3, top.Calls);
             string warning = Assert.Single(env.Warnings);
-            Assert.Contains("sampler gone", warning);
+            Assert.Contains("sampler gone", warning, StringComparison.Ordinal);
         }
     }
 }

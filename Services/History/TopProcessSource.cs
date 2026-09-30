@@ -11,8 +11,9 @@ namespace Kil0bitSystemMonitor.Services.History
     public interface ITopProcessSource
     {
         /// <summary>
-        /// The busiest processes right now. Never throws: null when no ranking arrived in time or
-        /// <paramref name="ct"/> was cancelled.
+        /// The busiest processes right now: null when no ranking arrived in time or
+        /// <paramref name="ct"/> was cancelled. May throw on any other failure; the caller
+        /// (<see cref="HistoryRecorder"/>) logs that once.
         /// </summary>
         Task<TopProcessSample?> SampleAsync(CancellationToken ct);
     }
@@ -35,13 +36,21 @@ namespace Kil0bitSystemMonitor.Services.History
 
         private readonly ProcessSampler _sampler;
         private readonly TimeSpan _timeout;
+        private readonly Func<int, string?> _pathOf;
 
         /// <param name="sampler">Normally <c>App.SharedProcessSampler</c>.</param>
         /// <param name="timeout">How long to wait for CPU data; 6 seconds when null.</param>
         public SamplerTopProcessSource(ProcessSampler sampler, TimeSpan? timeout = null)
+            : this(sampler, timeout, null)
+        {
+        }
+
+        /// <summary>Test seam: <paramref name="pathOf"/> replaces the exe path lookup by pid.</summary>
+        internal SamplerTopProcessSource(ProcessSampler sampler, TimeSpan? timeout, Func<int, string?>? pathOf)
         {
             _sampler = sampler ?? throw new ArgumentNullException(nameof(sampler));
             _timeout = timeout ?? TimeSpan.FromSeconds(6);
+            _pathOf = pathOf ?? ProcessPaths.TryGetPath;
         }
 
         /// <inheritdoc/>
@@ -64,11 +73,6 @@ namespace Kil0bitSystemMonitor.Services.History
             {
                 return null;
             }
-            catch (Exception)
-            {
-                // Runs unattended once a minute; a missing top process is only a gap in one row.
-                return null;
-            }
             finally
             {
                 _sampler.Release();
@@ -82,7 +86,7 @@ namespace Kil0bitSystemMonitor.Services.History
             if (cpu == null && ram == null) return null;
 
             // Stored redacted (spec: "redacted path"); tool output is redacted again on the way out.
-            string? path = cpu == null ? null : ProcessPaths.TryGetPath(cpu.Pid);
+            string? path = cpu == null ? null : _pathOf(cpu.Pid);
             return new TopProcessSample(
                 cpu?.Name,
                 path == null ? null : CurrentUser.Value.Redact(path),

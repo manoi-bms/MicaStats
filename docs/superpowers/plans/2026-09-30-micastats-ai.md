@@ -16032,7 +16032,12 @@ These need the real machine, real keys and real MCP clients, so the owner runs t
 9. **A suggested action.** Start a CPU hog (`powershell -c "while($true){}"`), ask "Something is hogging the CPU, can you stop it?". A suggestion **End powershell.exe** appears; nothing happens until you click it; after the click the process is gone. Ask again, press **New conversation**, then click nothing: old buttons are gone. A suggestion for a process that has since exited says so and ends nothing.
 10. **Switching off.** Turn the assistant off: the Ask window closes, Ctrl+Alt+A no longer opens it (and another program can take the combination), the overlay menu item and every Explain button disappear.
 11. **History.** Turn on **Keep 7 days of history**, wait ten minutes: `%APPDATA%\MicaStats\history\` holds today's CSV with one row a minute. Ask "What was my CPU doing in the last ten minutes?". **Delete history** empties the folder and the size drops to 0 KB.
-12. **The log stays clean.** After all of the above, open `%APPDATA%\MicaStats\logs\micastats.log`: no question text, no answer text, no key, no token.
+12. **MCP mode switch.** In Settings → AI switch MCP from **Stdio bridge** to **Off** and back to **Stdio bridge**: the diagnostics log shows "Tool pipe for the stdio bridge started" and "stopped" lines, and a Claude Desktop question gets live data again.
+13. **Explain buttons live.** Toggling the assistant on and off shows and hides the **Explain** buttons live, in Diagnostics (slowdown reports) and in the process window. The process-window **Explain** button is enabled only with exactly one process selected.
+14. **Clipboard.** **Copy token** and **Copy Claude Code command** (Local HTTP mode) put the text on the clipboard, and it does NOT appear in Windows clipboard history (Win+V). With another app holding the clipboard, Copy shows "The clipboard is busy. Try again." instead of crashing.
+15. **Gateway environment variables.** With a variable such as `ANTHROPIC_BASE_URL` set in the user environment (as Claude Code gateways do), a Claude question in MicaStats still goes to Anthropic and works with the key saved in Settings.
+16. **Local models.** A local model without tool support (for example a small Ollama model) answers in "limited mode"; a model that stops sending data shows the timeout message after about 60 seconds.
+17. **The log stays clean.** After all of the above, open `%APPDATA%\MicaStats\logs\micastats.log`: no question text, no answer text, no key, no token.
 
 - [ ] **Step 6: Finish the branch**
 

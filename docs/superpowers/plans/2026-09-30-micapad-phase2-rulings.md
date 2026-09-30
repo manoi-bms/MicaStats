@@ -1,0 +1,57 @@
+# MicaPad phase 2 — rulings made during execution
+
+Every decision the controller took while executing the phase 2 plans without stopping (conflicts, plan defects, scope calls), copied from the execution ledgers before they were deleted. Format: what was decided — why — what it costs if wrong.
+
+## Part 1
+
+- commit trailer placeholder "<your model name>" left for implementers to fill with their own model — plan global constraint says trailer names the authoring model — costs nothing if wrong (message text only).
+- Task 4 rename test asserts the rename state (new internal RenamingNote accessor + RenameBox.Text) instead of RenamePopup.IsOpen — a StaysOpen=False Popup in a window that is never shown cannot hold mouse capture and closes at once; the plan's assertion was a plan defect — if wrong, the popup opening is only covered by the owner's manual check (spec manual 2)
+- fix menu Delete via ApplicationCommands.Delete on the TextArea (same path as the Del key) with a rectangle test — spec 1.3 says Delete is the edit item; matching the Del key is what a user expects — costs nothing if wrong.
+- include final-review Minor 1 in the fix wave (tab-menu notices must not overwrite an info-bar file question) — losing Keep as note / Reload buttons is user-visible — if wrong, a notice is skipped while a question shows.
+- include Minor 7 (theme glyphs as / escapes) — readability only.
+- amend spec 1.2 light accent to #06707C (spec's #087E8B fails its own 4.5:1 rule on chrome/info bar/banner) and spec 1.3 tab Close has no shortcut hint (Ctrl+W acts on the active tab, not the right-clicked one) — spec follows the tested code — if wrong, only doc wording.
+
+## Part 2
+
+- accept Preprocessor-before-Type row order — keeps the plan's intent (DocType/XmlDeclaration are preprocessor-like), no known definition color name contains both a preprocessor token and Type/Class/Reference — spec 2.2 table order to be amended in the Part 2 final fix wave; costs a doc edit if wrong.
+- fix via a regression test first (a YAML line with don't must not color a string, and must not affect the next line's key); add (?<!\w) before the YAML ' span begin; add multiline="false" to YAML/Batch quote spans only if the test shows leakage (AvalonEdit spans may already end at the line end) — costs little if wrong.
+- include Minor 1 — PadHighlighting.Load catches Exception (a load failure must never reach the UI; spec error handling) and still caches null + logs once.
+- call ApplyLanguage() wherever the shown note's SourcePath changes (next to UpdateFileText at those sites) + a Save As test and a Keep-as-note test — spec 2.1 Auto is by file type — cheap if wrong.
+- ToastButtonTests.OnSta runs its body on the shared UiThread (UiThread.Run) so every WPF object in the suite is built on one thread; verify with 3 consecutive full-suite runs — costs nothing in behaviour (test-only change).
+- fix Quote to add "> " only to lines that lack it (as the doc comment says) + mixed-selection test; also fix Minor "Italic on bold turns it italic" (a single * marker counts as present only when not part of a ** run) + test; and the GUIDE sentence (Link and Code block do not toggle; a heading item replaces another level) — user-visible behaviour — cheap if wrong.
+- fix both (BraceSyntax gets an escape char; here-strings as multi-line spans) + include minors: backtick quotes only for JavaScript (C#/Java/C++/PHP quote with " and ' only; PHP also '#' line comments); FoldingController.Update catches Exception (timer callback must never crash the app); XML first-error offset passed to UpdateFoldings — spec 2.5 "ignoring braces inside strings and comments" — cheap if wrong.
+- reviewer claim "growth past 2 MB not re-resolved until tab switch" rejected — Task 4's EnsureDocument Changed handler re-applies the language when the limit is crossed (tested by Crossing_the_size_limit_turns_formatting_off_and_on).
+- fix wave takes Critical 1 (guard + defer the crossing re-apply via Dispatcher.BeginInvoke + regression test), Important 2 (EditorLanguage.Apply is a no-op for the same language on the same document; fold+Ctrl+S test), Important 3 (Find unfolds folds overlapping the match only), Important 4 (Wrap trims trailing CR/LF from the selection; multi-line selections wrap per line), Important 5 (catch in cache/colorizer/renderer/generator/themed colorizer; one warning per document via an injectable warn sink; that document falls back to Plain), the committed Rows comment and a full spec 2.2 table rewrite, Minor 1 partial (regex only on candidate lines; edited line re-checked as delimiter — fixes the Task 6 indent case; no splice), Minor 3 (fence shading below current line), Minor 4 (C# verbatim strings; PS single quotes literal), Minor 6 (GUIDE) — crash + spec promises — costs one bigger fix round if wrong.
+- defer Minor 2 (folding recompute 70-100 ms on 2 MB, within plan) and Minor 5 (monospace code under a proportional font; default font is monospace) — perf/cosmetic with design cost — owner may see them in e2e.
+- Task 8 re-resolve ruling narrowed per reviewer: re-apply only when the effective language changes (Important 2).
+- concern (b) fixed by controller - FoldingController logs once per attach (_warned) - a persistent failure would log after every typing pause - trivial if wrong.
+- concern (a) parked - language button/Format menu keep the chosen language after a formatting failure - cosmetic, failure already logged once, text edits still correct - owner sees a stale label at worst.
+
+## Part 3
+
+- insert Task 1b "MicaPad menu style" before Task 2 (Task 3 adds Lines to the same menus) - controller prototypes the style in the screenshot harness first, then an implementer ports it with tests - owner asked directly - costs a restyle round if they dislike the look.
+- fix - a quote typed right after the same quote character inserts plainly (``` and Python """ type as typed) + policy and typing tests; include Minor: Shift+Backspace also deletes an empty pair - Markdown is the default note type - cheap if wrong.
+- editing shortcuts are off while the history preview is shown (EditingKeysAllowed becomes an instance property: no TextBox focus and PreviewPanel not visible) + regression test - spec: shortcuts must not edit what the user is not looking at - cheap if wrong.
+- include Minors 1-2 (Join skips the space after an empty first line; Sort pins every trailing empty line, not just the last) and edge tests (lone CR, mixed endings, selection ending after a line break for Move/Duplicate, CRLF dedupe) - Review Focus 2/3 - cheap.
+- fix - Document.Changed (current document, re-hooked on ShowNote's swap) clears Offsets and the count at once and restarts the 150 ms timer + test; include Minors: selection length checked before copying Text; NonSpacingMark/SpacingCombiningMark count as word characters (Thai vowels/tone marks - the owner writes Thai); renderer-order comment corrected (find matches draw on the Selection layer); stray test formatting; one GUIDE line that Thai words inside unspaced Thai text are not marked - owner's language - cheap.
+- fix wave takes C1 (clamp + defensive ApplyEdit + tests), I1 (shared WordChars helper for auto-close and occurrences), I2 (AfterInsertion), I3 (line-by-line ApplyEdit when line count unchanged, explicit bookmark remap for Move, per-match Replace All in one update group with a 5,000-match fallback), M1-M7, M9, M10, and a MicaPad-scoped exception guard on menu items and window shortcuts - crash kills MicaStats; spec 3.1/3.3 promises - one bigger fix round if wrong.
+- defer M8 (per-key text copy, 7 ms at 2 MB), Sort/Dedupe bookmark merge (Scintilla does the same), Undo of reload/restore collapsing bookmarks, and the Declined-to-judge list - perf/edge with design cost.
+- park Undo-of-Move bookmark remap with the Undo-of-reload item (backlog: a custom IUndoableOperation calling Remap) - no data loss - owner may notice a dot on the neighbour line after Ctrl+Z.
+
+## Part 4
+
+- fix - one shared configure path for both editors: options off, SafeLinkGenerator, the always-handled RequestNavigate handler, link colour; tests for the preview (options, no builtin generator, request handled, file: opens nothing); include Minor edge tests (https://user@host allowed per spec, %2f and a 5,000-char line pattern check) - spec 4.1 "no other scheme is ever opened" - cheap.
+- fix both - specific regex for bold; writer keeps no per-char array when there are no runs and uses int style ids (4 B/char) with a style table when there are; include Minors: CopyAsRtf refuses above 10 M chars with a status message, and any unexpected failure shows "Copy as RTF failed" in the status bar (logged once) - silent failures are bad UX - cheap.
+- fix wave takes C1 (pattern without {}[] + balanced parens + Thai-prefix lookbehind, fold regression test), I1, I2, M1 (+ TextRange round-trip test), M2 (WinForms SetDataObject 3x100 ms, one call), M3, M4 as part of C1's pattern, M5, M6, M7, M8, M9 and the cheap tests - crash kills MicaStats; owner pastes Thai into Word - one bigger round if wrong.
+- Thai text right after a URL stays part of it (IRIs are real); Wikipedia-style balanced parens kept.
+
+## Part 5
+
+- accept HistoryDiff.MaxChangedLines (50,000) showing "Too large to compare" — DiffPlex took over 60 s on 1 MB of wholly different short lines; the spec's 1 MB limit alone does not bound the work — a big diff the owner wants to see shows the message instead (cost: can raise the cap later).
+- accept "after a cancelled log-off every window counts as exiting, × closes for real, its tabs stay in the session until the next start" — a cancelled log-off is rare and no text is lost; phase 1 had the same exiting flag — cost: tabs out of sight until restart.
+- accept "if another window fails to load on the first show, the front window is not shown either (logged)" — very unlikely (all windows load the same way) — cost: the hotkey needs a second press.
+- fix in Task 4 - released documents' UpdateStarted/UpdateFinished guard the old TextArea's caret and selection while it shows another document (handlers removed on re-attach and Detach) + a test (edit with selection in window A, hand over, undo in B, A unchanged); include Minors: EnsureDocument/Attach ownership check, LetGoOfShown hides the info bar about that note and ends the preview, a test for releasing the shown note, AdoptDocument returns bool, PrepareForExit after a failed LoadSession records Open=false - crash + silent cross-note edit - one more round if wrong.
+- fix round 2 - guard redo too (re-apply the saved caret/selection after UpdateFinished and once more via Dispatcher.BeginInvoke, clamped to the current document); if the probe shows no reliable guard, fall back to clearing the adopted document's undo stack when the source window stays open (Move to), keeping undo only for window close - data safety over undo retention - costs undo history on Move to if the fallback is needed.
+- accept - evidence is two passing tests on the real code path vs one probe without the guard - cost: a redo edge left if the tests miss a path.
+- C-1 fix (A) - clear the moved document's undo history on Move to / Move to new window (source window stays open); keep undo on × merge; delete the release hooks (also removes M-3) - pre-approved fallback in this ledger; data safety over undo retention - costs undo history on Move to.
+- fix wave also takes I-1, M-1, M-2, M-4, M-5, M-6, M-7, M-8, M-10, M-11 and a MoveToWindow doc line; defer M-9 (1,000-tab merge 650 ms).

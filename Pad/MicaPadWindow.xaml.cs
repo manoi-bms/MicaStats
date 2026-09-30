@@ -1168,6 +1168,12 @@ namespace Kil0bitSystemMonitor.Pad
             }
             menu.Items.Add(Item("Select all", "Ctrl+A", () => editor.SelectAll(), hasText));
 
+            if (!readOnly && ReferenceEquals(editor, Editor) && ReferenceEquals(_resolved.Effective, PadLanguages.Markdown))
+            {
+                menu.Items.Add(new Separator());
+                menu.Items.Add(BuildFormatMenu(editor));
+            }
+
             if (!readOnly)
             {
                 menu.Items.Add(new Separator());
@@ -1175,6 +1181,39 @@ namespace Kil0bitSystemMonitor.Pad
                 menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true)));
                 menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine));
             }
+        }
+
+        /// <summary>Format ▸ for a Markdown tab (spec 2.4): each item is one undoable edit; no new shortcuts.</summary>
+        private MenuItem BuildFormatMenu(ICSharpCode.AvalonEdit.TextEditor editor)
+        {
+            var format = new MenuItem { Header = "Format" };
+            void Add(string header, Func<string, int, int, TextEdit> edit) =>
+                format.Items.Add(Item(header, null, () =>
+                    ApplyEdit(editor, edit(editor.Document.Text, editor.SelectionStart, editor.SelectionLength))));
+
+            Add("Bold", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "**"));
+            Add("Italic", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "*"));
+            Add("Strikethrough", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "~~"));
+            Add("Code", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "`"));
+            Add("Link", MarkdownFormatter.Link);
+            format.Items.Add(new Separator());
+            Add("Heading 1", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading1));
+            Add("Heading 2", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading2));
+            Add("Heading 3", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading3));
+            format.Items.Add(new Separator());
+            Add("Bullet list", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Bullet));
+            Add("Numbered list", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Numbered));
+            Add("Task", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Task));
+            Add("Quote", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Quote));
+            Add("Code block", MarkdownFormatter.CodeBlock);
+            return format;
+        }
+
+        /// <summary>Applies an edit as one undoable change and selects what it says.</summary>
+        internal static void ApplyEdit(ICSharpCode.AvalonEdit.TextEditor editor, TextEdit edit)
+        {
+            editor.Document.Replace(edit.Offset, edit.Length, edit.Text);
+            editor.Select(edit.SelectionStart, edit.SelectionLength);
         }
 
         /// <summary>True when Paste has something to paste. A busy clipboard counts as yes: Paste itself then tries.</summary>

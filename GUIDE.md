@@ -215,6 +215,10 @@ Notes and `.md`/`.txt` files are formatted as you type: `#` headings grow, `**bo
 (dimmed) — the file is plain text and never changes. Turn it off with **☰ → Markdown formatting**
 or in **Settings → MicaPad**.
 
+Right-click → **Format** wraps the selection in bold, italic, strikethrough, code or a link, or
+turns the selected lines into headings, lists, tasks, quotes or a code block — choose it again to
+undo the formatting. Each is a single **Ctrl+Z**.
+
 ### Colors for code, logs and settings files
 
 JSON, XML, HTML, C#, JavaScript, CSS, PowerShell, Python, SQL, C/C++, Java, PHP, VB, diff, INI,

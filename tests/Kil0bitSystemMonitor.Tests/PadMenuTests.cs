@@ -44,10 +44,42 @@ namespace Kil0bitSystemMonitor.Tests
         {
             window.RefreshEditorMenu();
 
-            Assert.Equal(new[] { "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Delete", "Select all", "-", "Find", "Replace", "Go to line…" },
+            Assert.Equal(new[] { "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Delete", "Select all", "-", "Format", "-", "Find", "Replace", "Go to line…" },
                          Headers(window.EditorMenu));
             Assert.Equal("Ctrl+Z", ItemOf(window.EditorMenu, "Undo").InputGestureText);
             Assert.Equal("Ctrl+G", ItemOf(window.EditorMenu, "Go to line…").InputGestureText);
+        });
+
+        [Fact]
+        public void A_markdown_note_has_the_format_menu_and_a_json_file_does_not() => WithWindow((window, env) =>
+        {
+            window.RefreshEditorMenu();
+            var format = ItemOf(window.EditorMenu, "Format");
+            var headers = format.Items.Cast<object>().Select(i => i is MenuItem m ? (string)m.Header : "-").ToArray();
+            Assert.Equal(new[] { "Bold", "Italic", "Strikethrough", "Code", "Link", "-", "Heading 1", "Heading 2", "Heading 3", "-",
+                                 "Bullet list", "Numbered list", "Task", "Quote", "Code block" }, headers);
+
+            string path = env.FileOf("a.json");
+            File.WriteAllText(path, "{}");
+            window.OpenPath(path);
+            window.RefreshEditorMenu();
+            Assert.DoesNotContain("Format", Headers(window.EditorMenu));
+        });
+
+        [Fact]
+        public void Format_from_the_menu_is_one_undo_step() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Insert(0, "hello");
+            window.Editor.Select(0, 5);
+            window.RefreshEditorMenu();
+
+            var bold = ItemOf(window.EditorMenu, "Format").Items.OfType<MenuItem>().Single(m => (string)m.Header == "Bold");
+            Click(bold);
+
+            Assert.Equal("**hello**", window.Editor.Document.Text);
+            Assert.Equal("hello", window.Editor.SelectedText);
+            window.Editor.Undo();
+            Assert.Equal("hello", window.Editor.Document.Text);
         });
 
         [Fact]

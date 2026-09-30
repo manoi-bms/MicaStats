@@ -12,7 +12,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// <summary>
     /// Text plus styled runs to RTF (spec 4.4): one font, a color table, bold, italic, strike,
     /// character shading and relative sizes. Every character outside ASCII is written as a
-    /// unicode escape so Thai and emoji survive; line endings of any kind become paragraphs.
+    /// unicode escape so Thai and emoji survive; line endings of any kind become paragraphs. Other
+    /// control characters become spaces, and what is not a character (U+FFFE, U+FFFF, a lone
+    /// surrogate) a question mark, so the RTF is plain ASCII that every reader accepts.
     /// </summary>
     public static class RtfWriter
     {
@@ -78,45 +80,92 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 if (current != styleId)
                 {
                     var style = table[styleId];
+                    // Word formats Thai with the associated (complex-script) forms, \ab \ai \afs, and
+                    // \plain resets them, so each property is written in both forms.
                     body.Append(@"\plain\f0")
                         .Append(@"\cf").Append(ColorIndex(style.Foreground).ToString(CultureInfo.InvariantCulture));
-                    if (style.Bold) body.Append(@"\b");
-                    if (style.Italic) body.Append(@"\i");
+                    if (style.Bold) body.Append(@"\b\ab");
+                    if (style.Italic) body.Append(@"\i\ai");
                     if (style.Strike) body.Append(@"\strike");
                     if (style.Background is PadColor bg) body.Append(@"\chcbpat").Append(ColorIndex(bg).ToString(CultureInfo.InvariantCulture));
                     int halfPoints = (int)Math.Round(baseHalfPoints * style.Size, MidpointRounding.AwayFromZero);
-                    body.Append(@"\fs").Append(halfPoints.ToString(CultureInfo.InvariantCulture)).Append(' ');
+                    AppendSize(body, halfPoints).Append(' ');
                     current = styleId;
                 }
 
                 switch (c)
                 {
-                    case '\\': body.Append(@"\\"); break;
-                    case '{': body.Append(@"\{"); break;
-                    case '}': body.Append(@"\}"); break;
                     case '\t': body.Append(@"\tab "); break;
+                    case < ' ': body.Append(' '); break;          // a raw control character breaks readers (NUL ends the clipboard text)
                     default:
-                        if (c < 0x80) body.Append(c);
-                        else body.Append(@"\u").Append(((short)c).ToString(CultureInfo.InvariantCulture)).Append('?');
+                        if (char.IsSurrogate(c))
+                        {
+                            // A pair is written as its two halves; a lone half is not a character.
+                            if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                            {
+                                AppendChar(body, c);
+                                AppendChar(body, text[++i]);
+                            }
+                            else body.Append('?');
+                        }
+                        else AppendChar(body, c);
                         break;
                 }
             }
 
             var rtf = new StringBuilder();
             rtf.Append(@"{\rtf1\ansi\ansicpg1252\deff0");
-            rtf.Append(@"{\fonttbl{\f0\fmodern ").Append(Escape(fontFamily)).Append(";}}");
+            rtf.Append(@"{\fonttbl{\f0\fmodern ");
+            foreach (char c in fontFamily) AppendChar(rtf, c < ' ' ? ' ' : c);
+            rtf.Append(";}}");
             rtf.Append(@"{\colortbl ;");
             foreach (var c in colors)
                 rtf.Append(@"\red").Append(c.R.ToString(CultureInfo.InvariantCulture))
                    .Append(@"\green").Append(c.G.ToString(CultureInfo.InvariantCulture))
                    .Append(@"\blue").Append(c.B.ToString(CultureInfo.InvariantCulture)).Append(';');
             rtf.Append('}');
-            rtf.Append(@"\f0\fs").Append(baseHalfPoints.ToString(CultureInfo.InvariantCulture)).Append(' ');
+            rtf.Append(@"\f0");
+            AppendSize(rtf, baseHalfPoints).Append(' ');
             rtf.Append(body);
             rtf.Append('}');
             return rtf.ToString();
         }
 
-        private static string Escape(string s) => s.Replace(@"\", @"\\").Replace("{", @"\{").Replace("}", @"\}");
+        /// <summary>
+        /// About how long the RTF of <paramref name="text"/> will be, for a size cap before building
+        /// it: an ASCII character counts one, any other eight (its unicode escape).
+        /// </summary>
+        public static long EstimatedLength(string text)
+        {
+            long length = 0;
+            foreach (char c in text) length += c < 0x80 ? 1 : 8;
+            return length;
+        }
+
+        private static StringBuilder AppendSize(StringBuilder sb, int halfPoints)
+        {
+            string n = halfPoints.ToString(CultureInfo.InvariantCulture);
+            return sb.Append(@"\fs").Append(n).Append(@"\afs").Append(n);
+        }
+
+        /// <summary>
+        /// One character of text or of the font name: RTF's own \ { } escaped, anything outside
+        /// ASCII as a signed unicode escape with a ? fallback, and the noncharacters U+FFFE and
+        /// U+FFFF (which readers reject) as a plain ?.
+        /// </summary>
+        private static void AppendChar(StringBuilder sb, char c)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append(@"\\"); break;
+                case '{': sb.Append(@"\{"); break;
+                case '}': sb.Append(@"\}"); break;
+                case (char)0xFFFE or (char)0xFFFF: sb.Append('?'); break;
+                default:
+                    if (c < 0x80) sb.Append(c);
+                    else sb.Append(@"\u").Append(((short)c).ToString(CultureInfo.InvariantCulture)).Append('?');
+                    break;
+            }
+        }
     }
 }

@@ -24,7 +24,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal("**bold**", copied!.GetData(DataFormats.UnicodeText));
             string rtf = (string)copied.GetData(DataFormats.Rtf);
-            Assert.Matches(@"\\b\\fs\d+ \*\*bold\*\*|\\b\\fs\d+ bold", rtf);
+            Assert.Matches(@"\\b\\ab\\fs(\d+)\\afs\1 (\*\*bold\*\*|bold)", rtf);
             Assert.Contains("bold", rtf);
         });
 

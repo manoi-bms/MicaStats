@@ -56,7 +56,7 @@ namespace Kil0bitSystemMonitor.Tests
             window.WindowState = WindowState.Normal;
             window.ToggleFullScreen();
             window.PrepareForExit();
-            Assert.False(env.Workspace.Session.Maximized);     // full screen is maximized underneath; it must not be saved as such
+            Assert.False(env.Workspace.Windows[0].Maximized);     // full screen is maximized underneath; it must not be saved as such
         });
 
         [Fact]
@@ -65,7 +65,7 @@ namespace Kil0bitSystemMonitor.Tests
             window.WindowState = WindowState.Maximized;
             window.ToggleFullScreen();
             window.PrepareForExit();
-            Assert.True(env.Workspace.Session.Maximized);
+            Assert.True(env.Workspace.Windows[0].Maximized);
         });
 
         [Fact]
@@ -134,7 +134,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(window.IsFullScreen);
             Assert.Equal(style, window.WindowStyle);
             Assert.Equal(WindowState.Normal, window.WindowState);
-            Assert.False(env.Workspace.Session.Maximized);
+            Assert.False(env.Workspace.Windows[0].Maximized);
         });
     }
 }

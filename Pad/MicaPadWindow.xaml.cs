@@ -54,6 +54,24 @@ namespace Kil0bitSystemMonitor.Pad
 
         private readonly PadWorkspace _workspace;
         private readonly AppConfig _config;
+
+        /// <summary>The session window this window shows, as asked for at construction; null means the first.</summary>
+        private readonly string? _requestedWindowId;
+
+        /// <summary>This window's id in the session (spec 5.3); set by <see cref="LoadSession"/>.</summary>
+        private string _windowId = "";
+
+        /// <summary>This window's placement, zoom and on-top state in the session; set by <see cref="LoadSession"/>.</summary>
+        private PadWindowState? _state;
+
+        /// <summary>True while the close button has hidden this window (it was the last one).</summary>
+        private bool _hidden;
+
+        /// <summary>Each document's change handler, so a document can be handed to another window.</summary>
+        private readonly Dictionary<TextDocument, EventHandler<DocumentChangeEventArgs>> _docHandlers = new();
+
+        /// <summary>This window's id in the session; for tests and the window registry.</summary>
+        internal string WindowId => _windowId;
         private readonly Dictionary<string, TextDocument> _docs = new();
         private readonly DispatcherTimer _tick;
         private OpenNote? _shown;
@@ -73,12 +91,21 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The note whose tab is being renamed, or null; for tests (the popup itself needs a shown window).</summary>
         internal OpenNote? RenamingNote => _renaming;
 
-        /// <summary>Builds the window over a workspace; call <see cref="LoadSession"/> before showing it.</summary>
-        public MicaPadWindow(PadWorkspace workspace, AppConfig config)
+        /// <summary>Builds the window over the workspace's first window; call <see cref="LoadSession"/> before showing it.</summary>
+        public MicaPadWindow(PadWorkspace workspace, AppConfig config) : this(workspace, config, null)
+        {
+        }
+
+        /// <summary>
+        /// Builds the window for one of the workspace's windows (spec 5.3); null means the first.
+        /// Call <see cref="LoadSession"/> before showing it.
+        /// </summary>
+        public MicaPadWindow(PadWorkspace workspace, AppConfig config, string? windowId)
         {
             InitializeComponent();
             _workspace = workspace;
             _config = config;
+            _requestedWindowId = windowId;
 
             ConfigureEditor();
             ConfigureLinks(Editor);
@@ -121,8 +148,7 @@ namespace Kil0bitSystemMonitor.Pad
                 if (_shown != null) _workspace.SnapshotNow(_shown, SnapshotReason.BeforeReplace);
             };
 
-            TabStrip.ItemsSource = _workspace.Open;
-            _tabDrag = new TabDragController(TabStrip, TabScroller, () => _workspace.Open,
+            _tabDrag = new TabDragController(TabStrip, TabScroller, () => _workspace.TabsOf(_windowId),
                 (note, index) => _workspace.MoveTab(note, index),
                 () => _workspace.SaveSession());
             _workspace.Open.CollectionChanged += OnOpenChanged;
@@ -141,7 +167,11 @@ namespace Kil0bitSystemMonitor.Pad
             LoadIcon();
             SourceInitialized += OnSourceInitialized;
             Deactivated += (s, e) => _workspace.FlushPending();
-            Activated += (s, e) => CheckShownNoteOnDisk();
+            Activated += (s, e) =>
+            {
+                if (_windowId.Length > 0) _workspace.ActivateWindow(_windowId);
+                CheckShownNoteOnDisk();
+            };
             Closed += OnClosedForReal;
         }
 
@@ -171,7 +201,8 @@ namespace Kil0bitSystemMonitor.Pad
                 s_current = window;
             }
 
-            workspace.Session.WindowOpen = true;
+            window._hidden = false;
+            window._state!.Open = true;
             workspace.SaveSession();
 
             if (!window.IsVisible) window.Show();
@@ -182,20 +213,25 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>
-        /// Restores the saved tabs into documents and shows the active one. Called once, before the
-        /// window is first shown. The workspace restore is idempotent, so a recreated window picks
-        /// up the same notes.
+        /// Binds the window to its session window, builds the documents of its tabs and shows its
+        /// active tab. Called once, before the window is first shown. The workspace restore is
+        /// idempotent, so every window finds the same notes.
         /// </summary>
         public void LoadSession()
         {
             _workspace.Restore();
-            if (_workspace.Open.Count == 0) _workspace.NewNote();
-            foreach (var note in _workspace.Open) EnsureDocument(note);
+            _windowId = _requestedWindowId ?? _workspace.Windows[0].Id;
+            _state = _workspace.WindowStateOf(_windowId)
+                     ?? throw new InvalidOperationException("MicaPad has no window " + _windowId);
+            var tabs = _workspace.TabsOf(_windowId);
+            TabStrip.ItemsSource = tabs;
+            if (tabs.Count == 0) _workspace.NewNote(_windowId);
+            foreach (var note in tabs.ToList()) EnsureDocument(note);
 
-            Topmost = _workspace.Session.AlwaysOnTop;
+            Topmost = _state.AlwaysOnTop;
             ApplyPlacement();
             ApplyEditorSettings();
-            ShowNote(_workspace.Active ?? _workspace.Open[0]);
+            ShowNote(_workspace.ActiveIn(_windowId) ?? tabs[0]);
             _tick.Start();
         }
 
@@ -208,7 +244,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (_exiting) return;
             _exiting = true;
             CaptureViewState();
-            _workspace.Session.WindowOpen = IsVisible;
+            if (_state != null) _state.Open = !_hidden;
         }
 
         /// <summary>Closes the window for real (tests and application exit).</summary>
@@ -221,23 +257,25 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>A new scratch note in a new tab.</summary>
-        internal void NewTab() => ShowNote(_workspace.NewNote());
+        internal void NewTab() => ShowNote(_workspace.NewNote(_windowId));
 
-        /// <summary>Closes a tab without asking. Closing the last one leaves a fresh empty note.</summary>
+        /// <summary>Closes a tab without asking. Closing this window's last one leaves a fresh empty note here.</summary>
         internal void CloseTab(OpenNote note)
         {
             bool wasShown = ReferenceEquals(_shown, note);
             if (wasShown) _shown = null;
 
             _workspace.Close(note);
-            if (_workspace.Open.Count == 0) _workspace.NewNote();
-            if (wasShown || _shown == null) ShowNote(_workspace.Active ?? _workspace.Open[0]);
+            var tabs = _workspace.TabsOf(_windowId);
+            if (tabs.Count == 0) _workspace.NewNote(_windowId);
+            if (wasShown || _shown == null) ShowNote(_workspace.ActiveIn(_windowId) ?? tabs[0]);
         }
 
-        /// <summary>Shows the tab at a zero-based position; an out-of-range index is ignored.</summary>
+        /// <summary>Shows this window's tab at a zero-based position; an out-of-range index is ignored.</summary>
         internal void SelectTab(int index)
         {
-            if (index >= 0 && index < _workspace.Open.Count) ShowNote(_workspace.Open[index]);
+            var tabs = _workspace.TabsOf(_windowId);
+            if (index >= 0 && index < tabs.Count) ShowNote(tabs[index]);
         }
 
         /// <summary>
@@ -307,7 +345,8 @@ namespace Kil0bitSystemMonitor.Pad
                 e.Cancel = true;
                 CaptureViewState();                    // the placement from before full screen, if any
                 if (IsFullScreen) ToggleFullScreen();  // so MicaPad comes back windowed (GUIDE)
-                _workspace.Session.WindowOpen = false;
+                _hidden = true;
+                if (_state != null) _state.Open = false;
                 _workspace.FlushPending();
                 _workspace.SaveSession();
                 Hide();
@@ -408,7 +447,18 @@ namespace Kil0bitSystemMonitor.Pad
 
             var document = new TextDocument(note.TextProvider());
             document.UndoStack.ClearAll();
-            document.Changed += (s, e) =>
+            Attach(note, document);
+            return document;
+        }
+
+        /// <summary>
+        /// Makes <paramref name="document"/> this window's document of <paramref name="note"/>: its
+        /// edits reach the workspace, the note's text is read from it (autosave, snapshots), and its
+        /// saved bookmarks come back.
+        /// </summary>
+        private void Attach(OpenNote note, TextDocument document)
+        {
+            EventHandler<DocumentChangeEventArgs> changed = (s, e) =>
             {
                 _workspace.NotifyChanged(note, markUnsaved: !_suppressDirty);
                 if (ReferenceEquals(_shown, note)) UpdateCharsText();
@@ -424,11 +474,48 @@ namespace Kil0bitSystemMonitor.Pad
                     }));
                 }
             };
+            document.Changed += changed;
+            _docHandlers[document] = changed;
             note.TextProvider = () => document.Text;
             _docs[note.Id] = document;
             if (_workspace.Session.Tabs.TryGetValue(note.Id, out var view) && view.Bookmarks != null)
                 _bookmarks.Load(document, view.Bookmarks);
+        }
+
+        /// <summary>
+        /// Lets go of a note's document because its tab is moving to another window: its bookmarks
+        /// go to the session, and its change handler and bookmark anchors come off. Returns the
+        /// document, undo history and all, for <see cref="AdoptDocument"/>; null when this window
+        /// never built one.
+        /// </summary>
+        internal TextDocument? ReleaseDocument(OpenNote note)
+        {
+            if (!_docs.TryGetValue(note.Id, out var document)) return null;
+            if (ReferenceEquals(_shown, note)) LetGoOfShown();
+            _workspace.SetBookmarks(note, _bookmarks.Lines(document));
+            _bookmarks.Forget(document);
+            if (_docHandlers.Remove(document, out var changed)) document.Changed -= changed;
+            _docs.Remove(note.Id);
             return document;
+        }
+
+        /// <summary>Takes over a document another window released, undo history and all.</summary>
+        internal void AdoptDocument(OpenNote note, TextDocument document)
+        {
+            if (!_docs.ContainsKey(note.Id)) Attach(note, document);
+        }
+
+        /// <summary>
+        /// The editor stops showing any note (its tab is leaving this window): caret and scroll are
+        /// saved, and formatting and folding come off that document first, so nothing here keeps
+        /// listening to it.
+        /// </summary>
+        private void LetGoOfShown()
+        {
+            if (_shown != null) SaveViewState(_shown);
+            _shown = null;
+            _language.Apply(PadLanguages.Plain);
+            Editor.Document = new TextDocument();
         }
 
         /// <summary>True when the shown language's size-limit state no longer matches the document's length.</summary>
@@ -463,17 +550,23 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (e.Action == NotifyCollectionChangedAction.Move) return;   // a moved tab keeps its document, bookmarks and folds
             if (e.NewItems != null)
-                foreach (OpenNote note in e.NewItems) EnsureDocument(note);
+                foreach (OpenNote note in e.NewItems)
+                    if (note.WindowId == _windowId) EnsureDocument(note);   // never another window's: its TextProvider is that window's
             if (e.OldItems != null)
                 foreach (OpenNote note in e.OldItems)
                 {
-                    if (_docs.TryGetValue(note.Id, out var gone)) _bookmarks.Forget(gone);
+                    if (_docs.TryGetValue(note.Id, out var gone))
+                    {
+                        _bookmarks.Forget(gone);
+                        if (_docHandlers.Remove(gone, out var changed)) gone.Changed -= changed;
+                    }
                     _docs.Remove(note.Id);
                 }
         }
 
         private void ShowNote(OpenNote note)
         {
+            if (note.WindowId != _windowId) return;   // another window's tab (Task 6 brings that window forward)
             if (_shown != null && !ReferenceEquals(_shown, note))
             {
                 SaveViewState(_shown);
@@ -503,7 +596,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void ReopenClosed()
         {
-            var note = _workspace.ReopenLastClosed();
+            var note = _workspace.ReopenLastClosed(_windowId);
             if (note != null) ShowNote(note);
             else if (_workspace.ClosedNotes().Count > 0) ShowReopenFailed();   // not just an empty list
         }
@@ -514,10 +607,11 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void CycleTab(int delta)
         {
-            int count = _workspace.Open.Count;
+            var tabs = _workspace.TabsOf(_windowId);
+            int count = tabs.Count;
             if (count < 2 || _shown == null) return;
-            int index = _workspace.Open.IndexOf(_shown);
-            ShowNote(_workspace.Open[((index + delta) % count + count) % count]);
+            int index = tabs.IndexOf(_shown);
+            ShowNote(tabs[((index + delta) % count + count) % count]);
         }
 
         // ---- bookmarks -----------------------------------------------------------------------
@@ -653,7 +747,7 @@ namespace Kil0bitSystemMonitor.Pad
             var menu = NewMenu(target, PlacementMode.MousePoint);
             menu.Items.Add(Item("Rename…", null, () => BeginRename(note, target), icon: "\uE8AC"));
             menu.Items.Add(Item("Close", null, () => CloseTab(note), icon: "\uE711"));
-            menu.Items.Add(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.Open.Count > 1));
+            menu.Items.Add(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.TabsOf(_windowId).Count > 1));
 
             if (note.Meta.SourcePath is string path)
             {
@@ -671,7 +765,7 @@ namespace Kil0bitSystemMonitor.Pad
         internal void CloseOtherTabs(OpenNote keep)
         {
             ShowNote(keep);
-            foreach (var other in new List<OpenNote>(_workspace.Open))
+            foreach (var other in _workspace.TabsOf(_windowId).ToList())
                 if (!ReferenceEquals(other, keep)) CloseTab(other);
         }
 
@@ -781,7 +875,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Opens a file in a tab, or reports in the info bar why it was not opened.</summary>
         public void OpenPath(string path)
         {
-            var result = _workspace.OpenFile(path);
+            var result = _workspace.OpenFile(path, _windowId);
             string name = Path.GetFileName(path);
             switch (result.Status)
             {
@@ -1370,7 +1464,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if ((sender as FrameworkElement)?.Tag is not ClosedNoteRow row) return;
             ClosedPopup.IsOpen = false;
-            var note = _workspace.Reopen(row.Id);
+            var note = _workspace.Reopen(row.Id, _windowId);
             if (note != null) ShowNote(note);
             else ShowReopenFailed();
         }
@@ -1618,15 +1712,16 @@ namespace Kil0bitSystemMonitor.Pad
         private void ToggleTopmost()
         {
             Topmost = !Topmost;
-            _workspace.Session.AlwaysOnTop = Topmost;
+            if (_state != null) _state.AlwaysOnTop = Topmost;
             _workspace.SaveSession();
         }
 
-        private void Zoom(double delta) => SetZoom(_workspace.Session.Zoom + delta);
+        private void Zoom(double delta) => SetZoom((_state?.Zoom ?? 1.0) + delta);
 
         private void SetZoom(double zoom)
         {
-            _workspace.Session.Zoom = Math.Clamp(Math.Round(zoom, 2), 0.5, 4.0);
+            if (_state == null) return;
+            _state.Zoom = Math.Clamp(Math.Round(zoom, 2), 0.5, 4.0);
             ApplyEditorSettings();
         }
 
@@ -1827,7 +1922,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void ApplyEditorSettings()
         {
             Editor.FontFamily = new FontFamily(_config.PadFontFamily + ", Cascadia Mono, Consolas");
-            Editor.FontSize = _config.PadFontSize * _workspace.Session.Zoom;
+            Editor.FontSize = _config.PadFontSize * (_state?.Zoom ?? 1.0);
             Editor.WordWrap = _config.PadWordWrap;
             Editor.ShowLineNumbers = _config.PadShowLineNumbers;
             // Turning line numbers on puts AvalonEdit's margin at the front: the dots stay left of them.
@@ -1990,11 +2085,11 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void ApplyPlacement()
         {
-            var session = _workspace.Session;
-            Width = Math.Max(MinWidth, session.Width);
-            Height = Math.Max(MinHeight, session.Height);
+            var place = _state!;
+            Width = Math.Max(MinWidth, place.Width);
+            Height = Math.Max(MinHeight, place.Height);
 
-            if (session.Left is double left && session.Top is double top &&
+            if (place.Left is double left && place.Top is double top &&
                 PadPlacement.IsReachable(left, top, Width, Height,
                     SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
                     SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight))
@@ -2004,29 +2099,29 @@ namespace Kil0bitSystemMonitor.Pad
                 Top = top;
             }
 
-            if (session.Maximized) WindowState = WindowState.Maximized;
+            if (place.Maximized) WindowState = WindowState.Maximized;
         }
 
-        /// <summary>Records the active tab's caret and scroll, and the window's placement.</summary>
+        /// <summary>Records the shown tab's caret and scroll, and this window's placement.</summary>
         private void CaptureViewState()
         {
             if (_shown != null) SaveViewState(_shown);
+            if (_state is not { } place) return;
 
-            var session = _workspace.Session;
-            session.AlwaysOnTop = Topmost;
+            place.AlwaysOnTop = Topmost;
             // Full screen is never saved: the placement from before it is what the session keeps.
-            if (_beforeFullScreen is { } fs) session.Maximized = fs.State == WindowState.Maximized;
+            if (_beforeFullScreen is { } fs) place.Maximized = fs.State == WindowState.Maximized;
             if (!IsLoaded) return;
 
-            if (_beforeFullScreen == null) session.Maximized = WindowState == WindowState.Maximized;
+            if (_beforeFullScreen == null) place.Maximized = WindowState == WindowState.Maximized;
             Rect bounds = _beforeFullScreen is { } saved ? saved.Bounds
                 : WindowState == WindowState.Normal ? new Rect(Left, Top, ActualWidth, ActualHeight) : RestoreBounds;
             if (!bounds.IsEmpty && double.IsFinite(bounds.Left) && double.IsFinite(bounds.Top))
             {
-                session.Left = bounds.Left;
-                session.Top = bounds.Top;
-                session.Width = bounds.Width;
-                session.Height = bounds.Height;
+                place.Left = bounds.Left;
+                place.Top = bounds.Top;
+                place.Width = bounds.Width;
+                place.Height = bounds.Height;
             }
         }
 

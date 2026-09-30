@@ -141,5 +141,29 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Log", window.LanguageButton.Content);
             Assert.True(window.LanguageView.HasSyntaxColors);
         });
+
+        [Fact]
+        public void Saving_an_auto_note_as_json_switches_it_to_json() => WithWindow((window, env, config) =>
+        {
+            var note = env.Workspace.Active!;
+            Assert.Equal("Markdown", window.LanguageButton.Content);
+
+            window.SaveAsPath(note, env.FileOf("saved.json"));
+
+            Assert.Equal("JSON", window.LanguageButton.Content);
+            Assert.True(window.LanguageView.HasSyntaxColors);
+        });
+
+        [Fact]
+        public void Keeping_a_file_as_a_note_returns_it_to_markdown() => WithWindow((window, env, config) =>
+        {
+            OpenFile(window, env, "b.json", "{}");
+            Assert.Equal("JSON", window.LanguageButton.Content);
+
+            window.KeepAsNote(env.Workspace.Active!);
+
+            Assert.Equal("Markdown", window.LanguageButton.Content);
+            Assert.False(window.LanguageView.HasSyntaxColors);
+        });
     }
 }

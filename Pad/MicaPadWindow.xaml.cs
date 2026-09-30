@@ -671,7 +671,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 ShowInfo(name + " no longer exists.", note,
                     "Save As…", () => SaveAs(note),
-                    "Keep as note", () => { _workspace.DetachFromFile(note); UpdateFileText(); });
+                    "Keep as note", () => KeepAsNote(note));
             }
             else
             {
@@ -774,7 +774,15 @@ namespace Kil0bitSystemMonitor.Pad
             SaveAsPath(note, path);
         }
 
-        private void SaveAsPath(OpenNote note, string path) =>
+        /// <summary>Keep as note: the file is gone, so the tab becomes a note, in the note language.</summary>
+        internal void KeepAsNote(OpenNote note)
+        {
+            _workspace.DetachFromFile(note);
+            UpdateFileText();
+            if (ReferenceEquals(note, _shown)) ApplyLanguage();
+        }
+
+        internal void SaveAsPath(OpenNote note, string path) =>
             HandleSaveResult(note, _workspace.SaveAs(note, path), () => SaveAsPath(note, path));
 
         private void HandleSaveResult(OpenNote note, SaveToFileResult result, Action retry)
@@ -785,6 +793,7 @@ namespace Kil0bitSystemMonitor.Pad
                     if (ReferenceEquals(_infoNote, note)) HideInfo();
                     UpdateFileText();
                     UpdateSaveText();
+                    if (ReferenceEquals(note, _shown)) ApplyLanguage();   // Save As may have changed the file type
                     break;
                 case SaveToFileStatus.NeedsSaveAs:
                     SaveAs(note);

@@ -38,11 +38,17 @@ namespace Kil0bitSystemMonitor.Pad
             _move = move;
             _dropped = dropped;
             strip.PreviewMouseMove += OnPreviewMouseMove;
+            // Tunnels before the tab's own handler arms a new press, so a press the tab never sees
+            // (the x of another tab) cannot drag the tab pressed earlier.
+            strip.PreviewMouseLeftButtonDown += (s, e) => StripPressed();
             strip.PreviewMouseLeftButtonUp += (s, e) => { if (IsDragging) e.Handled = true; Release(); };
             strip.LostMouseCapture += (s, e) => Release();
         }
 
         internal bool IsDragging { get; private set; }
+
+        /// <summary>True from a press on a tab until the button goes up.</summary>
+        internal bool IsPressed => _pressed != null;
 
         /// <summary>A left press on a tab (the window calls this from the tab's mouse-down).</summary>
         internal void Press(OpenNote note, Point at)
@@ -50,6 +56,31 @@ namespace Kil0bitSystemMonitor.Pad
             _pressed = note;
             _pressAt = at;
             IsDragging = false;
+        }
+
+        /// <summary>
+        /// The left button went down anywhere on the strip. An old press is forgotten (a drag still
+        /// running missed its button up, so it drops); a press on a tab arms again right after.
+        /// </summary>
+        internal void StripPressed()
+        {
+            if (IsDragging) Release();
+            else _pressed = null;
+        }
+
+        /// <summary>
+        /// The pointer moved over the strip. With the button already up the press is stale: it was
+        /// released where the strip could not see it, so it ends here. Returns true while dragging.
+        /// </summary>
+        internal bool PointerMoved(Point at, bool buttonDown, Func<IReadOnlyList<(double Left, double Width)>> layout)
+        {
+            if (_pressed == null) return false;
+            if (!buttonDown)
+            {
+                Release();
+                return false;
+            }
+            return MoveTo(at, layout());
         }
 
         /// <summary>The pointer moved with the button down. Returns true while dragging.</summary>
@@ -84,9 +115,8 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnPreviewMouseMove(object sender, MouseEventArgs e)
         {
-            if (_pressed == null || e.LeftButton != MouseButtonState.Pressed) return;
             bool wasDragging = IsDragging;
-            if (!MoveTo(e.GetPosition(_strip), Layout())) return;
+            if (!PointerMoved(e.GetPosition(_strip), e.LeftButton == MouseButtonState.Pressed, Layout)) return;
             if (!wasDragging) _strip.CaptureMouse();
 
             double x = e.GetPosition(_scroller).X;

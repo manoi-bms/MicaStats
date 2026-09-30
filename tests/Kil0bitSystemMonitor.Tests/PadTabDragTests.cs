@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Pad;
@@ -80,6 +81,107 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(0, env.Workspace.Open.IndexOf(first));
             Assert.False(drag.IsDragging);
+        });
+
+        [Fact]
+        public void A_move_with_the_button_up_ends_the_press() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var first = env.Workspace.Open[0];
+            window.NewTab();
+            var drag = window.TabDrag;
+
+            drag.Press(first, new Point(50, 10));
+            Assert.False(drag.PointerMoved(new Point(51, 11), buttonDown: false, () => Layout));   // released outside the strip
+
+            Assert.False(drag.IsPressed);
+            Assert.False(drag.IsDragging);
+            Assert.False(drag.MoveTo(new Point(170, 12), Layout));   // a later jitter, e.g. on another tab's x
+            Assert.Equal(0, env.Workspace.Open.IndexOf(first));
+        });
+
+        [Fact]
+        public void A_move_with_the_button_up_mid_drag_drops_and_saves() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var first = env.Workspace.Open[0];
+            window.NewTab();
+            var drag = window.TabDrag;
+            drag.Press(first, new Point(50, 10));
+            Assert.True(drag.PointerMoved(new Point(170, 12), buttonDown: true, () => Layout));
+
+            Assert.False(drag.PointerMoved(new Point(172, 12), buttonDown: false, () => Layout));
+
+            Assert.False(drag.IsDragging);
+            Assert.Equal(1, env.Workspace.Open.IndexOf(first));
+            Assert.Equal(env.Workspace.Open.Select(n => n.Id), env.Workspace.Session.OpenNoteIds);
+        });
+
+        [Fact]
+        public void A_press_anywhere_on_the_strip_forgets_an_old_press() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var first = env.Workspace.Open[0];
+            window.NewTab();
+            var drag = window.TabDrag;
+            drag.Press(first, new Point(50, 10));
+
+            // A press the tab does not handle, such as one on another tab's x button, still tunnels through the strip.
+            window.TabStrip.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+            {
+                RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent,
+            });
+
+            Assert.False(drag.IsPressed);
+            Assert.False(drag.MoveTo(new Point(170, 12), Layout));
+            Assert.Equal(0, env.Workspace.Open.IndexOf(first));
+        });
+
+        [Fact]
+        public void A_second_press_on_another_tab_replaces_the_first() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var first = env.Workspace.Open[0];
+            window.NewTab();
+            window.NewTab();
+            var third = env.Workspace.Open[2];
+            var drag = window.TabDrag;
+
+            drag.Press(first, new Point(50, 10));
+            drag.StripPressed();
+            drag.Press(third, new Point(250, 10));
+            Assert.True(drag.MoveTo(new Point(20, 12), Layout));
+            drag.Release();
+
+            Assert.Equal(0, env.Workspace.Open.IndexOf(third));
+            Assert.Equal(1, env.Workspace.Open.IndexOf(first));
+        });
+
+        [Fact]
+        public void The_order_is_saved_exactly_once_per_drop() => UiThread.Run(() =>
+        {
+            using var env = new PadTestEnv();
+            env.Workspace.NewNote();
+            env.Workspace.NewNote();
+            env.Workspace.NewNote();
+            var first = env.Workspace.Open[0];
+            int saves = 0;
+            // The window wires the drop callback to PadWorkspace.SaveSession; count its calls here.
+            var drag = new TabDragController(new System.Windows.Controls.ItemsControl(), new System.Windows.Controls.ScrollViewer(),
+                () => env.Workspace.Open, (note, index) => env.Workspace.MoveTab(note, index), () => saves++);
+
+            drag.Press(first, new Point(50, 10));
+            drag.MoveTo(new Point(170, 12), Layout);
+            drag.MoveTo(new Point(290, 12), Layout);
+            drag.Release();
+            drag.Release();                                   // the capture loss that follows the button up
+            Assert.Equal(1, saves);
+
+            drag.Press(first, new Point(250, 10));
+            drag.MoveTo(new Point(20, 12), Layout);
+            Assert.False(drag.PointerMoved(new Point(20, 12), buttonDown: false, () => Layout));
+            drag.Release();
+            Assert.Equal(2, saves);
+
+            drag.Press(first, new Point(50, 10));             // a click without a drag saves nothing
+            drag.Release();
+            Assert.Equal(2, saves);
         });
 
         [Fact]

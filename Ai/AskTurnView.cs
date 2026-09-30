@@ -95,8 +95,16 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>The suggestion buttons, in the order they arrived.</summary>
         public List<Button> ActionButtons { get; } = new();
 
-        /// <summary>Adds streamed text to the answer.</summary>
-        public void AppendText(string text) => Answer.Text += text;
+        /// <summary>
+        /// Adds streamed text to the answer. Whitespace before the first visible character is
+        /// dropped: some OpenAI-compatible servers (vLLM with a reasoning parser) start every
+        /// answer with blank lines.
+        /// </summary>
+        public void AppendText(string text)
+        {
+            if (Answer.Text.Length == 0) text = text.TrimStart();
+            if (text.Length > 0) Answer.Text += text;
+        }
 
         /// <summary>Records one tool call on the Details line.</summary>
         public void AddTool(string name, string? args)

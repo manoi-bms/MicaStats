@@ -162,8 +162,8 @@ overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, from the Start me
 * Every note is saved one second after you stop typing, and at least every five seconds while
   you keep typing. The status bar says **Saving…** or **Saved 3s ago**.
 * When Windows shuts down or restarts, MicaPad writes everything and lets Windows continue —
-  no questions. If MicaPad was open, it reopens with the same windows and tabs after you sign in, with
-  **Launch on Startup** on.
+  no questions. If MicaPad was open, it reopens with the same windows and tabs after you sign in,
+  with **Launch on Startup** on.
 * Closing a tab (**Ctrl+W**, middle-click or **×**) never asks either. **Ctrl+Shift+T** reopens
   the last one; the **▾** button lists every closed note, with search, **Reopen** and **Delete**
   (which uses the Recycle Bin). A note that never had any text is simply discarded.
@@ -209,9 +209,9 @@ Right-click in the text for **Undo**, **Redo**, **Cut**, **Copy**, **Copy as RTF
 unless you click inside the selection — then the selection stays, so Cut and Copy act on it.
 Right-click a history version for **Copy** and **Select all**.
 
-Right-click a tab for **Rename**, **Close**, **Close other tabs** and **Move to new window** or **Move to** another window (closed tabs go to Closed notes
-as usual — nothing is deleted). A tab that is a real file also has **Copy file path** and
-**Show in folder**.
+Right-click a tab for **Rename**, **Close**, **Close other tabs** and **Move to new window** or
+**Move to** another window (closed tabs go to Closed notes as usual — nothing is deleted). A tab
+that is a real file also has **Copy file path** and **Show in folder**.
 
 ### Markdown
 
@@ -294,13 +294,14 @@ division by zero), the text is left alone and the status bar says why. Each is a
 **Ctrl+Shift+N** (or **☰ → New window**) opens another MicaPad window with a new note. Each window
 has its own tabs, size and place, zoom, **Always on top** and full screen; the theme, the font and
 the other switches are shared. Closing a window while another one is open moves its tabs into the
-window you used last — no note is closed. Closing the last window only hides it, as before, and
-every window comes back after you sign in.
+window you used last — no note is closed. Closing the last window only hides it, as before: its
+tabs wait for the next time you open MicaPad, and a hidden MicaPad does not reopen when you sign in.
 
 Right-click a tab → **Move to new window**, or **Move to** one of the other windows (listed by the
-tab each is showing); moving a window's last tab closes that window into the other. The hotkey
-and the overlay bring back the window you used last. Opening a file — **Open with**, the Start
-menu, **Ctrl+O** — that is already open in another window brings that window forward on its tab.
+tab each is showing); moving a window's last tab closes that window into the other. A moved tab
+starts a fresh **Ctrl+Z** history in its new window; closing a window keeps its tabs' history. The
+hotkey and the overlay bring back the window you used last. Opening a file — **Open with** or
+**Ctrl+O** — that is already open in another window brings that window forward on its tab.
 
 ### Where notes live
 

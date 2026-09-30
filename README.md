@@ -483,6 +483,7 @@ The published application will be created in the `publish` directory.
 | Desktop framework   | Windows Presentation Foundation              |
 | UI library          | ModernWpfUI                                  |
 | Text editor         | AvalonEdit (MIT), for MicaPad                |
+| Text comparison     | DiffPlex (Apache-2.0), for MicaPad's compare |
 | AI                  | Anthropic .NET SDK, Microsoft.Extensions.AI, MCP C# SDK (ModelContextProtocol.Core) |
 | Windows integration | Win32 APIs                                   |
 | Performance data    | Windows performance counters and system APIs |
@@ -1106,6 +1107,7 @@ dotnet publish `
 | เฟรมเวิร์กเดสก์ท็อป | Windows Presentation Foundation |
 | ไลบรารี UI | ModernWpfUI |
 | โปรแกรมแก้ไขข้อความ | AvalonEdit (MIT) สำหรับ MicaPad |
+| การเปรียบเทียบข้อความ | DiffPlex (Apache-2.0) สำหรับการเปรียบเทียบเวอร์ชันใน MicaPad |
 | AI | Anthropic .NET SDK, Microsoft.Extensions.AI และ MCP C# SDK (ModelContextProtocol.Core) |
 | การเชื่อมต่อกับ Windows | Win32 API |
 | ข้อมูลประสิทธิภาพ | ตัวนับประสิทธิภาพและ API ของ Windows |

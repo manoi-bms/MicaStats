@@ -174,6 +174,25 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(MicaTools.MaxHistoryPoints, result["points"]!.AsArray().Count);
         }
 
+        /// <summary>
+        /// Every field of every point: 500 of them were about 240,000 characters, re-sent with
+        /// every later round. The description already asks for at most 60; the server holds it.
+        /// </summary>
+        [Fact]
+        public async Task History_all_never_returns_more_than_60_points()
+        {
+            var data = new FakeMicaData();
+            for (int i = 0; i < 600; i++) data.Rows.Add(Row(600 - i, 1f, 1f));
+
+            var all = await Tools(data).GetHistoryAsync("all", "-1d", "now", maxPoints: 500);
+            var cpu = await Tools(data).GetHistoryAsync("cpu", "-1d", "now", maxPoints: 500);
+
+            Assert.Equal(MicaTools.MaxHistoryPointsAll, all["points"]!.AsArray().Count);
+            Assert.Equal(60, MicaTools.MaxHistoryPointsAll);
+            Assert.True(all["downsampled"]!.GetValue<bool>());
+            Assert.Equal(500, cpu["points"]!.AsArray().Count);
+        }
+
         [Fact]
         public async Task History_refuses_unknown_metrics_and_unreadable_times()
         {

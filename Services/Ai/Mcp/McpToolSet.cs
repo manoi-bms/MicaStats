@@ -101,7 +101,7 @@ public static class McpToolSet
             [Description("One of: cpu, cpuTemp, ram, gpu, gpuTemp, netUp, netDown, diskFree, diskActivity, battery, topProcesses, all.")] string metric,
             [Description("Start of the range: ISO-8601 UTC such as 2026-09-30T08:00:00Z, or relative such as -90s, -30m, -6h, -2d.")] string from,
             [Description("End of the range, in the same forms, or now.")] string to = "now",
-            [Description("Most rows to return, 1 to 500; a longer range is downsampled.")] int maxPoints = 200,
+            [Description("Most rows to return, 1 to 500 (at most 60 with all); a longer range is downsampled.")] int maxPoints = 200,
             CancellationToken cancellationToken = default) =>
             CallAsync(ToolNames.GetHistory, new JsonObject
             {

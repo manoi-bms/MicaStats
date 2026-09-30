@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -39,12 +40,16 @@ namespace Kil0bitSystemMonitor.Services.Ai
     /// <summary>Tidies tool calls in a conversation for requests and for keeping.</summary>
     internal static class ToolHistory
     {
-        private const int MaxResultChars = 20_000;
+        /// <summary>Most characters of one tool result sent again after its round: in the no-tools request and in kept questions.</summary>
+        internal const int MaxResultChars = 20_000;
 
         /// <summary>
         /// The messages worth keeping from one answer: text, tool calls that got a result, and
         /// the results. A call left without a result (the model asked after the last round) is
-        /// dropped, because sending it back would fail the next question.
+        /// dropped, because sending it back would fail the next question. A result longer than
+        /// <see cref="MaxResultChars"/> is kept shortened (<see cref="Cap"/>): the conversation is
+        /// sent again with every later request, so one large lookup would otherwise cost its full
+        /// size on every round of every later question.
         /// </summary>
         public static List<ChatMessage> KeepAnswered(IEnumerable<ChatMessage> messages)
         {
@@ -60,14 +65,32 @@ namespace Kil0bitSystemMonitor.Services.Ai
                     {
                         case TextContent text when !string.IsNullOrEmpty(text.Text):
                         case FunctionCallContent call when answered.Contains(call.CallId):
-                        case FunctionResultContent:
                             contents.Add(content);
+                            break;
+                        case FunctionResultContent result:
+                            string full = ResultText(result.Result);
+                            contents.Add(full.Length <= MaxResultChars ? result : new FunctionResultContent(result.CallId, Cap(full)));
                             break;
                     }
                 }
                 if (contents.Count > 0) kept.Add(new ChatMessage(message.Role, contents));
             }
             return kept;
+        }
+
+        /// <summary>
+        /// <paramref name="text"/> when it fits in <see cref="MaxResultChars"/>; otherwise its start
+        /// followed by a note naming the full length, at most <see cref="MaxResultChars"/> in all, so
+        /// shortening twice changes nothing.
+        /// </summary>
+        internal static string Cap(string text)
+        {
+            if (text.Length <= MaxResultChars) return text;
+            string note = "\n[MicaStats shortened this result from " + text.Length.ToString(CultureInfo.InvariantCulture) +
+                          " characters. Call the tool again if the rest is needed.]";
+            int keep = MaxResultChars - note.Length;
+            if (char.IsHighSurrogate(text[keep - 1])) keep--;   // never split a character in two
+            return text[..keep] + note;
         }
 
         /// <summary>
@@ -101,7 +124,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                             break;
                         case FunctionResultContent result:
                             string name = names.TryGetValue(result.CallId, out string? n) ? n : "a MicaStats tool";
-                            parts.Add("[Result of " + name + ": " + ResultText(result.Result) + "]");
+                            parts.Add("[Result of " + name + ": " + Cap(ResultText(result.Result)) + "]");
                             break;
                     }
                 }
@@ -116,16 +139,12 @@ namespace Kil0bitSystemMonitor.Services.Ai
         public static string ArgsJson(IDictionary<string, object?>? arguments) =>
             arguments == null || arguments.Count == 0 ? "{}" : JsonSerializer.Serialize(arguments, ToolJson.TextOptions);
 
-        private static string ResultText(object? result)
+        private static string ResultText(object? result) => result switch
         {
-            string text = result switch
-            {
-                null => "null",
-                JsonElement element => element.GetRawText(),
-                string s => s,
-                _ => JsonSerializer.Serialize(result, ToolJson.TextOptions),
-            };
-            return text.Length <= MaxResultChars ? text : text[..MaxResultChars] + "...";
-        }
+            null => "null",
+            JsonElement element => element.GetRawText(),
+            string s => s,
+            _ => JsonSerializer.Serialize(result, ToolJson.TextOptions),
+        };
     }
 }

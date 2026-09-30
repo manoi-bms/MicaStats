@@ -152,6 +152,87 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(AiAssistant.NoAnswer, _conversation.Messages[^1].Text);
         }
 
+        // ----- keeping answered questions small ----------------------------------------------
+
+        private static string ResultText(FunctionResultContent result) => result.Result switch
+        {
+            null => "",
+            JsonElement element => element.GetRawText(),
+            string s => s,
+            object other => other.ToString() ?? "",
+        };
+
+        [Fact]
+        public void A_kept_question_holds_at_most_the_cap_of_each_tool_result()
+        {
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.Assistant, new List<AIContent>
+                {
+                    new FunctionCallContent("c1", ToolNames.GetSlowdownReport),
+                    new FunctionCallContent("c2", ToolNames.GetBattery),
+                }),
+                new(ChatRole.Tool, new List<AIContent>
+                {
+                    new FunctionResultContent("c1", JsonSerializer.SerializeToElement(new string('x', 100_000))),
+                    new FunctionResultContent("c2", JsonSerializer.SerializeToElement(new { percent = 80 })),
+                }),
+                new(ChatRole.Assistant, "The report shows a disk storm."),
+            };
+
+            List<ChatMessage> kept = ToolHistory.KeepAnswered(messages);
+
+            FunctionResultContent[] results = kept.SelectMany(m => m.Contents).OfType<FunctionResultContent>().ToArray();
+            string big = ResultText(results[0]);
+            Assert.True(big.Length <= ToolHistory.MaxResultChars, "kept " + big.Length + " characters");
+            Assert.StartsWith("\"xxxx", big, StringComparison.Ordinal);
+            Assert.Contains("MicaStats shortened this result", big, StringComparison.Ordinal);
+            Assert.Contains("100002 characters", big, StringComparison.Ordinal);
+            Assert.Equal("c1", results[0].CallId);
+            // A result under the cap is kept exactly as the model saw it.
+            JsonElement small = Assert.IsType<JsonElement>(results[1].Result);
+            Assert.Equal(80, small.GetProperty("percent").GetInt32());
+        }
+
+        [Fact]
+        public async Task A_huge_tool_result_is_not_sent_again_in_full_with_later_questions()
+        {
+            // A day of rows with a long path: get_history topProcesses at 500 points is far over the cap.
+            string path = @"C:\Program Files\" + new string('p', 200) + @"\chrome.exe";
+            for (int i = 0; i < 1440; i++)
+            {
+                _data.Rows.Add(new Kil0bitSystemMonitor.Services.History.HistoryRow
+                {
+                    Utc = _data.UtcNow.AddMinutes(i - 1440),
+                    Seconds = 60,
+                    TopCpuName = "chrome.exe",
+                    TopCpuPath = path,
+                    TopCpuPercent = 12.5f,
+                });
+            }
+            _model.Call(ToolNames.GetHistory, new Dictionary<string, object?>
+                  {
+                      ["metric"] = "topProcesses",
+                      ["from"] = "-1d",
+                      ["maxPoints"] = 500,
+                  })
+                  .Reply("Chrome was busy all day.")
+                  .Reply("Nothing else stood out.");
+            AiAssistant assistant = Assistant();
+
+            await AskAsync(assistant, "What was busy today?");
+            await AskAsync(assistant, "Anything else?");
+
+            // Within its own question the model saw the whole result...
+            string seen = ResultText(Contents(_model.Requests[1]).OfType<FunctionResultContent>().Single());
+            Assert.True(seen.Length > 100_000, "the tool returned " + seen.Length + " characters");
+            // ...but the conversation keeps, and the next question sends, at most the cap.
+            string kept = ResultText(_conversation.Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single());
+            string resent = ResultText(Contents(_model.Requests[2]).OfType<FunctionResultContent>().Single());
+            Assert.True(kept.Length <= ToolHistory.MaxResultChars, "kept " + kept.Length + " characters");
+            Assert.Equal(kept, resent);
+        }
+
         // ----- limits and failures -----------------------------------------------------------
 
         [Fact]

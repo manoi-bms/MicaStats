@@ -28,6 +28,12 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
         /// <summary>Most points <c>get_history</c> returns; longer ranges are averaged down to this.</summary>
         public const int MaxHistoryPoints = 500;
 
+        /// <summary>
+        /// Most points <c>get_history</c> returns for <c>all</c>, which carries every field of every
+        /// point: 500 of them are about 240,000 characters, far more than one answer needs.
+        /// </summary>
+        public const int MaxHistoryPointsAll = 60;
+
         private const int MaxTopProcesses = 15;
 
         private const string NoHistory =
@@ -60,7 +66,8 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
         /// <summary>
         /// <c>get_history</c>: recorded rows of <paramref name="metric"/> between two times
         /// (<see cref="TimeRange"/> forms), averaged down to at most <paramref name="maxPoints"/>
-        /// (clamped to 1..<see cref="MaxHistoryPoints"/>).
+        /// (clamped to 1..<see cref="MaxHistoryPoints"/>, or 1..<see cref="MaxHistoryPointsAll"/>
+        /// for <c>all</c>).
         /// </summary>
         public Task<JsonNode> GetHistoryAsync(string metric, string from, string to, int maxPoints = 200, CancellationToken ct = default) =>
             RunAsync(() => Task.FromResult<JsonNode>(BuildHistory(metric, from, to, maxPoints)), ct);
@@ -345,7 +352,8 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
             if (fromUtc > toUtc) return ToolJson.Error("from (" + Iso(fromUtc) + ") is after to (" + Iso(toUtc) + ").");
 
             IReadOnlyList<HistoryRow> rows = _data.History(fromUtc, toUtc);
-            IReadOnlyList<HistoryRow> points = Downsample(rows, Math.Clamp(maxPoints, 1, MaxHistoryPoints));
+            int most = name == "all" ? MaxHistoryPointsAll : MaxHistoryPoints;
+            IReadOnlyList<HistoryRow> points = Downsample(rows, Math.Clamp(maxPoints, 1, most));
 
             var array = new JsonArray();
             foreach (HistoryRow row in points)

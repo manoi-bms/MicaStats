@@ -255,18 +255,19 @@ They appear only while the assistant is on.
 
 ### Suggestions, never actions
 
-An answer can end with buttons such as **End chrome.exe**, **Record a slowdown now**, **Open
-Diagnostics** or **Open Processes**. Nothing happens until you click. Ending a process goes
-through the same checks as the process window: the PID must still belong to the same program with
-the same start time, core Windows processes are refused, and MicaStats never ends itself. A
-process that needs administrator rights is left to the process window's **Retry as
+An answer can end with buttons such as **End chrome.exe (PID 1234)**, **Record a slowdown now**,
+**Open Diagnostics** or **Open the process list**. An end-process button always names the process
+and its PID, whatever the AI suggested calling it. Nothing happens until you click. Ending a
+process goes through the same checks as the process window: the PID must still belong to the same
+program with the same start time, core Windows processes are refused, and MicaStats never ends
+itself. A process that needs administrator rights is left to the process window's **Retry as
 administrator**. Buttons from a cleared conversation do nothing.
 
 ### Limits and cost
 
 - One **Send** or **Explain** counts as one question, however many lookups it takes. The default
   limit is **100 a day**, reset at local midnight; **Settings → AI** shows today's count
-- At most eight lookups per question and 2,000 output tokens per answer
+- At most eight rounds of lookups per question and 2,000 output tokens per answer
 - A request that receives no data for 60 seconds ends with a timeout message; the provider is
   retried twice before that
 - A local model that cannot use tools still answers, in **limited mode**, from a short summary of
@@ -275,8 +276,8 @@ administrator**. Buttons from a cleared conversation do nothing.
 ### Privacy
 
 Sent: readings, hardware model names, process names and their paths. Removed first: your profile
-folder (shown as `%USERPROFILE%`), other users' folder names, the computer name, your user name,
-IP and MAC addresses. Never collected by any tool: window titles, command lines, environment
+folder (shown as `%USERPROFILE%`), other users' folder names, the computer name and your user name
+(when 3 or more characters long), IP and MAC addresses. Never collected by any tool: window titles, command lines, environment
 variables. The diagnostics log records failures only — never questions, answers or data.
 
 ### 7-day history
@@ -515,7 +516,8 @@ upgrade.
 MicaStats appends informative events — startup identity, a one-line hardware summary, sensor
 sources that failed, report saves, unexpected errors — to
 `%APPDATA%\MicaStats\logs\micastats.log` (plain text, rotated at 512 KB). If something looks
-wrong, this file is the first place to look.
+wrong, this file is the first place to look. The MCP stdio bridge (`MicaStats.exe --mcp`) runs as
+a separate process and keeps its own `mcp-bridge.log` in the same folder.
 
 ---
 

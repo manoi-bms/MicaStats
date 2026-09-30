@@ -7,6 +7,7 @@ using System.Windows.Media;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Editing;
 using ICSharpCode.AvalonEdit.Rendering;
+using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 
 using Brush = System.Windows.Media.Brush;
@@ -109,7 +110,43 @@ namespace Kil0bitSystemMonitor.Pad
         private DiffRow? RowAt(int lineNumber) =>
             lineNumber >= 1 && lineNumber <= Rows.Count ? Rows[lineNumber - 1] : null;
 
+        /// <summary>Where a drawing failure is logged, once. Tests replace it, so they never write the real log.</summary>
+        internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("pad", message);
+
+        private bool _warned;
+
+        /// <summary>
+        /// Drawing runs in layout and render passes, where a throw would take MicaStats down (spec
+        /// "Error handling"): that part is left out, and the first failure is logged.
+        /// </summary>
+        private void ReportFailure(Exception ex)
+        {
+            if (_warned) return;
+            _warned = true;
+            try
+            {
+                Warn("Drawing the compare failed (" + ex.GetType().Name + ": " + ex.Message + "); that part was left out");
+            }
+            catch (Exception)
+            {
+                // Logging is best effort; it must not throw into rendering either.
+            }
+        }
+
+        /// <summary>Tints the added and removed rows; a failure draws nothing more and is logged once.</summary>
         public void Draw(TextView textView, DrawingContext drawingContext)
+        {
+            try
+            {
+                DrawTints(textView, drawingContext);
+            }
+            catch (Exception ex)
+            {
+                ReportFailure(ex);
+            }
+        }
+
+        private void DrawTints(TextView textView, DrawingContext drawingContext)
         {
             if (!IsShown || !textView.VisualLinesValid) return;
             var palette = _palette();
@@ -125,15 +162,38 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
-        /// <summary>The margin's width: two numbers and the glyph at the preview's font.</summary>
+        /// <summary>The margin's width: two numbers and the glyph at the preview's font; 0 when it cannot be measured (logged once).</summary>
         internal double MarginWidth()
         {
-            var sample = Text(new string('9', _digits * 2 + 1) + " +", PadThemeApplier.ToBrush(_palette().LineNumbers));
-            return Math.Ceiling(sample.WidthIncludingTrailingWhitespace) + 12;
+            try
+            {
+                var sample = Text(new string('9', _digits * 2 + 1) + " +", PadThemeApplier.ToBrush(_palette().LineNumbers));
+                return Math.Ceiling(sample.WidthIncludingTrailingWhitespace) + 12;
+            }
+            catch (Exception ex)
+            {
+                ReportFailure(ex);
+                return 0;
+            }
         }
 
-        /// <summary>Draws the numbers and glyphs of the visible lines (the margin's OnRender; tests call it directly).</summary>
+        /// <summary>
+        /// Draws the numbers and glyphs of the visible lines (the margin's OnRender; tests call it
+        /// directly). A failure draws nothing more and is logged once.
+        /// </summary>
         internal void DrawMargin(DrawingContext drawingContext)
+        {
+            try
+            {
+                DrawNumbers(drawingContext);
+            }
+            catch (Exception ex)
+            {
+                ReportFailure(ex);
+            }
+        }
+
+        private void DrawNumbers(DrawingContext drawingContext)
         {
             var view = _margin.TextView;
             if (!IsShown || view == null || !view.VisualLinesValid) return;

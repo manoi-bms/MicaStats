@@ -162,6 +162,32 @@ namespace Kil0bitSystemMonitor.Tests
             using (var context = new DrawingVisual().RenderOpen()) window.Diff.DrawMargin(context);   // draws, and does not throw
         });
 
+        [Fact]
+        public void A_failure_while_drawing_the_compare_is_never_thrown_and_is_logged_once() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var messages = new System.Collections.Generic.List<string>();
+            var editor = window.PreviewEditor;                              // a templated editor; the window's own compare is not shown
+            // The palette hook stands in for any failure in drawing: every drawing method reads it.
+            var diff = new DiffPreview(editor, () => throw new InvalidOperationException("broken")) { Warn = messages.Add };
+            diff.Show(new[] { new DiffRow(DiffKind.Added, "new", null, 1), new DiffRow(DiffKind.Removed, "old", 1, null) });
+
+            editor.Measure(new System.Windows.Size(600, 400));             // sizes the margin (MarginWidth)
+            editor.Arrange(new Rect(0, 0, 600, 400));                      // draws the tints and the margin
+            editor.UpdateLayout();
+            Assert.Single(messages);                                        // the layout pass hit the failure, and went on
+            var view = editor.TextArea.TextView;
+            view.EnsureVisualLines();
+            using (var context = new DrawingVisual().RenderOpen())
+            {
+                diff.Draw(view, context);
+                diff.DrawMargin(context);
+            }
+
+            Assert.Equal(0, diff.MarginWidth());
+            Assert.Equal(0, diff.Margin.DesiredSize.Width);
+            Assert.Contains("broken", Assert.Single(messages));
+        });
+
         [Theory]
         [InlineData("Dark")]
         [InlineData("Light")]

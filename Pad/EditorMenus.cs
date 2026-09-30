@@ -109,6 +109,33 @@ namespace Kil0bitSystemMonitor.Pad
             return format;
         }
 
+        /// <summary>Lines (spec 3.2): the line operations, each one undoable edit.</summary>
+        public static MenuItem LinesMenu(TextEditor editor)
+        {
+            var lines = new MenuItem { Header = "Lines", Icon = "" };
+            void Add(string header, string? gesture, Func<string, int, int, TextEdit?> operation, string? icon = null) =>
+                lines.Items.Add(Item(header, gesture, () => Run(editor, operation), icon: icon));
+
+            Add("Duplicate", "Ctrl+D", (t, s, l) => LineOperations.Duplicate(t, s, l), "");
+            Add("Move up", "Ctrl+Shift+Up", LineOperations.MoveUp, "");
+            Add("Move down", "Ctrl+Shift+Down", LineOperations.MoveDown, "");
+            Add("Join lines", "Ctrl+J", LineOperations.Join);
+            lines.Items.Add(new Separator());
+            Add("Sort ascending", null, (t, s, l) => LineOperations.Sort(t, s, l, false, System.Globalization.CultureInfo.CurrentCulture), "");
+            Add("Sort descending", null, (t, s, l) => LineOperations.Sort(t, s, l, true, System.Globalization.CultureInfo.CurrentCulture));
+            Add("Remove duplicate lines", null, LineOperations.RemoveDuplicates);
+            Add("Trim trailing whitespace", null, LineOperations.TrimTrailing);
+            return lines;
+        }
+
+        /// <summary>Runs a line operation on the editor's text and selection; a null result changes nothing.</summary>
+        public static void Run(TextEditor editor, Func<string, int, int, TextEdit?> operation)
+        {
+            if (editor.IsReadOnly) return;
+            if (operation(editor.Document.Text, editor.SelectionStart, editor.SelectionLength) is TextEdit edit)
+                ApplyEdit(editor, edit);
+        }
+
         /// <summary>Applies an edit as one undoable change and selects what it says.</summary>
         public static void ApplyEdit(TextEditor editor, TextEdit edit)
         {

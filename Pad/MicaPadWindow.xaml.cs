@@ -237,9 +237,19 @@ namespace Kil0bitSystemMonitor.Pad
             else if (ctrl && key == Key.G) ShowGoToLine();
             else if (modifiers == ModifierKeys.None && key == Key.Escape && FindBar.IsOpen) FindBar.Close();
             else if (ctrlShift && key == Key.H) ToggleHistory();
+            else if (EditingKeysAllowed && ctrl && key == Key.D) Run(Editor, (t, s, l) => LineOperations.Duplicate(t, s, l));
+            else if (EditingKeysAllowed && ctrlShift && key == Key.Up) Run(Editor, LineOperations.MoveUp);
+            else if (EditingKeysAllowed && ctrlShift && key == Key.Down) Run(Editor, LineOperations.MoveDown);
+            else if (EditingKeysAllowed && ctrl && key == Key.J) Run(Editor, LineOperations.Join);
             else return false;
             return true;
         }
+
+        /// <summary>
+        /// Shortcuts that edit the note run only while no text box (find, replace, go to line,
+        /// rename) has the keyboard focus, so Ctrl+D there never duplicates a line of the note.
+        /// </summary>
+        private static bool EditingKeysAllowed => Keyboard.FocusedElement is not System.Windows.Controls.TextBox;
 
         /// <summary>Turns the close button into a hide unless the window is really exiting.</summary>
         protected override void OnClosing(CancelEventArgs e)
@@ -1156,11 +1166,10 @@ namespace Kil0bitSystemMonitor.Pad
             AddEditGroup(menu, editor, readOnly);
             if (readOnly) return;
 
+            menu.Items.Add(new Separator());
             if (ReferenceEquals(editor, Editor) && ReferenceEquals(_resolved.Effective, PadLanguages.Markdown))
-            {
-                menu.Items.Add(new Separator());
                 menu.Items.Add(FormatMenu(editor));
-            }
+            menu.Items.Add(LinesMenu(editor));
 
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));

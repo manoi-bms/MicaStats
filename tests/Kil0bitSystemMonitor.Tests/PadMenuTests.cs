@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Windows.Input;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -44,10 +45,50 @@ namespace Kil0bitSystemMonitor.Tests
         {
             window.RefreshEditorMenu();
 
-            Assert.Equal(new[] { "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Delete", "Select all", "-", "Format", "-", "Find", "Replace", "Go to line…" },
+            Assert.Equal(new[] { "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Delete", "Select all", "-", "Format", "Lines", "-", "Find", "Replace", "Go to line…" },
                          Headers(window.EditorMenu));
             Assert.Equal("Ctrl+Z", ItemOf(window.EditorMenu, "Undo").InputGestureText);
             Assert.Equal("Ctrl+G", ItemOf(window.EditorMenu, "Go to line…").InputGestureText);
+        });
+
+        [Fact]
+        public void The_lines_menu_has_every_operation() => WithWindow((window, env) =>
+        {
+            window.RefreshEditorMenu();
+            var lines = ItemOf(window.EditorMenu, "Lines");
+            var headers = lines.Items.Cast<object>().Select(i => i is MenuItem m ? (string)m.Header : "-").ToArray();
+            Assert.Equal(new[] { "Duplicate", "Move up", "Move down", "Join lines", "-", "Sort ascending", "Sort descending",
+                                 "Remove duplicate lines", "Trim trailing whitespace" }, headers);
+            Assert.Equal("Ctrl+D", lines.Items.OfType<MenuItem>().First().InputGestureText);
+        });
+
+        [Fact]
+        public void Each_operation_is_one_undo_step() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Text = "b\na\nb\n";
+            foreach (var (key, modifiers) in new[] { (Key.D, ModifierKeys.Control), (Key.Down, ModifierKeys.Control | ModifierKeys.Shift), (Key.J, ModifierKeys.Control) })
+            {
+                window.Editor.CaretOffset = 0;          // first line: every operation has something to do
+                string before = window.Editor.Document.Text;
+                Assert.True(window.HandleShortcut(key, modifiers));
+                Assert.NotEqual(before, window.Editor.Document.Text);
+                window.Editor.Undo();
+                Assert.Equal(before, window.Editor.Document.Text);
+            }
+        });
+
+        [Fact]
+        public void Editing_shortcuts_ignore_a_focused_text_box() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Text = "one";
+            window.FindBar.Open(replace: false);
+            System.Windows.Input.Keyboard.Focus(window.FindBar.FindBox);
+
+            if (System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.TextBox)
+            {
+                Assert.False(window.HandleShortcut(Key.D, ModifierKeys.Control));
+                Assert.Equal("one", window.Editor.Document.Text);
+            }
         });
 
         [Fact]

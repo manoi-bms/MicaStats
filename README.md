@@ -276,6 +276,7 @@ Inside MicaPad:
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | Open file · save to its file · save as |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | Find · replace · next / previous |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | Go to line · word wrap · history |
+| **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | Duplicate line · move lines · join lines |
 | **Ctrl+Tab** · **Ctrl+1…9** | Next tab · jump to a tab |
 | **Ctrl+wheel** · **Ctrl+0** | Zoom · reset zoom |
 
@@ -888,6 +889,7 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | เปิดไฟล์ · บันทึกลงไฟล์ · บันทึกเป็น |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | ค้นหา · แทนที่ · ถัดไป / ก่อนหน้า |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | ไปยังบรรทัด · ตัดบรรทัดอัตโนมัติ · ประวัติ |
+| **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | ทำซ้ำบรรทัด · ย้ายบรรทัด · รวมบรรทัด |
 | **Ctrl+Tab** · **Ctrl+1…9** | แท็บถัดไป · ไปยังแท็บ |
 | **Ctrl+ล้อเมาส์** · **Ctrl+0** | ซูม · รีเซ็ตซูม |
 

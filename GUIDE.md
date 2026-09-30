@@ -238,6 +238,12 @@ again steps over it, and Backspace right after the opening one removes both. Wit
 an opening bracket or quote wraps the selection. It stays out of the way in prose — `don't` types
 normally, and nothing is added in front of a word. Turn it off in **☰** or **Settings → MicaPad**.
 
+**Lines**: **Ctrl+D** duplicates the line (or the selection), **Ctrl+Shift+↑/↓** moves the
+selected lines, **Ctrl+J** joins them with one space. Right-click → **Lines** also sorts
+(ascending or descending, ignoring case), removes duplicate lines (keeping the first; blank lines
+stay) and trims trailing spaces — on the selected lines, or the whole note when nothing is
+selected. Line endings are kept, and each is a single **Ctrl+Z**.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

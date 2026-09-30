@@ -45,13 +45,35 @@ namespace Kil0bitSystemMonitor.Services.Pad
             string selected = text.Substring(start, length);
             int m = marker.Length;
 
+            // Selection starts and ends with marker - only unwrap if neighbor chars are not also the marker
             if (length >= 2 * m && selected.StartsWith(marker, StringComparison.Ordinal) && selected.EndsWith(marker, StringComparison.Ordinal))
-                return new TextEdit(start, length, selected.Substring(m, length - 2 * m), start, length - 2 * m);
+            {
+                // For single-char markers, only unwrap if the char after the opening marker is not the marker
+                if (m == 1 && length > m && selected[m] == marker[0])
+                {
+                    // Don't unwrap: next char is the same marker (e.g., **hello** with * marker)
+                }
+                else
+                {
+                    return new TextEdit(start, length, selected.Substring(m, length - 2 * m), start, length - 2 * m);
+                }
+            }
 
+            // Markers just outside selection - only unwrap if neighbor chars are not also the marker
             if (length > 0 && start >= m && start + length + m <= text.Length
                 && string.CompareOrdinal(text, start - m, marker, 0, m) == 0
                 && string.CompareOrdinal(text, start + length, marker, 0, m) == 0)
-                return new TextEdit(start - m, length + 2 * m, selected, start - m, length);
+            {
+                // For single-char markers, only unwrap if the char before the opening marker is not the marker
+                if (m == 1 && start > m && text[start - 2] == marker[0])
+                {
+                    // Don't unwrap: previous char is the same marker
+                }
+                else
+                {
+                    return new TextEdit(start - m, length + 2 * m, selected, start - m, length);
+                }
+            }
 
             return new TextEdit(start, length, marker + selected + marker, start + m, length);
         }
@@ -129,7 +151,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             LinePrefix.Bullet => "- " + AnyListRx.Replace(text, "", 1),
             LinePrefix.Numbered => number.ToString(System.Globalization.CultureInfo.InvariantCulture) + ". " + AnyListRx.Replace(text, "", 1),
             LinePrefix.Task => "- [ ] " + AnyListRx.Replace(text, "", 1),
-            _ => "> " + text,
+            _ => QuoteRx.IsMatch(text) ? text : "> " + text,  // Don't nest quotes on lines that already have them
         };
 
         private static int HeadingLevel(string text)

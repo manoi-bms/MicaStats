@@ -102,6 +102,43 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Prefix_quote_does_not_nest_on_lines_that_already_have_quotes()
+        {
+            string text = "> a\nb";
+            var edit = MarkdownFormatter.Prefix(text, 0, text.Length, LinePrefix.Quote);
+            Assert.Equal("> a\n> b", Apply(text, edit));
+        }
+
+        [Fact]
+        public void Prefix_quote_removes_when_all_lines_have_it()
+        {
+            string text = "> a\n> b";
+            var edit = MarkdownFormatter.Prefix(text, 0, text.Length, LinePrefix.Quote);
+            Assert.Equal("a\nb", Apply(text, edit));
+        }
+
+        [Fact]
+        public void Wrap_italic_on_italic_unwraps()
+        {
+            var edit = MarkdownFormatter.Wrap("*hello*", 0, 7, "*");
+            Assert.Equal("hello", Apply("*hello*", edit));
+        }
+
+        [Fact]
+        public void Wrap_italic_on_bold_adds_italics()
+        {
+            var edit = MarkdownFormatter.Wrap("**hello**", 0, 9, "*");
+            Assert.Equal("***hello***", Apply("**hello**", edit));
+        }
+
+        [Fact]
+        public void Wrap_italic_on_hello_inside_bold_adds_italics()
+        {
+            var edit = MarkdownFormatter.Wrap("**hello**", 2, 5, "*");
+            Assert.Equal("***hello***", Apply("**hello**", edit));
+        }
+
+        [Fact]
         public void Code_block_fences_the_selected_lines_with_the_notes_line_ending()
         {
             string crlf = "a\r\nb";

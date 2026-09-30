@@ -216,8 +216,9 @@ Notes and `.md`/`.txt` files are formatted as you type: `#` headings grow, `**bo
 or in **Settings → MicaPad**.
 
 Right-click → **Format** wraps the selection in bold, italic, strikethrough, code or a link, or
-turns the selected lines into headings, lists, tasks, quotes or a code block — choose it again to
-undo the formatting. Each is a single **Ctrl+Z**.
+turns the selected lines into headings, lists, tasks, quotes or a code block — choose bold, italic,
+strikethrough, code, a list, a task or a quote again to take it off; a heading item switches the level.
+Each is a single **Ctrl+Z**.
 
 ### Colors for code, logs and settings files
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,11 +9,11 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Folding;
 using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services.Pad;
 
 using Brush = System.Windows.Media.Brush;
-using Color = System.Windows.Media.Color;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using UserControl = System.Windows.Controls.UserControl;
 
@@ -26,8 +27,6 @@ namespace Kil0bitSystemMonitor.Pad
     public partial class FindReplaceBar : UserControl
     {
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-        private static readonly Brush Muted = Frozen(Color.FromArgb(0x88, 0xED, 0xED, 0xF2));
-        private static readonly Brush AlertRed = Frozen(Color.FromRgb(0xFF, 0x6B, 0x6B));
 
         private readonly MatchHighlighter _highlighter = new();
         private readonly DispatcherTimer _refresh;
@@ -59,6 +58,16 @@ namespace Kil0bitSystemMonitor.Pad
             editor.DocumentChanged += (s, e) => ScheduleRefresh();
             editor.TextChanged += (s, e) => ScheduleRefresh();
         }
+
+        /// <summary>Takes the find-match color of the MicaPad theme and repaints the matches.</summary>
+        public void ApplyPalette(PadPalette palette)
+        {
+            _highlighter.Fill = PadThemeApplier.ToBrush(palette.FindMatch);
+            _editor?.TextArea.TextView.InvalidateLayer(_highlighter.Layer);
+        }
+
+        /// <summary>The brush behind each match, for tests.</summary>
+        internal Brush MatchFill => _highlighter.Fill;
 
         /// <summary>Shows the bar, seeded with a single-line selection, and focuses the find box.</summary>
         public void Open(bool replace)
@@ -122,7 +131,7 @@ namespace Kil0bitSystemMonitor.Pad
                 _timedOut = false;
                 _matches = Array.Empty<FindMatch>();
                 CountText.Text = error ?? "";
-                CountText.Foreground = AlertRed;
+                CountText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.AlertRed");
             }
 
             _highlighter.Matches = _matches;
@@ -132,7 +141,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void ShowTimedOut()
         {
             CountText.Text = FindReplaceEngine.TimedOutMessage;
-            CountText.Foreground = AlertRed;
+            CountText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.AlertRed");
         }
 
         private FindOptions Options => new(CaseToggle.IsChecked == true, WordToggle.IsChecked == true, RegexToggle.IsChecked == true);
@@ -157,7 +166,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void UpdateCount()
         {
-            CountText.Foreground = Muted;
+            CountText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.Muted");
             if (_editor == null) return;
             if (_matches.Count == 0)
             {
@@ -182,9 +191,24 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             _editor.Select(match.Value.Offset, match.Value.Length);
+            Reveal(match.Value);
             var location = _editor.Document.GetLocation(match.Value.Offset);
             _editor.ScrollTo(location.Line, location.Column);
             UpdateCount();
+        }
+
+        /// <summary>
+        /// Opens every fold that hides part of a found match. AvalonEdit opens a fold only when the
+        /// caret lands strictly inside it, and a selected match leaves the caret at its end, which can
+        /// be exactly where a fold ends.
+        /// </summary>
+        private void Reveal(FindMatch match)
+        {
+            if (_editor!.TextArea.TextView.GetService(typeof(FoldingManager)) is not FoldingManager folds) return;
+            int start = match.Offset;
+            int end = match.Offset + match.Length;
+            var hiding = folds.AllFoldings.Where(f => f.IsFolded && f.StartOffset < end && f.EndOffset > start).ToList();
+            foreach (var section in hiding) section.IsFolded = false;
         }
 
         private void OnReplaceClick(object sender, RoutedEventArgs e)
@@ -214,16 +238,34 @@ namespace Kil0bitSystemMonitor.Pad
 
             ReplacingAll?.Invoke();
             var document = _editor!.Document;
-            if (!FindReplaceEngine.TryReplaceAll(document.Text, _regex!, ReplaceBox.Text, Options.UseRegex,
-                                                 out string result, out int count, out string? error))
+            string text = document.Text;
+            if (!FindReplaceEngine.TryPlanReplaceAll(text, _regex!, ReplaceBox.Text, Options.UseRegex,
+                                                     out var edits, out int count, out string? error))
             {
                 CountText.Text = error ?? "";
-                CountText.Foreground = AlertRed;
+                CountText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.AlertRed");
                 return;
             }
 
-            // One Replace call: one undo step, however many matches.
-            if (count > 0) document.Replace(0, document.TextLength, result);
+            if (count > 0)
+            {
+                // One update group: one undo step, however many matches. Match by match, from the
+                // last, so bookmarks between the matches stay on their lines. Past the limit one
+                // replacement from the first match to the last instead: thousands of separate edits
+                // are slow, and bookmarks between those matches collapse then.
+                using (document.RunUpdate())
+                {
+                    if (edits.Count > TextPieces.MaxPieces)
+                    {
+                        var all = TextPieces.Combine(text, edits);
+                        document.Replace(all.Offset, all.Length, all.Text);
+                    }
+                    else
+                    {
+                        for (int i = edits.Count - 1; i >= 0; i--) document.Replace(edits[i].Offset, edits[i].Length, edits[i].Text);
+                    }
+                }
+            }
             Recompute();
             CountText.Text = count.ToString("N0", Inv) + " replaced";
         }
@@ -252,12 +294,5 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnNextClick(object sender, RoutedEventArgs e) => FindNext();
 
         private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
-
-        private static Brush Frozen(Color color)
-        {
-            var brush = new SolidColorBrush(color);
-            brush.Freeze();
-            return brush;
-        }
     }
 }

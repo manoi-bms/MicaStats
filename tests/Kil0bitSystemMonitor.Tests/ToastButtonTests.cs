@@ -160,25 +160,12 @@ namespace Kil0bitSystemMonitor.Tests
 
 
         /// <summary>
-        /// Runs a test body on an STA thread. Constructing any WPF FrameworkElement initialises
-        /// the input manager, which throws outright on xUnit's default MTA thread — so a helper
-        /// here is cheaper than taking a dependency on an STA test package for six tests.
+        /// Runs a test body on the suite's shared STA UI thread (see UiThread). Building WPF
+        /// controls on a second STA thread at the same time as the shared one can deadlock WPF's
+        /// one-time type initialization (the BAML schema lock against ContentPresenter's static
+        /// constructor), so every WPF object in the suite is built on that one thread.
         /// </summary>
-        private static void OnSta(Action body)
-        {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo? failure = null;
-
-            var thread = new System.Threading.Thread(() =>
-            {
-                try { body(); }
-                catch (Exception ex) { failure = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex); }
-            });
-            thread.SetApartmentState(System.Threading.ApartmentState.STA);
-            thread.Start();
-            thread.Join();
-
-            failure?.Throw();
-        }
+        private static void OnSta(Action body) => UiThread.Run(body);
 
         /// <summary>Reads the fill a state trigger applies to the template's Bg border.</summary>
         private static MediaColor TriggerFill(Button button, DependencyProperty state)

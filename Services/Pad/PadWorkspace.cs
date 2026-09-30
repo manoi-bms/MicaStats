@@ -123,6 +123,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             _warn = options.Warn;
             _error = options.Error;
             _ansiCodePage = options.AnsiCodePage;
+            Open.CollectionChanged += (s, e) => SyncTabs();   // first subscriber: every window's tab list is in step before a window's own handler runs
         }
 
         /// <summary>The store this workspace reads and writes.</summary>
@@ -131,11 +132,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Open notes in tab order. Changed on the UI thread only.</summary>
         public ObservableCollection<OpenNote> Open { get; } = new();
 
-        /// <summary>Window placement, zoom and per-tab view state, saved with <see cref="SaveSession"/>.</summary>
-        public SessionState Session { get; private set; } = new();
-
-        /// <summary>The tab currently shown, or null when none is open.</summary>
-        public OpenNote? Active { get; private set; }
+        /// <summary>Windows, placement, zoom and per-tab view state, saved with <see cref="SaveSession"/>. One window until <see cref="Restore"/> loads the saved ones.</summary>
+        public SessionState Session { get; private set; } = SessionWindows.Normalize(new SessionState());
 
         /// <summary>
         /// Loads the saved session's notes into <see cref="Open"/>. Only the first call does
@@ -148,62 +146,124 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (_restored) return Open.ToList();
             _restored = true;
 
-            Session = _store.LoadSession();
-            foreach (string id in Session.OpenNoteIds.ToList())
+            Session = _store.LoadSession();   // always at least one window (SessionWindows.Normalize)
+
+            // Notes opened before the restore (only tests do that) join the first window.
+            _active.Clear();
+            foreach (var note in Open)
             {
-                if (_byId.ContainsKey(id) || _unreadable.Contains(id)) continue;
-                var meta = _store.LoadMeta(id);
-                if (meta == null)
+                note.IsActive = false;
+                if (WindowStateOf(note.WindowId) == null) note.WindowId = Windows[0].Id;
+            }
+            SyncTabs();
+
+            foreach (var window in Windows)
+            {
+                foreach (string id in window.NoteIds.ToList())
                 {
-                    _warn("The session lists note " + id + " but it could not be loaded");
-                    continue;
+                    if (_byId.ContainsKey(id) || _unreadable.Contains(id)) continue;
+                    var meta = _store.LoadMeta(id);
+                    if (meta == null)
+                    {
+                        _warn("The session lists note " + id + " but it could not be loaded");
+                        continue;
+                    }
+                    if (meta.IsClosed) continue;
+                    if (!TryLoadInitialText(meta, out string text))
+                    {
+                        // Opening it empty (or from an older snapshot) would let the next autosave
+                        // overwrite the newer text that could not be read.
+                        _warn("The text of note " + id + " could not be read; it was left as it is and will be tried again next time");
+                        _unreadable.Add(id);
+                        _unreadableWindow[id] = window.Id;
+                        continue;
+                    }
+                    AddOpen(meta, text, Open.Count, window.Id);
                 }
-                if (meta.IsClosed) continue;
-                if (!TryLoadInitialText(meta, out string text))
-                {
-                    // Opening it empty (or from an older snapshot) would let the next autosave
-                    // overwrite the newer text that could not be read.
-                    _warn("The text of note " + id + " could not be read; it was left as it is and will be tried again next time");
-                    _unreadable.Add(id);
-                    continue;
-                }
-                AddOpen(meta, text, Open.Count);
             }
 
-            var active = Open.FirstOrDefault(n => n.Id == Session.ActiveNoteId) ?? Open.LastOrDefault();
-            if (active != null) SetActive(active);
+            // A window none of whose notes came back is not reopened, unless it is the only one;
+            // its unreadable notes are kept for the first window (UnreadableWindowOf).
+            foreach (var empty in Windows.Where(w => TabsOf(w.Id).Count == 0).ToList())
+            {
+                if (Windows.Count == 1) break;
+                Session.Windows!.Remove(empty);
+                _tabs.Remove(empty.Id);
+            }
+
+            foreach (var window in Windows)
+            {
+                var tabs = TabsOf(window.Id);
+                if (tabs.Count > 0) SetActive(tabs.FirstOrDefault(n => n.Id == window.ActiveNoteId) ?? tabs[tabs.Count - 1]);
+            }
+            _activation.Clear();
+            _activation.AddRange(SessionWindows.ByLastActive(Windows));
             return Open.ToList();
         }
 
-        /// <summary>A new empty scratch note, opened after the active tab and made active.</summary>
-        public OpenNote NewNote()
+        /// <summary>
+        /// Moves a tab to <paramref name="index"/> among its own window's tabs (clamped); other
+        /// windows' tabs keep their places. The caller saves the session when the drag ends.
+        /// </summary>
+        public void MoveTab(OpenNote note, int index)
         {
+            var tabs = TabsOf(note.WindowId);
+            int from = tabs.IndexOf(note);
+            if (from < 0) return;
+            int to = Math.Clamp(index, 0, tabs.Count - 1);
+            if (to == from) return;
+            // Moving onto the Open position of the tab now at "to" lands it before that tab when
+            // moving left and after it when moving right: exactly "to" among this window's tabs.
+            Open.Move(Open.IndexOf(note), Open.IndexOf(tabs[to]));
+        }
+
+        /// <summary>A new empty scratch note in the most recently active window.</summary>
+        public OpenNote NewNote() => NewNote(MostRecentWindowId);
+
+        /// <summary>A new empty scratch note, opened after the window's active tab and made active there.</summary>
+        public OpenNote NewNote(string windowId)
+        {
+            if (WindowStateOf(windowId) == null) windowId = MostRecentWindowId;
             int number = Open
                 .Where(n => !n.Meta.IsFileBacked)
                 .Select(n => n.Meta.UntitledNumber)
                 .DefaultIfEmpty(0)
                 .Max() + 1;
 
-            var note = AddOpen(NoteStore.NewMeta(_clock(), number, null), "", InsertIndexAfterActive());
+            var note = AddOpen(NoteStore.NewMeta(_clock(), number, null), "", InsertIndexAfterActive(windowId), windowId);
             SetActive(note);
             EnqueueSave(note);
             SaveSession();
             return note;
         }
 
-        /// <summary>Makes <paramref name="note"/> the shown tab and remembers it for the next launch.</summary>
+        /// <summary>Makes <paramref name="note"/> its window's shown tab and remembers it for the next launch.</summary>
         public void SetActive(OpenNote note)
         {
-            if (Active != null && !ReferenceEquals(Active, note)) Active.IsActive = false;
-            Active = note;
+            if (_active.TryGetValue(note.WindowId, out var previous) && !ReferenceEquals(previous, note)) previous.IsActive = false;
+            _active[note.WindowId] = note;
             note.IsActive = true;
-            Session.ActiveNoteId = note.Id;
+            if (WindowStateOf(note.WindowId) is { } state) state.ActiveNoteId = note.Id;
         }
 
         /// <summary>Remembers where the user was in a tab, for the next switch back or the next launch.</summary>
         public void SetTabViewState(OpenNote note, int caretOffset, double verticalOffset)
         {
-            Session.Tabs[note.Id] = new TabViewState { CaretOffset = caretOffset, VerticalOffset = verticalOffset };
+            Session.Tabs.TryGetValue(note.Id, out var previous);
+            Session.Tabs[note.Id] = new TabViewState
+            {
+                CaretOffset = caretOffset,
+                VerticalOffset = verticalOffset,
+                Bookmarks = previous?.Bookmarks,
+            };
+        }
+
+        /// <summary>Records a tab's bookmarked lines (1-based) for the session; none clears them.</summary>
+        public void SetBookmarks(OpenNote note, IReadOnlyList<int> lines)
+        {
+            if (!Session.Tabs.TryGetValue(note.Id, out var view))
+                Session.Tabs[note.Id] = view = new TabViewState();
+            view.Bookmarks = lines.Count == 0 ? null : lines.ToList();
         }
 
         /// <summary>
@@ -329,13 +389,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// Closes a tab without asking anything. The note is snapshotted and kept as a closed note;
-        /// a scratch note that never held text is deleted instead.
+        /// a scratch note that never held text is deleted instead. Its window's active tab falls to
+        /// the neighbour in that window.
         /// </summary>
         public void Close(OpenNote note)
         {
             if (!_byId.ContainsKey(note.Id)) return;
 
-            int index = Open.IndexOf(note);
+            string windowId = note.WindowId;
+            int index = TabsOf(windowId).IndexOf(note);
             _scheduler.Forget(note.Id);
 
             if (!note.Meta.IsFileBacked && !note.EverHadText)
@@ -359,10 +421,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
             Session.Tabs.Remove(note.Id);
             note.IsActive = false;
 
-            if (ReferenceEquals(Active, note))
+            if (ReferenceEquals(ActiveIn(windowId), note))
             {
-                Active = null;
-                if (Open.Count > 0) SetActive(Open[Math.Min(index, Open.Count - 1)]);
+                _active.Remove(windowId);
+                var tabs = TabsOf(windowId);
+                if (tabs.Count > 0) SetActive(tabs[Math.Min(index, tabs.Count - 1)]);
+                else if (WindowStateOf(windowId) is { } state) state.ActiveNoteId = null;
             }
             SaveSession();
         }
@@ -384,26 +448,34 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 .ToList();
         }
 
-        /// <summary>Ctrl+Shift+T.</summary>
-        public OpenNote? ReopenLastClosed()
+        /// <summary>Ctrl+Shift+T, into the most recently active window.</summary>
+        public OpenNote? ReopenLastClosed() => ReopenLastClosed(MostRecentWindowId);
+
+        /// <summary>Ctrl+Shift+T in a window: the last closed note comes back there.</summary>
+        public OpenNote? ReopenLastClosed(string windowId)
         {
             var last = ClosedNotes().FirstOrDefault();
-            return last == null ? null : Reopen(last.Id);
+            return last == null ? null : Reopen(last.Id, windowId);
         }
 
+        /// <summary>Reopens a closed note in the most recently active window; see <see cref="Reopen(string, string)"/>.</summary>
+        public OpenNote? Reopen(string id) => Reopen(id, MostRecentWindowId);
+
         /// <summary>
-        /// Reopens a closed note after the active tab; an open one is just activated. Null when the
-        /// note cannot be loaded, including when its text exists but cannot be read right now: then
-        /// nothing is written and the note stays in the closed list. A file note whose file another
-        /// tab already holds comes back as a note of its own.
+        /// Reopens a closed note after the active tab of <paramref name="windowId"/>; an open one is
+        /// just activated, in the window that shows it. Null when the note cannot be loaded,
+        /// including when its text exists but cannot be read right now: then nothing is written and
+        /// the note stays in the closed list. A file note whose file another tab already holds comes
+        /// back as a note of its own.
         /// </summary>
-        public OpenNote? Reopen(string id)
+        public OpenNote? Reopen(string id, string windowId)
         {
             if (_byId.TryGetValue(id, out var open))
             {
                 SetActive(open);
                 return open;
             }
+            if (WindowStateOf(windowId) == null) windowId = MostRecentWindowId;
 
             // Its close may still be queued; normally this lets it land first.
             _writer.FlushAll(TimeSpan.FromSeconds(2));
@@ -452,7 +524,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 _error("Reopening note " + id + " could not be written yet; autosave will retry", ex);
             }
 
-            var note = AddOpen(meta, text, InsertIndexAfterActive());
+            var note = AddOpen(meta, text, InsertIndexAfterActive(windowId), windowId);
             SetActive(note);
             EnqueueSave(note);
             SaveSession();
@@ -491,6 +563,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
             EnqueueSave(note);
         }
 
+        /// <summary>
+        /// Sets the language a note is shown in; null or an unknown id returns it to Auto. Saved with
+        /// the note like a rename: it is not an edit of a file.
+        /// </summary>
+        public void SetLanguage(OpenNote note, string? languageId)
+        {
+            note.Meta.Language = PadLanguages.ById(languageId)?.Id;
+            EnqueueSave(note);
+        }
+
         /// <summary>The note's versions, newest first.</summary>
         public IReadOnlyList<SnapshotInfo> History(OpenNote note) => _store.ListSnapshots(note.Id);
 
@@ -513,10 +595,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private SessionState PrepareSession()
         {
-            // Notes that could not be read at restore go last, so they return at the next launch.
-            Session.OpenNoteIds = Open.Select(n => n.Id)
-                .Concat(_unreadable.Where(id => !_byId.ContainsKey(id)))
-                .ToList();
+            foreach (var window in Windows)
+            {
+                window.NoteIds = TabsOf(window.Id).Select(n => n.Id)
+                    // Notes that could not be read at restore go last in their window, so they return at the next launch.
+                    .Concat(_unreadable.Where(id => !_byId.ContainsKey(id) && UnreadableWindowOf(id) == window.Id))
+                    .ToList();
+                window.ActiveNoteId = ActiveIn(window.Id)?.Id;
+            }
+            SessionWindows.WriteMirror(Session);      // the old fields, for older MicaPads
             foreach (string stale in Session.Tabs.Keys.Where(k => !_byId.ContainsKey(k)).ToList())
                 Session.Tabs.Remove(stale);
             return Session;
@@ -571,19 +658,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
             _error(message, ex);
         }
 
-        private OpenNote AddOpen(NoteMeta meta, string text, int index)
+        private OpenNote AddOpen(NoteMeta meta, string text, int index, string windowId)
         {
             var note = new OpenNote(meta, text)
             {
                 SnapshotClockUtc = _clock(),
                 EverHadText = text.Length > 0 || meta.LastSnapshotHash != null,
+                WindowId = windowId,                  // before the insert: the tab lists sync on it
             };
             _byId[meta.Id] = note;
             Open.Insert(Math.Clamp(index, 0, Open.Count), note);
             return note;
         }
-
-        private int InsertIndexAfterActive() => Active == null ? Open.Count : Open.IndexOf(Active) + 1;
 
         /// <summary>
         /// Queues a save of the note's meta, and of its text when the text is authoritative (always

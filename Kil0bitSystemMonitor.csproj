@@ -52,6 +52,11 @@
         <InternalsVisibleTo Include="Kil0bitSystemMonitor.Tests" />
     </ItemGroup>
 
+    <ItemGroup>
+        <!-- MicaPad's own highlighting definitions, loaded by Pad/PadHighlighting.cs. -->
+        <EmbeddedResource Include="Pad\Highlighting\*.xshd" LogicalName="MicaPad.Highlighting.%(Filename)%(Extension)" />
+    </ItemGroup>
+
     <!--
       This project lives at the repository root, so the SDK's default **/*.cs glob would compile
       the test project's sources into the application assembly. Exclude them explicitly.
@@ -65,6 +70,7 @@
 
     <ItemGroup>
         <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+        <PackageReference Include="DiffPlex" Version="1.9.0" />
         <PackageReference Include="ModernWpfUI" Version="0.9.6" />
         <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.0" />
         <PackageReference Include="System.Drawing.Common" Version="8.0.0" />

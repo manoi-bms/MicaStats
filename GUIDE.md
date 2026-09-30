@@ -162,8 +162,8 @@ overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, from the Start me
 * Every note is saved one second after you stop typing, and at least every five seconds while
   you keep typing. The status bar says **Saving…** or **Saved 3s ago**.
 * When Windows shuts down or restarts, MicaPad writes everything and lets Windows continue —
-  no questions. If MicaPad was open, it reopens with the same tabs after you sign in, with
-  **Launch on Startup** on.
+  no questions. If MicaPad was open, it reopens with the same windows and tabs after you sign in,
+  with **Launch on Startup** on.
 * Closing a tab (**Ctrl+W**, middle-click or **×**) never asks either. **Ctrl+Shift+T** reopens
   the last one; the **▾** button lists every closed note, with search, **Reopen** and **Delete**
   (which uses the Recycle Bin). A note that never had any text is simply discarded.
@@ -174,6 +174,12 @@ A version is kept each time you pause after at least a minute of changes, and be
 that replaces the whole text (reload, restore, Replace All, a line-ending change). **Ctrl+Shift+H**
 or **History** in the status bar lists them by day. Pick one to preview it, then **Restore**,
 **Copy all** or **Back**. Restoring is one step: **Ctrl+Z** undoes it.
+
+**Compare with current** shows the version against the note as it is now: removed lines on red,
+added lines on green, with both line numbers and − or + in the margin, and a count such as
+`+12 −3 lines`. Click it again (**Show this version**) for the version itself; **Restore** always
+restores the version. Notes or versions over 1 MB, or that differ on tens of thousands of lines,
+say *Too large to compare*.
 
 Every version from the last day is kept; then one per hour for a week; then one per day up to the
 limit in **Settings → MicaPad** (90 days by default). The newest version is always kept.
@@ -189,6 +195,113 @@ MicaPad offers **Save as UTF-8** instead of saving question marks.
 If another program changes the file, MicaPad reloads it — or, when you have edits of your own,
 asks **Reload from disk** or **Keep mine** (a reload first keeps your version in history). If the
 file is deleted, **Keep as note** turns the tab into an ordinary note.
+
+### Light or dark
+
+The sun button in MicaPad's tab strip switches MicaPad to a light theme; the moon button switches
+it back. Only MicaPad changes — Settings and the rest of MicaStats keep their look. The choice is
+remembered, and is also in **Settings → MicaPad → Theme**.
+
+### Right-click menus
+
+Right-click in the text for **Undo**, **Redo**, **Cut**, **Copy**, **Copy as RTF**, **Paste**,
+**Delete**, **Select all**, **Find**, **Replace** and **Go to line**. The caret moves to where you clicked,
+unless you click inside the selection — then the selection stays, so Cut and Copy act on it.
+Right-click a history version for **Copy** and **Select all**.
+
+Right-click a tab for **Rename**, **Close**, **Close other tabs** and **Move to new window** or
+**Move to** another window (closed tabs go to Closed notes as usual — nothing is deleted). A tab
+that is a real file also has **Copy file path** and **Show in folder**.
+
+### Markdown
+
+Notes and `.md`/`.txt` files are formatted as you type: `#` headings grow, `**bold**`, `*italic*`,
+`~~strike~~` and `` `code` `` look the part, `- ` items get bullets, `- [x]` tasks are crossed off,
+`>` quotes get a bar and fenced ```` ``` ```` blocks a shaded background. The markers stay visible
+(dimmed) — the file is plain text and never changes. Turn it off with **☰ → Markdown formatting**
+or in **Settings → MicaPad**.
+
+Right-click → **Format** wraps the selection in bold, italic, strikethrough, code or a link, or
+turns the selected lines into headings, lists, tasks, quotes or a code block — choose bold, italic,
+strikethrough, code, a list, a task or a quote again to take it off; a heading item switches the level,
+and choosing the level a line already has removes the heading. Each is a single **Ctrl+Z**.
+
+### Colors for code, logs and settings files
+
+JSON, XML, HTML, C#, JavaScript, CSS, PowerShell, Python, SQL, C/C++, Java, PHP, VB, diff, INI,
+YAML, batch and log files open colored, in both themes. The language shows in the status bar;
+click it to pick another for that tab (or **Auto** to go back to the file type). Notes and
+`.md`/`.txt` files are Markdown. Text over 2 MB is shown plain, so huge files stay fast.
+
+JSON, C#, JavaScript, CSS, C/C++, Java, PHP and PowerShell fold at braces, XML and HTML at tags,
+and Markdown at headings and code blocks: click the ⊟ box in the margin to fold, ⊞ to open again.
+Moving to text inside a fold (Find, Go to line) opens it.
+
+### Editing helpers
+
+**Auto-close**: typing `(`, `[`, `{` or a quote adds the closing one after the caret; typing it
+again steps over it, and Backspace right after the opening one removes both. With text selected,
+an opening bracket or quote wraps the selection. It stays out of the way in prose — `don't` and
+`คำว่า"ใช่"` type normally, and nothing is added in front of a word. Turn it off in **☰** or **Settings → MicaPad**.
+
+**Lines**: **Ctrl+D** duplicates the line (or the selection; with a rectangular **Alt**+drag
+selection, every line it touches), **Ctrl+Shift+↑/↓** moves the selected lines, **Ctrl+J** joins
+them with one space. Right-click → **Lines** also sorts
+(ascending or descending, ignoring case), removes duplicate lines (keeping the first; blank lines
+stay) and trims trailing spaces — on the selected lines, or the whole note when nothing is
+selected. Line endings are kept, and each is a single **Ctrl+Z**.
+
+**Bookmarks**: **Ctrl+F2** marks the caret line with a dot in the margin (again to remove it);
+**F2** / **Shift+F2** jump to the next / previous one, wrapping around. They move with the text as
+you edit — moved lines take theirs along, and trimming or **Replace all** leaves them on their
+lines — and each tab keeps its own across restarts. **☰ → Clear bookmarks** removes them.
+
+**Occurrences**: select a whole word and every other place it appears (same case, whole words
+only) gets a soft box; the status bar counts them (`5 matches`, up to `10,000+`). Words are letters, digits and
+underscores, so a word inside unspaced Thai text is only marked where it stands alone (between
+spaces or punctuation).
+
+### Links, tabs and view
+
+**Links**: `http://`, `https://` and `mailto:` addresses are underlined; **Ctrl+Click** opens them
+in your browser or mail program. Nothing else in a note is ever opened — not files, paths or other
+protocols. A link ends at a space, a quote, a brace or a square bracket, and before closing
+punctuation; parentheses stay in it only as a pair, as in Wikipedia addresses.
+
+**Tabs**: drag a tab to move it; the order is kept after a restart.
+
+**Full screen**: **F11** hides the title bar and fills the screen; **F11** again (or **Win+↓**) brings the window back. MicaPad always reopens windowed.
+
+**Copy as RTF** (right-click or **☰**): copies the selection — or the whole note — with its colors, bold, italic and heading sizes, ready to paste into Word or Outlook. It always uses light-theme colors, for white pages. A rectangular (**Alt**+drag) selection copies just the box, without colors; while a history version is shown, the ☰ item is off.
+
+### Tools
+
+Right-click → **Tools** (also in **☰**):
+
+* **Base64 encode** / **Base64 decode** — UTF-8, so Thai text comes back exactly.
+* **Convert number** to decimal, hex, binary or octal — `255` ↔ `0xFF` ↔ `0b11111111` ↔ `0o377`,
+  any 64-bit number, with `_` allowed between digits (`1_000`).
+* **Insert GUID** and **Insert timestamp** — `2026-09-30T18:05:12+07:00`, `2026-09-30` or Unix
+  seconds, always in the Western calendar.
+* **Evaluate** — select a sum such as `(1500 + 230) * 1.07` and ` = 1851.1` is added after it.
+  It knows `+ - * / % ^`, brackets and `0x` numbers, and nothing else: text in a note is never run.
+
+The selection tools work on the selected text; when one cannot (not a number, not Base64,
+division by zero), the text is left alone and the status bar says why. Each is a single **Ctrl+Z**.
+
+### More than one window
+
+**Ctrl+Shift+N** (or **☰ → New window**) opens another MicaPad window with a new note. Each window
+has its own tabs, size and place, zoom, **Always on top** and full screen; the theme, the font and
+the other switches are shared. Closing a window while another one is open moves its tabs into the
+window you used last — no note is closed. Closing the last window only hides it, as before: its
+tabs wait for the next time you open MicaPad, and a hidden MicaPad does not reopen when you sign in.
+
+Right-click a tab → **Move to new window**, or **Move to** one of the other windows (listed by the
+tab each is showing); moving a window's last tab closes that window into the other. A moved tab
+starts a fresh **Ctrl+Z** history in its new window; closing a window keeps its tabs' history. The
+hotkey and the overlay bring back the window you used last. Opening a file — **Open with** or
+**Ctrl+O** — that is already open in another window brings that window forward on its tab.
 
 ### Where notes live
 

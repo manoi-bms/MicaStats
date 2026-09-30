@@ -25,6 +25,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private string _title;
         private bool _hasUnsavedEdits;
         private bool _isActive;
+        private string _windowId = "";
         private SaveState _saveState = SaveState.Saved;
 
         internal OpenNote(NoteMeta meta, string initialText)
@@ -74,6 +75,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
             get => _isActive;
             internal set => Set(ref _isActive, value);
+        }
+
+        /// <summary>The MicaPad window showing this tab (spec 5.3); changed by the workspace when the tab moves.</summary>
+        public string WindowId
+        {
+            get => _windowId;
+            internal set => Set(ref _windowId, value);
         }
 
         /// <summary>Whether the note's latest text is on disk, being written, or failed to write.</summary>

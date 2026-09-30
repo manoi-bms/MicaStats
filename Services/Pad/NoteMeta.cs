@@ -49,6 +49,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The line ending recorded at open, or chosen by the user.</summary>
         public LineEnding LineEnding { get; set; } = LineEnding.CrLf;
 
+        /// <summary>
+        /// The language chosen for this note in the status bar (a <see cref="PadLanguage.Id"/>), or
+        /// null for Auto: by file type, Markdown for notes. Older meta.json files have none.
+        /// </summary>
+        public string? Language { get; set; }
+
         /// <summary>The source file's write time at the last load or save.</summary>
         public DateTime? SourceWriteTimeUtc { get; set; }
 
@@ -85,7 +91,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public NoteMeta Clone() => (NoteMeta)MemberwiseClone();
     }
 
-    /// <summary>The window and its tabs, persisted as <c>session.json</c>.</summary>
+    /// <summary>MicaPad's windows and their tabs, persisted as <c>session.json</c>.</summary>
     public sealed class SessionState
     {
         /// <summary>MicaPad was showing when this was written; drives reopen at login.</summary>
@@ -120,6 +126,52 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>Caret and scroll per open note.</summary>
         public Dictionary<string, TabViewState> Tabs { get; set; } = new();
+
+        /// <summary>
+        /// Every MicaPad window (spec 5.3), in a stable order. The first one is also written to the
+        /// fields above, and <see cref="OpenNoteIds"/> lists every window's notes, so an older
+        /// MicaPad still opens every tab. Null in sessions written before windows existed: those
+        /// load as one window made from the fields above.
+        /// </summary>
+        public List<PadWindowState>? Windows { get; set; }
+    }
+
+    /// <summary>One MicaPad window in <c>session.json</c> (spec 5.3). Changed on the UI thread only.</summary>
+    public sealed class PadWindowState
+    {
+        /// <summary>The window's id; each open note names its window by it (<see cref="OpenNote.WindowId"/>).</summary>
+        public string Id { get; set; } = "";
+
+        /// <summary>The window was showing when this was written; drives reopen at login.</summary>
+        public bool Open { get; set; }
+
+        /// <summary>Null until the window has been placed once.</summary>
+        public double? Left { get; set; }
+
+        /// <summary>Null until the window has been placed once.</summary>
+        public double? Top { get; set; }
+
+        /// <summary>Width in device-independent pixels; default 900.</summary>
+        public double Width { get; set; } = 900;
+
+        /// <summary>Height in device-independent pixels; default 640.</summary>
+        public double Height { get; set; } = 640;
+
+        public bool Maximized { get; set; }
+
+        public bool AlwaysOnTop { get; set; }
+
+        /// <summary>Editor zoom factor, 0.5 to 4.</summary>
+        public double Zoom { get; set; } = 1.0;
+
+        /// <summary>The window's notes, in tab order.</summary>
+        public List<string> NoteIds { get; set; } = new();
+
+        /// <summary>The window's selected tab, or null.</summary>
+        public string? ActiveNoteId { get; set; }
+
+        /// <summary>When the window was last active, so the most recently active one is known after a restart. Null in older sessions.</summary>
+        public DateTime? LastActiveUtc { get; set; }
     }
 
     /// <summary>Where the user was in one tab.</summary>
@@ -133,6 +185,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>Vertical scroll offset in the editor.</summary>
         public double VerticalOffset { get; set; }
+
+        /// <summary>Bookmarked lines (1-based), or null when there are none. Older sessions have none.</summary>
+        public List<int>? Bookmarks { get; set; }
     }
 
     /// <summary>One version in a note's history.</summary>

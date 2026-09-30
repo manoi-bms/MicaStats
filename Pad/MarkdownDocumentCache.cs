@@ -1,0 +1,106 @@
+using System;
+using ICSharpCode.AvalonEdit.Document;
+using Kil0bitSystemMonitor.Services.Pad;
+
+namespace Kil0bitSystemMonitor.Pad
+{
+    /// <summary>
+    /// Which lines of the shown document are fenced code, shared by the Markdown colorizer, the
+    /// background renderer and the bullet generator. Rescans only after an edit that can move a
+    /// fence (a backtick or tilde, a new or removed line, or an edit on a line that was or may now
+    /// be a delimiter), so ordinary typing never walks the whole note.
+    /// </summary>
+    internal sealed class MarkdownDocumentCache
+    {
+        private static readonly char[] FenceChars = { '`', '~' };
+
+        private readonly Action<Exception> _onFailure;
+        private TextDocument? _document;
+        private MdFence[] _kinds = Array.Empty<MdFence>();
+        private bool _stale = true;
+
+        /// <param name="onFailure">Told when following an edit fails; the edit itself never sees the exception.</param>
+        public MarkdownDocumentCache(Action<Exception>? onFailure = null) => _onFailure = onFailure ?? (_ => { });
+
+        /// <summary>Raised after an edit changed which lines are fenced, so lines far from the edit repaint.</summary>
+        public event Action? FencesChanged;
+
+        /// <summary>How many times the whole document was scanned; for tests.</summary>
+        internal int Recomputes { get; private set; }
+
+        /// <summary>The fence kind of a line (1-based) of <paramref name="document"/>.</summary>
+        public MdFence KindOf(TextDocument document, int lineNumber)
+        {
+            Track(document);
+            if (_stale) Recompute();
+            int index = lineNumber - 1;
+            return index >= 0 && index < _kinds.Length ? _kinds[index] : MdFence.None;
+        }
+
+        /// <summary>Stops following the document.</summary>
+        public void Detach()
+        {
+            if (_document != null) _document.Changed -= OnChanged;
+            _document = null;
+            _kinds = Array.Empty<MdFence>();
+            _stale = true;
+        }
+
+        private void Track(TextDocument document)
+        {
+            if (ReferenceEquals(document, _document)) return;
+            Detach();
+            _document = document;
+            _document.Changed += OnChanged;
+        }
+
+        private void OnChanged(object? sender, DocumentChangeEventArgs e)
+        {
+            // AvalonEdit calls every handler the document had when the change began, so a handler
+            // that ran earlier in this change may already have detached the cache.
+            var document = _document;
+            if (document == null || !ReferenceEquals(sender, document)) return;
+            try
+            {
+                if (!_stale && !TouchesFences(document, e)) return;
+                var before = _kinds;
+                Recompute();
+                if (!before.AsSpan().SequenceEqual(_kinds)) FencesChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _stale = true;
+                _onFailure(ex);
+            }
+        }
+
+        private bool TouchesFences(TextDocument document, DocumentChangeEventArgs e)
+        {
+            if (document.LineCount != _kinds.Length) return true;
+            if (e.InsertedText.Text.IndexOfAny(FenceChars) >= 0 || e.RemovedText.Text.IndexOfAny(FenceChars) >= 0) return true;
+
+            // Each line the edit left text on: a delimiter before it, or one now. Removing the
+            // indent or a character before ``` makes a fence without any backtick typed.
+            int first = document.GetLineByOffset(Math.Min(e.Offset, document.TextLength)).LineNumber;
+            int last = document.GetLineByOffset(Math.Min(e.Offset + e.InsertionLength, document.TextLength)).LineNumber;
+            for (int number = first; number <= last; number++)
+            {
+                if (_kinds[number - 1] == MdFence.Delimiter) return true;
+                var line = document.GetLineByNumber(number);
+                // A delimiter has at most three spaces before its first backtick or tilde.
+                if (FenceTracker.MayBeDelimiter(document.GetText(line.Offset, Math.Min(line.Length, 4)))) return true;
+            }
+            return false;
+        }
+
+        private void Recompute()
+        {
+            var document = _document!;
+            var lines = new string[document.LineCount];
+            foreach (var line in document.Lines) lines[line.LineNumber - 1] = document.GetText(line);
+            _kinds = FenceTracker.Classify(lines);
+            _stale = false;
+            Recomputes++;
+        }
+    }
+}

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!-- MicaPad's INI highlighting. Colors are names only: MicaPad paints them from its palette. -->
+<SyntaxDefinition name="MicaPad INI" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" />
+  <Color name="Section" />
+  <Color name="KeyName" />
+  <Color name="String" />
+  <RuleSet ignoreCase="true">
+    <Rule color="Comment">^\s*[;\#].*$</Rule>
+    <Rule color="Section">^\s*\[[^\]\r\n]*\]</Rule>
+    <Rule color="KeyName">^\s*[^=:\s;\#\[][^=:\r\n]*?(?=\s*[=:])</Rule>
+    <Rule color="String">(?&lt;=[=:]\s*)\S.*$</Rule>
+  </RuleSet>
+</SyntaxDefinition>

@@ -158,6 +158,18 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Real files stay safe**: edits to an opened file are always kept, but the file itself changes only on Ctrl+S, in its original encoding (Thai TIS-620 / cp874 included) and line endings
 * Find and replace with regular expressions, go to line, zoom, word wrap
 * Open it from the overlay's right-click menu, **Ctrl+Alt+N** anywhere, the Start menu, or Explorer's **Open with**
+* **Light or dark**: MicaPad has its own theme switch (the sun and moon button), independent of the rest of MicaStats
+* **Right-click menus** in the text (cut, copy, paste, find) and on tabs (rename, close others, copy the file path, show in folder)
+* **Colors for code and logs**: JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch and log files are colored in both themes; the status bar shows the language and changes it per tab
+* **Markdown as you type**: headings, bold, italic, code, lists, tasks and quotes are formatted in place, with the markers still visible; the file stays plain text
+* **Folding**: collapse braces, tags, Markdown sections and code blocks from the margin
+* **Editing helpers**: auto-closing brackets and quotes, notepad4-style line operations, bookmarks, and every occurrence of the selected word marked
+* **Links**: web and mail addresses are underlined and open with **Ctrl+Click**; nothing else in a note is ever opened
+* **Drag tabs** to reorder them (the order is kept), and **F11** for full screen
+* **Copy as RTF** pastes the note, or the selection, into Word or Outlook with its colors, bold and heading sizes
+* **Tools**: Base64, number bases, GUIDs, timestamps, and a calculator that works the sum out itself — nothing in a note is ever run; each is one **Ctrl+Z**
+* **Compare with current**: see what changed since a history version, line by line — removed lines in red, added in green
+* **More than one window** (**Ctrl+Shift+N**), each with its own tabs, place and zoom; closing one moves its tabs into another, so no note is ever closed that way
 * Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
 
 ### Ask MicaStats: answers about your PC
@@ -267,9 +279,14 @@ Inside MicaPad:
 | Key | Action |
 | --- | --- |
 | **Ctrl+N** · **Ctrl+W** · **Ctrl+Shift+T** | New note · close tab · reopen closed tab |
+| **Ctrl+Shift+N** | New window |
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | Open file · save to its file · save as |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | Find · replace · next / previous |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | Go to line · word wrap · history |
+| **F11** | Full screen |
+| **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | Duplicate line · move lines · join lines |
+| **Ctrl+F2** · **F2** / **Shift+F2** | Toggle bookmark · next / previous bookmark |
+| **Ctrl+Click** a link | Open it (web and mail links only) |
 | **Ctrl+Tab** · **Ctrl+1…9** | Next tab · jump to a tab |
 | **Ctrl+wheel** · **Ctrl+0** | Zoom · reset zoom |
 
@@ -466,6 +483,7 @@ The published application will be created in the `publish` directory.
 | Desktop framework   | Windows Presentation Foundation              |
 | UI library          | ModernWpfUI                                  |
 | Text editor         | AvalonEdit (MIT), for MicaPad                |
+| Text comparison     | DiffPlex (Apache-2.0), for MicaPad's compare |
 | AI                  | Anthropic .NET SDK, Microsoft.Extensions.AI, MCP C# SDK (ModelContextProtocol.Core) |
 | Windows integration | Win32 APIs                                   |
 | Performance data    | Windows performance counters and system APIs |
@@ -764,6 +782,18 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **ไฟล์จริงปลอดภัย** การแก้ไขไฟล์ที่เปิดอยู่ถูกเก็บไว้เสมอ แต่ตัวไฟล์จะเปลี่ยนเมื่อกด Ctrl+S เท่านั้น โดยคงการเข้ารหัสเดิม (รวมถึง TIS-620 / cp874) และรูปแบบการขึ้นบรรทัดเดิม
 * ค้นหาและแทนที่ด้วย regular expression, ไปยังบรรทัด, ซูม, ตัดบรรทัดอัตโนมัติ
 * เปิดได้จากเมนูคลิกขวาของโอเวอร์เลย์, **Ctrl+Alt+N** จากที่ใดก็ได้, เมนู Start หรือ **Open with** ใน Explorer
+* **ธีมสว่างหรือมืด**: MicaPad มีปุ่มสลับธีมของตัวเอง (ปุ่มดวงอาทิตย์และพระจันทร์) โดยส่วนอื่นของ MicaStats ไม่เปลี่ยน
+* **เมนูคลิกขวา** ในเนื้อความ (ตัด คัดลอก วาง ค้นหา) และบนแท็บ (เปลี่ยนชื่อ ปิดแท็บอื่น คัดลอกพาธไฟล์ เปิดโฟลเดอร์ที่เก็บไฟล์)
+* **สีสำหรับโค้ดและล็อก**: ไฟล์ JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch และไฟล์ล็อก แสดงสีได้ทั้งธีมสว่างและมืด ภาษาแสดงที่แถบสถานะและเปลี่ยนได้ทีละแท็บ
+* **Markdown ขณะพิมพ์**: หัวข้อ ตัวหนา ตัวเอียง โค้ด รายการ งานที่ต้องทำ และข้อความอ้างอิง แสดงผลตามรูปแบบทันที โดยยังเห็นเครื่องหมาย และไฟล์ยังเป็นข้อความธรรมดา
+* **ย่อ/ขยายโค้ด**: ย่อส่วนในวงเล็บปีกกา แท็ก หัวข้อ Markdown และบล็อกโค้ดได้จากขอบซ้าย
+* **ตัวช่วยแก้ไข**: ปิดวงเล็บและเครื่องหมายคำพูดอัตโนมัติ คำสั่งจัดการบรรทัดแบบ notepad4 บุ๊กมาร์ก และไฮไลต์คำเดียวกันทั้งหมดเมื่อเลือกคำ
+* **ลิงก์**: ที่อยู่เว็บและอีเมลมีขีดเส้นใต้ และเปิดได้ด้วย **Ctrl+Click** นอกจากนั้นไม่มีสิ่งใดในโน้ตถูกเปิดเลย
+* **ลากแท็บ** เพื่อจัดลำดับใหม่ (ลำดับถูกจำไว้) และกด **F11** เพื่อแสดงเต็มจอ
+* **Copy as RTF** คัดลอกโน้ตหรือส่วนที่เลือกไปวางใน Word หรือ Outlook พร้อมสี ตัวหนา และขนาดหัวข้อ
+* **เครื่องมือ**: Base64 แปลงเลขฐาน GUID เวลาปัจจุบัน และเครื่องคิดเลขที่คำนวณเอง ไม่มีสิ่งใดในโน้ตถูกรันเลย ทุกคำสั่งย้อนกลับได้ด้วย **Ctrl+Z** ครั้งเดียว
+* **Compare with current**: ดูว่าอะไรเปลี่ยนไปจากเวอร์ชันในประวัติทีละบรรทัด บรรทัดที่ถูกลบเป็นสีแดง บรรทัดที่เพิ่มเป็นสีเขียว
+* **หลายหน้าต่าง** (**Ctrl+Shift+N**) แต่ละหน้าต่างมีแท็บ ตำแหน่ง และการซูมของตัวเอง เมื่อปิดหน้าต่างหนึ่ง แท็บจะย้ายไปอยู่อีกหน้าต่าง จึงไม่มีโน้ตใดถูกปิดไปด้วย
 * โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา
@@ -873,9 +903,14 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | ปุ่ม | การทำงาน |
 | --- | --- |
 | **Ctrl+N** · **Ctrl+W** · **Ctrl+Shift+T** | โน้ตใหม่ · ปิดแท็บ · เปิดแท็บที่ปิดไปกลับมา |
+| **Ctrl+Shift+N** | หน้าต่างใหม่ |
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | เปิดไฟล์ · บันทึกลงไฟล์ · บันทึกเป็น |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | ค้นหา · แทนที่ · ถัดไป / ก่อนหน้า |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | ไปยังบรรทัด · ตัดบรรทัดอัตโนมัติ · ประวัติ |
+| **F11** | เต็มจอ |
+| **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | ทำซ้ำบรรทัด · ย้ายบรรทัด · รวมบรรทัด |
+| **Ctrl+F2** · **F2** / **Shift+F2** | เพิ่ม/ลบบุ๊กมาร์ก · บุ๊กมาร์กถัดไป / ก่อนหน้า |
+| **Ctrl+Click** ลิงก์ | เปิดลิงก์ (เฉพาะเว็บและอีเมล) |
 | **Ctrl+Tab** · **Ctrl+1…9** | แท็บถัดไป · ไปยังแท็บ |
 | **Ctrl+ล้อเมาส์** · **Ctrl+0** | ซูม · รีเซ็ตซูม |
 
@@ -1072,6 +1107,7 @@ dotnet publish `
 | เฟรมเวิร์กเดสก์ท็อป | Windows Presentation Foundation |
 | ไลบรารี UI | ModernWpfUI |
 | โปรแกรมแก้ไขข้อความ | AvalonEdit (MIT) สำหรับ MicaPad |
+| การเปรียบเทียบข้อความ | DiffPlex (Apache-2.0) สำหรับการเปรียบเทียบเวอร์ชันใน MicaPad |
 | AI | Anthropic .NET SDK, Microsoft.Extensions.AI และ MCP C# SDK (ModelContextProtocol.Core) |
 | การเชื่อมต่อกับ Windows | Win32 API |
 | ข้อมูลประสิทธิภาพ | ตัวนับประสิทธิภาพและ API ของ Windows |

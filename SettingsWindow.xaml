@@ -1040,6 +1040,54 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE706;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Theme" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Dark or light, for MicaPad only. The sun and moon button in MicaPad switches it too." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ComboBox Grid.Column="2" x:Name="PadThemeBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnPadThemeChanged">
+                                    <ComboBoxItem Content="Dark"/>
+                                    <ComboBoxItem Content="Light"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE8D2;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Markdown formatting" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Headings, bold, lists and code in notes and .md and .txt files are shown formatted as you type. The file itself never changes." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="PadMarkdownToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE943;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Auto-close brackets and quotes" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Typing ( [ { or a quote adds the closing one; typing it again steps over it. Never in the middle of a word." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="PadAutoCloseToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE751;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
                                     <TextBlock Text="Word wrap" FontWeight="SemiBold" FontSize="15"/>

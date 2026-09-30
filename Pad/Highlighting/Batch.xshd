@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- MicaPad's Windows batch highlighting. Colors are names only: MicaPad paints them from its palette. -->
+<SyntaxDefinition name="MicaPad Batch" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" />
+  <Color name="Keywords" />
+  <Color name="Variable" />
+  <Color name="LabelDirective" />
+  <Color name="String" />
+  <RuleSet ignoreCase="true">
+    <Rule color="Comment">^\s*@?rem(\s.*)?$</Rule>
+    <Rule color="Comment">^\s*::.*$</Rule>
+    <Rule color="LabelDirective">^\s*:[^:\s].*$</Rule>
+    <Span color="String" begin="&quot;" end="&quot;" />
+    <Rule color="Variable">%[^%\s]+%|%~?[0-9a-z]|![\w]+!</Rule>
+    <Keywords color="Keywords">
+      <Word>echo</Word><Word>set</Word><Word>if</Word><Word>else</Word><Word>for</Word><Word>in</Word>
+      <Word>do</Word><Word>goto</Word><Word>call</Word><Word>exit</Word><Word>not</Word><Word>exist</Word>
+      <Word>errorlevel</Word><Word>defined</Word><Word>setlocal</Word><Word>endlocal</Word><Word>pushd</Word>
+      <Word>popd</Word><Word>shift</Word><Word>start</Word><Word>cd</Word><Word>equ</Word><Word>neq</Word>
+      <Word>lss</Word><Word>leq</Word><Word>gtr</Word><Word>geq</Word><Word>nul</Word>
+    </Keywords>
+  </RuleSet>
+</SyntaxDefinition>

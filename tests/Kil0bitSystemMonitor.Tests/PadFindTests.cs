@@ -88,6 +88,39 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void The_replace_all_plan_is_one_edit_per_match_with_groups_expanded()
+        {
+            var regex = Build(@"(\w+)@", regex: true);
+
+            Assert.True(FindReplaceEngine.TryPlanReplaceAll("a@ b@", regex, "<$1>", useRegex: true, out var edits, out int count, out string? error));
+            Assert.Equal(new[] { new TextPiece(0, 2, "<a>"), new TextPiece(3, 2, "<b>") }, edits);
+            Assert.Equal(2, count);
+            Assert.Null(error);
+
+            Assert.True(FindReplaceEngine.TryPlanReplaceAll("price", Build("price"), "$1", useRegex: false, out edits, out _, out _));
+            Assert.Equal(new[] { new TextPiece(0, 5, "$1") }, edits);
+        }
+
+        [Fact]
+        public void The_replace_all_plan_keeps_zero_length_matches()
+        {
+            Assert.True(FindReplaceEngine.TryPlanReplaceAll("abc", Build("x*", regex: true), "-", useRegex: true, out var edits, out int count, out _));
+            Assert.Equal(4, count);
+            Assert.Equal(new[] { 0, 1, 2, 3 }, edits.Select(e => e.Offset));
+            Assert.All(edits, e => Assert.Equal(0, e.Length));
+        }
+
+        [Fact]
+        public void A_timed_out_plan_says_so()
+        {
+            var regex = new Regex("(x+x+)+y", RegexOptions.None, System.TimeSpan.FromMilliseconds(1));
+            Assert.False(FindReplaceEngine.TryPlanReplaceAll(new string('x', 40), regex, "-", useRegex: true, out var edits, out int count, out string? error));
+            Assert.Empty(edits);
+            Assert.Equal(0, count);
+            Assert.Equal(FindReplaceEngine.TimedOutMessage, error);
+        }
+
+        [Fact]
         public void Find_next_wraps_to_the_start()
         {
             var regex = Build("ab");

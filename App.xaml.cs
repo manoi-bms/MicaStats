@@ -607,6 +607,8 @@ namespace Kil0bitSystemMonitor
         /// <summary>
         /// Shows MicaPad, creating its workspace on first use, and opens <paramref name="path"/> in a
         /// tab when given. From the overlay menu, the hotkey, <c>--pad</c> and the settings page.
+        /// A file already open in a MicaPad window brings that window forward; anything else goes to
+        /// the most recently active window.
         /// </summary>
         public static void OpenPad(string? path)
         {
@@ -625,8 +627,7 @@ namespace Kil0bitSystemMonitor
                         });
                 }
 
-                var window = Kil0bitSystemMonitor.Pad.MicaPadWindow.ShowOrActivate(s_pad, config, () => ShowSettingsSection("MicaPad"));
-                if (!string.IsNullOrWhiteSpace(path)) window.OpenPath(path);
+                Kil0bitSystemMonitor.Pad.MicaPadWindow.Open(s_pad, config, () => ShowSettingsSection("MicaPad"), path);
             }
             catch (Exception ex)
             {
@@ -647,7 +648,7 @@ namespace Kil0bitSystemMonitor
         {
             try
             {
-                Kil0bitSystemMonitor.Pad.MicaPadWindow.Current?.PrepareForExit();
+                Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit();
                 s_pad?.FlushAll(TimeSpan.FromSeconds(2));
             }
             catch (Exception ex)
@@ -664,7 +665,7 @@ namespace Kil0bitSystemMonitor
 
                 string session = System.IO.Path.Combine(Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot, "session.json");
                 if (!System.IO.File.Exists(session)) return;
-                if (PadStore.LoadSession().WindowOpen) OpenPad(null);
+                if (Kil0bitSystemMonitor.Services.Pad.SessionWindows.AnyOpen(PadStore.LoadSession())) OpenPad(null);
             }
             catch (Exception ex)
             {
@@ -764,7 +765,7 @@ namespace Kil0bitSystemMonitor
         public static void Quit()
         {
             // Record whether MicaPad is showing before shutdown closes it, so it reopens at next login.
-            Kil0bitSystemMonitor.Pad.MicaPadWindow.Current?.PrepareForExit();
+            Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit();
             Current.Shutdown();
         }
     }

@@ -40,13 +40,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
     public sealed partial class PadWorkspace
     {
+        /// <summary>Opens a file in the most recently active window; see <see cref="OpenFile(string, string)"/>.</summary>
+        public OpenFileResult OpenFile(string path) => OpenFile(path, MostRecentWindowId);
+
         /// <summary>
-        /// Opens a file as a tab. A file already open switches to its tab; a file with a closed
-        /// note, or with a note skipped at <see cref="Restore"/>, reopens that note, so its history
-        /// and any unsaved edits continue.
+        /// Opens a file as a tab of <paramref name="windowId"/>. A file already open in any window
+        /// switches to its tab there (the window layer brings that window forward); a file with a
+        /// closed note, or with a note skipped at <see cref="Restore"/>, reopens that note in
+        /// <paramref name="windowId"/>, so its history and any unsaved edits continue.
         /// </summary>
-        public OpenFileResult OpenFile(string path)
+        public OpenFileResult OpenFile(string path, string windowId)
         {
+            if (WindowStateOf(windowId) == null) windowId = MostRecentWindowId;
             string full;
             try
             {
@@ -64,7 +69,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 return new OpenFileResult(OpenFileStatus.AlreadyOpen, open);
             }
 
-            var skipped = OpenSkippedNote(full);
+            var skipped = OpenSkippedNote(full, windowId);
             if (skipped != null) return skipped;
 
             var closed = ClosedNotes().FirstOrDefault(m => SamePath(m.SourcePath, full));
@@ -79,7 +84,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     lossy = !probe.Lossless;
                 }
 
-                var reopened = Reopen(closed.Id);
+                var reopened = Reopen(closed.Id, windowId);
                 if (reopened != null) return new OpenFileResult(OpenFileStatus.Opened, reopened, lossy);
                 // Its unsaved edits are in text that cannot be read right now (Reopen logged why).
                 // A fresh note beside it would be a second note for this file.
@@ -96,7 +101,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             meta.LineEnding = decoded.LineEnding;
             meta.SourceStamp = stamp;
 
-            var note = AddOpen(meta, decoded.Text, InsertIndexAfterActive());
+            var note = AddOpen(meta, decoded.Text, InsertIndexAfterActive(windowId), windowId);
             SetActive(note);
             EnqueueSave(note);
             SaveSession();
@@ -112,7 +117,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// back (as at <see cref="Restore"/>); while it cannot, nothing is opened
         /// (<see cref="OpenFileStatus.ClosedNoteUnreadable"/>). Null when no skipped note names the file.
         /// </summary>
-        private OpenFileResult? OpenSkippedNote(string full)
+        private OpenFileResult? OpenSkippedNote(string full, string windowId)
         {
             foreach (string id in _unreadable.ToList())
             {
@@ -123,7 +128,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     return new OpenFileResult(OpenFileStatus.ClosedNoteUnreadable, null);
 
                 _unreadable.Remove(id);
-                var note = AddOpen(meta, text, InsertIndexAfterActive());
+                _unreadableWindow.Remove(id);
+                var note = AddOpen(meta, text, InsertIndexAfterActive(windowId), windowId);
                 SetActive(note);
                 SaveSession();
                 return new OpenFileResult(OpenFileStatus.Opened, note);

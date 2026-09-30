@@ -6,7 +6,6 @@ using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services.Pad;
 
 using Brush = System.Windows.Media.Brush;
-using Color = System.Windows.Media.Color;
 
 namespace Kil0bitSystemMonitor.Pad
 {
@@ -17,7 +16,8 @@ namespace Kil0bitSystemMonitor.Pad
     /// </summary>
     internal sealed class MatchHighlighter : IBackgroundRenderer
     {
-        private static readonly Brush Fill = CreateFill();
+        /// <summary>The box behind each match; the MicaPad theme sets it (see <c>FindReplaceBar.ApplyPalette</c>).</summary>
+        public Brush Fill { get; set; } = PadThemeApplier.ToBrush(PadPalette.Dark.FindMatch);
 
         /// <summary>The matches to paint, sorted by offset.</summary>
         public IReadOnlyList<FindMatch> Matches { get; set; } = Array.Empty<FindMatch>();
@@ -47,13 +47,6 @@ namespace Kil0bitSystemMonitor.Pad
                 var geometry = builder.CreateGeometry();
                 if (geometry != null) drawingContext.DrawGeometry(Fill, null, geometry);
             }
-        }
-
-        private static Brush CreateFill()
-        {
-            var brush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xC8, 0x57));
-            brush.Freeze();
-            return brush;
         }
     }
 }

@@ -37,6 +37,10 @@ public static class McpBridge
     /// </summary>
     public static int RunStdio()
     {
+        // Before the first log line: the bridge runs beside the app, and two processes appending
+        // to micastats.log would refuse each other's writes, so the bridge keeps its own file.
+        DiagnosticsLog.UseFileName(DiagnosticsLog.BridgeFileName);
+
         // The SDK writes the raw stdout handle, not Console.Out, so this cannot silence MCP; it
         // only makes sure a stray Console.Write anywhere can never corrupt the stream.
         Console.SetOut(TextWriter.Null);

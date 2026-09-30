@@ -22,7 +22,9 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
     /// <para>
     /// When in doubt it hides more rather than less: a spaced name followed by a slash later in the
     /// sentence may take a few extra words with it. Over-redaction costs a little context; a leak
-    /// cannot be taken back.
+    /// cannot be taken back. A longer own-profile folder at the very end of the text with no
+    /// separator after it (<c>C:\Users\Manoi Smith</c> alone) is ambiguous and is treated as the own
+    /// profile.
     /// </para>
     /// </summary>
     public sealed class Redactor
@@ -52,8 +54,7 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
             Options | RegexOptions.Compiled);
 
         private readonly Regex? _ownProfile;
-        private readonly Regex? _machine;
-        private readonly Regex? _user;
+        private readonly Regex? _names;
 
         /// <param name="userProfile">The profile folder that becomes <c>%USERPROFILE%</c>; blank skips the rule.</param>
         /// <param name="userName">Replaced as a whole word when 3 or more characters long.</param>
@@ -61,8 +62,7 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
         public Redactor(string userProfile, string userName, string machineName)
         {
             _ownProfile = ProfilePattern(userProfile);
-            _machine = WordPattern(machineName);
-            _user = WordPattern(userName);
+            _names = NamesPattern(machineName, userName);
         }
 
         /// <summary>A redactor for the Windows account MicaStats runs under.</summary>
@@ -76,8 +76,7 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
 
             if (_ownProfile != null) text = _ownProfile.Replace(text, "%USERPROFILE%");
             text = OtherProfile.Replace(text, "${1}:${2}${3}${4}<user>");
-            if (_machine != null) text = _machine.Replace(text, "[computer]");
-            if (_user != null) text = _user.Replace(text, "[user]");
+            if (_names != null) text = _names.Replace(text, NameOrToken);
             text = IPv4.Replace(text, "[ip]");
             text = IPv6.Replace(text, "[ip]");
             return Mac.Replace(text, "[mac]");
@@ -162,12 +161,34 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
             return new Regex(@"(?<!\w)" + body + @"(?![^\\/\s""'<>|,;:.)\]}])(?![ .][^\s""'<>|\\/]*[\\/])", Options);
         }
 
-        /// <summary>A whole-word pattern, or null for a name too short to replace safely.</summary>
-        private static Regex? WordPattern(string? word)
+        /// <summary>Keeps a token the redactor emitted itself, else swaps the name for its token.</summary>
+        private static string NameOrToken(Match m) =>
+            m.Groups["token"].Success ? m.Value : m.Groups["machine"].Success ? "[computer]" : "[user]";
+
+        /// <summary>
+        /// One pattern for both names, so a name that equals a token word (User, Computer) is never
+        /// found inside a token, while ordinary punctuation around a name protects nothing. The
+        /// exact tokens come first: at the same spot the leftmost match wins and the token is kept.
+        /// Null when neither name is 3 or more characters long.
+        /// </summary>
+        private static Regex? NamesPattern(string? machineName, string? userName)
         {
-            if (string.IsNullOrWhiteSpace(word) || word.Trim().Length < 3) return null;
-            // Never inside an existing token such as [user], <user> or %USERPROFILE%.
-            return new Regex(@"(?<![\w\[<%])" + Regex.Escape(word.Trim()) + @"(?![\w\]>%])", Options);
+            string machine = WordAlternative(machineName);
+            string user = WordAlternative(userName);
+            if (machine.Length == 0 && user.Length == 0) return null;
+
+            return new Regex(
+                @"(?<token>%USERPROFILE%|<user>|\[(?:user|computer|ip|mac)\])"
+                + (machine.Length == 0 ? "" : "|(?<machine>" + machine + ")")
+                + (user.Length == 0 ? "" : "|(?<user>" + user + ")"),
+                Options);
+        }
+
+        /// <summary>A whole-word alternative, or empty for a name too short to replace safely.</summary>
+        private static string WordAlternative(string? word)
+        {
+            if (string.IsNullOrWhiteSpace(word) || word.Trim().Length < 3) return "";
+            return @"(?<!\w)" + Regex.Escape(word.Trim()) + @"(?!\w)";
         }
     }
 }

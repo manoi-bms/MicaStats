@@ -91,6 +91,20 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Null(R.RedactJson(null));
         }
 
+        [Theory]
+        [InlineData("From: Bob <Manoi@example.com>", "Manoi")]
+        [InlineData("[Manoi] logged in", "Manoi")]
+        [InlineData("Manoi%20Smith", "Manoi")]
+        [InlineData("50%Manoi", "Manoi")]
+        [InlineData("[DESKTOP-ABC123]", "DESKTOP-ABC123")]
+        public void Punctuation_around_a_name_does_not_protect_it(string input, string name)
+        {
+            string once = R.Redact(input);
+
+            Assert.DoesNotContain(name, once, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(once, R.Redact(once));
+        }
+
         [Fact]
         public void Names_equal_to_token_words_never_match_inside_a_token()
         {

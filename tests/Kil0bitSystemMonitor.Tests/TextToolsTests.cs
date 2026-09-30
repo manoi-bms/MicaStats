@@ -39,6 +39,7 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("a", TextTools.NotBase64)]
         [InlineData("////", TextTools.NotUtf8)]     // bytes FF FF FF
         [InlineData("AAAA", TextTools.NotUtf8)]     // three NULs: binary, not text
+        [InlineData("77u/", TextTools.DecodesToNothing)]   // a byte order mark alone: nothing is left once it is dropped
         public void Not_base64_or_not_text_is_reported(string text, string problem)
         {
             var (decoded, reason) = TextTools.Base64Decode(text);

@@ -24,6 +24,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public const string SelectFirst = "Select some text first";
         public const string NotBase64 = "Not valid Base64";
         public const string NotUtf8 = "Not UTF-8 text";
+        public const string DecodesToNothing = "Decodes to empty text";
 
         private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
@@ -34,7 +35,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// Base64 back to UTF-8 text. Line breaks and spaces inside are ignored (Base64 is often
         /// wrapped), missing padding is added, and the URL-safe alphabet (<c>-</c>, <c>_</c>) is read
         /// too. A leading byte order mark is dropped. Bytes that are not UTF-8, or that decode to
-        /// control characters other than tab and line breaks (binary data), are not text.
+        /// control characters other than tab and line breaks (binary data), are not text. Nothing
+        /// left (a byte order mark alone) is <see cref="DecodesToNothing"/>: the selection is not
+        /// replaced by empty text.
         /// </summary>
         public static (string? Text, string? Problem) Base64Decode(string text)
         {
@@ -67,6 +70,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
 
             if (decoded.Length > 0 && decoded[0] == '\uFEFF') decoded = decoded.Substring(1);
+            if (decoded.Length == 0) return (null, DecodesToNothing);
             foreach (char c in decoded)
                 if (char.IsControl(c) && c != '\t' && c != '\r' && c != '\n') return (null, NotUtf8);
             return (decoded, null);

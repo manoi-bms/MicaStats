@@ -95,6 +95,19 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Base64_that_decodes_to_nothing_leaves_the_selection_and_says_so() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Text = "bom: 77u/";
+            window.Editor.Select(5, 4);
+
+            PadMenuTests.Click(Tool(window, "Base64 decode"));
+
+            Assert.Equal("bom: 77u/", window.Editor.Document.Text);
+            Assert.Equal(Visibility.Visible, window.StatusMessage.Visibility);
+            Assert.Equal(TextTools.DecodesToNothing, window.StatusMessage.Text);
+        });
+
+        [Fact]
         public void Base64_from_the_menu_round_trips_thai_text() => PadLanguageWindowTests.WithWindow((window, env, config) =>
         {
             window.Editor.Document.Text = "สวัสดี";

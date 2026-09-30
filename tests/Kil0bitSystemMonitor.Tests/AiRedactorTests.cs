@@ -22,6 +22,14 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData(@"D:\Users\Jane Doe\file.txt", @"D:\Users\<user>\file.txt")]
         [InlineData(@"C:\Users\Manoi2\x", @"C:\Users\<user>\x")]
         [InlineData(@"C:\Users\Bob", @"C:\Users\<user>")]
+        // A longer folder name that starts with the own profile name is somebody else.
+        [InlineData(@"C:\Users\Manoi Smith\x.txt", @"C:\Users\<user>\x.txt")]
+        [InlineData(@"C:\Users\Manoi.old\x", @"C:\Users\<user>\x")]
+        [InlineData(@"C:\Users\Manoix\y", @"C:\Users\<user>\y")]
+        [InlineData(@"C:\Users\Manoi\x.txt", @"%USERPROFILE%\x.txt")]
+        [InlineData(@"saved in C:\Users\Manoi now", @"saved in %USERPROFILE% now")]
+        [InlineData(@"see C:\Users\Manoi.", @"see %USERPROFILE%.")]
+        [InlineData(@"""C:\Users\Manoi""", @"""%USERPROFILE%""")]
         // The computer and user names, as whole words only.
         [InlineData("Computer DESKTOP-ABC123 is slow", "Computer [computer] is slow")]
         [InlineData("desktop-abc123", "[computer]")]
@@ -81,6 +89,19 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal("mac [mac]", back!.GetValue<string>());
             Assert.Null(R.RedactJson(null));
+        }
+
+        [Fact]
+        public void Names_equal_to_token_words_never_match_inside_a_token()
+        {
+            var r = new Redactor(@"C:\Users\User", "User", "Computer");
+
+            string once = r.Redact(@"C:\Users\User\a, C:\Users\Bob\b, User on Computer at 10.1.2.3 mac AA-BB-CC-DD-EE-FF");
+
+            Assert.DoesNotContain("[[", once, StringComparison.Ordinal);
+            Assert.DoesNotContain("<[", once, StringComparison.Ordinal);
+            Assert.Equal(@"%USERPROFILE%\a, C:\Users\<user>\b, [user] on [computer] at [ip] mac [mac]", once);
+            Assert.Equal(once, r.Redact(once));
         }
 
         [Fact]

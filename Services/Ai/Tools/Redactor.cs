@@ -157,14 +157,17 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
             if (parts.Length < 2) return null;   // a bare drive is not a profile
 
             string body = string.Join(@"[\\/]+", parts.Select(Regex.Escape));
-            return new Regex(@"(?<!\w)" + body + @"(?![^\\/\s""'<>|,;:.)\]}])", Options);
+            // A space or dot only ends the profile when what follows does not run on into a
+            // path separator: "Manoi Smith\x" and "Manoi.old\x" are longer folder names.
+            return new Regex(@"(?<!\w)" + body + @"(?![^\\/\s""'<>|,;:.)\]}])(?![ .][^\s""'<>|\\/]*[\\/])", Options);
         }
 
         /// <summary>A whole-word pattern, or null for a name too short to replace safely.</summary>
         private static Regex? WordPattern(string? word)
         {
             if (string.IsNullOrWhiteSpace(word) || word.Trim().Length < 3) return null;
-            return new Regex(@"(?<!\w)" + Regex.Escape(word.Trim()) + @"(?!\w)", Options);
+            // Never inside an existing token such as [user], <user> or %USERPROFILE%.
+            return new Regex(@"(?<![\w\[<%])" + Regex.Escape(word.Trim()) + @"(?![\w\]>%])", Options);
         }
     }
 }

@@ -1,0 +1,137 @@
+using System;
+using System.Net;
+using System.Text.Json.Nodes;
+using System.Threading.Tasks;
+using Kil0bitSystemMonitor.Models;
+using Kil0bitSystemMonitor.Services.Ai;
+using Microsoft.Extensions.AI;
+using Xunit;
+
+namespace Kil0bitSystemMonitor.Tests
+{
+    public class AiProviderFactoryTests
+    {
+        private static SecretStore Secrets(AiTestEnv env, string? claudeKey = null, string? compatibleKey = null)
+        {
+            var store = new SecretStore(env.PathOf("secrets.bin"), _ => { });
+            if (claudeKey != null) store.Set(SecretNames.ClaudeKey, claudeKey);
+            if (compatibleKey != null) store.Set(SecretNames.CompatibleKey, compatibleKey);
+            return store;
+        }
+
+        private static AppConfig Compatible(string baseUrl, string model) => new()
+        {
+            AiProvider = AiProviders.OpenAiCompatible,
+            AiCompatibleBaseUrl = baseUrl,
+            AiCompatibleModel = model,
+        };
+
+        [Fact]
+        public void Claude_without_a_key_asks_for_one()
+        {
+            using var env = new AiTestEnv();
+
+            AiClientResult result = AiProviderFactory.Create(new AppConfig(), Secrets(env));
+
+            Assert.Null(result.Client);
+            Assert.Equal("Add an API key in Settings > AI.", result.Problem);
+            Assert.True(result.IsClaude);
+        }
+
+        [Fact]
+        public void A_compatible_endpoint_without_a_model_asks_for_one()
+        {
+            using var env = new AiTestEnv();
+
+            AiClientResult result = AiProviderFactory.Create(Compatible("http://localhost:11434/v1", " "), Secrets(env));
+
+            Assert.Null(result.Client);
+            Assert.Equal("Choose a model in Settings > AI.", result.Problem);
+            Assert.False(result.IsClaude);
+        }
+
+        [Fact]
+        public void A_base_url_that_is_not_http_is_refused()
+        {
+            using var env = new AiTestEnv();
+
+            AiClientResult result = AiProviderFactory.Create(Compatible("ftp://localhost/v1", "llama3.2"), Secrets(env));
+
+            Assert.Null(result.Client);
+            Assert.Contains("base URL", result.Problem);
+        }
+
+        [Fact]
+        public async Task Claude_calls_the_messages_api_with_the_key_the_model_and_the_output_cap()
+        {
+            using var env = new AiTestEnv();
+            var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.ClaudeText("CPU is fine.")));
+
+            AiClientResult result = AiProviderFactory.Create(new AppConfig(), Secrets(env, claudeKey: "sk-ant-test"), handler);
+            ChatResponse response = await result.Client!.GetResponseAsync("How is my CPU?");
+
+            Assert.Equal("CPU is fine.", response.Text);
+            ScriptedHttpHandler.Sent sent = Assert.Single(handler.Requests);
+            Assert.Equal("https://api.anthropic.com/v1/messages", sent.Url);
+            Assert.Equal("x-api-key=sk-ant-test", sent.Auth);
+            JsonNode body = JsonNode.Parse(sent.Body)!;
+            Assert.Equal("claude-haiku-4-5", body["model"]!.GetValue<string>());
+            Assert.Equal(2000, body["max_tokens"]!.GetValue<int>());
+        }
+
+        [Fact]
+        public async Task A_local_server_gets_max_tokens_and_a_placeholder_key()
+        {
+            using var env = new AiTestEnv();
+            var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.OpenAiText));
+
+            AiClientResult result = AiProviderFactory.Create(Compatible("http://localhost:11434/v1", "llama3.2"), Secrets(env), handler);
+            ChatResponse response = await result.Client!.GetResponseAsync("CPU?", new ChatOptions { MaxOutputTokens = 2000 });
+
+            Assert.Equal("Core 4 is idle.", response.Text);
+            ScriptedHttpHandler.Sent sent = Assert.Single(handler.Requests);
+            Assert.Equal("http://localhost:11434/v1/chat/completions", sent.Url);
+            Assert.Equal("Bearer none", sent.Auth);
+            JsonNode body = JsonNode.Parse(sent.Body)!;
+            Assert.Equal("llama3.2", body["model"]!.GetValue<string>());
+            Assert.Equal(2000, body["max_tokens"]!.GetValue<int>());
+            Assert.Null(body["max_completion_tokens"]);
+        }
+
+        [Fact]
+        public async Task OpenAI_itself_keeps_max_completion_tokens()
+        {
+            using var env = new AiTestEnv();
+            var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.OpenAiText));
+
+            AiClientResult result = AiProviderFactory.Create(Compatible("https://api.openai.com/v1", "gpt-5-mini"),
+                Secrets(env, compatibleKey: "sk-test"), handler);
+            await result.Client!.GetResponseAsync("CPU?", new ChatOptions { MaxOutputTokens = 2000 });
+
+            ScriptedHttpHandler.Sent sent = Assert.Single(handler.Requests);
+            Assert.Equal("Bearer sk-test", sent.Auth);
+            JsonNode body = JsonNode.Parse(sent.Body)!;
+            Assert.Equal(2000, body["max_completion_tokens"]!.GetValue<int>());
+            Assert.Null(body["max_tokens"]);
+        }
+
+        [Fact]
+        public async Task A_rejected_key_reads_as_such_for_both_providers()
+        {
+            using var env = new AiTestEnv();
+            var claudeHandler = new ScriptedHttpHandler(_ => (HttpStatusCode.Unauthorized, "application/json", ScriptedHttpHandler.ClaudeUnauthorized));
+            var openAiHandler = new ScriptedHttpHandler(_ => (HttpStatusCode.Unauthorized, "application/json",
+                "{\"error\":{\"message\":\"Incorrect API key provided\",\"type\":\"invalid_request_error\"}}"));
+            IChatClient claude = AiProviderFactory.Create(new AppConfig(), Secrets(env, claudeKey: "sk-ant-bad"), claudeHandler).Client!;
+            IChatClient openAi = AiProviderFactory.Create(Compatible("https://api.openai.com/v1", "gpt-5-mini"),
+                Secrets(env, compatibleKey: "sk-bad"), openAiHandler).Client!;
+
+            Exception claudeError = await Assert.ThrowsAnyAsync<Exception>(() => claude.GetResponseAsync("hi"));
+            Exception openAiError = await Assert.ThrowsAnyAsync<Exception>(() => openAi.GetResponseAsync("hi"));
+
+            Assert.Equal("The key was rejected. Check it in Settings > AI.", AiErrorText.Describe(claudeError));
+            Assert.Equal("The key was rejected. Check it in Settings > AI.", AiErrorText.Describe(openAiError));
+            Assert.Single(claudeHandler.Requests);
+        }
+    }
+}

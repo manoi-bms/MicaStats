@@ -65,7 +65,7 @@ namespace Kil0bitSystemMonitor.Tests
             AiClientResult result = AiProviderFactory.Create(Compatible("ftp://localhost/v1", "llama3.2"), Secrets(env));
 
             Assert.Null(result.Client);
-            Assert.Contains("base URL", result.Problem);
+            Assert.Contains("base URL", result.Problem, StringComparison.Ordinal);
         }
 
         [Fact]

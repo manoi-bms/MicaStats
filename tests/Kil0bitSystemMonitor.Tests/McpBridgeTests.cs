@@ -140,8 +140,8 @@ public class McpBridgeTests : IDisposable
         JsonNode report = await forward(ToolNames.GetSlowdownReport, new JsonObject { ["id"] = "slowdown-20260930-100000" }, CancellationToken.None);
 
         Assert.Equal("MicaStats is not running", (string?)live["error"]);
-        Assert.Contains("slowdown-20260930-100000", list.ToJsonString());
-        Assert.Contains("Recorded by hand", report.ToJsonString());
+        Assert.Contains("slowdown-20260930-100000", list.ToJsonString(), StringComparison.Ordinal);
+        Assert.Contains("Recorded by hand", report.ToJsonString(), StringComparison.Ordinal);
     }
 
     [Fact]

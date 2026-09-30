@@ -90,7 +90,7 @@ public class McpHttpHostTests
         using HttpResponseMessage response = await SendAsync(port, HttpMethod.Post, bearer);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Contains("Bearer", response.Headers.WwwAuthenticate.ToString());
+        Assert.Contains("Bearer", response.Headers.WwwAuthenticate.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -247,7 +247,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             AssistantUpdate error = updates[0];
             Assert.Equal(AssistantUpdateKind.Error, error.Kind);
-            Assert.Contains("daily limit set in Settings > AI", error.Text);
+            Assert.Contains("daily limit set in Settings > AI", error.Text, StringComparison.Ordinal);
             Assert.Equal(2, updates.Count);
             Assert.Single(_model.Requests);
             Assert.Equal(new[] { "First", "One." }, _conversation.Messages.Select(m => m.Text));
@@ -411,7 +411,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.DoesNotContain(updates, u => u.Kind == AssistantUpdateKind.Suggestion);
             JsonElement result = (JsonElement)Contents(_model.Requests[1]).OfType<FunctionResultContent>().Single().Result!;
-            Assert.Contains("pid and createTime", result.GetProperty("error").GetString());
+            Assert.Contains("pid and createTime", result.GetProperty("error").GetString(), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -447,10 +447,10 @@ namespace Kil0bitSystemMonitor.Tests
             ScriptedChatClient.Request retry = _model.Requests[1];
             Assert.Empty(retry.ToolNames);
             string sent = retry.Messages[^1].Text;
-            Assert.StartsWith("How is my PC?", sent);
-            Assert.Contains("Limited mode", sent);
-            Assert.Contains("usagePercent", sent);
-            Assert.Contains("chrome.exe", sent);
+            Assert.StartsWith("How is my PC?", sent, StringComparison.Ordinal);
+            Assert.Contains("Limited mode", sent, StringComparison.Ordinal);
+            Assert.Contains("usagePercent", sent, StringComparison.Ordinal);
+            Assert.Contains("chrome.exe", sent, StringComparison.Ordinal);
             Assert.Equal(new[] { "How is my PC?", "From the snapshot: CPU 12%." }, _conversation.Messages.Select(m => m.Text));
             Assert.Equal(1, _usage.UsedToday);
 

@@ -98,8 +98,8 @@ namespace Kil0bitSystemMonitor.Tests
             var result = await Tools(data).GetSlowdownReportAsync("slowdown-20260930-110000");
 
             string text = result["text"]!.GetValue<string>();
-            Assert.Contains("%USERPROFILE%\\game.exe on [computer]", text);
-            Assert.DoesNotContain("alice", text);
+            Assert.Contains("%USERPROFILE%\\game.exe on [computer]", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("alice", text, StringComparison.Ordinal);
             Assert.False(result["truncated"]!.GetValue<bool>());
         }
 
@@ -110,7 +110,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             var result = await Tools(data).GetSlowdownReportAsync(@"..\hardware-report-20260930-100000");
 
-            Assert.Contains("is not a slowdown report id", result["error"]!.GetValue<string>());
+            Assert.Contains("is not a slowdown report id", result["error"]!.GetValue<string>(), StringComparison.Ordinal);
             Assert.Empty(data.ReportReads);
         }
 
@@ -119,7 +119,7 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var result = await Tools(new FakeMicaData()).GetSlowdownReportAsync("slowdown-20200101-000000");
 
-            Assert.Contains("No slowdown report has the id", result["error"]!.GetValue<string>());
+            Assert.Contains("No slowdown report has the id", result["error"]!.GetValue<string>(), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -132,9 +132,9 @@ namespace Kil0bitSystemMonitor.Tests
 
             string text = result["text"]!.GetValue<string>();
             Assert.True(result["truncated"]!.GetValue<bool>());
-            Assert.StartsWith("HEAD", text);
-            Assert.EndsWith("TAIL", text);
-            Assert.Contains("10008 characters of the timeline left out", text);
+            Assert.StartsWith("HEAD", text, StringComparison.Ordinal);
+            Assert.EndsWith("TAIL", text, StringComparison.Ordinal);
+            Assert.Contains("10008 characters of the timeline left out", text, StringComparison.Ordinal);
             Assert.True(text.Length < 40_100);
         }
 
@@ -168,7 +168,7 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var result = await Tools(new FakeMicaData()).ListAlertsAsync("last week");
 
-            Assert.Contains("Could not read the time 'last week'", result["error"]!.GetValue<string>());
+            Assert.Contains("Could not read the time 'last week'", result["error"]!.GetValue<string>(), StringComparison.Ordinal);
         }
 
         // ----- hardware, battery, boot -------------------------------------------------------
@@ -282,7 +282,7 @@ namespace Kil0bitSystemMonitor.Tests
             };
 
             Assert.NotNull(list["reports"]);
-            Assert.Contains("MicaStats Slowdown Report", report["text"]!.GetValue<string>());
+            Assert.Contains("MicaStats Slowdown Report", report["text"]!.GetValue<string>(), StringComparison.Ordinal);
             Assert.All(others, r => Assert.Null(r["error"]));
         }
     }

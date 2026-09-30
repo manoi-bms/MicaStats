@@ -147,7 +147,7 @@ namespace Kil0bitSystemMonitor.Tests
             config.AiMcpHttpPort = 50000;
 
             Assert.Equal(10, names.Distinct().Count());
-            Assert.All(names, name => Assert.StartsWith("Ai", name));
+            Assert.All(names, name => Assert.StartsWith("Ai", name, StringComparison.Ordinal));
         }
 
         [Fact]

@@ -73,7 +73,7 @@ namespace Kil0bitSystemMonitor.Tests
 
                 string line = HistoryCsv.Format(Full());
 
-                Assert.StartsWith("2026-09-30T10:00:00Z,60,12.5,88.1,", line);
+                Assert.StartsWith("2026-09-30T10:00:00Z,60,12.5,88.1,", line, StringComparison.Ordinal);
                 Assert.True(HistoryCsv.TryParse(line, out HistoryRow? back));
                 Assert.Equal(2026, back!.Utc.Year);
                 Assert.Equal(Full(), back);

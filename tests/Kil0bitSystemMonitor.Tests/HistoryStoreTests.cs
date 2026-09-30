@@ -207,7 +207,7 @@ namespace Kil0bitSystemMonitor.Tests
             store.DeleteAll();
 
             string warning = Assert.Single(env.Warnings);
-            Assert.Contains("could not be written", warning);
+            Assert.Contains("could not be written", warning, StringComparison.Ordinal);
             Assert.True(File.Exists(blocked));
         }
 

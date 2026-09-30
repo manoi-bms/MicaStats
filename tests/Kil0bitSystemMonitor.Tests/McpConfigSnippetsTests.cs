@@ -17,8 +17,8 @@ public class McpConfigSnippetsTests
         JsonNode server = JsonNode.Parse(json)!["mcpServers"]!["micastats"]!;
         Assert.Equal(Exe, (string?)server["command"]);
         Assert.Equal("[\"--mcp\"]", server["args"]!.ToJsonString());
-        Assert.Contains("\"C:\\\\Program Files\\\\MicaStats\\\\MicaStats.exe\"", json);
-        Assert.Contains("\n", json);
+        Assert.Contains("\"C:\\\\Program Files\\\\MicaStats\\\\MicaStats.exe\"", json, StringComparison.Ordinal);
+        Assert.Contains("\n", json, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -28,7 +28,7 @@ public class McpConfigSnippetsTests
 
         string json = McpConfigSnippets.ClaudeDesktopJson(exe);
 
-        Assert.Contains("\u0E42\u0E1B\u0E23\u0E41\u0E01\u0E23\u0E21", json);
+        Assert.Contains("\u0E42\u0E1B\u0E23\u0E41\u0E01\u0E23\u0E21", json, StringComparison.Ordinal);
         Assert.Equal(exe, (string?)JsonNode.Parse(json)!["mcpServers"]!["micastats"]!["command"]);
     }
 

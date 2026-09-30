@@ -68,13 +68,13 @@ namespace Kil0bitSystemMonitor.Tests
             string text = File.ReadAllText(path);
             byte[] sealedBytes = Convert.FromBase64String(text);
 
-            Assert.DoesNotContain("plain-token-value", text);
-            Assert.DoesNotContain("plain-token-value", Encoding.UTF8.GetString(sealedBytes));
+            Assert.DoesNotContain("plain-token-value", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("plain-token-value", Encoding.UTF8.GetString(sealedBytes), StringComparison.Ordinal);
             Assert.ThrowsAny<CryptographicException>(() =>
                 ProtectedData.Unprotect(sealedBytes, null, DataProtectionScope.CurrentUser));
             byte[] plain = ProtectedData.Unprotect(sealedBytes, Encoding.UTF8.GetBytes("MicaStats.Secrets.v1"),
                                                    DataProtectionScope.CurrentUser);
-            Assert.Contains("plain-token-value", Encoding.UTF8.GetString(plain));
+            Assert.Contains("plain-token-value", Encoding.UTF8.GetString(plain), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -156,7 +156,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.False(store.Has(SecretNames.ClaudeKey));
             string warning = Assert.Single(env.Warnings);
-            Assert.DoesNotContain("sk-ant-secret-999", warning);
+            Assert.DoesNotContain("sk-ant-secret-999", warning, StringComparison.Ordinal);
         }
 
         [Fact]

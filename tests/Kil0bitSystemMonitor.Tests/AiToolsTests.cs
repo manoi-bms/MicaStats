@@ -61,7 +61,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             JsonObject temperature = Assert.IsType<JsonObject>(result["cpu"]!["temperatureC"]);
             Assert.True(temperature["unavailable"]!.GetValue<bool>());
-            Assert.Contains("temperature", temperature["reason"]!.GetValue<string>());
+            Assert.Contains("temperature", temperature["reason"]!.GetValue<string>(), StringComparison.Ordinal);
             Assert.True(result["gpu"]!["usagePercent"]!["unavailable"]!.GetValue<bool>());
             Assert.True(result["disks"]![1]!["freePercent"]!["unavailable"]!.GetValue<bool>());
             Assert.True(result["battery"]!["unavailable"]!.GetValue<bool>());
@@ -126,7 +126,7 @@ namespace Kil0bitSystemMonitor.Tests
             var broken = await Tools(new FakeMicaData { Failure = new InvalidOperationException("counter broke") }).GetLiveStatusAsync();
             var offline = await Tools(new FakeMicaData { Failure = new DataUnavailableException("MicaStats is not running") }).GetLiveStatusAsync();
 
-            Assert.Contains("counter broke", broken["error"]!.GetValue<string>());
+            Assert.Contains("counter broke", broken["error"]!.GetValue<string>(), StringComparison.Ordinal);
             Assert.Equal("MicaStats is not running", offline["error"]!.GetValue<string>());
             Assert.Single(offline.AsObject());
         }
@@ -230,9 +230,9 @@ namespace Kil0bitSystemMonitor.Tests
             var time = await tools.GetHistoryAsync("cpu", "yesterday", "now");
             var order = await tools.GetHistoryAsync("cpu", "now", "-1h");
 
-            Assert.Contains("Use one of: cpu, cpuTemp", metric["error"]!.GetValue<string>());
-            Assert.Contains("Could not read the time 'yesterday'", time["error"]!.GetValue<string>());
-            Assert.Contains("is after", order["error"]!.GetValue<string>());
+            Assert.Contains("Use one of: cpu, cpuTemp", metric["error"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.Contains("Could not read the time 'yesterday'", time["error"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.Contains("is after", order["error"]!.GetValue<string>(), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -264,7 +264,7 @@ namespace Kil0bitSystemMonitor.Tests
             var result = await Tools(new FakeMicaData()).GetHistoryAsync("ram", "-2d", "now");
 
             Assert.Empty(result["points"]!.AsArray());
-            Assert.Contains("Keep 7 days of history", result["note"]!.GetValue<string>());
+            Assert.Contains("Keep 7 days of history", result["note"]!.GetValue<string>(), StringComparison.Ordinal);
         }
 
         [Fact]
@@ -326,7 +326,7 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var result = await Tools(new FakeMicaData()).GetTopProcessesAsync("gpu");
 
-            Assert.Contains("Use cpu, memory or disk", result["error"]!.GetValue<string>());
+            Assert.Contains("Use cpu, memory or disk", result["error"]!.GetValue<string>(), StringComparison.Ordinal);
         }
 
         // ----- dispatcher, names, shapes -----------------------------------------------------
@@ -356,8 +356,8 @@ namespace Kil0bitSystemMonitor.Tests
             var suggest = await tools.InvokeAsync(ToolNames.SuggestAction, null);
             var made_up = await tools.InvokeAsync("delete_everything", null);
 
-            Assert.StartsWith("Unknown tool 'suggest_action'", suggest["error"]!.GetValue<string>());
-            Assert.StartsWith("Unknown tool 'delete_everything'", made_up["error"]!.GetValue<string>());
+            Assert.StartsWith("Unknown tool 'suggest_action'", suggest["error"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.StartsWith("Unknown tool 'delete_everything'", made_up["error"]!.GetValue<string>(), StringComparison.Ordinal);
         }
 
         [Fact]

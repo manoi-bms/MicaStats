@@ -63,7 +63,7 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.Equal("\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22\u0E23\u0E32\u0E22\u0E07\u0E32\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E0A\u0E49\u0E32\u0E40\u0E21\u0E37\u0E48\u0E2D 2026-09-29 14:02 (id slowdown-20260929-140215)", report);
                 Assert.Equal("\u0E17\u0E33\u0E44\u0E21\u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19 CPU temperature \u0E08\u0E36\u0E07\u0E40\u0E01\u0E34\u0E14\u0E02\u0E36\u0E49\u0E19\u0E40\u0E21\u0E37\u0E48\u0E2D 2026-09-30 14:02? MicaStats \u0E23\u0E32\u0E22\u0E07\u0E32\u0E19\u0E27\u0E48\u0E32: 97.4\u00B0C, past the 95\u00B0C you set", alert);
                 Assert.Equal("svchost.exe (PID 1234) \u0E01\u0E33\u0E25\u0E31\u0E07\u0E17\u0E33\u0E2D\u0E30\u0E44\u0E23\u0E2D\u0E22\u0E39\u0E48?", process);
-                Assert.DoesNotContain("2569", report + alert);
+                Assert.DoesNotContain("2569", report + alert, StringComparison.Ordinal);
             }
             finally
             {
@@ -177,10 +177,10 @@ namespace Kil0bitSystemMonitor.Tests
             string diagnostics = File.ReadAllText(Path.Combine(root, "DiagnosticsWindow.xaml"));
             string processes = File.ReadAllText(Path.Combine(root, "TaskManagerWindow.xaml"));
 
-            Assert.Contains("Click=\"OnExplainReport\"", diagnostics);
-            Assert.Contains("Visibility=\"{Binding ExplainVisibility}\"", diagnostics);
-            Assert.Contains("x:Name=\"ExplainButton\"", processes);
-            Assert.Contains("Click=\"OnExplain\"", processes);
+            Assert.Contains("Click=\"OnExplainReport\"", diagnostics, StringComparison.Ordinal);
+            Assert.Contains("Visibility=\"{Binding ExplainVisibility}\"", diagnostics, StringComparison.Ordinal);
+            Assert.Contains("x:Name=\"ExplainButton\"", processes, StringComparison.Ordinal);
+            Assert.Contains("Click=\"OnExplain\"", processes, StringComparison.Ordinal);
         }
     }
 }

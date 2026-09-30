@@ -14,7 +14,7 @@
         <Span begin="\\" end="." />
       </RuleSet>
     </Span>
-    <Span color="String" begin="'" end="'" />
+    <Span color="String" begin="(?&lt;!\w)'" end="'" />
     <Rule color="Directive">^(---|\.\.\.)\s*$</Rule>
     <Rule color="KeyName">^\s*(-\s+)?[^\s\#'"-][^:\#\r\n]*?(?=:(\s|$))</Rule>
     <Rule color="Bool">\b(true|false|yes|no|on|off|null)\b</Rule>

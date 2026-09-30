@@ -43,7 +43,7 @@ namespace Kil0bitSystemMonitor.Pad
                 using var reader = XmlReader.Create(stream);
                 return HighlightingLoader.Load(reader, HighlightingManager.Instance);
             }
-            catch (Exception ex) when (ex is HighlightingDefinitionInvalidException or XmlException or InvalidOperationException or IOException)
+            catch (Exception ex)
             {
                 DiagnosticsLog.Warn("pad", "The " + language.Name + " colors could not be loaded, so it shows as plain text: " + ex.Message);
                 return null;

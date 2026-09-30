@@ -42,6 +42,32 @@ namespace Kil0bitSystemMonitor.Tests
             }
         });
 
+        [Fact]
+        public void Yaml_apostrophe_in_text_is_not_a_string() => UiThread.Run(() =>
+        {
+            var definition = PadHighlighting.For(PadLanguages.ById("yaml")!)!;
+            var highlighter = new DocumentHighlighter(new TextDocument("note: don't panic"), definition);
+            Assert.DoesNotContain(highlighter.HighlightLine(1).Sections, s => s.Color.Name == "String");
+        });
+
+        [Fact]
+        public void Yaml_apostrophe_does_not_leak_into_the_next_line() => UiThread.Run(() =>
+        {
+            var definition = PadHighlighting.For(PadLanguages.ById("yaml")!)!;
+            var document = new TextDocument("note: don't panic\nnext: 1");
+            var highlighter = new DocumentHighlighter(document, definition);
+            int lineStart = document.GetLineByNumber(2).Offset;
+            Assert.Contains(highlighter.HighlightLine(2).Sections, s => s.Offset == lineStart && s.Length == 4 && s.Color.Name == "KeyName");
+        });
+
+        [Fact]
+        public void Yaml_quoted_value_is_a_string() => UiThread.Run(() =>
+        {
+            var definition = PadHighlighting.For(PadLanguages.ById("yaml")!)!;
+            var highlighter = new DocumentHighlighter(new TextDocument("title: 'hello'"), definition);
+            Assert.Contains(highlighter.HighlightLine(1).Sections, s => s.Offset == 7 && s.Length == 7 && s.Color.Name == "String");
+        });
+
         [Theory]
         [InlineData("ini", "[main]", "[main]", "Section")]
         [InlineData("ini", "key = value", "key", "KeyName")]

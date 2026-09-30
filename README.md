@@ -160,6 +160,16 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * Open it from the overlay's right-click menu, **Ctrl+Alt+N** anywhere, the Start menu, or Explorer's **Open with**
 * Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
 
+### Ask MicaStats: answers about your PC
+
+* **Ask in plain words** — "why was it slow ten minutes ago?", "what is using my memory?", "is 90 °C normal for this CPU?" — and get an answer built from MicaStats' own readings: live status, the busiest processes, slowdown reports, alerts, hardware, battery, boot times and up to **7 days of history**
+* **Explain buttons** on slowdown reports (Diagnostics), alert notices and the selected process (Processes) ask for you, in your Windows display language; a question in Thai is answered in Thai
+* **Your choice of AI**: Claude with your own Anthropic API key, or any OpenAI-compatible server — OpenAI, Azure, OpenRouter, or **Ollama / LM Studio on this PC**, in which case nothing leaves the machine
+* **Suggestions, never actions**: an answer can offer a button such as *End chrome.exe* or *Record a slowdown now*; nothing happens until you click, and the usual checks apply (same process and start time, core Windows processes refused)
+* **Private by design**: your profile folder, computer name, user name, IP and MAC addresses are removed before anything is sent; window titles, command lines and environment variables are never collected; keys are stored encrypted for your Windows account (DPAPI) and never shown again
+* **Claude Desktop and Claude Code** can read the same data through **MCP**, with no key or cost inside MicaStats: a stdio bridge (`MicaStats.exe --mcp`) or a token-protected local HTTP endpoint on `127.0.0.1`. Read-only
+* Everything is **off until you turn it on** in **Settings → AI**; a daily question limit (100 by default) keeps the cost predictable, and the assistant only runs when you press Send or Explain
+
 ### Windows 11 interface
 
 * Compact, menu-style monitoring panels
@@ -250,6 +260,7 @@ Windows measures how long your boot took, which app delayed it, and how worn you
 | **Ctrl+Shift+2** | Capture the window currently in front |
 | **Ctrl+Shift+3** | Capture the screen the pointer is on |
 | **Ctrl+Alt+N** | Show MicaPad |
+| **Ctrl+Alt+A** | Ask MicaStats (while the assistant is on in **Settings → AI**) |
 
 Inside MicaPad:
 
@@ -455,6 +466,7 @@ The published application will be created in the `publish` directory.
 | Desktop framework   | Windows Presentation Foundation              |
 | UI library          | ModernWpfUI                                  |
 | Text editor         | AvalonEdit (MIT), for MicaPad                |
+| AI                  | Anthropic .NET SDK, Microsoft.Extensions.AI, MCP C# SDK (ModelContextProtocol.Core) |
 | Windows integration | Win32 APIs                                   |
 | Performance data    | Windows performance counters and system APIs |
 | Hardware identity   | CPUID instruction and raw SMBIOS tables      |
@@ -754,6 +766,16 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * เปิดได้จากเมนูคลิกขวาของโอเวอร์เลย์, **Ctrl+Alt+N** จากที่ใดก็ได้, เมนู Start หรือ **Open with** ใน Explorer
 * โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
 
+### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา
+
+* **ถามเป็นภาษาพูด** เช่น "เมื่อสิบนาทีก่อนเครื่องช้าเพราะอะไร?", "อะไรกินหน่วยความจำอยู่?", "CPU 90 °C ถือว่าปกติไหม?" แล้วได้คำตอบที่อ้างอิงข้อมูลจริงของ MicaStats เอง ทั้งสถานะปัจจุบัน โปรเซสที่ทำงานหนักที่สุด รายงานเครื่องช้า การแจ้งเตือน ฮาร์ดแวร์ แบตเตอรี่ เวลาบูต และ **ประวัติย้อนหลังได้ถึง 7 วัน**
+* **ปุ่ม Explain** บนรายงานเครื่องช้า (Diagnostics) การแจ้งเตือนที่มุมจอ และโปรเซสที่เลือกไว้ (Processes) จะตั้งคำถามให้เองตามภาษาที่ Windows แสดงผล ถามเป็นภาษาไทยก็ได้คำตอบเป็นภาษาไทย
+* **เลือก AI ได้เอง**: Claude ด้วยคีย์ API ของ Anthropic ของคุณเอง หรือเซิร์ฟเวอร์ที่รองรับรูปแบบ OpenAI เช่น OpenAI, Azure, OpenRouter หรือ **Ollama / LM Studio ที่รันบนเครื่องนี้** ซึ่งข้อมูลจะไม่ออกจากเครื่องเลย
+* **แนะนำเท่านั้น ไม่ลงมือเอง**: คำตอบอาจมีปุ่มอย่าง *End chrome.exe* หรือ *Record a slowdown now* แต่จะไม่มีอะไรเกิดขึ้นจนกว่าคุณจะกด และยังผ่านการตรวจสอบแบบเดิมทุกครั้ง (ต้องเป็นโปรเซสเดิมที่เวลาเริ่มทำงานตรงกัน และไม่ยอมปิดโปรเซสหลักของ Windows)
+* **ความเป็นส่วนตัวมาก่อน**: ลบโฟลเดอร์โปรไฟล์ ชื่อเครื่อง ชื่อผู้ใช้ ที่อยู่ IP และ MAC ออกก่อนส่งทุกครั้ง ไม่เก็บชื่อหน้าต่าง คำสั่งที่ใช้เรียกโปรแกรม หรือตัวแปรสภาพแวดล้อม และคีย์ถูกเข้ารหัสด้วยบัญชี Windows ของคุณ (DPAPI) ไม่แสดงให้เห็นอีกหลังบันทึก
+* **Claude Desktop และ Claude Code** อ่านข้อมูลชุดเดียวกันได้ผ่าน **MCP** โดยไม่ต้องใช้คีย์หรือเสียค่าใช้จ่ายใน MicaStats เลือกได้ระหว่าง stdio bridge (`MicaStats.exe --mcp`) หรือ HTTP ภายในเครื่องที่ `127.0.0.1` ซึ่งต้องใช้โทเคน ทั้งสองแบบอ่านข้อมูลได้อย่างเดียว
+* ทุกอย่าง **ปิดไว้จนกว่าคุณจะเปิด** ใน **Settings → AI** มีเพดานจำนวนคำถามต่อวัน (ค่าเริ่มต้น 100) เพื่อคุมค่าใช้จ่าย และผู้ช่วยจะทำงานเฉพาะเมื่อคุณกด Send หรือ Explain เท่านั้น
+
 ### หน้าตาแบบ Windows 11
 
 * แผงข้อมูลกะทัดรัดสไตล์เมนู
@@ -844,6 +866,7 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | **Ctrl+Shift+2** | จับภาพหน้าต่างที่อยู่ด้านหน้าสุด |
 | **Ctrl+Shift+3** | จับภาพหน้าจอที่เมาส์อยู่ |
 | **Ctrl+Alt+N** | เปิด MicaPad |
+| **Ctrl+Alt+A** | เปิด Ask MicaStats (เมื่อเปิดผู้ช่วยไว้ใน **Settings → AI**) |
 
 ภายใน MicaPad:
 
@@ -1049,6 +1072,7 @@ dotnet publish `
 | เฟรมเวิร์กเดสก์ท็อป | Windows Presentation Foundation |
 | ไลบรารี UI | ModernWpfUI |
 | โปรแกรมแก้ไขข้อความ | AvalonEdit (MIT) สำหรับ MicaPad |
+| AI | Anthropic .NET SDK, Microsoft.Extensions.AI และ MCP C# SDK (ModelContextProtocol.Core) |
 | การเชื่อมต่อกับ Windows | Win32 API |
 | ข้อมูลประสิทธิภาพ | ตัวนับประสิทธิภาพและ API ของ Windows |
 | ข้อมูลฮาร์ดแวร์ | คำสั่ง CPUID และตาราง SMBIOS โดยตรง |

@@ -161,6 +161,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Light or dark**: MicaPad has its own theme switch (the sun and moon button), independent of the rest of MicaStats
 * **Right-click menus** in the text (cut, copy, paste, find) and on tabs (rename, close others, copy the file path, show in folder)
 * **Colors for code and logs**: JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch and log files are colored in both themes; the status bar shows the language and changes it per tab
+* **Markdown as you type**: headings, bold, italic, code, lists, tasks and quotes are formatted in place, with the markers still visible; the file stays plain text
 * Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
 
 ### Ask MicaStats: answers about your PC
@@ -770,6 +771,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **ธีมสว่างหรือมืด**: MicaPad มีปุ่มสลับธีมของตัวเอง (ปุ่มดวงอาทิตย์และพระจันทร์) โดยส่วนอื่นของ MicaStats ไม่เปลี่ยน
 * **เมนูคลิกขวา** ในเนื้อความ (ตัด คัดลอก วาง ค้นหา) และบนแท็บ (เปลี่ยนชื่อ ปิดแท็บอื่น คัดลอกพาธไฟล์ เปิดโฟลเดอร์ที่เก็บไฟล์)
 * **สีสำหรับโค้ดและล็อก**: ไฟล์ JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch และไฟล์ล็อก แสดงสีได้ทั้งธีมสว่างและมืด ภาษาแสดงที่แถบสถานะและเปลี่ยนได้ทีละแท็บ
+* **Markdown ขณะพิมพ์**: หัวข้อ ตัวหนา ตัวเอียง โค้ด รายการ งานที่ต้องทำ และข้อความอ้างอิง แสดงผลตามรูปแบบทันที โดยยังเห็นเครื่องหมาย และไฟล์ยังเป็นข้อความธรรมดา
 * โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา

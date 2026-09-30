@@ -557,6 +557,7 @@ namespace Kil0bitSystemMonitor
                 PadReopenToggle.IsOn = cfg.PadReopenAtLogin;
                 PadWrapToggle.IsOn = cfg.PadWordWrap;
                 PadLineNumbersToggle.IsOn = cfg.PadShowLineNumbers;
+                PadMarkdownToggle.IsOn = cfg.PadMarkdown;
                 PadThemeBox.SelectedIndex = cfg.PadTheme == Kil0bitSystemMonitor.Services.Pad.PadThemes.Light ? 1 : 0;
                 PadFontBox.Text = cfg.PadFontFamily;
                 PadFontSizeBox.ItemsSource = PadFontSizes;
@@ -581,6 +582,7 @@ namespace Kil0bitSystemMonitor
             cfg.PadReopenAtLogin = PadReopenToggle.IsOn;
             cfg.PadWordWrap = PadWrapToggle.IsOn;
             cfg.PadShowLineNumbers = PadLineNumbersToggle.IsOn;
+            cfg.PadMarkdown = PadMarkdownToggle.IsOn;
             _config.SaveConfig();
         }
 

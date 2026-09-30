@@ -1096,6 +1096,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Check("Word wrap", "Alt+Z", _config.PadWordWrap, ToggleWordWrap));
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,
                 () => _config.PadShowLineNumbers = !_config.PadShowLineNumbers));
+            menu.Items.Add(Check("Markdown formatting", null, _config.PadMarkdown, () => _config.PadMarkdown = !_config.PadMarkdown));
             menu.Items.Add(Check("Always on top", null, Topmost, ToggleTopmost));
             menu.Items.Add(Item("Font…", null, ChooseFont));
             menu.Items.Add(new Separator());

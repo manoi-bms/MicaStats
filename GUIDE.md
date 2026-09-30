@@ -207,6 +207,14 @@ Right-click a tab for **Rename**, **Close** and **Close other tabs** (closed tab
 as usual — nothing is deleted). A tab that is a real file also has **Copy file path** and
 **Show in folder**.
 
+### Markdown
+
+Notes and `.md`/`.txt` files are formatted as you type: `#` headings grow, `**bold**`, `*italic*`,
+`~~strike~~` and `` `code` `` look the part, `- ` items get bullets, `- [x]` tasks are crossed off,
+`>` quotes get a bar and fenced ```` ``` ```` blocks a shaded background. The markers stay visible
+(dimmed) — the file is plain text and never changes. Turn it off with **☰ → Markdown formatting**
+or in **Settings → MicaPad**.
+
 ### Colors for code, logs and settings files
 
 JSON, XML, HTML, C#, JavaScript, CSS, PowerShell, Python, SQL, C/C++, Java, PHP, VB, diff, INI,

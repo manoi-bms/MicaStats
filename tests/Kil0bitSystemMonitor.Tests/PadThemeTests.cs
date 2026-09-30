@@ -94,14 +94,14 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Wpf(light.Selection), BrushColor(window.Editor.TextArea.SelectionBrush));
             Assert.Equal(Wpf(light.LineNumbers), BrushColor(window.Editor.LineNumbersForeground));
             Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(window));
-            Assert.Equal("",window.ThemeButton.Content);
+            Assert.Equal("\uE708", window.ThemeButton.Content);
             Assert.Equal("Switch to dark theme", window.ThemeButton.ToolTip);
         });
 
         [Fact]
         public void The_theme_button_switches_live_and_remembers_the_choice() => WithWindow("Dark", (window, config) =>
         {
-            Assert.Equal("",window.ThemeButton.Content);
+            Assert.Equal("\uE706", window.ThemeButton.Content);
             Assert.Equal("Switch to light theme", window.ThemeButton.ToolTip);
 
             window.ToggleTheme();

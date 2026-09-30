@@ -96,6 +96,37 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Delete_on_a_rectangle_matches_the_Del_key_and_is_one_undo_step() => WithWindow((window, env) =>
+        {
+            const string original = "123456\n789012\n345678";   // digits share one width, so visual columns line up on every line
+            window.Editor.Document.Text = original;
+            var area = window.Editor.TextArea;
+            // An unshown window has no layout, and a rectangle is measured in visual columns.
+            window.Measure(new System.Windows.Size(800, 600));
+            window.Arrange(new System.Windows.Rect(0, 0, 800, 600));
+            window.UpdateLayout();
+            area.TextView.EnsureVisualLines();
+            area.Selection = new ICSharpCode.AvalonEdit.Editing.RectangleSelection(
+                area, new ICSharpCode.AvalonEdit.TextViewPosition(1, 2), new ICSharpCode.AvalonEdit.TextViewPosition(3, 5));
+            Assert.Equal("234\n890\n456", area.Selection.GetText().Replace("\r\n", "\n"));
+            window.Editor.Document.UndoStack.ClearAll();
+            window.RefreshEditorMenu();
+
+            Click(ItemOf(window.EditorMenu, "Delete"));
+            string viaMenu = window.Editor.Document.Text;
+
+            window.Editor.Undo();
+            Assert.Equal(original, window.Editor.Document.Text);
+
+            // The Del key runs the same command on the same rectangle.
+            area.Selection = new ICSharpCode.AvalonEdit.Editing.RectangleSelection(
+                area, new ICSharpCode.AvalonEdit.TextViewPosition(1, 2), new ICSharpCode.AvalonEdit.TextViewPosition(3, 5));
+            System.Windows.Input.ApplicationCommands.Delete.Execute(null, area);
+            Assert.Equal(viaMenu, window.Editor.Document.Text);
+            Assert.Equal("156\n712\n378", viaMenu);
+        });
+
+        [Fact]
         public void Select_all_and_find_do_what_they_say() => WithWindow((window, env) =>
         {
             window.Editor.Document.Insert(0, "abc");
@@ -256,6 +287,25 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
             Assert.Equal("That file is no longer at " + path + ".", window.InfoText.Text);
+        });
+
+        [Fact]
+        public void A_tab_menu_notice_does_not_replace_a_file_gone_question() => WithWindow((window, env) =>
+        {
+            string path = env.FileOf("vanishing.txt");
+            File.WriteAllText(path, "hello");
+            window.OpenPath(path);
+            File.Delete(path);
+            window.CheckShownNoteOnDisk();
+
+            Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
+            Assert.Equal("Save As…", window.InfoPrimary.Content);
+            string question = window.InfoText.Text;
+
+            window.ShowInFolder(path);
+
+            Assert.Equal(question, window.InfoText.Text);
+            Assert.Equal(Visibility.Visible, window.InfoPrimary.Visibility);
         });
     }
 }

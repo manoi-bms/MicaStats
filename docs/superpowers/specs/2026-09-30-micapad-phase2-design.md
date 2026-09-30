@@ -70,8 +70,8 @@ palette.
 - Code that paints directly (editor properties, background renderers, colorizers) reads the
   current `PadPalette` and is re-applied on a switch; renderers redraw through
   `TextView.Redraw()`.
-- Light values: background `#FBFBFD`, chrome `#F0F0F4`, text `#1B1B1F`, accent `#087E8B` (today's
-  `#3FD2E4` is unreadable on white), alert red `#C62828`. Dark values are today's colors.
+- Light values: background `#FBFBFD`, chrome `#F0F0F4`, text `#1B1B1F`, accent `#06707C` (today's
+  `#3FD2E4` is unreadable on white; `#087E8B` misses the 4.5:1 rule on the chrome, info bar and banner), alert red `#C62828`. Dark values are today's colors.
 - **Contrast rules, checked by tests for both palettes** (WCAG relative luminance): body text on
   background ≥ 7:1; muted text, link text and accent text ≥ 4.5:1; dimmed Markdown markers and line
   numbers ≥ 3:1.
@@ -90,7 +90,7 @@ method that each part extends.
 
 **Tab.** Right-click on a tab (without switching to it first):
 
-- Rename… (the existing rename popup), Close `Ctrl+W`, Close other tabs
+- Rename… (the existing rename popup), Close (no shortcut shown: `Ctrl+W` closes the active tab, not the one right-clicked), Close other tabs
 - For a file-backed note only: Copy file path, Show in folder (`explorer.exe /select,"<path>"`)
 
 Closing through the menu is the ordinary close: flushed, snapshotted, moved to Closed notes,

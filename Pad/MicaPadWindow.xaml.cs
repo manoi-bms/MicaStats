@@ -450,8 +450,22 @@ namespace Kil0bitSystemMonitor.Pad
             catch (System.Runtime.InteropServices.ExternalException ex)
             {
                 DiagnosticsLog.Warn("pad", "Copying a file path failed: " + ex.Message);
-                ShowInfo("The clipboard is busy. Try again in a moment.", null);
+                ShowNotice("The clipboard is busy. Try again in a moment.");
             }
+        }
+
+        /// <summary>
+        /// A passing notice from a menu action. It never replaces a disk question (file gone, changed
+        /// on disk) that is waiting for an answer; it is logged instead.
+        /// </summary>
+        private void ShowNotice(string message)
+        {
+            if (_infoKind != null)
+            {
+                DiagnosticsLog.Warn("pad", message);
+                return;
+            }
+            ShowInfo(message, null);
         }
 
         /// <summary>
@@ -462,7 +476,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (!File.Exists(path))
             {
-                ShowInfo("That file is no longer at " + path + ".", null);
+                ShowNotice("That file is no longer at " + path + ".");
                 return;
             }
             try
@@ -472,7 +486,7 @@ namespace Kil0bitSystemMonitor.Pad
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
                 DiagnosticsLog.Warn("pad", "Could not show a file in its folder: " + ex.Message);
-                ShowInfo("Explorer could not be opened.", null);
+                ShowNotice("Explorer could not be opened.");
             }
         }
 
@@ -1130,7 +1144,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (!readOnly)
             {
                 menu.Items.Add(Item("Paste", "Ctrl+V", () => editor.Paste(), ClipboardHasText()));
-                menu.Items.Add(Item("Delete", "Del", () => editor.SelectedText = "", hasSelection));
+                menu.Items.Add(Item("Delete", "Del", () => System.Windows.Input.ApplicationCommands.Delete.Execute(null, editor.TextArea), hasSelection));
             }
             menu.Items.Add(Item("Select all", "Ctrl+A", () => editor.SelectAll(), hasText));
 
@@ -1285,7 +1299,7 @@ namespace Kil0bitSystemMonitor.Pad
             FindBar.ApplyPalette(_palette);
 
             // Sun (E706) offers the light theme, moon (E708) the dark one.
-            ThemeButton.Content = _palette.IsDark ? "" : "";
+            ThemeButton.Content = _palette.IsDark ? "\uE706" : "\uE708";
             ThemeButton.ToolTip = _palette.IsDark ? "Switch to light theme" : "Switch to dark theme";
             PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
         }

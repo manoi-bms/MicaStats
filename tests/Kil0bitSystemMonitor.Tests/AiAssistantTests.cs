@@ -294,7 +294,7 @@ namespace Kil0bitSystemMonitor.Tests
             List<AssistantUpdate> updates = await AskAsync(Assistant(), "What is slowing me down?");
 
             SuggestedAction action = Assert.Single(updates, u => u.Kind == AssistantUpdateKind.Suggestion).Suggestion!;
-            Assert.Equal(new SuggestedAction(SuggestedActionKind.EndProcess, "End chrome.exe", "It uses most of the CPU.",
+            Assert.Equal(new SuggestedAction(SuggestedActionKind.EndProcess, "End chrome.exe (PID 4242)", "It uses most of the CPU.",
                 4242, 134037504000000000L, "chrome.exe"), action);
             Assert.Equal(action, Assert.Single(_conversation.Suggestions));
             Assert.DoesNotContain(updates, u => u.Kind == AssistantUpdateKind.ToolUsed);
@@ -302,6 +302,22 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(result.GetProperty("recorded").GetBoolean());
             Assert.Equal(0, _data.LatestCalls);
             Assert.Null(_data.LastTopRequest);
+        }
+
+        [Fact]
+        public void An_end_process_label_from_the_model_is_replaced_by_the_process_and_pid()
+        {
+            SuggestedAction? disguised = AiToolFunctions.Build("end_process", "Refreshes the list", "Open Diagnostics",
+                1234, 555L, "chrome.exe", out string? error);
+            SuggestedAction? nameless = AiToolFunctions.Build("end_process", "Busy.", null, 77, 5L, null, out _);
+            SuggestedAction? longName = AiToolFunctions.Build("end_process", "Busy.", null, 1234, 5L, new string('a', 100) + ".exe", out _);
+
+            Assert.Null(error);
+            Assert.Equal(SuggestedActionKind.EndProcess, disguised!.Kind);
+            Assert.Equal("End chrome.exe (PID 1234)", disguised.Label);
+            Assert.Equal("End PID 77", nameless!.Label);
+            Assert.EndsWith(" (PID 1234)", longName!.Label, StringComparison.Ordinal);
+            Assert.StartsWith("End aaaa", longName.Label, StringComparison.Ordinal);
         }
 
         [Fact]

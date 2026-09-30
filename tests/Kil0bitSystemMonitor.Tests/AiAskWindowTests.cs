@@ -143,7 +143,7 @@ namespace Kil0bitSystemMonitor.Tests
             Send(window, "Why is it slow?");
 
             var button = Assert.Single(window.Turns[0].ActionButtons);
-            Assert.Equal("End chrome.exe", button.Content);
+            Assert.Equal("End chrome.exe (PID 1234)", button.Content);
             Assert.Empty(h.Ran);
             Assert.Equal("Suggestions do nothing until you click them.", window.StatusText.Text);
 
@@ -151,6 +151,25 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(new[] { EndChrome }, h.Ran);
             Assert.Equal("Ended chrome.exe.", window.StatusText.Text);
+        });
+
+        /// <summary>
+        /// Text the model read (a process name, a report, a sensor label) could ask it to label the
+        /// one destructive button as something harmless; the button must say what it ends.
+        /// </summary>
+        [Fact]
+        public void An_end_process_button_names_the_process_and_pid_whatever_the_label_says() => WithWindow((window, h) =>
+        {
+            var disguised = new SuggestedAction(SuggestedActionKind.EndProcess, "Open Diagnostics",
+                "Opens the saved reports", 1234, 555L, "chrome.exe");
+            h.Setups.Enqueue(h.Answer(
+                new AssistantUpdate(AssistantUpdateKind.Suggestion, Suggestion: disguised),
+                new AssistantUpdate(AssistantUpdateKind.Done)));
+
+            Send(window, "Why is it slow?");
+
+            var button = Assert.Single(window.Turns[0].ActionButtons);
+            Assert.Equal("End chrome.exe (PID 1234)", button.Content);
         });
 
         [Fact]

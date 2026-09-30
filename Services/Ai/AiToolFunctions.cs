@@ -97,7 +97,6 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 return null;
             }
 
-            string? text = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
             if (k == SuggestedActionKind.EndProcess)
             {
                 if (pid is not > 0 || createTime is not > 0)
@@ -106,16 +105,17 @@ namespace Kil0bitSystemMonitor.Services.Ai
                     return null;
                 }
                 string name = (processName ?? "").Trim();
-                text ??= "End " + (name.Length > 0 ? name : "PID " + pid.Value.ToString(CultureInfo.InvariantCulture));
-                return new SuggestedAction(k, Clip(text, 60), why, pid, createTime, name.Length > 0 ? name : null);
+                // The model's label is ignored: the one destructive button always names its target.
+                return new SuggestedAction(k, SuggestedAction.EndProcessText(name, pid), why, pid, createTime,
+                                           name.Length > 0 ? name : null);
             }
 
-            text ??= k switch
+            string text = string.IsNullOrWhiteSpace(label) ? k switch
             {
                 SuggestedActionKind.RecordSlowdown => "Record a slowdown now",
                 SuggestedActionKind.OpenDiagnostics => "Open Diagnostics",
                 _ => "Open the process list",
-            };
+            } : label.Trim();
             return new SuggestedAction(k, Clip(text, 60), why);
         }
 
@@ -186,7 +186,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             public JsonElement Suggest(
                 [Description("end_process, record_slowdown, open_diagnostics or open_process_window.")] string kind,
                 [Description("One short sentence in the user's language: why this helps.")] string reason,
-                [Description("Button text in the user's language, e.g. End chrome.exe. Optional.")] string? label = null,
+                [Description("Button text in the user's language, e.g. Open Diagnostics. Optional; ignored for end_process, whose button always names the process and PID.")] string? label = null,
                 [Description("end_process only: the pid from get_top_processes.")] int? pid = null,
                 [Description("end_process only: the createTime from get_top_processes.")] long? createTime = null,
                 [Description("end_process only: the process name.")] string? processName = null)

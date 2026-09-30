@@ -113,12 +113,15 @@ namespace Kil0bitSystemMonitor.Ai
             Note.Visibility = Visibility.Visible;
         }
 
-        /// <summary>Adds a suggestion button; <paramref name="onClick"/> runs only when it is clicked.</summary>
+        /// <summary>
+        /// Adds a suggestion button; <paramref name="onClick"/> runs only when it is clicked. An
+        /// end-process button shows its process and PID, never the model's label.
+        /// </summary>
         public Button AddAction(SuggestedAction action, Action onClick)
         {
             var button = new Button
             {
-                Content = action.Label,
+                Content = action.ButtonText,
                 ToolTip = action.Reason,
                 Margin = new Thickness(0, 0, 6, 6),
                 Padding = new Thickness(10, 4, 10, 4),

@@ -71,6 +71,8 @@ public partial class App
         {
             DiagnosticsLog.Error("ai", "Starting the data tools failed", ex);
         }
+        // After AiTools exists (Task 7's code above this line).
+        ApplyToolPipe();
         // AI anchor: start
     }
 
@@ -92,6 +94,7 @@ public partial class App
         {
             DiagnosticsLog.Error("ai", "Applying the history setting failed", ex);
         }
+        ApplyToolPipe();
         // AI anchor: apply
     }
 
@@ -101,6 +104,17 @@ public partial class App
     /// </summary>
     internal static void StopAi()
     {
+        // Guarded here because this runs before StopAi's own try: a throw would skip the rest
+        // of App.OnExit's teardown, including the config flush.
+        try
+        {
+            s_toolPipe?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping the tool pipe failed", ex);
+        }
+        s_toolPipe = null;
         // AI anchor: stop
         try
         {
@@ -131,6 +145,51 @@ public partial class App
     /// null until <see cref="StartAi"/> has built them, or if building them failed (logged).
     /// </summary>
     public static Services.Ai.Tools.MicaTools? AiTools { get; private set; }
+
+    /// <summary>
+    /// The tool pipe the <c>--mcp</c> bridge forwards to. Runs only while the AI settings have
+    /// MCP set to the stdio bridge, so a user who never turns MCP on has no pipe at all.
+    /// </summary>
+    private static Kil0bitSystemMonitor.Services.Ai.Mcp.ToolPipeServer? s_toolPipe;
+
+    /// <summary>
+    /// Starts or stops the tool pipe to match <c>AiMcpMode</c>. Idempotent: called at the end of
+    /// <see cref="StartAi"/> and on every AI setting change. A pipe that cannot start (another
+    /// session of the same user already serves the name) is logged and tried again at the next
+    /// change.
+    /// </summary>
+    private static void ApplyToolPipe()
+    {
+        var config = ConfigService?.Config;
+        Kil0bitSystemMonitor.Services.Ai.Tools.MicaTools? tools = AiTools;
+        if (config == null || tools == null ||
+            config.AiMcpMode != Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Stdio)
+        {
+            if (s_toolPipe != null)
+            {
+                s_toolPipe.Dispose();
+                s_toolPipe = null;
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("mcp", "Tool pipe for the stdio bridge stopped");
+            }
+            return;
+        }
+        if (s_toolPipe != null) return;
+
+        try
+        {
+            var server = new Kil0bitSystemMonitor.Services.Ai.Mcp.ToolPipeServer(
+                Kil0bitSystemMonitor.Services.Ai.Mcp.ToolPipeProtocol.DefaultPipeName(),
+                tools.InvokeAsync,
+                message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("mcp", message));
+            server.Start();
+            s_toolPipe = server;
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("mcp", "Tool pipe for the stdio bridge started");
+        }
+        catch (Exception ex)
+        {
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "The tool pipe for the stdio bridge could not start", ex);
+        }
+    }
 
     // AI anchor: members
 }

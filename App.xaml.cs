@@ -126,6 +126,18 @@ namespace Kil0bitSystemMonitor
                 return;
             }
 
+            // MicaStats.exe --mcp: Claude Desktop or Claude Code started the MCP stdio bridge.
+            //
+            // Like --kill it runs before base.OnStartup and the single-instance mutex: the bridge
+            // is a second process by design (it reaches the running MicaStats over the tool pipe),
+            // so it must not take the mutex, open a window, or start any monitoring. RunStdio
+            // blocks until the client closes stdin, and nothing but MCP ever reaches stdout.
+            if (Kil0bitSystemMonitor.Services.Ai.Mcp.McpArguments.TryParse(e.Args))
+            {
+                System.Environment.Exit(Kil0bitSystemMonitor.Services.Ai.Mcp.McpBridge.RunStdio());
+                return;
+            }
+
             base.OnStartup(e);
 
             // Legacy code pages (cp874 on Thai Windows) for MicaPad, before anything reads a file.

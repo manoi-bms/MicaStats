@@ -100,9 +100,18 @@ namespace Kil0bitSystemMonitor.Services.Ai
             return new AiClientResult(client, null, IsClaude: false);
         }
 
-        private static bool IsOpenAiHost(Uri endpoint) =>
-            endpoint.Host.EndsWith("openai.com", StringComparison.OrdinalIgnoreCase) ||
-            endpoint.Host.EndsWith("openai.azure.com", StringComparison.OrdinalIgnoreCase);
+        /// <summary>
+        /// True for OpenAI itself (<c>openai.com</c> or a <c>.openai.com</c> subdomain) and Azure
+        /// OpenAI (a <c>.openai.azure.com</c> subdomain), matched on whole labels so a host such as
+        /// <c>notopenai.com</c> is another server and gets <c>max_tokens</c>.
+        /// </summary>
+        internal static bool IsOpenAiHost(Uri endpoint)
+        {
+            string host = endpoint.Host;
+            return string.Equals(host, "openai.com", StringComparison.OrdinalIgnoreCase) ||
+                   host.EndsWith(".openai.com", StringComparison.OrdinalIgnoreCase) ||
+                   host.EndsWith(".openai.azure.com", StringComparison.OrdinalIgnoreCase);
+        }
 
         private static HttpClient NewHttpClient(HttpMessageHandler? handler) =>
             new(handler ?? new SocketsHttpHandler(), disposeHandler: handler == null) { Timeout = RequestTimeout };

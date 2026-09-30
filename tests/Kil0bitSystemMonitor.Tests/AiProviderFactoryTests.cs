@@ -173,6 +173,41 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         /// <summary>
+        /// Only OpenAI itself gets max_completion_tokens. A host that merely ends in "openai.com"
+        /// is another server, which may ignore the newer name and leave answers unbounded.
+        /// </summary>
+        [Fact]
+        public async Task A_host_that_only_ends_in_openai_com_gets_max_tokens()
+        {
+            using var env = new AiTestEnv();
+            var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.OpenAiText));
+
+            AiClientResult result = AiProviderFactory.Create(Compatible("https://notopenai.com/v1", "llama3.2"),
+                Secrets(env, compatibleKey: "sk-test"), handler);
+            await result.Client!.GetResponseAsync("CPU?", new ChatOptions { MaxOutputTokens = 2000 });
+
+            JsonNode body = JsonNode.Parse(Assert.Single(handler.Requests).Body)!;
+            Assert.Equal(2000, body["max_tokens"]!.GetValue<int>());
+            Assert.Null(body["max_completion_tokens"]);
+        }
+
+        [Theory]
+        [InlineData("https://api.openai.com/v1", true)]
+        [InlineData("https://openai.com/v1", true)]
+        [InlineData("https://eu.api.openai.com/v1", true)]
+        [InlineData("https://API.OpenAI.com/v1", true)]
+        [InlineData("https://my-resource.openai.azure.com/openai/v1", true)]
+        [InlineData("https://notopenai.com/v1", false)]
+        [InlineData("https://api.notopenai.com/v1", false)]
+        [InlineData("https://myopenai.azure.com/v1", false)]
+        [InlineData("https://openai.com.example.net/v1", false)]
+        [InlineData("http://localhost:11434/v1", false)]
+        public void Only_openai_and_azure_openai_hosts_count_as_openai(string url, bool expected)
+        {
+            Assert.Equal(expected, AiProviderFactory.IsOpenAiHost(new Uri(url)));
+        }
+
+        /// <summary>
         /// The design (section 10): a busy or rate-limited service is retried twice by the SDK
         /// before the Ask window says it is busy, so three attempts in all. The reply carries a
         /// tiny retry-after so the test does not wait out the SDK backoff.

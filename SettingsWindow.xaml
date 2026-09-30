@@ -6,6 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:local="clr-namespace:Kil0bitSystemMonitor"
+    xmlns:ai="clr-namespace:Kil0bitSystemMonitor.Ai"
     mc:Ignorable="d"
     Title="MicaStats Settings"
     Height="720" Width="1000"
@@ -62,6 +63,11 @@
                 <ui:NavigationViewItem Content="MicaPad" Tag="MicaPad">
                     <ui:NavigationViewItem.Icon>
                         <ui:FontIcon Glyph="&#xE70B;" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="AI" Tag="AI">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:FontIcon Glyph="&#xE8BD;" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
                 <ui:NavigationViewItem Content="Diagnostics" Tag="Diagnostics">
@@ -1098,6 +1104,13 @@
                                 </ComboBox>
                             </Grid>
                         </Border>
+                    </StackPanel>
+
+                    <!-- AI -->
+                    <StackPanel x:Name="AiSection" Visibility="Collapsed">
+                        <TextBlock Text="AI" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="Ask MicaStats about this PC, and let Claude Desktop or Claude Code read its data. Everything here is off until you turn it on, and nothing is sent anywhere until you press Send, Explain or Test connection." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <ai:AiSettingsPanel x:Name="AiPanel"/>
                     </StackPanel>
 
                     <!-- Diagnostics -->

@@ -452,6 +452,7 @@ namespace Kil0bitSystemMonitor
                 DiagnosticsSection.Visibility = Visibility.Collapsed;
                 UpdatesSection.Visibility = Visibility.Collapsed;
                 PadSection.Visibility = Visibility.Collapsed;
+                AiSection.Visibility = Visibility.Collapsed;
 
                 switch (sectionName)
                 {
@@ -461,6 +462,7 @@ namespace Kil0bitSystemMonitor
                     case "Appearance": AppearanceSection.Visibility = Visibility.Visible; LoadOverlayTheme(); break;
                     case "Capture": CaptureSection.Visibility = Visibility.Visible; break;
                     case "MicaPad": PadSection.Visibility = Visibility.Visible; LoadPadSettings(); break;
+                    case "AI": AiSection.Visibility = Visibility.Visible; LoadAiSettings(); break;
                     case "Diagnostics": DiagnosticsSection.Visibility = Visibility.Visible; LoadDiagnosticsSettings(); break;
                     case "Updates": UpdatesSection.Visibility = Visibility.Visible; break;
                     case "About": AboutSection.Visibility = Visibility.Visible; break;
@@ -643,6 +645,32 @@ namespace Kil0bitSystemMonitor
             catch (Exception ex)
             {
                 Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Could not open the notes folder", ex);
+            }
+        }
+
+        // ---- AI -------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Hands the AI panel the live config and stores. The panel holds every rule, so this is
+        /// the only AI code in the settings window.
+        /// </summary>
+        private void LoadAiSettings()
+        {
+            try
+            {
+                AiPanel.Load(new Kil0bitSystemMonitor.Ai.AiSettingsHost
+                {
+                    Config = _config.Config,
+                    Save = _config.SaveConfig,
+                    Secrets = App.AiSecrets,
+                    History = App.History,
+                    Usage = () => App.AiUsage,
+                    McpHttpProblem = () => App.AiMcpHttpProblem,
+                });
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("ai", "Could not load AI settings", ex);
             }
         }
 

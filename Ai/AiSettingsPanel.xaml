@@ -1,0 +1,222 @@
+<UserControl
+    x:Class="Kil0bitSystemMonitor.Ai.AiSettingsPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.modernwpf.com/2019">
+
+    <!--
+      Settings > AI, hosted in SettingsWindow's AiSection. Thin: the rules live in Services/Ai,
+      and AiSettingsHost supplies the config and the stores, so a test builds this panel over
+      temp folders. A key goes to the DPAPI secret store on Save and is never shown again: the
+      box turns into "Saved" and a Remove button.
+    -->
+
+    <UserControl.Resources>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlElevationBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Padding" Value="20,16" />
+        </Style>
+        <Style x:Key="CardIcon" TargetType="ui:FontIcon">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="Foreground" Value="{DynamicResource SystemAccentColorBrush}" />
+            <Setter Property="Margin" Value="0,0,20,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="CardTitle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="15" />
+        </Style>
+        <Style x:Key="CardHint" TargetType="TextBlock">
+            <Setter Property="Opacity" Value="0.6" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel>
+
+        <!-- Assistant -->
+        <Border Style="{StaticResource Card}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:FontIcon Glyph="&#xE8BD;" Style="{StaticResource CardIcon}" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="Ask MicaStats" Style="{StaticResource CardTitle}" />
+                    <TextBlock Style="{StaticResource CardHint}"
+                               Text="A window for questions about this PC, and Explain buttons on slowdown reports, alerts and processes. Nothing is sent until you press Send or Explain." />
+                </StackPanel>
+                <ui:ToggleSwitch Grid.Column="2" x:Name="AssistantToggle" Toggled="OnAssistantToggled" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Provider -->
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:FontIcon Glyph="&#xE774;" Style="{StaticResource CardIcon}" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <TextBlock Text="Provider" Style="{StaticResource CardTitle}" />
+                        <TextBlock Style="{StaticResource CardHint}"
+                                   Text="Claude with your own API key, or any OpenAI-compatible server: OpenAI, Azure, OpenRouter, or Ollama and LM Studio on this PC." />
+                    </StackPanel>
+                    <ComboBox Grid.Column="2" x:Name="ProviderBox" Width="180" VerticalAlignment="Center" SelectionChanged="OnProviderChanged">
+                        <ComboBoxItem Content="Claude" />
+                        <ComboBoxItem Content="OpenAI-compatible" />
+                    </ComboBox>
+                </Grid>
+
+                <StackPanel x:Name="ClaudePanel" Margin="40,16,0,0">
+                    <TextBlock Text="Model" Style="{StaticResource FieldLabel}" />
+                    <TextBlock Style="{StaticResource CardHint}"
+                               Text="claude-haiku-4-5 is quick and cheap; claude-sonnet-5-5 and claude-opus-5-5 think harder. Any model name works." />
+                    <TextBox x:Name="ClaudeModelBox" Width="260" HorizontalAlignment="Left" Margin="0,6,0,14" LostFocus="OnClaudeModelChanged" />
+                    <TextBlock Text="API key" Style="{StaticResource FieldLabel}" />
+                    <StackPanel x:Name="ClaudeKeyEntry" Orientation="Horizontal">
+                        <PasswordBox x:Name="ClaudeKeyBox" Width="260" />
+                        <Button x:Name="SaveClaudeKeyButton" Content="Save" Click="OnSaveClaudeKey" Margin="8,0,0,0" Padding="14,5" />
+                    </StackPanel>
+                    <StackPanel x:Name="ClaudeKeySaved" Orientation="Horizontal" Visibility="Collapsed">
+                        <TextBlock Text="Saved" VerticalAlignment="Center" Opacity="0.8" />
+                        <Button x:Name="RemoveClaudeKeyButton" Content="Remove" Click="OnRemoveClaudeKey" Margin="12,0,0,0" Padding="14,5" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel x:Name="CompatiblePanel" Margin="40,16,0,0" Visibility="Collapsed">
+                    <TextBlock Text="Base URL" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="CompatibleUrlBox" Width="320" HorizontalAlignment="Left" Margin="0,0,0,14" LostFocus="OnCompatibleUrlChanged" />
+                    <TextBlock Text="Model" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="CompatibleModelBox" Width="260" HorizontalAlignment="Left" Margin="0,0,0,14" LostFocus="OnCompatibleModelChanged" />
+                    <TextBlock Text="API key (not needed for Ollama or LM Studio)" Style="{StaticResource FieldLabel}" />
+                    <StackPanel x:Name="CompatibleKeyEntry" Orientation="Horizontal">
+                        <PasswordBox x:Name="CompatibleKeyBox" Width="260" />
+                        <Button x:Name="SaveCompatibleKeyButton" Content="Save" Click="OnSaveCompatibleKey" Margin="8,0,0,0" Padding="14,5" />
+                    </StackPanel>
+                    <StackPanel x:Name="CompatibleKeySaved" Orientation="Horizontal" Visibility="Collapsed">
+                        <TextBlock Text="Saved" VerticalAlignment="Center" Opacity="0.8" />
+                        <Button x:Name="RemoveCompatibleKeyButton" Content="Remove" Click="OnRemoveCompatibleKey" Margin="12,0,0,0" Padding="14,5" />
+                    </StackPanel>
+                </StackPanel>
+
+                <TextBlock x:Name="KeyHint" Margin="40,8,0,0" Style="{StaticResource CardHint}" Visibility="Collapsed" />
+                <TextBlock x:Name="PrivacyText" Margin="40,14,0,0" Style="{StaticResource CardHint}" />
+                <StackPanel Orientation="Horizontal" Margin="40,14,0,0">
+                    <Button x:Name="TestButton" Content="Test connection" Click="OnTestConnection" Padding="14,6" />
+                    <TextBlock x:Name="TestResultText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap" MaxWidth="420" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Shortcut -->
+        <Border Style="{StaticResource Card}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:FontIcon Glyph="&#xE765;" Style="{StaticResource CardIcon}" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="Shortcut" Style="{StaticResource CardTitle}" />
+                    <TextBlock x:Name="HotkeyHint" Style="{StaticResource CardHint}" />
+                </StackPanel>
+                <TextBox Grid.Column="2" x:Name="HotkeyBox" Width="160" VerticalAlignment="Center" LostFocus="OnHotkeyChanged" />
+            </Grid>
+        </Border>
+
+        <!-- Daily limit -->
+        <Border Style="{StaticResource Card}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:FontIcon Glyph="&#xE823;" Style="{StaticResource CardIcon}" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="Questions per day" Style="{StaticResource CardTitle}" />
+                    <TextBlock x:Name="LimitHint" Style="{StaticResource CardHint}" />
+                </StackPanel>
+                <TextBox Grid.Column="2" x:Name="LimitBox" Width="100" VerticalAlignment="Center" LostFocus="OnLimitChanged" />
+            </Grid>
+        </Border>
+
+        <!-- History -->
+        <Border Style="{StaticResource Card}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:FontIcon Glyph="&#xE81C;" Style="{StaticResource CardIcon}" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="Keep 7 days of history" Style="{StaticResource CardTitle}" />
+                    <TextBlock x:Name="HistoryHint" Style="{StaticResource CardHint}" />
+                    <Button x:Name="DeleteHistoryButton" Content="Delete history" Click="OnDeleteHistory"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Padding="14,5" />
+                </StackPanel>
+                <ui:ToggleSwitch Grid.Column="2" x:Name="HistoryToggle" Toggled="OnHistoryToggled" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- MCP -->
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:FontIcon Glyph="&#xE703;" Style="{StaticResource CardIcon}" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <TextBlock Text="MCP for Claude Desktop and Claude Code" Style="{StaticResource CardTitle}" />
+                        <TextBlock x:Name="McpHint" Style="{StaticResource CardHint}" />
+                    </StackPanel>
+                    <ComboBox Grid.Column="2" x:Name="McpModeBox" Width="160" VerticalAlignment="Center" SelectionChanged="OnMcpModeChanged">
+                        <ComboBoxItem Content="Off" />
+                        <ComboBoxItem Content="Stdio bridge" />
+                        <ComboBoxItem Content="Local HTTP" />
+                    </ComboBox>
+                </Grid>
+
+                <StackPanel x:Name="McpHttpPanel" Margin="40,16,0,0" Visibility="Collapsed">
+                    <TextBlock Text="Port" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="McpPortBox" Width="100" HorizontalAlignment="Left" Margin="0,0,0,14" LostFocus="OnMcpPortChanged" />
+                    <TextBlock Text="Token" Style="{StaticResource FieldLabel}" />
+                    <TextBlock Style="{StaticResource CardHint}"
+                               Text="Clients send it as a bearer token. It is stored encrypted for your Windows account and never shown." />
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button x:Name="CopyTokenButton" Content="Copy token" Click="OnCopyToken" Padding="14,5" />
+                        <Button x:Name="RegenerateTokenButton" Content="Regenerate" Click="OnRegenerateToken" Margin="8,0,0,0" Padding="14,5" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="40,16,0,0">
+                    <Button x:Name="CopyDesktopButton" Content="Copy Claude Desktop config" Click="OnCopyDesktopConfig" Padding="14,5" />
+                    <Button x:Name="CopyCodeButton" Content="Copy Claude Code command" Click="OnCopyCodeCommand" Margin="8,0,0,0" Padding="14,5" />
+                </StackPanel>
+                <TextBlock x:Name="McpProblemText" Margin="40,10,0,0" TextWrapping="Wrap" Foreground="#FFE8A53C" Visibility="Collapsed" />
+                <TextBlock x:Name="McpStatusText" Margin="40,8,0,0" Style="{StaticResource CardHint}" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

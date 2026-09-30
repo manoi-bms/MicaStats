@@ -51,6 +51,54 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Theory]
+        [InlineData("see http://x.com/api{", "http://x.com/api")]
+        [InlineData("list http://x.com/a[", "http://x.com/a")]
+        [InlineData("x https://a.com/b}c", "https://a.com/b")]
+        [InlineData("x https://a.com/b]c", "https://a.com/b")]
+        public void A_link_never_holds_a_brace_or_bracket_where_a_fold_may_start(string text, string link)
+        {
+            Assert.Equal(new[] { link }, Matches(text));
+        }
+
+        [Theory]
+        [InlineData("https://en.wikipedia.org/wiki/Mercury_(planet)", "https://en.wikipedia.org/wiki/Mercury_(planet)")]
+        [InlineData("(see https://en.wikipedia.org/wiki/Mercury_(planet))", "https://en.wikipedia.org/wiki/Mercury_(planet)")]
+        [InlineData("(https://a.com/x)", "https://a.com/x")]
+        [InlineData("https://a.com/x) and more", "https://a.com/x")]
+        [InlineData("https://a.com/(x", "https://a.com/")]
+        public void Balanced_parentheses_belong_to_the_link_and_an_unbalanced_close_does_not(string text, string link)
+        {
+            Assert.Equal(new[] { link }, Matches(text));
+        }
+
+        [Fact]
+        public void A_link_may_follow_a_thai_letter_but_not_an_ascii_one()
+        {
+            // "see at" in Thai, ending in a tone mark: \b finds no word boundary between it and the scheme.
+            Assert.Equal(new[] { "https://example.com" }, Matches("\u0E14\u0E39\u0E17\u0E35\u0E48https://example.com"));
+            Assert.Equal(new[] { "https://example.com" }, Matches("\u0E14\u0E39https://example.com"));
+            Assert.Empty(Matches("xhttps://example.com"));
+            Assert.Empty(Matches("9https://example.com"));
+        }
+
+        [Fact]
+        public void Thai_right_after_a_link_stays_part_of_it()
+        {
+            string text = "https://th.wikipedia.org/wiki/\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22";
+            Assert.Equal(new[] { text }, Matches(text));
+        }
+
+        [Fact]
+        public void Many_open_parentheses_still_match_quickly()
+        {
+            string text = "https://example.com/" + string.Concat(Enumerable.Repeat("(a", 2500));
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var found = Matches(text);
+            Assert.True(watch.ElapsedMilliseconds < 1000);
+            Assert.Equal(new[] { "https://example.com/" }, found);
+        }
+
+        [Theory]
         [InlineData("https://user@example.com")]
         [InlineData("https://example.com/..%2f..")]
         public void Uri_edge_cases_stay_https_links(string text)

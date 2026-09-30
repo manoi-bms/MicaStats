@@ -105,6 +105,30 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("That link could not be opened.", window.StatusMessage.Text);
         });
 
+        // A link that swallowed a collapsed fold's opening bracket made AvalonEdit throw in the render pass
+        // ("Trying to build visual line from collapsed line"). In JavaScript an http link starts a // comment,
+        // which hides its bracket from folding, so the JavaScript row uses mailto.
+        [Theory]
+        [InlineData("a.css", "see http://x.com/api{\n  a\n}\nlist http://x.com/a[\n  1,\n  2\n]\nafter")]
+        [InlineData("a.ps1", "see http://x.com/api{\n  a\n}\nafter")]
+        [InlineData("a.js", "var m = mailto:a@b.co{\n  a\n}\nafter")]
+        public void A_link_touching_a_folded_block_still_renders(string name, string text) => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            PadLanguageWindowTests.OpenFile(window, env, name, text);
+            var folding = window.LanguageView.Folding!;
+            folding.Update();
+            Assert.NotEmpty(folding.Manager!.AllFoldings);
+            foreach (var section in folding.Manager!.AllFoldings) section.IsFolded = true;
+
+            window.Editor.Measure(new System.Windows.Size(800, 600));
+            window.Editor.Arrange(new System.Windows.Rect(0, 0, 800, 600));
+            window.Editor.UpdateLayout();
+
+            Assert.All(folding.Manager!.AllFoldings, section => Assert.True(section.IsFolded));
+            Assert.Contains(window.Editor.TextArea.TextView.VisualLines,
+                line => line.Elements.OfType<VisualLineLinkText>().Any());
+        });
+
         [Fact]
         public void The_link_color_follows_the_theme() => PadLanguageWindowTests.WithWindow((window, env, config) =>
         {

@@ -10,10 +10,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
     public static class SafeLinks
     {
         /// <summary>
-        /// A web or mail address in text. It never ends with sentence punctuation or a closing
-        /// bracket or quote, so "see https://a.com/x." links "https://a.com/x".
+        /// A web or mail address in text. It never ends with sentence punctuation, so
+        /// "see https://a.com/x." links "https://a.com/x". Parentheses belong to it only in balanced
+        /// pairs: "https://en.wikipedia.org/wiki/Mercury_(planet)" keeps its ")", "(https://a.com/x)"
+        /// does not. It never holds a brace or square bracket, because folds start there and a link
+        /// that swallows a collapsed fold's start breaks AvalonEdit's rendering. Only an ASCII letter
+        /// or digit right before the scheme stops a match, so Thai text may run into the address.
         /// </summary>
-        public const string Pattern = @"\b(?:https?://|mailto:)[^\s<>""'`]*[^\s<>""'`.,;:!?)\]}]";
+        public const string Pattern =
+            @"(?<![A-Za-z0-9])(?:https?://|mailto:)" +
+            @"(?:[^\s<>""'`()\[\]{}]|\([^\s<>""'`()\[\]{}]*\))*" +
+            @"(?:[^\s<>""'`.,;:!?()\[\]{}]|\([^\s<>""'`()\[\]{}]*\))";
 
         private static readonly Regex Rx = new(Pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 

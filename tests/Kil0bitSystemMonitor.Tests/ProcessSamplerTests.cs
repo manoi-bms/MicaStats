@@ -161,5 +161,59 @@ namespace Kil0bitSystemMonitor.Tests
             s.Dispose();
             Assert.False(s.Enabled);
         }
+
+        /// <summary>
+        /// Leases are taken from pool threads too (the history's per-minute top process,
+        /// get_top_processes). A Release that dropped the count to zero and a Retain that raised it
+        /// again could interleave so the sampler ended up stopped under a live lease, or the count
+        /// was reset under one. Many rounds, because the race needs an unlucky moment.
+        /// </summary>
+        [Fact]
+        public void Parallel_leases_never_leave_a_holder_with_the_sampler_stopped()
+        {
+            const int Rounds = 30;
+            const int Churners = 3;
+            const int Pairs = 1500;
+            for (int round = 0; round < Rounds; round++)
+            {
+                using var s = new ProcessSampler();
+                using var go = new ManualResetEventSlim(false);
+                var threads = new List<Thread>();
+                for (int t = 0; t < Churners; t++)
+                {
+                    threads.Add(new Thread(() =>
+                    {
+                        go.Wait();
+                        for (int i = 0; i < Pairs; i++)
+                        {
+                            s.Retain();
+                            s.Release();
+                        }
+                    }));
+                }
+                // The holder takes its lease in the middle of the churn and keeps it.
+                threads.Add(new Thread(() =>
+                {
+                    go.Wait();
+                    for (int i = 0; i < Pairs / 2; i++)
+                    {
+                        s.Retain();
+                        s.Release();
+                    }
+                    s.Retain();
+                }));
+                foreach (var thread in threads) thread.Start();
+                go.Set();
+                foreach (var thread in threads) thread.Join();
+
+                Assert.True(s.Enabled, "round " + round + ": the holder's lease has the sampler stopped");
+                Assert.Equal(1, s.Leases);
+
+                s.Release();
+
+                Assert.False(s.Enabled);
+                Assert.Equal(0, s.Leases);
+            }
+        }
     }
 }

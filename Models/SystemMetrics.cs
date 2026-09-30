@@ -568,6 +568,90 @@ namespace Kil0bitSystemMonitor.Models
         /// <summary>Reopen MicaPad at login when it was open at shutdown.</summary>
         public bool PadReopenAtLogin { get => _padReopenAtLogin; set { Set(ref _padReopenAtLogin, value); } }
 
+        // ----- AI ---------------------------------------------------------------------------
+        // Everything is off by default. No key or token is ever stored here: config.json is the
+        // file people attach to bug reports, so secrets live in SecretStore (DPAPI) instead.
+
+        private const string DefaultAiClaudeModel = "claude-haiku-4-5";
+        private const string DefaultAiCompatibleBaseUrl = "http://localhost:11434/v1";
+
+        private bool _aiAssistantEnabled;
+        private string _aiProvider = Kil0bitSystemMonitor.Services.Ai.AiProviders.Claude;
+        private string _aiClaudeModel = DefaultAiClaudeModel;
+        private string _aiCompatibleBaseUrl = DefaultAiCompatibleBaseUrl;
+        private string _aiCompatibleModel = "";
+        private string _aiHotkey = "Ctrl+Alt+A";
+        private int _aiDailyLimit = 100;
+        private bool _aiHistoryEnabled;
+        private string _aiMcpMode = Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Off;
+        private int _aiMcpHttpPort = 47831;
+
+        /// <summary>The Ask window, the Explain buttons and the AI hotkey.</summary>
+        public bool AiAssistantEnabled { get => _aiAssistantEnabled; set { Set(ref _aiAssistantEnabled, value); } }
+
+        /// <summary>
+        /// <c>"Claude"</c> or <c>"OpenAiCompatible"</c> (see <c>AiProviders</c>). Anything else, such as a
+        /// typo or a newer build's value, falls back to Claude rather than leaving no provider.
+        /// </summary>
+        public string AiProvider
+        {
+            get => _aiProvider;
+            set
+            {
+                Set(ref _aiProvider,
+                    string.Equals(value, Kil0bitSystemMonitor.Services.Ai.AiProviders.OpenAiCompatible, StringComparison.OrdinalIgnoreCase)
+                        ? Kil0bitSystemMonitor.Services.Ai.AiProviders.OpenAiCompatible
+                        : Kil0bitSystemMonitor.Services.Ai.AiProviders.Claude);
+            }
+        }
+
+        /// <summary>The Claude model id; any typed name is accepted, a blank one means claude-haiku-4-5.</summary>
+        public string AiClaudeModel
+        {
+            get => _aiClaudeModel;
+            set { Set(ref _aiClaudeModel, string.IsNullOrWhiteSpace(value) ? DefaultAiClaudeModel : value.Trim()); }
+        }
+
+        /// <summary>Base URL of the OpenAI-compatible endpoint; blank means Ollama on this PC.</summary>
+        public string AiCompatibleBaseUrl
+        {
+            get => _aiCompatibleBaseUrl;
+            set { Set(ref _aiCompatibleBaseUrl, string.IsNullOrWhiteSpace(value) ? DefaultAiCompatibleBaseUrl : value.Trim()); }
+        }
+
+        /// <summary>The model name at the compatible endpoint. Empty until the user picks one.</summary>
+        public string AiCompatibleModel { get => _aiCompatibleModel; set { Set(ref _aiCompatibleModel, value?.Trim() ?? ""); } }
+
+        /// <summary>Global shortcut that opens Ask MicaStats, in <c>HotkeyParser</c> syntax. Empty turns it off.</summary>
+        public string AiHotkey { get => _aiHotkey; set { Set(ref _aiHotkey, value ?? ""); } }
+
+        /// <summary>Questions (Send or Explain) allowed per local day; keeps a runaway loop from spending money.</summary>
+        public int AiDailyLimit { get => _aiDailyLimit; set { Set(ref _aiDailyLimit, Math.Clamp(value, 1, 10000)); } }
+
+        /// <summary>Keep 7 days of per-minute history on disk for the assistant and MCP clients.</summary>
+        public bool AiHistoryEnabled { get => _aiHistoryEnabled; set { Set(ref _aiHistoryEnabled, value); } }
+
+        /// <summary>
+        /// <c>"Off"</c>, <c>"Stdio"</c> or <c>"Http"</c> (see <c>AiMcpModes</c>). Anything else is Off,
+        /// so a damaged setting never opens a server.
+        /// </summary>
+        public string AiMcpMode
+        {
+            get => _aiMcpMode;
+            set
+            {
+                string mode = Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Off;
+                if (string.Equals(value, Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Stdio, StringComparison.OrdinalIgnoreCase))
+                    mode = Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Stdio;
+                else if (string.Equals(value, Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Http, StringComparison.OrdinalIgnoreCase))
+                    mode = Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Http;
+                Set(ref _aiMcpMode, mode);
+            }
+        }
+
+        /// <summary>Loopback port of the local HTTP MCP server; kept out of the privileged range.</summary>
+        public int AiMcpHttpPort { get => _aiMcpHttpPort; set { Set(ref _aiMcpHttpPort, Math.Clamp(value, 1024, 65535)); } }
+
         [System.Text.Json.Serialization.JsonIgnore]
         public System.Windows.Media.Color AccentColor { get => HexToColor(AccentColorHex); set => AccentColorHex = ColorToHex(value); }
 

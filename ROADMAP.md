@@ -92,6 +92,20 @@ reimplemented on AvalonEdit:
 - Clickable URLs, copy as RTF, full screen
 - A line diff in the history pane; drag-to-reorder tabs; more than one MicaPad window
 
+## MicaStats AI — ships in the next release
+
+An *Ask MicaStats* window and Explain buttons backed by Claude or any OpenAI-compatible endpoint
+(Ollama and LM Studio included), an MCP data source for Claude Desktop and Claude Code (stdio
+bridge or local HTTP), and a 7-day on-disk metrics history. Everything is off by default, MCP is
+read-only, and every result is redacted before it leaves the PC. Design:
+`docs/superpowers/specs/2026-09-30-micastats-ai-design.md`.
+
+Next, built on the 7-day history:
+
+- Learned per-PC baselines, and alerts for readings that are unusual *for this PC*
+- Forecasts: a drive full in N days, the battery wear trend
+- AI notes on alerts, written only when the user asks for them
+
 ## Explicitly not planned
 
 - **Fan control** — iStat Menus has it, but on Windows it requires a resident kernel driver

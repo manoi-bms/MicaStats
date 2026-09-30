@@ -24,6 +24,14 @@
 
         <!-- App Options -->
         <ApplicationManifest>app.manifest</ApplicationManifest>
+
+        <!--
+          The AI packages mark some members experimental, and using one is a build error until its
+          id is listed here. MEAI001: Microsoft.Extensions.AI. MCPEXP001: ModelContextProtocol.
+          OPENAI001: the OpenAI SDK. SCME0001: System.ClientModel JSON patching
+          (ChatCompletionOptions.Patch, which sends max_tokens to older OpenAI-compatible servers).
+        -->
+        <NoWarn>$(NoWarn);MEAI001;MCPEXP001;OPENAI001;SCME0001</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
@@ -61,6 +69,19 @@
         <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.0" />
         <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
         <PackageReference Include="System.Management" Version="8.0.0" />
+    </ItemGroup>
+
+    <!--
+      MicaStats AI. Anthropic: the official Claude SDK, usable as an IChatClient.
+      Microsoft.Extensions.AI and .OpenAI: the chat abstraction, tool calling and every
+      OpenAI-compatible endpoint. ModelContextProtocol.Core: the MCP server behind the stdio bridge
+      and local HTTP mode; the ASP.NET Core hosting package is deliberately not used.
+    -->
+    <ItemGroup>
+        <PackageReference Include="Anthropic" Version="12.51.0" />
+        <PackageReference Include="Microsoft.Extensions.AI" Version="10.10.0" />
+        <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.1" />
+        <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
     </ItemGroup>
 
 </Project>

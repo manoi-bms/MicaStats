@@ -126,6 +126,18 @@ namespace Kil0bitSystemMonitor
                 return;
             }
 
+            // MicaStats.exe --mcp: Claude Desktop or Claude Code started the MCP stdio bridge.
+            //
+            // Like --kill it runs before base.OnStartup and the single-instance mutex: the bridge
+            // is a second process by design (it reaches the running MicaStats over the tool pipe),
+            // so it must not take the mutex, open a window, or start any monitoring. RunStdio
+            // blocks until the client closes stdin, and nothing but MCP ever reaches stdout.
+            if (Kil0bitSystemMonitor.Services.Ai.Mcp.McpArguments.TryParse(e.Args))
+            {
+                System.Environment.Exit(Kil0bitSystemMonitor.Services.Ai.Mcp.McpBridge.RunStdio());
+                return;
+            }
+
             base.OnStartup(e);
 
             // Legacy code pages (cp874 on Thai Windows) for MicaPad, before anything reads a file.
@@ -233,13 +245,17 @@ namespace Kil0bitSystemMonitor
             // System-wide capture shortcuts. Re-applied whenever the user edits them, so a new
             // combination takes effect without a restart.
             m_captureHotkeys = new Kil0bitSystemMonitor.Services.Capture.CaptureHotkeys(
-                Dispatcher, () => m_config?.Config, () => OpenPad(null));
+                Dispatcher, () => m_config?.Config, () => OpenPad(null), () => OpenAsk(null));
             m_captureHotkeys.Apply();
             config.Config.PropertyChanged += (s, e) =>
             {
+                // The Ask MicaStats key registers only while the assistant is on, so the switch
+                // re-applies too: turning the assistant off frees the combination.
                 if (e.PropertyName != null &&
                     (e.PropertyName.StartsWith("CaptureHotkey", StringComparison.Ordinal) ||
-                     e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.PadHotkey)))
+                     e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.PadHotkey) ||
+                     e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.AiHotkey) ||
+                     e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.AiAssistantEnabled)))
                     Dispatcher.BeginInvoke(new Action(() => m_captureHotkeys?.Apply()));
             };
 
@@ -262,6 +278,9 @@ namespace Kil0bitSystemMonitor
             Kil0bitSystemMonitor.Services.Update.UpdateNotifier.ScheduleStartupCheck(config.Config, Dispatcher);
 
             StartDiagnostics(config);
+
+            // The 7-day history now, and the assistant and the MCP servers as they are added (App.Ai.cs).
+            StartAi(config, m_telemetry, m_history, Dispatcher);
 
             // Windows is shutting down or signing out: every MicaPad note reaches disk now, and
             // nothing is asked. Cancel is never set.
@@ -311,12 +330,14 @@ namespace Kil0bitSystemMonitor
                             0, true, 0, true);
                         AlertToastWindow.ShowFor(
                             new Kil0bitSystemMonitor.Services.Diagnostics.AlertEvent(rule, 0, headline, DateTime.Now),
-                            () => DiagnosticsWindow.ShowDiagnostics(0));
+                            () => DiagnosticsWindow.ShowDiagnostics(0),
+                            Kil0bitSystemMonitor.Ai.ExplainActions.ForSlowdownReport(path, DateTime.Now));
                     }));
 
                 s_alerts = new Kil0bitSystemMonitor.Services.Diagnostics.AlertMonitor(m_history!, Battery);
                 s_alerts.Raised += alert =>
-                    AlertToastWindow.ShowFor(alert, () => DiagnosticsWindow.ShowDiagnostics(3));
+                    AlertToastWindow.ShowFor(alert, () => DiagnosticsWindow.ShowDiagnostics(3),
+                        Kil0bitSystemMonitor.Ai.ExplainActions.ForAlert(alert));
 
                 // The watchdog reports; it never ends anything by itself. The click that does
                 // is on the card. Found is raised on a timer thread, so the card is built on
@@ -713,6 +734,9 @@ namespace Kil0bitSystemMonitor
                 m_padMaintenanceTimer?.Stop();
                 s_pad?.Dispose();
                 m_captureHotkeys?.Dispose();
+                // Before anything the AI tools read, and before the shared sampler: the history
+                // recorder may hold a sampler lease for its once-a-minute top process.
+                StopAi();
                 // The watchdog owns nothing else here — its scans are a static kernel snapshot,
                 // not a lease on m_history or SharedProcessSampler — so stopping it first just
                 // silences its timer earliest; it does not have to precede anything below it.

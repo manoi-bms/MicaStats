@@ -138,6 +138,9 @@ namespace Kil0bitSystemMonitor.Services
         private const int OffWriteTransferCount = 0xF0;
 
         private readonly object _gate = new();
+
+        /// <summary>Guards the lease count together with the switch it drives; taken before <see cref="_gate"/>, never after.</summary>
+        private readonly object _leaseGate = new();
         private readonly Dictionary<long, Previous> _previous = new();
         private readonly int _processorCount;
         private System.Threading.Timer? _timer;
@@ -197,21 +200,38 @@ namespace Kil0bitSystemMonitor.Services
         /// Registers interest in sampling. The sampler runs while at least one caller holds a
         /// lease, so the stats panel and the slowdown recorder can both want it without either
         /// switching the other off. Balance every call with <see cref="Release"/>.
+        ///
+        /// <para>
+        /// Leases come from the UI thread and from pool threads (the history's per-minute top
+        /// process, the AI tools), so the count and the switch change together under one lock:
+        /// otherwise a Release that reached zero and a Retain on another thread could interleave
+        /// and leave the sampler stopped under a live lease. <see cref="Updated"/> is raised by
+        /// the sampling thread, never under this lock.
+        /// </para>
         /// </summary>
         public void Retain()
         {
-            if (_disposed) return;
-            if (System.Threading.Interlocked.Increment(ref _clients) == 1) Enabled = true;
+            lock (_leaseGate)
+            {
+                if (_disposed) return;
+                if (++_clients == 1) Enabled = true;
+            }
         }
 
-        /// <summary>Drops one lease, stopping the sampler when the last one goes.</summary>
+        /// <summary>How many leases are held now, for tests.</summary>
+        internal int Leases
+        {
+            get { lock (_leaseGate) return _clients; }
+        }
+
+        /// <summary>Drops one lease, stopping the sampler when the last one goes. A Release with no lease held leaves the count at zero.</summary>
         public void Release()
         {
-            if (_disposed) return;
-            if (System.Threading.Interlocked.Decrement(ref _clients) <= 0)
+            lock (_leaseGate)
             {
-                System.Threading.Interlocked.Exchange(ref _clients, 0);
-                Enabled = false;
+                if (_disposed) return;
+                if (_clients > 0) _clients--;
+                if (_clients == 0) Enabled = false;
             }
         }
 

@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services;
@@ -79,6 +80,14 @@ namespace Kil0bitSystemMonitor
                 StartLiveStrip();
             };
             PreviewKeyDown += OnPreviewKeyDown;
+
+            // The Explain buttons follow the assistant switch while the window is open.
+            var watched = Config;
+            if (watched != null)
+            {
+                watched.PropertyChanged += OnConfigChanged;
+                Closed += (s, e) => watched.PropertyChanged -= OnConfigChanged;
+            }
             Closed += (s, e) =>
             {
                 if (ReferenceEquals(_open, this)) _open = null;
@@ -199,7 +208,7 @@ namespace Kil0bitSystemMonitor
         private void ApplyReports()
         {
             _reports = DiagnosticsService.ListReports();
-            ReportList.ItemsSource = _reports;
+            ReportList.ItemsSource = ExplainableReport.For(_reports, ExplainActions.AssistantOn);
             NoReportsText.Visibility = _reports.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -398,6 +407,20 @@ namespace Kil0bitSystemMonitor
                 DiagnosticsLog.Error("diagnostics", "Could not open " + path, ex);
                 StatusText.Text = "That report could not be opened — see the diagnostics log.";
             }
+        }
+
+        /// <summary>Asks Ask MicaStats to explain one slowdown report (the button's Tag is its path).</summary>
+        private void OnExplainReport(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not string path) return;
+            var report = _reports.Find(r => string.Equals(r.Path, path, StringComparison.OrdinalIgnoreCase));
+            ExplainActions.ForSlowdownReport(path, report?.At ?? DateTime.Now)?.Invoke();
+        }
+
+        private void OnConfigChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(AppConfig.AiAssistantEnabled))
+                Dispatcher.BeginInvoke(new Action(ApplyReports));
         }
 
         private void OnSaveReport(object sender, RoutedEventArgs e)

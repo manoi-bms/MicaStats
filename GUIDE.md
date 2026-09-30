@@ -197,6 +197,156 @@ folder of plain text files. **Settings → MicaPad → Open notes folder** takes
 
 ---
 
+## 🤖 AI assistant and MCP
+
+MicaStats measures a lot and used to leave the reading to you. **Ask MicaStats** answers
+questions about this PC from MicaStats' own data, and **MCP** lets Claude Desktop or Claude Code
+read the same data. Everything is **off until you turn it on** in **Settings → AI**, and nothing
+is sent anywhere until you press **Send**, **Explain** or **Test connection**.
+
+### Setting it up
+
+1. **Settings → AI → Ask MicaStats**: turn it on.
+2. **Provider**:
+   - **Claude** — paste an API key from [console.anthropic.com](https://console.anthropic.com/)
+     and press **Save**. The default model, `claude-haiku-4-5`, is quick and cheap;
+     `claude-sonnet-5-5` and `claude-opus-5-5` think harder, and any model name works.
+     MicaStats talks to Claude only at `api.anthropic.com`, with the key saved here. It ignores
+     `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_CUSTOM_HEADERS`, which belong to
+     Claude Code gateways.
+   - **OpenAI-compatible** — a base URL, a model and, if the server needs one, a key. For a model
+     on this PC with [Ollama](https://ollama.com/): run `ollama pull llama3.2`, then use base URL
+     `http://localhost:11434/v1` and model `llama3.2`, with no key. LM Studio's server is
+     `http://localhost:1234/v1`. OpenAI, Azure and OpenRouter work the same way with their URL
+     and key.
+3. **Test connection** sends one tiny request and shows the reply. It does not count toward the
+   daily limit.
+
+A key is stored encrypted for your Windows account (DPAPI) in `%APPDATA%\MicaStats\secrets.bin`,
+never in `config.json`, and is never shown again: the box turns into **Saved** and **Remove**.
+Settings checks that a save worked: if the key cannot be stored, it says so and keeps the key in
+the box so you can try again.
+The line under the provider says where questions go — *Everything stays on this PC* for a local
+server, otherwise the host name.
+
+### Asking
+
+Open it from **Ask MicaStats…** in the overlay's right-click menu or with **Ctrl+Alt+A** (change
+the shortcut in **Settings → AI**). Type a question and press **Enter** (**Shift+Enter** adds a
+line):
+
+- "Why was the PC slow ten minutes ago?"
+- "What is using my memory right now?"
+- "Did the CPU run hotter today than yesterday?" (needs the 7-day history, below)
+- "ทำไมเครื่องช้าเมื่อเช้านี้?" — a question in Thai is answered in Thai
+
+The answer streams in. Under it, **Details** lists what MicaStats looked up, with the arguments
+(for example `get_top_processes {"by":"cpu","count":5}`), so you can see what the answer rests
+on. **Stop** cancels; **New conversation** starts over. If something fails, the question stays in
+the box and **Retry** sends it again; a missing key or model offers **Open Settings > AI**.
+
+**Explain buttons** ask for you, in your Windows display language:
+
+- **Diagnostics → Slowdowns**: **Explain** beside each saved slowdown report
+- **Alert cards**: **Explain** beside **Show me**
+- **Processes**: select one process and press **Explain**
+
+They appear only while the assistant is on.
+
+### Suggestions, never actions
+
+An answer can end with buttons such as **End chrome.exe (PID 1234)**, **Record a slowdown now**,
+**Open Diagnostics** or **Open the process list**. An end-process button always names the process
+and its PID, whatever the AI suggested calling it. Nothing happens until you click. Ending a
+process goes through the same checks as the process window: the PID must still belong to the same
+program with the same start time, core Windows processes are refused, and MicaStats never ends
+itself. A process that needs administrator rights is left to the process window's **Retry as
+administrator**. Buttons from a cleared conversation do nothing.
+
+### Limits and cost
+
+- One **Send** or **Explain** counts as one question, however many lookups it takes. The default
+  limit is **100 a day**, reset at local midnight; **Settings → AI** shows today's count
+- At most eight rounds of lookups per question and 2,000 output tokens per answer
+- A request that receives no data for 60 seconds ends with a timeout message; the provider is
+  retried twice before that
+- A local model that cannot use tools still answers, in **limited mode**, from a short summary of
+  the PC's current state
+
+### Privacy
+
+Sent: readings, hardware model names, process names and their paths. Removed first: your profile
+folder (shown as `%USERPROFILE%`), other users' folder names, the computer name and your user name
+(when 3 or more characters long), IP and MAC addresses. Never collected by any tool: window titles, command lines, environment
+variables. The diagnostics log records failures only — never questions, answers or data.
+
+### 7-day history
+
+**Keep 7 days of history** records one row a minute — CPU, temperatures, memory, GPU, network,
+disk, battery, and the busiest process by CPU and by memory — to `%APPDATA%\MicaStats\history\`,
+one CSV file per day. After a day the rows are thinned to one every five minutes; after seven
+days the file is deleted, about 10 MB at most. **Delete history** removes it all. The assistant
+and MCP use it to answer questions about the past.
+
+### MCP for Claude Desktop and Claude Code
+
+MCP lets an AI app you already use read MicaStats' data directly — no key or cost inside
+MicaStats, and **read-only**: the same lookups as the assistant, without suggestions. Choose the
+connection in **Settings → AI → MCP**.
+
+**Stdio bridge (recommended).** The AI app starts `MicaStats.exe --mcp`, which reads from the
+running MicaStats over a private pipe open to your Windows account only. Nothing listens on the
+network.
+
+- **Claude Desktop**: press **Copy Claude Desktop config**, then in Claude Desktop open
+  **Settings → Developer → Edit Config** and merge it into `claude_desktop_config.json`:
+
+  ```json
+  {
+    "mcpServers": {
+      "micastats": {
+        "command": "C:\\Program Files\\MicaStats\\MicaStats.exe",
+        "args": ["--mcp"]
+      }
+    }
+  }
+  ```
+
+  Restart Claude Desktop and ask, for example, "Use MicaStats: what slowed my PC down today?"
+- **Claude Code**: press **Copy Claude Code command** and run it in a terminal:
+
+  ```powershell
+  claude mcp add --scope user micastats -- "C:\Program Files\MicaStats\MicaStats.exe" --mcp
+  ```
+
+When MicaStats is not running, the bridge still answers from the files on disk (history and
+slowdown reports) and says "MicaStats is not running" for live readings.
+
+> **Pick the mode that matches your client's config.** The private pipe runs only while MCP is
+> set to **Stdio bridge**. A Claude Desktop or Claude Code config that starts `MicaStats.exe --mcp`
+> while MCP is set to **Local HTTP** gets the files on disk only, and every live reading says
+> "MicaStats is not running".
+
+**Local HTTP.** While MicaStats runs it serves MCP at `http://127.0.0.1:47831/mcp` (the port can
+be changed) — this PC only, and every request needs the token. **Copy Claude Code command** gives
+the complete command with your token:
+
+```powershell
+claude mcp add --transport http --scope user micastats http://127.0.0.1:47831/mcp --header "Authorization: Bearer <token>"
+```
+
+Copying the token or this command keeps it out of Windows clipboard history. **Regenerate**
+makes a new token; a client still using the old one is refused until you copy the command again.
+If the port is taken, **Settings → AI** says so and the diagnostics log records it.
+
+> The snippets above use the default install folder and port. The **Copy** buttons always produce
+> the exact text for your installation — prefer them.
+
+Setting MCP to **Off** stops the pipe and the HTTP server; an AI app that still calls MicaStats is
+told "MCP is turned off in MicaStats Settings".
+
+---
+
 ## 🔩 Hardware Inspector
 
 The **Hardware** button at the top of the stats panel opens a CPU-Z-style inspector with six tabs:
@@ -366,7 +516,8 @@ upgrade.
 MicaStats appends informative events — startup identity, a one-line hardware summary, sensor
 sources that failed, report saves, unexpected errors — to
 `%APPDATA%\MicaStats\logs\micastats.log` (plain text, rotated at 512 KB). If something looks
-wrong, this file is the first place to look.
+wrong, this file is the first place to look. The MCP stdio bridge (`MicaStats.exe --mcp`) runs as
+a separate process and keeps its own `mcp-bridge.log` in the same folder.
 
 ---
 
@@ -387,6 +538,7 @@ wrong, this file is the first place to look.
 - **Diagnostics…**: Opens the Diagnostics window — slowdowns, boot, battery and alerts.
 - **Record Slowdown Now**: Saves the last few minutes of per-process activity to a report. Use
   it immediately after the machine stutters, while the rolling window still holds what happened.
+- **Ask MicaStats…**: Opens the AI assistant. Shown only while it is on in **Settings → AI**.
 
 ---
 

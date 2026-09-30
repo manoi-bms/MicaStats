@@ -28,6 +28,14 @@ public class McpPipeTests
     private static ToolInvoker Constant(JsonObject result) =>
         (tool, args, ct) => Task.FromResult<JsonNode>(result.DeepClone());
 
+    /// <summary>A hand-driven single-instance server with the real descriptor, so the client trusts it.</summary>
+    private static NamedPipeServerStream FakeServer(string name)
+    {
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        var handle = ToolPipeNative.Create(name, ToolPipeNative.SddlFor(identity.User!), firstInstance: true, maxInstances: 1);
+        return new NamedPipeServerStream(PipeDirection.InOut, isAsync: true, isConnected: false, handle);
+    }
+
     private static int CountOf(string text, string part)
     {
         int count = 0;
@@ -94,7 +102,7 @@ public class McpPipeTests
         JsonObject? reply = await ToolPipeProtocol.ReadAsync(pipe, CancellationToken.None);
 
         Assert.Equal(false, (bool?)reply!["ok"]);
-        Assert.Contains("version mismatch", (string?)reply["error"]);
+        Assert.Contains("version mismatch", (string?)reply["error"], StringComparison.Ordinal);
         Assert.Equal(0, calls);
     }
 
@@ -102,7 +110,7 @@ public class McpPipeTests
     public async Task The_client_refuses_a_reply_from_another_protocol_version()
     {
         string name = TestPipeName();
-        using var fake = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        using NamedPipeServerStream fake = FakeServer(name);
         Task serve = Task.Run(async () =>
         {
             await fake.WaitForConnectionAsync();
@@ -113,7 +121,7 @@ public class McpPipeTests
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None));
 
-        Assert.Contains("version mismatch", ex.Message);
+        Assert.Contains("version mismatch", ex.Message, StringComparison.Ordinal);
         await serve;
     }
 
@@ -174,7 +182,7 @@ public class McpPipeTests
         using WindowsIdentity identity = WindowsIdentity.GetCurrent();
         SecurityIdentifier me = identity.User!;
 
-        Assert.Equal("D:P(A;;GA;;;" + me.Value + ")S:(ML;;NW;;;ME)", ToolPipeNative.SddlFor(me));
+        Assert.Equal("O:" + me.Value + "D:P(A;;GA;;;" + me.Value + ")S:(ML;;NWNR;;;ME)", ToolPipeNative.SddlFor(me));
     }
 
     [Fact]
@@ -189,10 +197,11 @@ public class McpPipeTests
         string dacl = ToolPipeNative.ReadSddl(pipe.SafePipeHandle, ToolPipeNative.DACL_SECURITY_INFORMATION);
         string label = ToolPipeNative.ReadSddl(pipe.SafePipeHandle, ToolPipeNative.LABEL_SECURITY_INFORMATION);
 
-        Assert.StartsWith("D:P(", dacl);
+        Assert.StartsWith("D:P(", dacl, StringComparison.Ordinal);
         Assert.Equal(1, CountOf(dacl, "(A;"));
-        Assert.Contains(";;;" + identity.User!.Value + ")", dacl);
-        Assert.Contains("(ML;;NW;;;ME)", label);
+        Assert.Equal("O:" + identity.User!.Value, ToolPipeNative.ReadSddl(pipe.SafePipeHandle, 0x00000001));
+        Assert.Contains(";;;" + identity.User!.Value + ")", dacl, StringComparison.Ordinal);
+        Assert.Contains("(ML;;NWNR;;;ME)", label, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -204,7 +213,7 @@ public class McpPipeTests
 
         var ex = Assert.Throws<IOException>(() => server.Start());
 
-        Assert.Contains("already in use", ex.Message);
+        Assert.Contains("already in use", ex.Message, StringComparison.Ordinal);
         Assert.False(server.IsRunning);
     }
 
@@ -259,5 +268,140 @@ public class McpPipeTests
 
         Assert.Equal(Enumerable.Range(0, 6).Select(i => "t" + i), results.Select(r => (string?)r["tool"]));
         Assert.InRange(Volatile.Read(ref peak), 2, ToolPipeServer.MaxClients);
+    }
+
+    [Fact]
+    public async Task A_squatter_with_a_default_descriptor_is_refused_before_any_request_is_sent()
+    {
+        string name = TestPipeName();
+        using var squatter = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        Task<JsonObject?> received = Task.Run(async () =>
+        {
+            try
+            {
+                await squatter.WaitForConnectionAsync();
+                return await ToolPipeProtocol.ReadAsync(squatter, CancellationToken.None);
+            }
+            catch (IOException)
+            {
+                return null;   // the client came and went before the squatter looked: nothing was sent
+            }
+        });
+
+        var ex = await Assert.ThrowsAsync<ToolPipeUnavailableException>(
+            () => ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None));
+
+        Assert.Contains("not a MicaStats pipe", ex.Message, StringComparison.Ordinal);
+        Assert.Null(await received);   // the client hung up without writing a frame
+    }
+
+    [Fact]
+    public async Task The_client_connects_at_the_identification_level_so_the_server_cannot_act_as_it()
+    {
+        string name = TestPipeName();
+        using NamedPipeServerStream fake = FakeServer(name);
+        Task<TokenImpersonationLevel?> serve = Task.Run(async () =>
+        {
+            await fake.WaitForConnectionAsync();
+            await ToolPipeProtocol.ReadAsync(fake, CancellationToken.None);
+            TokenImpersonationLevel? level = null;
+            fake.RunAsClient(() =>
+            {
+                using WindowsIdentity? impersonated = WindowsIdentity.GetCurrent(ifImpersonating: true);
+                level = impersonated?.ImpersonationLevel;
+            });
+            await ToolPipeProtocol.WriteAsync(fake, new JsonObject { ["v"] = 1, ["ok"] = true, ["result"] = new JsonObject() }, CancellationToken.None);
+            return level;
+        });
+
+        await ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None);
+
+        Assert.Equal(TokenImpersonationLevel.Identification, await serve);
+    }
+
+    [Theory]
+    [InlineData("S:AI(ML;;NWNR;;;ME)", true)]
+    [InlineData("S:(ML;;NW;;;HI)", true)]
+    [InlineData("S:(ML;;NW;;;S-1-16-8192)", true)]
+    [InlineData("S:(ML;;NW;;;LW)", false)]
+    [InlineData("S:(ML;;NW;;;S-1-16-4096)", false)]
+    [InlineData("", false)]
+    public void Only_a_medium_or_higher_label_counts(string sddl, bool expected)
+    {
+        Assert.Equal(expected, ToolPipeNative.LabelIsMediumOrHigher(sddl));
+    }
+
+    [Fact]
+    public async Task Callers_dropping_connections_while_all_slots_are_busy_do_not_kill_the_server()
+    {
+        string name = TestPipeName();
+        using var server = new ToolPipeServer(name, async (tool, args, ct) =>
+        {
+            await Task.Delay(100, ct);
+            return new JsonObject();
+        }) { RequestWaitLimit = TimeSpan.FromMilliseconds(300) };
+        server.Start();
+        var stopAt = DateTime.UtcNow.AddSeconds(3);
+        Task[] callers = Enumerable.Range(0, 4).Select(i => Task.Run(async () =>
+        {
+            while (DateTime.UtcNow < stopAt)
+            {
+                try
+                {
+                    await ToolPipeClient.CallAsync(name, "t", null, TenSeconds, CancellationToken.None);
+                }
+                catch (Exception ex) when (ex is ToolPipeUnavailableException or TimeoutException or InvalidOperationException)
+                {
+                }
+            }
+        })).ToArray();
+        Task[] hitters = Enumerable.Range(0, 3).Select(i => Task.Run(() =>
+        {
+            while (DateTime.UtcNow < stopAt)
+            {
+                try
+                {
+                    using var c = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.None);
+                    c.Connect(0);
+                }
+                catch (Exception ex) when (ex is TimeoutException or IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        })).ToArray();
+        await Task.WhenAll(callers.Concat(hitters));
+
+        Assert.True(server.IsRunning);
+        JsonNode result = await ToolPipeClient.CallAsync(name, "t", null, TenSeconds, CancellationToken.None);
+        Assert.NotNull(result);
+    }
+
+    [Fact]
+    public async Task Idle_connections_are_closed_and_do_not_hold_the_slots()
+    {
+        string name = TestPipeName();
+        using var server = new ToolPipeServer(name, Constant(new JsonObject { ["n"] = 1 })) { RequestWaitLimit = TimeSpan.FromMilliseconds(300) };
+        server.Start();
+        var idle = new List<NamedPipeClientStream>();
+        try
+        {
+            for (int i = 0; i < ToolPipeServer.MaxClients; i++)
+            {
+                var pipe = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
+                idle.Add(pipe);
+                await pipe.ConnectAsync(5000);
+            }
+
+            // Every slot is taken by a silent connection; the call gets through once they time out.
+            JsonNode result = await ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None);
+
+            Assert.Equal(1, (int?)result["n"]);
+            foreach (NamedPipeClientStream pipe in idle)
+                Assert.Null(await ToolPipeProtocol.ReadAsync(pipe, CancellationToken.None));   // closed by the server
+        }
+        finally
+        {
+            foreach (NamedPipeClientStream pipe in idle) pipe.Dispose();
+        }
     }
 }

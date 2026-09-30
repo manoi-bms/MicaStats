@@ -30,6 +30,12 @@ public sealed class ToolPipeServer : IDisposable
     /// </summary>
     private static readonly TimeSpan ServerCallTimeout = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// How long a connection may sit without sending its next request before the server closes it.
+    /// Without a bound, four idle connections would hold every slot and lock all callers out.
+    /// </summary>
+    private static readonly TimeSpan DefaultRequestWaitLimit = TimeSpan.FromSeconds(5);
+
     private readonly string _pipeName;
     private readonly ToolInvoker _invoke;
     private readonly Action<string> _warn;
@@ -38,6 +44,9 @@ public sealed class ToolPipeServer : IDisposable
     private readonly HashSet<NamedPipeServerStream> _open = new();
     private CancellationTokenSource? _cts;
     private Task? _loop;
+
+    /// <summary>The idle bound above; tests shorten it before <see cref="Start"/>.</summary>
+    internal TimeSpan RequestWaitLimit { get; set; } = DefaultRequestWaitLimit;
 
     /// <summary>A server for <paramref name="pipeName"/> (see <see cref="ToolPipeProtocol.DefaultPipeName"/>); nothing is created until <see cref="Start"/>.</summary>
     /// <param name="warn">Receives failure notes for the diagnostics log: never tool arguments or results.</param>
@@ -66,6 +75,13 @@ public sealed class ToolPipeServer : IDisposable
         lock (_gate)
         {
             if (_loop is { IsCompleted: false }) return;
+
+            // A previous run that ended without Stop leaves its token and instances behind.
+            _cts?.Cancel();
+            _cts = null;
+            _loop = null;
+            foreach (NamedPipeServerStream leftover in _open) leftover.Dispose();
+            _open.Clear();
 
             NamedPipeServerStream first = CreateInstance(firstInstance: true);
             _open.Add(first);
@@ -110,6 +126,8 @@ public sealed class ToolPipeServer : IDisposable
 
     private async Task AcceptLoopAsync(NamedPipeServerStream listening, SemaphoreSlim slots, CancellationToken ct)
     {
+        // The loop ends only when the server is stopped: any other failure is logged and the
+        // listening instance is replaced, because a dead loop frees the name for a squatter.
         try
         {
             while (!ct.IsCancellationRequested)
@@ -118,12 +136,17 @@ public sealed class ToolPipeServer : IDisposable
                 {
                     await listening.WaitForConnectionAsync(ct).ConfigureAwait(false);
                 }
-                catch (IOException) when (!ct.IsCancellationRequested)
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
-                    // A client connected and left before it was accepted. Replace the instance,
-                    // creating the new one first so the name is never left without one.
+                    return;
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    // A client connected and left before it was accepted, or the instance failed.
+                    // Replace it, creating the new one first so the name is never left without one.
+                    if (ex is not IOException) _warn("The tool pipe listener failed: " + ex.GetType().Name);
                     NamedPipeServerStream stale = listening;
-                    listening = Track(CreateInstance(firstInstance: false));
+                    listening = await NewListeningAsync(ct).ConfigureAwait(false);
                     Close(stale);
                     continue;
                 }
@@ -140,24 +163,43 @@ public sealed class ToolPipeServer : IDisposable
                 }
 
                 // The next instance exists before this one is served (and later closed).
-                listening = Track(CreateInstance(firstInstance: false));
+                try
+                {
+                    listening = await NewListeningAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    Close(connected);
+                    slots.Release();
+                    return;
+                }
                 _ = Task.Run(() => ServeAsync(connected, slots, ct));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
         }
-        catch (ObjectDisposedException) when (ct.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            if (!ct.IsCancellationRequested)
-                _warn("The tool pipe stopped accepting connections: " + ex.GetType().Name + ": " + ex.Message);
-        }
         finally
         {
             Close(listening);
+        }
+    }
+
+    /// <summary>Creates the next waiting instance, retrying until it works or the server stops.</summary>
+    private async Task<NamedPipeServerStream> NewListeningAsync(CancellationToken ct)
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                return Track(CreateInstance(firstInstance: false));
+            }
+            catch (IOException ex)
+            {
+                _warn("The tool pipe could not create its next instance: " + ex.GetType().Name);
+                await Task.Delay(TimeSpan.FromMilliseconds(200), ct).ConfigureAwait(false);
+            }
         }
     }
 
@@ -168,14 +210,22 @@ public sealed class ToolPipeServer : IDisposable
             while (!ct.IsCancellationRequested)
             {
                 JsonObject? request;
-                try
+                using (var idle = CancellationTokenSource.CreateLinkedTokenSource(ct))
                 {
-                    request = await ToolPipeProtocol.ReadAsync(pipe, ct).ConfigureAwait(false);
-                }
-                catch (InvalidDataException ex)
-                {
-                    await ToolPipeProtocol.WriteAsync(pipe, Failure("The request could not be read: " + ex.Message), ct).ConfigureAwait(false);
-                    return;
+                    idle.CancelAfter(RequestWaitLimit);
+                    try
+                    {
+                        request = await ToolPipeProtocol.ReadAsync(pipe, idle.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        return;   // idle too long: free the slot
+                    }
+                    catch (InvalidDataException ex)
+                    {
+                        await ToolPipeProtocol.WriteAsync(pipe, Failure("The request could not be read: " + ex.Message), ct).ConfigureAwait(false);
+                        return;
+                    }
                 }
                 if (request == null) return;   // the bridge hung up
 
@@ -250,11 +300,12 @@ public sealed class ToolPipeServer : IDisposable
     {
         try
         {
-            // One more instance than served clients: the one waiting for the next caller.
-            var handle = ToolPipeNative.Create(_pipeName, _sddl, firstInstance, MaxClients + 1);
+            // Two more instances than served clients: the one waiting for the next caller, and the
+            // replacement created before a connection that dropped before it was accepted is closed.
+            var handle = ToolPipeNative.Create(_pipeName, _sddl, firstInstance, MaxClients + 2);
             return new NamedPipeServerStream(PipeDirection.InOut, isAsync: true, isConnected: false, handle);
         }
-        catch (Win32Exception ex) when (ex.NativeErrorCode is ToolPipeNative.ErrorAccessDenied or ToolPipeNative.ErrorPipeBusy)
+        catch (Win32Exception ex) when (firstInstance && ex.NativeErrorCode is ToolPipeNative.ErrorAccessDenied or ToolPipeNative.ErrorPipeBusy)
         {
             throw new IOException("The tool pipe " + _pipeName + " is already in use by another process.", ex);
         }

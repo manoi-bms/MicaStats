@@ -109,4 +109,25 @@ public class McpPipeProtocolTests
 
         Assert.Equal("MicaStats.Tools." + identity.User!.Value, ToolPipeProtocol.DefaultPipeName());
     }
+
+    [Theory]
+    [InlineData("{\"a\":1,\"a\":2}")]
+    [InlineData("{\"args\":{\"x\":1,\"x\":2}}")]
+    [InlineData("{\"list\":[{\"k\":1,\"k\":2}]}")]
+    public async Task A_body_with_duplicate_keys_is_refused_as_invalid_data(string body)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(body);
+        using MemoryStream stream = Raw(bytes.Length, bytes);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => ToolPipeProtocol.ReadAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_body_that_is_not_valid_utf8_is_refused_as_invalid_data()
+    {
+        byte[] bytes = { (byte)'{', (byte)'"', (byte)'a', (byte)'"', (byte)':', (byte)'"', 0xFF, 0xFE, (byte)'"', (byte)'}' };
+        using MemoryStream stream = Raw(bytes.Length, bytes);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => ToolPipeProtocol.ReadAsync(stream, CancellationToken.None));
+    }
 }

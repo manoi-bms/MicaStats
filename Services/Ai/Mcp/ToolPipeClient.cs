@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Security.Principal;
 using System.Text.Json.Nodes;
 
 namespace Kil0bitSystemMonitor.Services.Ai.Mcp;
@@ -20,7 +21,9 @@ public sealed class ToolPipeUnavailableException : Exception
 
 /// <summary>
 /// The bridge's end of the tool pipe: one connection per call, so a MicaStats restart between
-/// two calls costs nothing.
+/// two calls costs nothing. It connects at the identification impersonation level (the server
+/// learns who called but cannot act as the caller) and refuses a pipe that is not owned by the
+/// current user with an explicit medium label.
 /// </summary>
 public static class ToolPipeClient
 {
@@ -30,14 +33,14 @@ public static class ToolPipeClient
     /// <summary>
     /// Runs <paramref name="tool"/> in the running MicaStats and returns its result, detached from
     /// the reply. Throws <see cref="ToolPipeUnavailableException"/> when nothing accepts the
-    /// connection within 1 s; <see cref="TimeoutException"/> when no reply arrives within
+    /// connection within 1 s or the pipe is not the current user own MicaStats pipe; <see cref="TimeoutException"/> when no reply arrives within
     /// <paramref name="timeout"/>; <see cref="InvalidOperationException"/> carrying the server's
     /// sentence for <c>ok:false</c>, a version mismatch, or a broken or unreadable reply; and
     /// <see cref="OperationCanceledException"/> when <paramref name="ct"/> is cancelled.
     /// </summary>
     public static async Task<JsonNode> CallAsync(string pipeName, string tool, JsonObject? args, TimeSpan timeout, CancellationToken ct)
     {
-        using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
         try
         {
             await pipe.ConnectAsync(ConnectTimeoutMs, ct).ConfigureAwait(false);
@@ -53,6 +56,14 @@ public static class ToolPipeClient
         catch (IOException ex)
         {
             throw new ToolPipeUnavailableException("The MicaStats tool pipe could not be opened: " + ex.Message);
+        }
+
+        // Whoever created the name first can serve it: check the owner and the label before
+        // sending anything, so a squatter never sees a request or gets to forge a reply.
+        using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
+        {
+            if (identity.User == null || !ToolPipeNative.IsTrustedServer(pipe.SafePipeHandle, identity.User))
+                throw new ToolPipeUnavailableException("The pipe named for MicaStats is not a MicaStats pipe.");
         }
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);

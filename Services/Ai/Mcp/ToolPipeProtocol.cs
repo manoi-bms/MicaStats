@@ -91,15 +91,36 @@ public static class ToolPipeProtocol
             throw new InvalidDataException("The tool pipe frame was cut short.", ex);
         }
 
-        JsonNode? node;
+        JsonObject? message;
         try
         {
-            node = JsonNode.Parse(body);
+            // Strict UTF-8, and every property touched here: JsonNode parses lazily, so a duplicate
+            // key would otherwise surface later as an ArgumentException in the caller.
+            string text = StrictUtf8.GetString(body);
+            message = JsonNode.Parse(text) as JsonObject;
+            if (message != null) Touch(message);
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or FormatException)
         {
-            throw new InvalidDataException("The tool pipe frame is not JSON.", ex);
+            throw new InvalidDataException("The tool pipe frame is not valid JSON.", ex);
         }
-        return node as JsonObject ?? throw new InvalidDataException("The tool pipe frame is not a JSON object.");
+        return message ?? throw new InvalidDataException("The tool pipe frame is not a JSON object.");
+    }
+
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    private static void Touch(JsonNode node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach (KeyValuePair<string, JsonNode?> property in obj)
+                    if (property.Value != null) Touch(property.Value);
+                break;
+            case JsonArray array:
+                foreach (JsonNode? item in array)
+                    if (item != null) Touch(item);
+                break;
+        }
     }
 }

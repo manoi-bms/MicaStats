@@ -268,6 +268,21 @@ punctuation; parentheses stay in it only as a pair, as in Wikipedia addresses.
 
 **Copy as RTF** (right-click or **☰**): copies the selection — or the whole note — with its colors, bold, italic and heading sizes, ready to paste into Word or Outlook. It always uses light-theme colors, for white pages. A rectangular (**Alt**+drag) selection copies just the box, without colors; while a history version is shown, the ☰ item is off.
 
+### Tools
+
+Right-click → **Tools** (also in **☰**):
+
+* **Base64 encode** / **Base64 decode** — UTF-8, so Thai text comes back exactly.
+* **Convert number** to decimal, hex, binary or octal — `255` ↔ `0xFF` ↔ `0b11111111` ↔ `0o377`,
+  any 64-bit number, with `_` allowed between digits (`1_000`).
+* **Insert GUID** and **Insert timestamp** — `2026-09-30T18:05:12+07:00`, `2026-09-30` or Unix
+  seconds, always in the Western calendar.
+* **Evaluate** — select a sum such as `(1500 + 230) * 1.07` and ` = 1851.1` is added after it.
+  It knows `+ - * / % ^`, brackets and `0x` numbers, and nothing else: text in a note is never run.
+
+The selection tools work on the selected text; when one cannot (not a number, not Base64,
+division by zero), the text is left alone and the status bar says why. Each is a single **Ctrl+Z**.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

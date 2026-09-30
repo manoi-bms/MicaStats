@@ -171,6 +171,60 @@ namespace Kil0bitSystemMonitor.Pad
             return lines;
         }
 
+        /// <summary>What a tool says about a rectangular selection: its flat span would be garbage.</summary>
+        public const string RectangleRefused = "Tools work on an ordinary selection, not a rectangle";
+
+        /// <summary>
+        /// Tools (spec 5.1): each item is one undoable edit on the selection, or at the caret for the
+        /// inserts; when a tool cannot apply, the text is left alone and <paramref name="report"/>
+        /// says why. The selection tools wait for a selection.
+        /// </summary>
+        public static MenuItem ToolsMenu(TextEditor editor, Action<string> report, Func<DateTimeOffset> now)
+        {
+            bool selected = editor.SelectionLength > 0;
+            var tools = new MenuItem { Header = "Tools", Icon = "\uE90F" };
+            MenuItem Tool(string header, Func<string, int, int, ToolOutcome> tool, bool enabled = true) =>
+                Item(header, null, () => RunTool(editor, report, tool), enabled);
+
+            tools.Items.Add(Tool("Base64 encode", (t, s, l) => TextTools.OnSelection(t, s, l, x => (TextTools.Base64Encode(x), null)), selected));
+            tools.Items.Add(Tool("Base64 decode", (t, s, l) => TextTools.OnSelection(t, s, l, TextTools.Base64Decode), selected));
+
+            var convert = new MenuItem { Header = "Convert number", IsEnabled = selected };
+            foreach (var (header, target) in new[] { ("Decimal", NumberBase.Decimal), ("Hex", NumberBase.Hex), ("Binary", NumberBase.Binary), ("Octal", NumberBase.Octal) })
+                convert.Items.Add(Tool(header, (t, s, l) => TextTools.OnSelection(t, s, l, x => NumberConverter.Convert(x, target))));
+            tools.Items.Add(convert);
+
+            tools.Items.Add(Tool("Insert GUID", (t, s, l) => TextTools.Insert(s, l, TextTools.FormatGuid(Guid.NewGuid()))));
+
+            var stamp = new MenuItem { Header = "Insert timestamp" };
+            stamp.Items.Add(Tool("ISO 8601", (t, s, l) => TextTools.Insert(s, l, TextTools.Iso8601(now()))));
+            stamp.Items.Add(Tool("Date", (t, s, l) => TextTools.Insert(s, l, TextTools.Date(now()))));
+            stamp.Items.Add(Tool("Unix seconds", (t, s, l) => TextTools.Insert(s, l, TextTools.UnixSeconds(now()))));
+            tools.Items.Add(stamp);
+
+            tools.Items.Add(Tool("Evaluate", TextTools.Evaluate, selected));
+            return tools;
+        }
+
+        /// <summary>Runs a tool: its edit is one undoable change; a problem is reported and the text left alone. True when it edited.</summary>
+        public static bool RunTool(TextEditor editor, Action<string> report, Func<string, int, int, ToolOutcome> tool)
+        {
+            if (editor.IsReadOnly) return false;
+            if (editor.TextArea.Selection is RectangleSelection)
+            {
+                report(RectangleRefused);
+                return false;
+            }
+            var outcome = tool(editor.Document.Text, editor.SelectionStart, editor.SelectionLength);
+            if (outcome.Edit is not TextEdit edit)
+            {
+                report(outcome.Problem ?? TextTools.SelectFirst);
+                return false;
+            }
+            ApplyEdit(editor, edit);
+            return true;
+        }
+
         /// <summary>
         /// Ctrl+D and Lines ▸ Duplicate: the selection, or the caret line. A rectangular selection
         /// duplicates every line it touches instead: its flat span would be garbage.

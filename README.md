@@ -167,6 +167,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Links**: web and mail addresses are underlined and open with **Ctrl+Click**; nothing else in a note is ever opened
 * **Drag tabs** to reorder them (the order is kept), and **F11** for full screen
 * **Copy as RTF** pastes the note, or the selection, into Word or Outlook with its colors, bold and heading sizes
+* **Tools**: Base64, number bases, GUIDs, timestamps, and a calculator that works the sum out itself — nothing in a note is ever run; each is one **Ctrl+Z**
 * Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
 
 ### Ask MicaStats: answers about your PC
@@ -786,6 +787,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **ลิงก์**: ที่อยู่เว็บและอีเมลมีขีดเส้นใต้ และเปิดได้ด้วย **Ctrl+Click** นอกจากนั้นไม่มีสิ่งใดในโน้ตถูกเปิดเลย
 * **ลากแท็บ** เพื่อจัดลำดับใหม่ (ลำดับถูกจำไว้) และกด **F11** เพื่อแสดงเต็มจอ
 * **Copy as RTF** คัดลอกโน้ตหรือส่วนที่เลือกไปวางใน Word หรือ Outlook พร้อมสี ตัวหนา และขนาดหัวข้อ
+* **เครื่องมือ**: Base64 แปลงเลขฐาน GUID เวลาปัจจุบัน และเครื่องคิดเลขที่คำนวณเอง ไม่มีสิ่งใดในโน้ตถูกรันเลย ทุกคำสั่งย้อนกลับได้ด้วย **Ctrl+Z** ครั้งเดียว
 * โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา

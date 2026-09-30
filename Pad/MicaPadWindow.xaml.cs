@@ -1326,6 +1326,9 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine, icon: "\uE8AD"));
             menu.Items.Add(Item("History", "Ctrl+Shift+H", ToggleHistory, icon: "\uE81C"));
             menu.Items.Add(Item("Clear bookmarks", null, ClearBookmarks, enabled: BookmarkLines.Count > 0));
+            var tools = ToolsMenu(Editor, ShowStatus, () => Now());
+            tools.IsEnabled = PreviewPanel.Visibility != Visibility.Visible;   // never edit a note hidden under the history preview
+            menu.Items.Add(tools);
             menu.Items.Add(new Separator());
             menu.Items.Add(Check("Word wrap", "Alt+Z", _config.PadWordWrap, ToggleWordWrap));
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,
@@ -1386,6 +1389,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (ReferenceEquals(editor, Editor) && ReferenceEquals(_resolved.Effective, PadLanguages.Markdown))
                 menu.Items.Add(FormatMenu(editor));
             menu.Items.Add(LinesMenu(editor, MoveLines));
+            menu.Items.Add(ToolsMenu(editor, ShowStatus, () => Now()));
 
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));
@@ -1577,6 +1581,9 @@ namespace Kil0bitSystemMonitor.Pad
                 else Dispatcher.BeginInvoke(new Action(ApplyLanguage));
             }
         }
+
+        /// <summary>The time the timestamp tools insert. Tests replace it.</summary>
+        internal Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.Now;
 
         private DispatcherTimer? _statusTimer;
 

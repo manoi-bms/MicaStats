@@ -41,24 +41,45 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("a\r\nb\r\nc", 3, 0, "b\r\na\r\nc", 0)]
         [InlineData("a\nb\nc", 4, 0, "a\nc\nb", 2)]
         [InlineData("a\nb", 0, 0, null, 0)]
+        [InlineData("1\n2\n3", 2, 2, "2\n1\n3", 0)]           // selection ends after a break, next line is last
+        [InlineData("1\r\n2\r\n3", 3, 3, "2\r\n1\r\n3", 0)]
         public void Move_up(string text, int caret, int length, string? expected, int newCaret)
         {
             var edit = LineOperations.MoveUp(text, caret, length);
             if (expected == null) { Assert.Null(edit); return; }
-            Assert.Equal(expected, Apply(text, edit));
+            string result = Apply(text, edit);
+            Assert.Equal(expected, result);
             Assert.Equal(newCaret, edit!.Value.SelectionStart);
+            Assert.InRange(edit.Value.SelectionStart + edit.Value.SelectionLength, 0, result.Length);
         }
 
         [Theory]
         [InlineData("a\nb\nc", 0, 0, "b\na\nc", 2)]
         [InlineData("a\r\nb", 0, 0, "b\r\na", 3)]
         [InlineData("a\nb", 2, 0, null, 0)]
+        [InlineData("1\n2", 0, 2, "2\n1", 2)]                 // selection ends after a break, next line is last
+        [InlineData("1\r\n2", 0, 3, "2\r\n1", 3)]
+        [InlineData("1\n2\n3", 2, 2, "1\n3\n2", 4)]
         public void Move_down(string text, int caret, int length, string? expected, int newCaret)
         {
             var edit = LineOperations.MoveDown(text, caret, length);
             if (expected == null) { Assert.Null(edit); return; }
-            Assert.Equal(expected, Apply(text, edit));
+            string result = Apply(text, edit);
+            Assert.Equal(expected, result);
             Assert.Equal(newCaret, edit!.Value.SelectionStart);
+            Assert.InRange(edit.Value.SelectionStart + edit.Value.SelectionLength, 0, result.Length);
+        }
+
+        [Fact]
+        public void Moving_down_onto_the_last_line_keeps_the_selection_inside_the_text()
+        {
+            var edit = LineOperations.MoveDown("1\n2", 0, 2)!.Value;
+            Assert.Equal("2\n1", Apply("1\n2", edit));
+            Assert.Equal((2, 1), (edit.SelectionStart, edit.SelectionLength));   // the moved "1"
+
+            var crlf = LineOperations.MoveDown("1\r\n2", 0, 3)!.Value;
+            Assert.Equal("2\r\n1", Apply("1\r\n2", crlf));
+            Assert.Equal((3, 1), (crlf.SelectionStart, crlf.SelectionLength));
         }
 
         [Fact]

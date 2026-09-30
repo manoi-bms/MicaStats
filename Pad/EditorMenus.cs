@@ -136,11 +136,16 @@ namespace Kil0bitSystemMonitor.Pad
                 ApplyEdit(editor, edit);
         }
 
-        /// <summary>Applies an edit as one undoable change and selects what it says.</summary>
+        /// <summary>
+        /// Applies an edit as one undoable change and selects what it says, clamped to the new text:
+        /// a selection past the end would throw out of a key or menu handler and take MicaStats down.
+        /// </summary>
         public static void ApplyEdit(TextEditor editor, TextEdit edit)
         {
             editor.Document.Replace(edit.Offset, edit.Length, edit.Text);
-            editor.Select(edit.SelectionStart, edit.SelectionLength);
+            int textLength = editor.Document.TextLength;
+            int start = Math.Clamp(edit.SelectionStart, 0, textLength);
+            editor.Select(start, Math.Clamp(edit.SelectionLength, 0, textLength - start));
         }
 
         /// <summary>True when Paste has something to paste. A busy clipboard counts as yes: Paste itself then tries.</summary>

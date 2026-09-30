@@ -53,7 +53,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
             string separator = text.Substring(blockEnd, nextStart - blockEnd);
             string next = text.Substring(nextStart, nextEnd - nextStart);
             int shift = next.Length + separator.Length;
-            return new TextEdit(blockStart, nextEnd - blockStart, next + separator + block, start + shift, length);
+            // A selection taking the block's line break runs past the end once the block is the last
+            // line (no break after it any more): keep it inside the text, whose length a move keeps.
+            int newStart = start + shift;
+            return new TextEdit(blockStart, nextEnd - blockStart, next + separator + block, newStart, Math.Min(length, text.Length - newStart));
         }
 
         /// <summary>

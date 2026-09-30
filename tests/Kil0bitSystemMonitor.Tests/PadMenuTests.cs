@@ -78,6 +78,34 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Moving_down_a_selection_that_ends_at_a_break_onto_the_last_line_does_not_crash() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Text = "1\n2";
+            window.Editor.Select(0, 2);                 // "1\n", as Shift+Down selects it
+
+            Assert.True(window.HandleShortcut(Key.Down, ModifierKeys.Control | ModifierKeys.Shift));
+
+            Assert.Equal("2\n1", window.Editor.Document.Text);
+            Assert.Equal("1", window.Editor.SelectedText);
+        });
+
+        [Fact]
+        public void An_edit_whose_selection_runs_past_the_end_is_clamped() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Text = "abc";
+
+            EditorMenus.ApplyEdit(window.Editor, new TextEdit(0, 3, "xy", 1, 50));
+            Assert.Equal("xy", window.Editor.Document.Text);
+            Assert.Equal((1, 1), (window.Editor.SelectionStart, window.Editor.SelectionLength));
+
+            EditorMenus.ApplyEdit(window.Editor, new TextEdit(0, 0, "", 99, 1));
+            Assert.Equal((2, 0), (window.Editor.SelectionStart, window.Editor.SelectionLength));
+
+            EditorMenus.ApplyEdit(window.Editor, new TextEdit(0, 0, "", -4, 1));
+            Assert.Equal((0, 1), (window.Editor.SelectionStart, window.Editor.SelectionLength));
+        });
+
+        [Fact]
         public void Editing_shortcuts_ignore_a_focused_text_box() => WithWindow((window, env) =>
         {
             window.Editor.Document.Text = "one";

@@ -195,6 +195,7 @@ namespace Kil0bitSystemMonitor.Pad
                 catch
                 {
                     // Cached only once built: a half-loaded window must not be the one the next show reuses.
+                    window._hidden = true;   // never shown: its entry must not reopen at login
                     window.CloseForExit();
                     throw;
                 }
@@ -436,13 +437,16 @@ namespace Kil0bitSystemMonitor.Pad
             _statusTimer?.Stop();
             _config.PropertyChanged -= OnConfigChanged;
             _workspace.Open.CollectionChanged -= OnOpenChanged;
+            foreach (var document in _releaseHooks.Keys.ToList()) DropReleaseHooks(document);
             if (ReferenceEquals(s_current, this)) s_current = null;
         }
 
         // ---- documents and tabs -------------------------------------------------------------
 
-        private TextDocument EnsureDocument(OpenNote note)
+        /// <summary>This window's document of a note, built on first use; null for a note of another window.</summary>
+        private TextDocument? EnsureDocument(OpenNote note)
         {
+            if (note.WindowId != _windowId) return null;
             if (_docs.TryGetValue(note.Id, out var existing)) return existing;
 
             var document = new TextDocument(note.TextProvider());
@@ -458,6 +462,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         private void Attach(OpenNote note, TextDocument document)
         {
+            DropReleaseHooks(document);
             EventHandler<DocumentChangeEventArgs> changed = (s, e) =>
             {
                 _workspace.NotifyChanged(note, markUnsaved: !_suppressDirty);
@@ -496,13 +501,56 @@ namespace Kil0bitSystemMonitor.Pad
             _bookmarks.Forget(document);
             if (_docHandlers.Remove(document, out var changed)) document.Changed -= changed;
             _docs.Remove(note.Id);
+            HookRelease(document);
             return document;
         }
 
-        /// <summary>Takes over a document another window released, undo history and all.</summary>
-        internal void AdoptDocument(OpenNote note, TextDocument document)
+        /// <summary>Takes over a document another window released, undo history and all. False when this window already had one for the note (the handed-over one is dropped).</summary>
+        internal bool AdoptDocument(OpenNote note, TextDocument document)
         {
-            if (!_docs.ContainsKey(note.Id)) Attach(note, document);
+            if (note.WindowId != _windowId || _docs.ContainsKey(note.Id)) return false;
+            Attach(note, document);
+            return true;
+        }
+
+        private readonly Dictionary<TextDocument, (EventHandler Started, EventHandler Finished)> _releaseHooks = new();
+
+        /// <summary>
+        /// Every edit leaves an undo action holding a weak reference to the text area that made it;
+        /// undo or redo in the window that adopted the document sets that text area's caret and
+        /// selection, whatever it shows now. While this window is not showing a released document,
+        /// its caret and selection are put back after each update of it.
+        /// </summary>
+        private void HookRelease(TextDocument document)
+        {
+            DropReleaseHooks(document);
+            ICSharpCode.AvalonEdit.TextViewPosition? caret = null;
+            ICSharpCode.AvalonEdit.Editing.Selection? selection = null;
+            EventHandler started = (s, e) =>
+            {
+                if (ReferenceEquals(Editor.Document, document)) return;
+                caret = Editor.TextArea.Caret.Position;
+                selection = Editor.TextArea.Selection;
+            };
+            EventHandler finished = (s, e) =>
+            {
+                if (caret is not { } savedCaret || selection is not { } savedSelection) return;
+                caret = null;
+                selection = null;
+                if (ReferenceEquals(Editor.Document, document)) return;
+                Editor.TextArea.Selection = savedSelection;
+                Editor.TextArea.Caret.Position = savedCaret;
+            };
+            document.UpdateStarted += started;
+            document.UpdateFinished += finished;
+            _releaseHooks[document] = (started, finished);
+        }
+
+        private void DropReleaseHooks(TextDocument document)
+        {
+            if (!_releaseHooks.Remove(document, out var hooks)) return;
+            document.UpdateStarted -= hooks.Started;
+            document.UpdateFinished -= hooks.Finished;
         }
 
         /// <summary>
@@ -514,6 +562,9 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (_shown != null) SaveViewState(_shown);
             _shown = null;
+            HideInfo();
+            EndPreview();
+            HistoryPanel.Visibility = Visibility.Collapsed;
             _language.Apply(PadLanguages.Plain);
             Editor.Document = new TextDocument();
         }
@@ -529,6 +580,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void ReplaceText(OpenNote note, string text, bool markUnsaved)
         {
             var document = EnsureDocument(note);
+            if (document == null) return;
             var marked = _bookmarks.Lines(document);
             bool previous = _suppressDirty;
             _suppressDirty = !markUnsaved;
@@ -575,7 +627,7 @@ namespace Kil0bitSystemMonitor.Pad
 
             _shown = note;
             _workspace.SetActive(note);
-            Editor.Document = EnsureDocument(note);
+            Editor.Document = EnsureDocument(note)!;
             ApplyLanguage();
             RefreshOccurrences();
             RestoreViewState(note);
@@ -673,8 +725,9 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void SaveViewState(OpenNote note)
         {
+            if (EnsureDocument(note) is not { } document) return;   // another window's tab: its window records it
             _workspace.SetTabViewState(note, Editor.CaretOffset, Editor.VerticalOffset);
-            _workspace.SetBookmarks(note, _bookmarks.Lines(EnsureDocument(note)));
+            _workspace.SetBookmarks(note, _bookmarks.Lines(document));
         }
 
         private void RestoreViewState(OpenNote note)
@@ -1207,7 +1260,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void ConvertLineEndings(OpenNote note, LineEnding ending)
         {
             string converted = _workspace.ConvertLineEndings(note, ending);
-            if (converted != EnsureDocument(note).Text) ReplaceText(note, converted, markUnsaved: true);
+            if (EnsureDocument(note) is { } document && converted != document.Text) ReplaceText(note, converted, markUnsaved: true);
             UpdateFileText();
         }
 

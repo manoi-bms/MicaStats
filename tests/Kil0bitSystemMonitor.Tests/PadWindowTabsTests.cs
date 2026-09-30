@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Pad;
+using ICSharpCode.AvalonEdit.Highlighting;
 using Xunit;
 
 namespace Kil0bitSystemMonitor.Tests
@@ -136,7 +137,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             var released = first.ReleaseDocument(note);
             env.Workspace.MoveToWindow(note, second.WindowId);
-            second.AdoptDocument(note, released!);
+            Assert.True(second.AdoptDocument(note, released!));
             second.SelectTab(env.Workspace.TabsOf(second.WindowId).IndexOf(note));
 
             Assert.Same(document, released);
@@ -146,6 +147,63 @@ namespace Kil0bitSystemMonitor.Tests
             second.Editor.Document.Insert(0, "typed ");
             Assert.StartsWith("typed a", note.TextProvider());
             Assert.True(env.Workspace.HasPendingChanges(note));        // the second window's edits reach the workspace
+        });
+
+        [Fact]
+        public void Undo_in_the_adopting_window_leaves_the_releasing_windows_caret_and_text_alone() => WithTwoWindows((first, second, env) =>
+        {
+            var note = env.Workspace.ActiveIn(first.WindowId)!;
+            first.Editor.Document.Insert(0, "hello world, a long line of text");
+            first.Editor.Document.UndoStack.ClearAll();
+            first.Editor.Select(6, 5);
+            first.Editor.SelectedText = "";                              // an edit made with a selection: the undo action remembers this window's text area
+            first.NewTab();
+            var other = env.Workspace.ActiveIn(first.WindowId)!;
+            first.Editor.Document.Insert(0, "hi");
+            first.Editor.CaretOffset = 2;
+
+            var released = first.ReleaseDocument(note);
+            env.Workspace.MoveToWindow(note, second.WindowId);
+            Assert.True(second.AdoptDocument(note, released!));
+            second.SelectTab(env.Workspace.TabsOf(second.WindowId).IndexOf(note));
+            second.Editor.Undo();
+
+            Assert.Equal("hello world, a long line of text", note.TextProvider());
+            Assert.Equal("hi", other.TextProvider());
+            Assert.Equal(2, first.Editor.CaretOffset);
+            Assert.Equal(0, first.Editor.SelectionLength);
+            first.Editor.TextArea.PerformTextInput("Z");                 // no exception, and only this window's note changes
+            Assert.Equal("hiZ", other.TextProvider());
+            Assert.Equal("hello world, a long line of text", note.TextProvider());
+        });
+
+        [Fact]
+        public void Releasing_the_shown_note_leaves_the_editor_empty_and_unhooked() => WithTwoWindows((first, second, env) =>
+        {
+            var note = env.Workspace.ActiveIn(first.WindowId)!;
+            first.Editor.Document.Insert(0, "kept");
+            first.ShowInfo("about the note", note);
+
+            var released = first.ReleaseDocument(note);
+
+            Assert.NotNull(released);
+            Assert.NotSame(released, first.Editor.Document);
+            Assert.Equal("", first.Editor.Document.Text);
+            Assert.Equal(System.Windows.Visibility.Collapsed, first.InfoBar.Visibility);
+            Assert.Empty(first.Editor.TextArea.TextView.LineTransformers.OfType<ThemedHighlightingColorizer>());
+            first.Editor.Document.Insert(0, "stray");
+            Assert.Equal("kept", note.TextProvider());
+        });
+
+        [Fact]
+        public void A_window_adopts_only_a_document_for_its_own_note_and_only_once() => WithTwoWindows((first, second, env) =>
+        {
+            var mine = env.Workspace.ActiveIn(second.WindowId)!;
+            var theirs = env.Workspace.ActiveIn(first.WindowId)!;
+
+            Assert.False(second.AdoptDocument(mine, new ICSharpCode.AvalonEdit.Document.TextDocument("dropped")));   // already has one
+            Assert.False(second.AdoptDocument(theirs, new ICSharpCode.AvalonEdit.Document.TextDocument("not mine")));
+            Assert.Equal("", mine.TextProvider());
         });
     }
 }

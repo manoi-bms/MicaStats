@@ -224,9 +224,10 @@ namespace Kil0bitSystemMonitor.Tests
         public async Task A_slow_model_that_keeps_answering_within_the_deadline_finishes()
         {
             TimeSpan pause = TimeSpan.FromMilliseconds(250);
-            _model.Slow(pause, tool: ToolNames.GetLiveStatus).Slow(pause, text: "Worth the wait.");
+            _model.Slow(pause, tool: ToolNames.GetLiveStatus).Slow(pause, tool: ToolNames.GetLiveStatus).Slow(pause, text: "Worth the wait.");
 
-            List<AssistantUpdate> updates = await AskAsync(Assistant(silence: TimeSpan.FromMilliseconds(600)), "Slow but steady");
+            // 3 x 250 ms is longer than the 400 ms deadline, so only re-arming on each update lets it finish.
+            List<AssistantUpdate> updates = await AskAsync(Assistant(silence: TimeSpan.FromMilliseconds(400)), "Slow but steady");
 
             Assert.DoesNotContain(updates, u => u.Kind == AssistantUpdateKind.Error);
             Assert.Equal("Worth the wait.", TextOf(updates));

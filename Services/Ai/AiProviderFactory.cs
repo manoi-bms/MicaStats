@@ -52,6 +52,13 @@ namespace Kil0bitSystemMonitor.Services.Ai
             string? key = secrets.Get(SecretNames.ClaudeKey);
             if (string.IsNullOrWhiteSpace(key)) return new AiClientResult(null, NoKey, IsClaude: true);
 
+            // MicaStats must talk only to api.anthropic.com with the user's own key. These variables
+            // belong to Claude Code gateways; the SDK would read them at construction and could
+            // redirect the traffic, add an Authorization header, or override anthropic-version.
+            Environment.SetEnvironmentVariable("ANTHROPIC_BASE_URL", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", null);
+
             var anthropic = new AnthropicClient
             {
                 ApiKey = key.Trim(),

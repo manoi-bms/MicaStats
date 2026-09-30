@@ -104,10 +104,35 @@ namespace Kil0bitSystemMonitor.Tests
                 ScriptedHttpHandler.Sent sent = Assert.Single(handler.Requests);
                 Assert.Equal("https://api.anthropic.com/v1/messages", sent.Url);
                 Assert.Equal("x-api-key=sk-ant-test", sent.Auth);
+                Assert.Equal("", sent.Authorization);
             }
             finally
             {
                 for (int i = 0; i < names.Length; i++) Environment.SetEnvironmentVariable(names[i], before[i]);
+            }
+        }
+
+        [Fact]
+        public async Task Claude_ignores_custom_headers_from_the_environment()
+        {
+            string? before = Environment.GetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS");
+            try
+            {
+                Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", "x-api-key: other-key\nanthropic-version: 1999-01-01");
+                using var env = new AiTestEnv();
+                var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.ClaudeText("Fine.")));
+
+                AiClientResult result = AiProviderFactory.Create(new AppConfig(), Secrets(env, claudeKey: "sk-ant-test"), handler);
+                await result.Client!.GetResponseAsync("hi");
+
+                ScriptedHttpHandler.Sent sent = Assert.Single(handler.Requests);
+                Assert.Equal("x-api-key=sk-ant-test", sent.Auth);
+                Assert.NotEqual("1999-01-01", sent.Headers!["anthropic-version"]);
+                Assert.DoesNotContain("other-key", string.Concat(sent.Headers.Values), StringComparison.Ordinal);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", before);
             }
         }
 

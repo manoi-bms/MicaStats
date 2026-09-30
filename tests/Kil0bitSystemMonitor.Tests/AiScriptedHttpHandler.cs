@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -17,7 +18,8 @@ namespace Kil0bitSystemMonitor.Tests
         private readonly Func<Sent, (HttpStatusCode Status, string ContentType, string Body)> _respond;
 
         /// <summary>One request: URL, the key header (x-api-key or Authorization) and the body.</summary>
-        public sealed record Sent(string Url, string Auth, string Body)
+        public sealed record Sent(string Url, string Auth, string Body, string Authorization = "",
+                                  IReadOnlyDictionary<string, string>? Headers = null)
         {
             public bool Streaming => Body.Contains("\"stream\":true", StringComparison.Ordinal);
         }
@@ -32,7 +34,8 @@ namespace Kil0bitSystemMonitor.Tests
             string auth = request.Headers.TryGetValues("x-api-key", out IEnumerable<string>? key)
                 ? "x-api-key=" + string.Join(",", key)
                 : request.Headers.Authorization?.ToString() ?? "";
-            var sent = new Sent(request.RequestUri!.ToString(), auth, body);
+            var headers = request.Headers.ToDictionary(h => h.Key, h => string.Join(",", h.Value), StringComparer.OrdinalIgnoreCase);
+            var sent = new Sent(request.RequestUri!.ToString(), auth, body, request.Headers.Authorization?.ToString() ?? "", headers);
             lock (Requests) Requests.Add(sent);
             (HttpStatusCode status, string contentType, string text) = _respond(sent);
             return new HttpResponseMessage(status) { Content = new StringContent(text, Encoding.UTF8, contentType) };

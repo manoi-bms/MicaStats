@@ -411,6 +411,12 @@ git commit -m "refactor(pad): menus out of the window, and shared whole-line hel
 
 ---
 
+### Task 1b: MicaPad's own menu style (owner request, added during execution)
+
+The owner asked for "more professional" right-click menus and smoother text. Every MicaPad menu goes through `EditorMenus.Style(menu, palette)`: `Pad/PadMenuStyles.xaml` (a rounded card in the pad palette with a soft shadow, Fluent icons in a left column, a rounded highlight, muted shortcuts, grayscale-smoothed text), and `Item(...)` takes an optional `icon:` glyph. The full task text (XAML, icon table, tests) was prototyped on screen and dispatched as its own brief; later tasks pass `icon:` for new items (Task 3's Lines menu below).
+
+---
+
 ### Task 2: Auto-close brackets and quotes
 
 **Files:**
@@ -1205,16 +1211,16 @@ Note: `A_whole_document_operation_keeps_the_caret_on_its_line`: "b  \na  \nc  " 
         /// <summary>Lines ▸ (spec 3.2): the line operations, each one undoable edit.</summary>
         public static MenuItem LinesMenu(TextEditor editor)
         {
-            var lines = new MenuItem { Header = "Lines" };
-            void Add(string header, string? gesture, Func<string, int, int, TextEdit?> operation) =>
-                lines.Items.Add(Item(header, gesture, () => Run(editor, operation)));
+            var lines = new MenuItem { Header = "Lines", Icon = "" };
+            void Add(string header, string? gesture, Func<string, int, int, TextEdit?> operation, string? icon = null) =>
+                lines.Items.Add(Item(header, gesture, () => Run(editor, operation), icon: icon));
 
-            Add("Duplicate", "Ctrl+D", (t, s, l) => LineOperations.Duplicate(t, s, l));
-            Add("Move up", "Ctrl+Shift+Up", LineOperations.MoveUp);
-            Add("Move down", "Ctrl+Shift+Down", LineOperations.MoveDown);
+            Add("Duplicate", "Ctrl+D", (t, s, l) => LineOperations.Duplicate(t, s, l), "");
+            Add("Move up", "Ctrl+Shift+Up", LineOperations.MoveUp, "");
+            Add("Move down", "Ctrl+Shift+Down", LineOperations.MoveDown, "");
             Add("Join lines", "Ctrl+J", LineOperations.Join);
             lines.Items.Add(new Separator());
-            Add("Sort ascending", null, (t, s, l) => LineOperations.Sort(t, s, l, false, System.Globalization.CultureInfo.CurrentCulture));
+            Add("Sort ascending", null, (t, s, l) => LineOperations.Sort(t, s, l, false, System.Globalization.CultureInfo.CurrentCulture), "");
             Add("Sort descending", null, (t, s, l) => LineOperations.Sort(t, s, l, true, System.Globalization.CultureInfo.CurrentCulture));
             Add("Remove duplicate lines", null, LineOperations.RemoveDuplicates);
             Add("Trim trailing whitespace", null, LineOperations.TrimTrailing);

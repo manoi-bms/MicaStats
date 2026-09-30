@@ -10,6 +10,8 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <IsPackable>false</IsPackable>
         <IsPublishable>false</IsPublishable>
+        <!-- The same experimental-API ids as the app (see Kil0bitSystemMonitor.csproj), for tests that use those APIs. -->
+        <NoWarn>$(NoWarn);MEAI001;MCPEXP001;OPENAI001;SCME0001</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>

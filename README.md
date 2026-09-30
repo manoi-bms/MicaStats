@@ -159,6 +159,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * Find and replace with regular expressions, go to line, zoom, word wrap
 * Open it from the overlay's right-click menu, **Ctrl+Alt+N** anywhere, the Start menu, or Explorer's **Open with**
 * **Light or dark**: MicaPad has its own theme switch (the sun and moon button), independent of the rest of MicaStats
+* **Right-click menus** in the text (cut, copy, paste, find) and on tabs (rename, close others, copy the file path, show in folder)
 * Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
 
 ### Ask MicaStats: answers about your PC
@@ -766,6 +767,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * ค้นหาและแทนที่ด้วย regular expression, ไปยังบรรทัด, ซูม, ตัดบรรทัดอัตโนมัติ
 * เปิดได้จากเมนูคลิกขวาของโอเวอร์เลย์, **Ctrl+Alt+N** จากที่ใดก็ได้, เมนู Start หรือ **Open with** ใน Explorer
 * **ธีมสว่างหรือมืด**: MicaPad มีปุ่มสลับธีมของตัวเอง (ปุ่มดวงอาทิตย์และพระจันทร์) โดยส่วนอื่นของ MicaStats ไม่เปลี่ยน
+* **เมนูคลิกขวา** ในเนื้อความ (ตัด คัดลอก วาง ค้นหา) และบนแท็บ (เปลี่ยนชื่อ ปิดแท็บอื่น คัดลอกพาธไฟล์ เปิดโฟลเดอร์ที่เก็บไฟล์)
 * โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา

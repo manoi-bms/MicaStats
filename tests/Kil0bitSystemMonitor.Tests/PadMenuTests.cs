@@ -163,5 +163,99 @@ namespace Kil0bitSystemMonitor.Tests
                 window.CloseForExit();
             }
         });
+
+        [Fact]
+        public void A_note_tab_menu_has_rename_close_and_close_others() => WithWindow((window, env) =>
+        {
+            var note = env.Workspace.Open[0];
+
+            var menu = window.BuildTabMenu(note, null);
+
+            Assert.Equal(new[] { "Rename…", "Close", "Close other tabs" }, Headers(menu));
+            Assert.False(ItemOf(menu, "Close other tabs").IsEnabled);   // it is the only tab
+        });
+
+        [Fact]
+        public void A_file_tab_menu_adds_copy_path_and_show_in_folder() => WithWindow((window, env) =>
+        {
+            string path = env.FileOf("notes.txt");
+            File.WriteAllText(path, "text");
+            window.OpenPath(path);
+            var note = env.Workspace.Active!;
+
+            var menu = window.BuildTabMenu(note, null);
+
+            Assert.Equal(new[] { "Rename…", "Close", "Close other tabs", "-", "Copy file path", "Show in folder" }, Headers(menu));
+            Assert.True(ItemOf(menu, "Close other tabs").IsEnabled);
+        });
+
+        [Fact]
+        public void Close_from_the_tab_menu_closes_that_tab_only() => WithWindow((window, env) =>
+        {
+            var first = env.Workspace.Open[0];
+            window.Editor.Document.Insert(0, "first");
+            window.NewTab();
+            window.Editor.Document.Insert(0, "second");
+            var second = env.Workspace.Active!;
+
+            Click(ItemOf(window.BuildTabMenu(first, null), "Close"));
+
+            Assert.Same(second, Assert.Single(env.Workspace.Open));
+            Assert.Equal("second", window.Editor.Document.Text);
+        });
+
+        [Fact]
+        public void Close_other_tabs_keeps_every_note_recoverable() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Insert(0, "scratch one");
+            var scratch = env.Workspace.Active!;
+
+            string path = env.FileOf("edited.txt");
+            File.WriteAllText(path, "on disk");
+            window.OpenPath(path);
+            window.Editor.Document.Insert(window.Editor.Document.TextLength, " plus my edit");
+            var file = env.Workspace.Active!;
+
+            window.NewTab();
+            window.Editor.Document.Insert(0, "keep me");
+            var keep = env.Workspace.Active!;
+
+            Click(ItemOf(window.BuildTabMenu(keep, null), "Close other tabs"));
+            env.Flush();
+
+            Assert.Same(keep, Assert.Single(env.Workspace.Open));
+            Assert.Equal("keep me", window.Editor.Document.Text);
+            var closedIds = env.Workspace.ClosedNotes().Select(m => m.Id).ToList();
+            Assert.Contains(scratch.Id, closedIds);
+            Assert.Contains(file.Id, closedIds);
+            Assert.Equal("on disk", File.ReadAllText(path));   // closing never writes the real file
+
+            var back = env.Workspace.Reopen(file.Id);
+            Assert.NotNull(back);
+            Assert.Equal("on disk plus my edit", back!.TextProvider());
+        });
+
+        [Fact]
+        public void Rename_from_the_tab_menu_opens_the_rename_box() => WithWindow((window, env) =>
+        {
+            window.Editor.Document.Insert(0, "Shopping list");
+            var note = env.Workspace.Active!;
+
+            Click(ItemOf(window.BuildTabMenu(note, null), "Rename…"));
+
+            Assert.True(window.RenamePopup.IsOpen);
+            Assert.Equal(note.Title, window.RenameBox.Text);
+        });
+
+        [Fact]
+        public void Show_in_folder_on_a_missing_file_says_so() => WithWindow((window, env) =>
+        {
+            string path = env.FileOf("gone.txt");
+
+            window.ShowInFolder(path);
+
+            Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
+            Assert.Equal("That file is no longer at " + path + ".", window.InfoText.Text);
+        });
     }
 }

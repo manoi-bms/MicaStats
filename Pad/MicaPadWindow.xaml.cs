@@ -397,6 +397,82 @@ namespace Kil0bitSystemMonitor.Pad
             e.Handled = true;
         }
 
+        /// <summary>Right-click on a tab: its menu, without switching to it first.</summary>
+        private void OnTabMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is not FrameworkElement anchor || anchor.Tag is not OpenNote note) return;
+            var menu = BuildTabMenu(note, anchor);
+            menu.IsOpen = true;
+            e.Handled = true;
+        }
+
+        /// <summary>
+        /// A tab's right-click menu. Closing from it is the ordinary close: nothing is deleted and
+        /// nothing is asked. A tab backed by a real file adds its path and folder.
+        /// </summary>
+        internal ContextMenu BuildTabMenu(OpenNote note, FrameworkElement? anchor)
+        {
+            FrameworkElement target = anchor ?? TabStrip;
+            var menu = NewMenu(target, PlacementMode.MousePoint);
+            menu.Items.Add(Item("Rename…", null, () => BeginRename(note, target)));
+            menu.Items.Add(Item("Close", null, () => CloseTab(note)));
+            menu.Items.Add(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.Open.Count > 1));
+
+            if (note.Meta.SourcePath is string path)
+            {
+                menu.Items.Add(new Separator());
+                menu.Items.Add(Item("Copy file path", null, () => CopyFilePath(path)));
+                menu.Items.Add(Item("Show in folder", null, () => ShowInFolder(path)));
+            }
+            return menu;
+        }
+
+        /// <summary>
+        /// Closes every tab except <paramref name="keep"/>, each as an ordinary close: flushed,
+        /// snapshotted and moved to Closed notes, with a file's unsaved edits kept.
+        /// </summary>
+        internal void CloseOtherTabs(OpenNote keep)
+        {
+            ShowNote(keep);
+            foreach (var other in new List<OpenNote>(_workspace.Open))
+                if (!ReferenceEquals(other, keep)) CloseTab(other);
+        }
+
+        private void CopyFilePath(string path)
+        {
+            try
+            {
+                Clipboard.SetText(path);
+            }
+            catch (System.Runtime.InteropServices.ExternalException ex)
+            {
+                DiagnosticsLog.Warn("pad", "Copying a file path failed: " + ex.Message);
+                ShowInfo("The clipboard is busy. Try again in a moment.", null);
+            }
+        }
+
+        /// <summary>
+        /// Opens Explorer with the file selected. A file that is no longer there is reported rather
+        /// than opening some other folder.
+        /// </summary>
+        internal void ShowInFolder(string path)
+        {
+            if (!File.Exists(path))
+            {
+                ShowInfo("That file is no longer at " + path + ".", null);
+                return;
+            }
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                DiagnosticsLog.Warn("pad", "Could not show a file in its folder: " + ex.Message);
+                ShowInfo("Explorer could not be opened.", null);
+            }
+        }
+
         private void OnNewTabClick(object sender, RoutedEventArgs e) => NewTab();
 
         private void OnTabScrollChanged(object sender, ScrollChangedEventArgs e)

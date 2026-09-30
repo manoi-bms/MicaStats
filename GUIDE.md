@@ -196,6 +196,17 @@ The sun button in MicaPad's tab strip switches MicaPad to a light theme; the moo
 it back. Only MicaPad changes — Settings and the rest of MicaStats keep their look. The choice is
 remembered, and is also in **Settings → MicaPad → Theme**.
 
+### Right-click menus
+
+Right-click in the text for **Undo**, **Redo**, **Cut**, **Copy**, **Paste**, **Delete**,
+**Select all**, **Find**, **Replace** and **Go to line**. The caret moves to where you clicked,
+unless you click inside the selection — then the selection stays, so Cut and Copy act on it.
+Right-click a history version for **Copy** and **Select all**.
+
+Right-click a tab for **Rename**, **Close** and **Close other tabs** (closed tabs go to Closed notes
+as usual — nothing is deleted). A tab that is a real file also has **Copy file path** and
+**Show in folder**.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

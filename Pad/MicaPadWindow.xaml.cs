@@ -17,6 +17,7 @@ using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
+using static Kil0bitSystemMonitor.Pad.EditorMenus;
 
 // UseWindowsForms puts System.Windows.Forms and System.Drawing in scope; these names exist in both.
 using Brushes = System.Windows.Media.Brushes;
@@ -1124,21 +1125,6 @@ namespace Kil0bitSystemMonitor.Pad
             return menu;
         }
 
-        private static MenuItem Item(string header, string? gesture, Action action, bool enabled = true)
-        {
-            var item = new MenuItem { Header = header, InputGestureText = gesture ?? "", IsEnabled = enabled };
-            item.Click += (s, e) => action();
-            return item;
-        }
-
-        private static MenuItem Check(string header, string? gesture, bool isChecked, Action action)
-        {
-            var item = Item(header, gesture, action);
-            item.IsCheckable = true;
-            item.IsChecked = isChecked;
-            return item;
-        }
-
         // ---- right-click menus --------------------------------------------------------------
 
         /// <summary>The editor's right-click menu. One instance; its items are rebuilt each time it opens.</summary>
@@ -1162,83 +1148,19 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Clear();
             ModernWpf.ThemeManager.SetRequestedTheme(menu, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
 
-            bool hasSelection = editor.SelectionLength > 0;
-            bool hasText = editor.Document != null && editor.Document.TextLength > 0;
+            AddEditGroup(menu, editor, readOnly);
+            if (readOnly) return;
 
-            if (!readOnly)
-            {
-                menu.Items.Add(Item("Undo", "Ctrl+Z", () => editor.Undo(), editor.CanUndo));
-                menu.Items.Add(Item("Redo", "Ctrl+Y", () => editor.Redo(), editor.CanRedo));
-                menu.Items.Add(new Separator());
-                menu.Items.Add(Item("Cut", "Ctrl+X", () => editor.Cut(), hasSelection));
-            }
-            menu.Items.Add(Item("Copy", "Ctrl+C", () => editor.Copy(), hasSelection));
-            if (!readOnly)
-            {
-                menu.Items.Add(Item("Paste", "Ctrl+V", () => editor.Paste(), ClipboardHasText()));
-                menu.Items.Add(Item("Delete", "Del", () => System.Windows.Input.ApplicationCommands.Delete.Execute(null, editor.TextArea), hasSelection));
-            }
-            menu.Items.Add(Item("Select all", "Ctrl+A", () => editor.SelectAll(), hasText));
-
-            if (!readOnly && ReferenceEquals(editor, Editor) && ReferenceEquals(_resolved.Effective, PadLanguages.Markdown))
+            if (ReferenceEquals(editor, Editor) && ReferenceEquals(_resolved.Effective, PadLanguages.Markdown))
             {
                 menu.Items.Add(new Separator());
-                menu.Items.Add(BuildFormatMenu(editor));
+                menu.Items.Add(FormatMenu(editor));
             }
 
-            if (!readOnly)
-            {
-                menu.Items.Add(new Separator());
-                menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false)));
-                menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true)));
-                menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine));
-            }
-        }
-
-        /// <summary>Format ▸ for a Markdown tab (spec 2.4): each item is one undoable edit; no new shortcuts.</summary>
-        private MenuItem BuildFormatMenu(ICSharpCode.AvalonEdit.TextEditor editor)
-        {
-            var format = new MenuItem { Header = "Format" };
-            void Add(string header, Func<string, int, int, TextEdit> edit) =>
-                format.Items.Add(Item(header, null, () =>
-                    ApplyEdit(editor, edit(editor.Document.Text, editor.SelectionStart, editor.SelectionLength))));
-
-            Add("Bold", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "**"));
-            Add("Italic", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "*"));
-            Add("Strikethrough", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "~~"));
-            Add("Code", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "`"));
-            Add("Link", MarkdownFormatter.Link);
-            format.Items.Add(new Separator());
-            Add("Heading 1", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading1));
-            Add("Heading 2", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading2));
-            Add("Heading 3", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading3));
-            format.Items.Add(new Separator());
-            Add("Bullet list", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Bullet));
-            Add("Numbered list", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Numbered));
-            Add("Task", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Task));
-            Add("Quote", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Quote));
-            Add("Code block", MarkdownFormatter.CodeBlock);
-            return format;
-        }
-
-        /// <summary>Applies an edit as one undoable change and selects what it says.</summary>
-        internal static void ApplyEdit(ICSharpCode.AvalonEdit.TextEditor editor, TextEdit edit)
-        {
-            editor.Document.Replace(edit.Offset, edit.Length, edit.Text);
-            editor.Select(edit.SelectionStart, edit.SelectionLength);
-        }
-
-        /// <summary>True when Paste has something to paste. A busy clipboard counts as yes: Paste itself then tries.</summary>
-        private static bool ClipboardHasText()
-        {
-            try
-            {
-                return Clipboard.ContainsText();
-            }
-            catch (System.Runtime.InteropServices.ExternalException)
-            {
-                return true;
-            }
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false)));
+            menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true)));
+            menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine));
         }
 
         private void OnEditorRightButtonDown(object sender, MouseButtonEventArgs e)

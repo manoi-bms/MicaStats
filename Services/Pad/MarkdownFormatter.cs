@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Kil0bitSystemMonitor.Services.Pad
@@ -92,7 +91,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private static TextEdit WrapLines(string text, int start, int length, string marker)
         {
             int m = marker.Length;
-            var (lines, breaks) = SplitLines(text.Substring(start, length));
+            var (lines, breaks) = TextLines.Split(text.Substring(start, length));
             var parts = lines.Select(SplitSpaces).ToList();
             bool unwrap = parts.All(p => p.Core.Length == 0 || IsWrapped(p.Core, marker));
 
@@ -105,7 +104,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 lines[i] = lead + core + trail;
             }
 
-            string block = Join(lines, breaks);
+            string block = TextLines.Join(lines, breaks);
             return new TextEdit(start, length, block, start, block.Length);
         }
 
@@ -145,8 +144,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// </summary>
         public static TextEdit Prefix(string text, int start, int length, LinePrefix kind)
         {
-            var (blockStart, blockEnd) = LineBlock(text, start, length);
-            var (lines, breaks) = SplitLines(text.Substring(blockStart, blockEnd - blockStart));
+            var (blockStart, blockEnd) = TextLines.Block(text, start, length);
+            var (lines, breaks) = TextLines.Split(text.Substring(blockStart, blockEnd - blockStart));
 
             bool[] targets = lines.Select(l => !string.IsNullOrWhiteSpace(l)).ToArray();
             if (!targets.Any(t => t)) targets = lines.Select(_ => true).ToArray();
@@ -163,16 +162,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 lines[i] = indent + (remove ? Remove(content, kind) : Add(content, kind, ++number));
             }
 
-            string block = Join(lines, breaks);
+            string block = TextLines.Join(lines, breaks);
             return new TextEdit(blockStart, blockEnd - blockStart, block, blockStart, block.Length);
         }
 
         /// <summary>Puts <c>```</c> lines around the selected lines, using the note's line ending.</summary>
         public static TextEdit CodeBlock(string text, int start, int length)
         {
-            var (blockStart, blockEnd) = LineBlock(text, start, length);
+            var (blockStart, blockEnd) = TextLines.Block(text, start, length);
             string block = text.Substring(blockStart, blockEnd - blockStart);
-            string newline = NewlineOf(text);
+            string newline = TextLines.NewlineOf(text);
             string fenced = "```" + newline + block + newline + "```";
             return new TextEdit(blockStart, blockEnd - blockStart, fenced, blockStart + 3 + newline.Length, block.Length);
         }
@@ -220,61 +219,5 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return (line.Substring(0, i), line.Substring(i));
         }
 
-        /// <summary>
-        /// The whole lines a selection touches. A selection that ends right after a line break does
-        /// not take the next line.
-        /// </summary>
-        private static (int Start, int End) LineBlock(string text, int start, int length)
-        {
-            int end = start + length;
-            if (length > 0 && text[end - 1] == '\n')
-            {
-                end--;
-                if (end > start && text[end - 1] == '\r') end--;
-            }
-            else if (length > 0 && text[end - 1] == '\r')
-            {
-                end--;
-            }
-            int blockStart = start == 0 ? 0 : text.LastIndexOfAny(LineBreaks, start - 1) + 1;
-            int lineEnd = text.IndexOfAny(LineBreaks, Math.Max(end, blockStart));
-            return (blockStart, lineEnd < 0 ? text.Length : lineEnd);
-        }
-
-        /// <summary>Splits a block into lines, remembering each line break exactly (CRLF, LF or CR).</summary>
-        private static (List<string> Lines, List<string> Breaks) SplitLines(string block)
-        {
-            var lines = new List<string>();
-            var breaks = new List<string>();
-            int lineStart = 0;
-            int i = 0;
-            while (i < block.Length)
-            {
-                char c = block[i];
-                if (c != '\r' && c != '\n') { i++; continue; }
-                int width = c == '\r' && i + 1 < block.Length && block[i + 1] == '\n' ? 2 : 1;
-                lines.Add(block.Substring(lineStart, i - lineStart));
-                breaks.Add(block.Substring(i, width));
-                i += width;
-                lineStart = i;
-            }
-            lines.Add(block.Substring(lineStart));
-            return (lines, breaks);
-        }
-
-        private static string Join(List<string> lines, List<string> breaks)
-        {
-            var sb = new StringBuilder(lines[0]);
-            for (int i = 1; i < lines.Count; i++) sb.Append(breaks[i - 1]).Append(lines[i]);
-            return sb.ToString();
-        }
-
-        /// <summary>The note's line ending: its first line break, or CRLF for a note without one yet.</summary>
-        private static string NewlineOf(string text)
-        {
-            int lf = text.IndexOf('\n');
-            if (lf < 0) return text.Contains('\r') ? "\r" : "\r\n";
-            return lf > 0 && text[lf - 1] == '\r' ? "\r\n" : "\n";
-        }
     }
 }

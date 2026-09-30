@@ -40,6 +40,18 @@ namespace Kil0bitSystemMonitor.Tests
             window.OpenPath(path);
         }
 
+        /// <summary>Runs what the window queued for after the current change (Normal priority and above).</summary>
+        internal static void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+
+        /// <summary>Lays out the editor's text as a shown window would, so the language's colorizers run.</summary>
+        internal static void Render(MicaPadWindow window)
+        {
+            var view = window.Editor.TextArea.TextView;
+            view.Measure(new System.Windows.Size(600, 400));
+            view.Arrange(new System.Windows.Rect(0, 0, 600, 400));
+            view.EnsureVisualLines();
+        }
+
         private static int SyntaxColorizers(MicaPadWindow window) =>
             window.Editor.TextArea.TextView.LineTransformers.OfType<ThemedHighlightingColorizer>().Count();
 
@@ -111,12 +123,44 @@ namespace Kil0bitSystemMonitor.Tests
             var document = window.Editor.Document;
 
             document.Insert(0, new string('x', PadLanguages.MaxFormattedChars));
+            Pump();
             Assert.Equal("Plain text (large)", window.LanguageButton.Content);
             Assert.False(window.LanguageView.HasSyntaxColors);
 
             document.Remove(0, PadLanguages.MaxFormattedChars);
+            Pump();
             Assert.Equal("JSON", window.LanguageButton.Content);
             Assert.True(window.LanguageView.HasSyntaxColors);
+        });
+
+        [Fact]
+        public void A_rendered_markdown_note_crossing_the_size_limit_turns_markdown_off_and_on() => WithWindow((window, env, config) =>
+        {
+            var view = window.Editor.TextArea.TextView;
+            var document = window.Editor.Document;
+            document.Text = "# Title\n```\ncode\n```\n- item";
+            Render(window);   // the Markdown colorizer reads the fence cache, which starts following the document
+            bool? markdownDuringChange = null;
+            document.Changed += (s, e) => markdownDuringChange ??= window.LanguageView.HasMarkdown;
+
+            // Short lines, so laying out the visible part stays quick.
+            string paste = string.Concat(Enumerable.Repeat("\npasted line", PadLanguages.MaxFormattedChars / 12 + 1));
+            document.Insert(document.TextLength, paste);
+            Assert.True(markdownDuringChange);   // nothing is torn down inside the change itself
+            Pump();
+
+            Assert.True(window.ShownLanguage.TooLarge);
+            Assert.False(window.LanguageView.HasMarkdown);
+            Assert.Empty(view.LineTransformers.OfType<MarkdownColorizer>());
+            Assert.Equal("Plain text (large)", window.LanguageButton.Content);
+
+            document.Remove(document.TextLength - paste.Length, paste.Length);
+            Pump();
+
+            Assert.False(window.ShownLanguage.TooLarge);
+            Assert.True(window.LanguageView.HasMarkdown);
+            Assert.Single(view.LineTransformers.OfType<MarkdownColorizer>());
+            Render(window);
         });
 
         [Fact]

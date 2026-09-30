@@ -85,6 +85,8 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnChanged(object? sender, DocumentChangeEventArgs e)
         {
+            // A change that detached folding still reaches this handler (AvalonEdit's handler snapshot).
+            if (!ReferenceEquals(sender, _document)) return;
             _timer.Stop();
             _timer.Start();
         }

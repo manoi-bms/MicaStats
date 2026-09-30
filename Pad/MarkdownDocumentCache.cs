@@ -52,7 +52,10 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnChanged(object? sender, DocumentChangeEventArgs e)
         {
-            var document = _document!;
+            // AvalonEdit calls every handler the document had when the change began, so a handler
+            // that ran earlier in this change may already have detached the cache.
+            var document = _document;
+            if (document == null || !ReferenceEquals(sender, document)) return;
             if (!_stale && !TouchesFences(document, e)) return;
             var before = _kinds;
             Recompute();

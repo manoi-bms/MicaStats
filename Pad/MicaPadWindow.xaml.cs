@@ -276,14 +276,26 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 _workspace.NotifyChanged(note, markUnsaved: !_suppressDirty);
                 if (ReferenceEquals(_shown, note)) UpdateCharsText();
-                // A big paste crosses the 2 MB limit: formatting switches off (and back on) at once.
-                if (ReferenceEquals(_shown, note) && (document.TextLength > PadLanguages.MaxFormattedChars) != _resolved.TooLarge)
-                    ApplyLanguage();
+                // A big paste crosses the 2 MB limit: formatting switches off (and back on) once the
+                // change is done. Never inside it: AvalonEdit still calls the document's other
+                // handlers for this change, among them the formatting a re-apply would tear down.
+                if (ReferenceEquals(_shown, note) && CrossesSizeLimit(document))
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (ReferenceEquals(_shown, note) && ReferenceEquals(Editor.Document, document) && CrossesSizeLimit(document))
+                            ApplyLanguage();
+                    }));
+                }
             };
             note.TextProvider = () => document.Text;
             _docs[note.Id] = document;
             return document;
         }
+
+        /// <summary>True when the shown language's size-limit state no longer matches the document's length.</summary>
+        private bool CrossesSizeLimit(TextDocument document) =>
+            (document.TextLength > PadLanguages.MaxFormattedChars) != _resolved.TooLarge;
 
         /// <summary>
         /// Replaces a note's whole text as one undoable edit. With <paramref name="markUnsaved"/>

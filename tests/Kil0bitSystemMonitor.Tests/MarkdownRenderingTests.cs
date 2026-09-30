@@ -46,6 +46,21 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_cache_detached_by_an_earlier_handler_of_the_same_change_ignores_it() => UiThread.Run(() =>
+        {
+            var document = new TextDocument("a\n```\nx\n```\nb");
+            var cache = new MarkdownDocumentCache();
+            // Subscribed first, as the window's own handler is: it switches formatting off mid-change.
+            document.Changed += (s, e) => cache.Detach();
+            Assert.Equal(MdFence.Inside, cache.KindOf(document, 3));
+
+            // AvalonEdit still calls the detached cache for this change; it must not throw.
+            document.Insert(0, "```\n");
+
+            Assert.Equal(MdFence.Delimiter, cache.KindOf(document, 1));
+        });
+
+        [Fact]
         public void The_colorizer_sizes_headings_and_bolds_bold_text() => UiThread.Run(() =>
         {
             var document = new TextDocument("# Title\nsome **bold** text");

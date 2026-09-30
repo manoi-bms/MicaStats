@@ -538,8 +538,17 @@ namespace Kil0bitSystemMonitor.Pad
                 caret = null;
                 selection = null;
                 if (ReferenceEquals(Editor.Document, document)) return;
-                Editor.TextArea.Selection = savedSelection;
-                Editor.TextArea.Caret.Position = savedCaret;
+                try
+                {
+                    Editor.TextArea.Selection = savedSelection;
+                    Editor.TextArea.Caret.Position = savedCaret;
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    // This window's own document changed under the saved position: fall back to the start, never throw from an undo.
+                    Editor.TextArea.ClearSelection();
+                    Editor.CaretOffset = 0;
+                }
             };
             document.UpdateStarted += started;
             document.UpdateFinished += finished;

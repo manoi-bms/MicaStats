@@ -208,5 +208,163 @@ namespace Kil0bitSystemMonitor.Tests
                 foreach (var window in MicaPadWindow.WindowsOf(restarted).ToList()) window.CloseForExit();
             }
         });
+
+        [Fact]
+        public void Move_to_new_window_takes_the_tab_with_its_undo() => WithWindows((first, env, shown) =>
+        {
+            first.Editor.Document.Insert(0, "stays");
+            first.NewTab();
+            first.Editor.Document.Insert(0, "leaves");
+            var leaving = env.Workspace.ActiveIn(first.WindowId)!;
+            var document = first.Editor.Document;
+
+            PadMenuTests.Click(PadMenuTests.ItemOf(first.BuildTabMenu(leaving, null), "Move to new window"));
+
+            var second = Assert.Single(shown);
+            Assert.Equal(new[] { leaving }, env.Workspace.TabsOf(second.WindowId));
+            Assert.DoesNotContain(leaving, env.Workspace.TabsOf(first.WindowId));
+            Assert.Same(document, second.Editor.Document);
+            Assert.True(second.Editor.CanUndo);
+            Assert.Equal("stays", first.Editor.Document.Text);        // the neighbour is shown here now
+        });
+
+        [Fact]
+        public void The_only_tab_cannot_move_to_a_new_window() => WithWindows((window, env, shown) =>
+        {
+            var only = env.Workspace.ActiveIn(window.WindowId)!;
+
+            var menu = window.BuildTabMenu(only, null);
+
+            Assert.False(PadMenuTests.ItemOf(menu, "Move to new window").IsEnabled);
+            Assert.DoesNotContain("Move to", PadMenuTests.Headers(menu));    // no other window to move to
+        });
+
+        [Fact]
+        public void Move_to_lists_each_other_window_by_its_active_tab() => WithWindows((first, env, shown) =>
+        {
+            first.Editor.Document.Insert(0, "Groceries");
+            var second = first.NewWindow();
+            second.Editor.Document.Insert(0, "Meeting notes");
+            env.Workspace.FlushPending();                             // a note's title follows its first line when saved
+            var note = env.Workspace.ActiveIn(first.WindowId)!;
+
+            var moveTo = PadMenuTests.ItemOf(first.BuildTabMenu(note, null), "Move to");
+
+            Assert.Equal(new[] { "Meeting notes" }, moveTo.Items.OfType<MenuItem>().Select(m => (string)m.Header));
+
+            env.Workspace.Rename(env.Workspace.ActiveIn(second.WindowId)!, "error_log.txt");
+            moveTo = PadMenuTests.ItemOf(first.BuildTabMenu(note, null), "Move to");
+            Assert.Equal("error__log.txt", (string)moveTo.Items.OfType<MenuItem>().Single().Header);   // shows as error_log.txt, no access key
+        });
+
+        [Fact]
+        public void Move_to_another_window_shows_the_tab_there() => WithWindows((first, env, shown) =>
+        {
+            first.Editor.Document.Insert(0, "keep");
+            first.NewTab();
+            first.Editor.Document.Insert(0, "Travel");
+            var travel = env.Workspace.ActiveIn(first.WindowId)!;
+            var second = first.NewWindow();
+            shown.Clear();
+
+            PadMenuTests.Click(PadMenuTests.ItemOf(first.BuildTabMenu(travel, null), "Move to").Items.OfType<MenuItem>().Single());
+
+            Assert.Same(travel, env.Workspace.ActiveIn(second.WindowId));
+            Assert.Equal("Travel", second.Editor.Document.Text);
+            Assert.Equal("keep", first.Editor.Document.Text);
+            Assert.Equal(new[] { second }, shown);
+        });
+
+        [Fact]
+        public void Moving_the_only_tab_closes_its_window_into_the_other() => WithWindows((first, env, shown) =>
+        {
+            var second = first.NewWindow();
+            second.Editor.Document.Insert(0, "Travel");
+            var travel = env.Workspace.ActiveIn(second.WindowId)!;
+
+            PadMenuTests.Click(PadMenuTests.ItemOf(second.BuildTabMenu(travel, null), "Move to").Items.OfType<MenuItem>().Single());
+
+            Assert.DoesNotContain(second, MicaPadWindow.WindowsOf(env.Workspace));
+            Assert.Single(env.Workspace.Windows);
+            Assert.Same(travel, env.Workspace.ActiveIn(first.WindowId));
+            Assert.Equal("Travel", first.Editor.Document.Text);
+            Assert.True(first.Editor.CanUndo);
+        });
+
+        [Fact]
+        public void Opening_a_file_open_in_another_window_brings_that_window_forward_on_its_tab() => WithWindows((first, env, shown) =>
+        {
+            string path = env.FileOf("app.log");
+            File.WriteAllText(path, "started");
+            var second = first.NewWindow();
+            second.OpenPath(path);
+            var log = env.Workspace.ActiveIn(second.WindowId)!;
+            second.NewTab();                                          // the log is no longer the tab shown there
+            env.Workspace.ActivateWindow(first.WindowId);             // and the user went back to the first window
+            shown.Clear();
+
+            var window = MicaPadWindow.Open(env.Workspace, new AppConfig(), null, path.ToUpperInvariant());   // what --pad and Open with do
+
+            Assert.Same(second, window);
+            Assert.Same(second, shown[shown.Count - 1]);
+            Assert.Same(log, env.Workspace.ActiveIn(second.WindowId));
+            Assert.Equal("started", second.Editor.Document.Text);
+            Assert.Single(env.Workspace.Open, n => string.Equals(n.Meta.SourcePath, path, StringComparison.OrdinalIgnoreCase));
+        });
+
+        [Fact]
+        public void A_file_open_nowhere_goes_to_the_most_recently_active_window() => WithWindows((first, env, shown) =>
+        {
+            string path = env.FileOf("new.txt");
+            File.WriteAllText(path, "fresh");
+            first.NewWindow();
+            env.Workspace.ActivateWindow(first.WindowId);
+
+            var window = MicaPadWindow.Open(env.Workspace, new AppConfig(), null, path);
+
+            Assert.Same(first, window);
+            Assert.Equal(first.WindowId, env.Workspace.Open.Single(n => n.Meta.SourcePath == path).WindowId);
+            Assert.Equal("fresh", first.Editor.Document.Text);
+        });
+
+        [Fact]
+        public void Ctrl_o_of_a_file_open_in_another_window_shows_it_there() => WithWindows((first, env, shown) =>
+        {
+            string path = env.FileOf("shared.txt");
+            File.WriteAllText(path, "one copy");
+            var second = first.NewWindow();
+            second.OpenPath(path);
+            second.NewTab();
+            shown.Clear();
+
+            first.OpenPath(path);                                     // Ctrl+O and the Open dialog end here
+
+            Assert.Same(second, shown[shown.Count - 1]);
+            Assert.Equal("one copy", second.Editor.Document.Text);
+            Assert.DoesNotContain(env.Workspace.TabsOf(first.WindowId), n => n.Meta.SourcePath == path);
+        });
+
+        [Fact]
+        public void Undo_in_the_window_a_tab_moved_to_leaves_the_source_windows_caret_and_text_alone() => WithWindows((first, env, shown) =>
+        {
+            first.Editor.Document.Insert(0, "stays put");
+            first.NewTab();
+            first.Editor.Document.Insert(0, "leaves");
+            var leaving = env.Workspace.ActiveIn(first.WindowId)!;
+            PadMenuTests.Click(PadMenuTests.ItemOf(first.BuildTabMenu(leaving, null), "Move to new window"));
+            var second = Assert.Single(shown);
+            first.Editor.Select(2, 4);
+            int caret = first.Editor.CaretOffset;
+
+            second.Editor.Undo();                                     // the moved tab's undo runs in its new window
+
+            Assert.Equal("", second.Editor.Document.Text);
+            Assert.Equal("stays put", first.Editor.Document.Text);
+            Assert.Equal(2, first.Editor.SelectionStart);
+            Assert.Equal(4, first.Editor.SelectionLength);
+            Assert.Equal(caret, first.Editor.CaretOffset);
+            first.Editor.TextArea.PerformTextInput("X");
+            Assert.Equal("stXput", first.Editor.Document.Text);      // typing in the source window still works
+        });
     }
 }

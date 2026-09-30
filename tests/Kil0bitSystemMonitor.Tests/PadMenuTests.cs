@@ -399,7 +399,8 @@ namespace Kil0bitSystemMonitor.Tests
 
             var menu = window.BuildTabMenu(note, null);
 
-            Assert.Equal(new[] { "Rename…", "Close", "Close other tabs" }, Headers(menu));
+            Assert.Equal(new[] { "Rename…", "Close", "Close other tabs", "-", "Move to new window" }, Headers(menu));
+            Assert.False(ItemOf(menu, "Move to new window").IsEnabled);
             Assert.False(ItemOf(menu, "Close other tabs").IsEnabled);   // it is the only tab
         });
 
@@ -413,7 +414,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             var menu = window.BuildTabMenu(note, null);
 
-            Assert.Equal(new[] { "Rename…", "Close", "Close other tabs", "-", "Copy file path", "Show in folder" }, Headers(menu));
+            Assert.Equal(new[] { "Rename…", "Close", "Close other tabs", "-", "Move to new window", "-", "Copy file path", "Show in folder" }, Headers(menu));
             Assert.True(ItemOf(menu, "Close other tabs").IsEnabled);
         });
 

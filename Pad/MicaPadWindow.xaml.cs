@@ -221,14 +221,16 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>
         /// Shows MicaPad (the hotkey, the overlay menu, the Start menu): the most recently active
-        /// window comes to the front. The first show in a run brings back every window of the
-        /// session, each where it was (spec 5.3: reopen at login restores every window), so no tab
-        /// can wait in a window nobody shows; the most recently active ends up in front.
+        /// window comes to the front — or, with <paramref name="path"/>, the window already showing
+        /// that file. The first show in a run brings back every window of the session, each where it
+        /// was (spec 5.3: reopen at login restores every window), so no tab can wait in a window
+        /// nobody shows; the target ends up in front.
         /// </summary>
-        public static MicaPadWindow ShowOrActivate(PadWorkspace workspace, AppConfig config, Action? openSettings)
+        public static MicaPadWindow ShowOrActivate(PadWorkspace workspace, AppConfig config, Action? openSettings, string? path = null)
         {
             workspace.Restore();
-            string targetId = workspace.MostRecentWindowId;
+            // A file already open in a window goes there; anything else to the most recently active window.
+            string targetId = workspace.RouteFile(path);
             if (WindowsOf(workspace).Count == 0)
             {
                 // Least recently active first, so each later one comes up in front of it.
@@ -237,6 +239,18 @@ namespace Kil0bitSystemMonitor.Pad
             }
             var window = Registered(workspace, targetId) ?? Create(workspace, config, targetId, openSettings);
             window.Present();
+            return window;
+        }
+
+        /// <summary>
+        /// MicaPad for the hotkey, the overlay, <c>--pad</c> and Open with (spec 5.3), opening
+        /// <paramref name="path"/> when given: a file already open in a window brings that window
+        /// forward on its tab; any other file opens in the most recently active window.
+        /// </summary>
+        public static MicaPadWindow Open(PadWorkspace workspace, AppConfig config, Action? openSettings, string? path)
+        {
+            var window = ShowOrActivate(workspace, config, openSettings, path);
+            if (!string.IsNullOrWhiteSpace(path)) window.OpenPath(path);
             return window;
         }
 
@@ -656,7 +670,8 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Takes over a document another window released, undo history and all. False when this window already had one for the note (the handed-over one is dropped).</summary>
         internal bool AdoptDocument(OpenNote note, TextDocument document)
         {
-            if (note.WindowId != _windowId || _docs.ContainsKey(note.Id)) return false;
+            // Create hands a document over before LoadSession, when only the requested id is known.
+            if (note.WindowId != (_requestedWindowId ?? _windowId) || _docs.ContainsKey(note.Id)) return false;
             Attach(note, document);
             return true;
         }
@@ -775,7 +790,16 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void ShowNote(OpenNote note)
         {
-            if (note.WindowId != _windowId) return;   // another window's tab (Task 6 brings that window forward)
+            if (note.WindowId != _windowId)
+            {
+                // Another window shows this tab (a file already open there): that window comes forward on it (spec 5.3).
+                if (Registered(_workspace, note.WindowId) is { } owner && !ReferenceEquals(owner, this) && !owner._exiting)
+                {
+                    owner.ShowNote(note);
+                    owner.Present();
+                }
+                return;
+            }
             if (_shown != null && !ReferenceEquals(_shown, note))
             {
                 SaveViewState(_shown);
@@ -959,6 +983,17 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Close", null, () => CloseTab(note), icon: "\uE711"));
             menu.Items.Add(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.TabsOf(_windowId).Count > 1));
 
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("Move to new window", null, () => MoveToNewWindow(note), _workspace.TabsOf(_windowId).Count > 1, icon: ""));
+            var others = OtherWindows();
+            if (others.Count > 0)
+            {
+                var moveTo = new MenuItem { Header = "Move to" };
+                // Doubled: a menu header reads "_" as an access key, and file names are full of them.
+                foreach (var other in others) moveTo.Items.Add(Item(other.ActiveTitle.Replace("_", "__"), null, () => MoveToWindow(note, other)));
+                menu.Items.Add(moveTo);
+            }
+
             if (note.Meta.SourcePath is string path)
             {
                 menu.Items.Add(new Separator());
@@ -966,6 +1001,69 @@ namespace Kil0bitSystemMonitor.Pad
                 menu.Items.Add(Item("Show in folder", null, () => ShowInFolder(path), icon: "\uE838"));
             }
             return menu;
+        }
+
+        /// <summary>A window's name in Move to ▸: the title of its active tab.</summary>
+        private string ActiveTitle => _workspace.ActiveIn(_windowId)?.Title ?? "MicaPad";
+
+        /// <summary>Tab menu → Move to new window: the tab moves to a new window of its own, with its undo history and bookmarks.</summary>
+        internal void MoveToNewWindow(OpenNote note)
+        {
+            if (note.WindowId != _windowId || _workspace.TabsOf(_windowId).Count < 2) return;
+            CaptureViewState();                   // the new window cascades from where this one is
+            var document = LetGoOf(note);
+            var state = _workspace.NewWindow(_windowId);
+            _workspace.MoveToWindow(note, state.Id);
+            MicaPadWindow window;
+            try
+            {
+                window = Create(_workspace, _config, state.Id, OpenSettingsRequested,
+                    beforeLoad: w => { if (document != null) w.AdoptDocument(note, document); });
+            }
+            catch
+            {
+                // No window shows it: the tab comes back here, undo history and all.
+                _workspace.CloseWindow(state.Id, _windowId);
+                if (document != null) AdoptDocument(note, document);
+                throw;
+            }
+            window.Present();                     // saves the session
+        }
+
+        /// <summary>
+        /// Tab menu → Move to ▸ (spec 5.3): the tab moves to <paramref name="target"/> and is shown
+        /// there. Moving this window's only tab closes this window into that one.
+        /// </summary>
+        internal void MoveToWindow(OpenNote note, MicaPadWindow target)
+        {
+            // The menu was built earlier: the target may have closed since.
+            if (note.WindowId != _windowId || ReferenceEquals(target, this) || target._exiting || !s_windows.Contains(target)) return;
+            if (_workspace.TabsOf(_windowId).Count == 1)
+            {
+                MergeInto(target);
+                CloseForExit();
+            }
+            else
+            {
+                var document = LetGoOf(note);
+                _workspace.MoveToWindow(note, target._windowId);
+                if (document != null) target.AdoptDocument(note, document);
+                _workspace.SaveSession();
+            }
+            target.ShowNote(note);
+            target.Present();
+        }
+
+        /// <summary>A tab leaving this window: a neighbour is shown first if it was the shown one, then its document is released.</summary>
+        private TextDocument? LetGoOf(OpenNote note)
+        {
+            if (ReferenceEquals(_shown, note))
+            {
+                var tabs = _workspace.TabsOf(_windowId);
+                int index = tabs.IndexOf(note);
+                ShowNote(tabs[index + 1 < tabs.Count ? index + 1 : index - 1]);
+            }
+            return ReleaseDocument(note);
         }
 
         /// <summary>

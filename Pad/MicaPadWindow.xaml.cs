@@ -271,6 +271,7 @@ namespace Kil0bitSystemMonitor.Pad
             else if (ctrl && key == Key.G) ShowGoToLine();
             else if (modifiers == ModifierKeys.None && key == Key.Escape && FindBar.IsOpen) FindBar.Close();
             else if (ctrlShift && key == Key.H) ToggleHistory();
+            else if (modifiers == ModifierKeys.None && key == Key.F11) ToggleFullScreen();
             // Under the history preview the note keys do nothing: swallowed, so AvalonEdit's own
             // Ctrl+D (delete line) cannot reach the hidden editor either. A focused text box keeps them.
             else if (noteKey && PreviewPanel.Visibility == Visibility.Visible) return Keyboard.FocusedElement is not System.Windows.Controls.TextBox;
@@ -1328,6 +1329,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Check("Markdown formatting", null, _config.PadMarkdown, () => _config.PadMarkdown = !_config.PadMarkdown));
             menu.Items.Add(Check("Auto-close brackets and quotes", null, _config.PadAutoClose, () => _config.PadAutoClose = !_config.PadAutoClose));
             menu.Items.Add(Check("Always on top", null, Topmost, ToggleTopmost));
+            menu.Items.Add(Check("Full screen", "F11", IsFullScreen, ToggleFullScreen));
             menu.Items.Add(Item("Font…", null, ChooseFont, icon: "\uE8D2"));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Open notes folder", null, OpenNotesFolder, icon: "\uE838"));
@@ -1697,6 +1699,45 @@ namespace Kil0bitSystemMonitor.Pad
 
         // ---- placement, identity, icon ------------------------------------------------------
 
+        // ---- full screen ---------------------------------------------------------------------
+
+        /// <summary>What full screen replaced, to put back on leaving it; null while windowed.</summary>
+        private (WindowStyle Style, ResizeMode Resize, WindowState State, Rect Bounds)? _beforeFullScreen;
+
+        internal bool IsFullScreen => _beforeFullScreen != null;
+
+        /// <summary>
+        /// F11 (spec 4.3): no title bar, the whole monitor (a borderless maximized WPF window covers
+        /// the taskbar), tabs, find bar and status bar kept. Again: the previous placement. Never
+        /// saved: the session keeps the placement from before.
+        /// </summary>
+        internal void ToggleFullScreen()
+        {
+            if (_beforeFullScreen is { } before)
+            {
+                _beforeFullScreen = null;
+                WindowState = WindowState.Normal;
+                WindowStyle = before.Style;
+                ResizeMode = before.Resize;
+                if (!double.IsNaN(before.Bounds.Left)) Left = before.Bounds.Left;
+                if (!double.IsNaN(before.Bounds.Top)) Top = before.Bounds.Top;
+                if (!double.IsNaN(before.Bounds.Width)) Width = before.Bounds.Width;
+                if (!double.IsNaN(before.Bounds.Height)) Height = before.Bounds.Height;
+                WindowState = before.State;
+                PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
+                return;
+            }
+
+            var bounds = WindowState == WindowState.Normal || RestoreBounds.IsEmpty
+                ? new Rect(Left, Top, Width, Height)
+                : RestoreBounds;
+            _beforeFullScreen = (WindowStyle, ResizeMode, WindowState, bounds);
+            WindowState = WindowState.Normal;      // style changes apply cleanly from Normal
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            WindowState = WindowState.Maximized;
+        }
+
         private void ApplyPlacement()
         {
             var session = _workspace.Session;
@@ -1723,10 +1764,13 @@ namespace Kil0bitSystemMonitor.Pad
 
             var session = _workspace.Session;
             session.AlwaysOnTop = Topmost;
+            // Full screen is never saved: the placement from before it is what the session keeps.
+            if (_beforeFullScreen is { } fs) session.Maximized = fs.State == WindowState.Maximized;
             if (!IsLoaded) return;
 
-            session.Maximized = WindowState == WindowState.Maximized;
-            Rect bounds = WindowState == WindowState.Normal ? new Rect(Left, Top, ActualWidth, ActualHeight) : RestoreBounds;
+            if (_beforeFullScreen == null) session.Maximized = WindowState == WindowState.Maximized;
+            Rect bounds = _beforeFullScreen is { } saved ? saved.Bounds
+                : WindowState == WindowState.Normal ? new Rect(Left, Top, ActualWidth, ActualHeight) : RestoreBounds;
             if (!bounds.IsEmpty && double.IsFinite(bounds.Left) && double.IsFinite(bounds.Top))
             {
                 session.Left = bounds.Left;

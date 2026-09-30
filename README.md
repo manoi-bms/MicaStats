@@ -276,6 +276,7 @@ Inside MicaPad:
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | Open file · save to its file · save as |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | Find · replace · next / previous |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | Go to line · word wrap · history |
+| **F11** | Full screen |
 | **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | Duplicate line · move lines · join lines |
 | **Ctrl+F2** · **F2** / **Shift+F2** | Toggle bookmark · next / previous bookmark |
 | **Ctrl+Click** a link | Open it (web and mail links only) |
@@ -891,6 +892,7 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | เปิดไฟล์ · บันทึกลงไฟล์ · บันทึกเป็น |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | ค้นหา · แทนที่ · ถัดไป / ก่อนหน้า |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | ไปยังบรรทัด · ตัดบรรทัดอัตโนมัติ · ประวัติ |
+| **F11** | เต็มจอ |
 | **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | ทำซ้ำบรรทัด · ย้ายบรรทัด · รวมบรรทัด |
 | **Ctrl+F2** · **F2** / **Shift+F2** | เพิ่ม/ลบบุ๊กมาร์ก · บุ๊กมาร์กถัดไป / ก่อนหน้า |
 | **Ctrl+Click** ลิงก์ | เปิดลิงก์ (เฉพาะเว็บและอีเมล) |

@@ -263,6 +263,8 @@ protocols.
 
 **Tabs**: drag a tab to move it; the order is kept after a restart.
 
+**Full screen**: **F11** hides the title bar and fills the screen; **F11** again brings the window back. MicaPad always reopens windowed.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

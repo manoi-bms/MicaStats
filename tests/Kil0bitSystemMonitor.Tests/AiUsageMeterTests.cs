@@ -67,6 +67,19 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_file_with_duplicate_keys_counts_as_zero_instead_of_crashing()
+        {
+            using var env = new AiTestEnv();
+            string path = env.PathOf("ai-usage.json");
+            File.WriteAllText(path, "{\"date\":\"2026-09-30\",\"date\":\"2026-09-30\",\"count\":3}");
+
+            var meter = new UsageMeter(path, () => new DateTime(2026, 9, 30, 12, 0, 0));
+
+            Assert.Equal(0, meter.UsedToday);
+            Assert.True(meter.TryConsume(1));
+        }
+
+        [Fact]
         public void The_file_keeps_a_gregorian_date_under_a_thai_culture()
         {
             using var env = new AiTestEnv();

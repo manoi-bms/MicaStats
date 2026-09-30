@@ -47,6 +47,17 @@ namespace Kil0bitSystemMonitor.Tests
             return this;
         }
 
+        /// <summary>Answers with <paramref name="text"/> or a tool call after a pause, to test slow models.</summary>
+        public ScriptedChatClient Slow(TimeSpan pause, string? text = null, string? tool = null)
+        {
+            _script.Enqueue(async (_, ct) =>
+            {
+                await Task.Delay(pause, ct);
+                return tool != null ? CallMessage(tool) : new ChatMessage(ChatRole.Assistant, text ?? "");
+            });
+            return this;
+        }
+
         public ScriptedChatClient Hang()
         {
             _script.Enqueue(async (_, ct) =>

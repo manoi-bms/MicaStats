@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -9,6 +10,12 @@ using Xunit;
 
 namespace Kil0bitSystemMonitor.Tests
 {
+    [CollectionDefinition("AnthropicEnv", DisableParallelization = true)]
+    public class AnthropicEnvCollection
+    {
+    }
+
+    [Collection("AnthropicEnv")]
     public class AiProviderFactoryTests
     {
         private static SecretStore Secrets(AiTestEnv env, string? claudeKey = null, string? compatibleKey = null)
@@ -77,6 +84,31 @@ namespace Kil0bitSystemMonitor.Tests
             JsonNode body = JsonNode.Parse(sent.Body)!;
             Assert.Equal("claude-haiku-4-5", body["model"]!.GetValue<string>());
             Assert.Equal(2000, body["max_tokens"]!.GetValue<int>());
+        }
+
+        [Fact]
+        public async Task Claude_ignores_base_url_and_token_variables_from_the_environment()
+        {
+            string[] names = { "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN" };
+            string?[] before = names.Select(Environment.GetEnvironmentVariable).ToArray();
+            try
+            {
+                Environment.SetEnvironmentVariable("ANTHROPIC_BASE_URL", "https://proxy.invalid");
+                Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", "proxy-token");
+                using var env = new AiTestEnv();
+                var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.ClaudeText("Fine.")));
+
+                AiClientResult result = AiProviderFactory.Create(new AppConfig(), Secrets(env, claudeKey: "sk-ant-test"), handler);
+                await result.Client!.GetResponseAsync("hi");
+
+                ScriptedHttpHandler.Sent sent = Assert.Single(handler.Requests);
+                Assert.Equal("https://api.anthropic.com/v1/messages", sent.Url);
+                Assert.Equal("x-api-key=sk-ant-test", sent.Auth);
+            }
+            finally
+            {
+                for (int i = 0; i < names.Length; i++) Environment.SetEnvironmentVariable(names[i], before[i]);
+            }
         }
 
         [Fact]

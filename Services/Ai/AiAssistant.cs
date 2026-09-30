@@ -22,6 +22,12 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
         /// <summary>Questions allowed per local day; read at each question so a Settings change applies at once.</summary>
         public Func<int> DailyLimit { get; init; } = () => 100;
+
+        /// <summary>
+        /// How long the model may stay silent before the question fails; re-armed by every update,
+        /// because each SDK timeout covers one attempt and retries would otherwise multiply it.
+        /// </summary>
+        internal TimeSpan InactivityTimeout { get; init; } = TimeSpan.FromSeconds(60);
     }
 
     /// <summary>
@@ -74,7 +80,13 @@ namespace Kil0bitSystemMonitor.Services.Ai
             _isClaude = isClaude;
             _readOnlyTools = AiToolFunctions.ReadOnly(tools);
             _toolClient = new ChatClientBuilder(new FinalAnswerChatClient(client))
-                .UseFunctionInvocation(configure: f => f.MaximumIterationsPerRequest = Math.Max(1, options.MaxToolRounds))
+                .UseFunctionInvocation(configure: f =>
+                {
+                    f.MaximumIterationsPerRequest = Math.Max(1, options.MaxToolRounds);
+                    // Tool errors carry no secrets, and a small model can correct bad arguments from them.
+                    f.IncludeDetailedErrors = true;
+                    f.MaximumConsecutiveErrorsPerRequest = Math.Max(1, options.MaxToolRounds);
+                })
                 .Build();
         }
 
@@ -107,6 +119,12 @@ namespace Kil0bitSystemMonitor.Services.Ai
             int start = conversation.Messages.Count;
             conversation.Messages.Add(new ChatMessage(ChatRole.User, text));
 
+            // Cancelled by the caller, or by this deadline when the model stays silent.
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            TimeSpan silence = _options.InactivityTimeout;
+            deadline.CancelAfter(silence);
+            CancellationToken token = deadline.Token;
+
             if (!_toolsUnsupported)
             {
                 var turn = new Turn();
@@ -116,8 +134,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 Exception? failure = null;
 
                 IAsyncEnumerator<ChatResponseUpdate> stream = _toolClient
-                    .GetStreamingResponseAsync(WithSystem(conversation.Messages), ToolOptions(turn), ct)
-                    .GetAsyncEnumerator(ct);
+                    .GetStreamingResponseAsync(WithSystem(conversation.Messages), ToolOptions(turn), token)
+                    .GetAsyncEnumerator(token);
                 try
                 {
                     while (true)
@@ -129,6 +147,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                             break;
                         }
                         if (!moved) break;
+                        deadline.CancelAfter(silence);
 
                         ChatResponseUpdate update = stream.Current;
                         updates.Add(update);
@@ -181,7 +200,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
                     conversation.Suggestions.Clear();
                     conversation.Messages.RemoveRange(start, conversation.Messages.Count - start);
                     if (!ct.IsCancellationRequested)
-                        yield return new AssistantUpdate(AssistantUpdateKind.Error, AiErrorText.Describe(failure));
+                        yield return new AssistantUpdate(AssistantUpdateKind.Error,
+                            deadline.IsCancellationRequested ? AiErrorText.TimedOut : AiErrorText.Describe(failure));
                     yield return Done;
                     yield break;
                 }
@@ -191,15 +211,16 @@ namespace Kil0bitSystemMonitor.Services.Ai
             // Limited mode: the same question without tools, with a live snapshot attached.
             yield return new AssistantUpdate(AssistantUpdateKind.LimitedMode, LimitedModeNote);
 
-            JsonNode? snapshot = await SnapshotAsync(ct);
+            deadline.CancelAfter(silence);
+            JsonNode? snapshot = await SnapshotAsync(token);
             var answer = new StringBuilder();
             Exception? limitedFailure = null;
             if (snapshot != null)
             {
                 List<ChatMessage> messages = LimitedMessages(conversation.Messages, text, snapshot);
                 IAsyncEnumerator<ChatResponseUpdate> plain = _client
-                    .GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = _options.MaxOutputTokens }, ct)
-                    .GetAsyncEnumerator(ct);
+                    .GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = _options.MaxOutputTokens }, token)
+                    .GetAsyncEnumerator(token);
                 try
                 {
                     while (true)
@@ -211,6 +232,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                             break;
                         }
                         if (!moved) break;
+                        deadline.CancelAfter(silence);
                         string piece = plain.Current.Text;
                         if (string.IsNullOrEmpty(piece)) continue;
                         answer.Append(piece);
@@ -226,8 +248,9 @@ namespace Kil0bitSystemMonitor.Services.Ai
             if (snapshot == null || limitedFailure != null)
             {
                 conversation.Messages.RemoveRange(start, conversation.Messages.Count - start);
-                if (limitedFailure != null && !ct.IsCancellationRequested)
-                    yield return new AssistantUpdate(AssistantUpdateKind.Error, AiErrorText.Describe(limitedFailure));
+                if (!ct.IsCancellationRequested && (limitedFailure != null || deadline.IsCancellationRequested))
+                    yield return new AssistantUpdate(AssistantUpdateKind.Error,
+                        deadline.IsCancellationRequested ? AiErrorText.TimedOut : AiErrorText.Describe(limitedFailure!));
                 yield return Done;
                 yield break;
             }

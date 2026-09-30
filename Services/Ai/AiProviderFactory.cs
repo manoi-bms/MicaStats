@@ -55,6 +55,10 @@ namespace Kil0bitSystemMonitor.Services.Ai
             var anthropic = new AnthropicClient
             {
                 ApiKey = key.Trim(),
+                // The SDK would otherwise read ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN from the
+                // environment and could send the key and every question to another host.
+                BaseUrl = "https://api.anthropic.com",
+                AuthToken = null,
                 HttpClient = NewHttpClient(handler),
                 // 429 and 529 are retried twice by the SDK before the Ask window says "busy".
                 MaxRetries = 2,
@@ -79,6 +83,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
             {
                 Endpoint = endpoint,
                 Transport = new HttpClientPipelineTransport(NewHttpClient(handler)),
+                // Retried twice like Claude; the default is four attempts.
+                RetryPolicy = new ClientRetryPolicy(maxRetries: 2),
             });
 
             IChatClient client = openAi.GetChatClient(model).AsIChatClient();

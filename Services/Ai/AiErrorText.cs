@@ -1,5 +1,6 @@
 using System;
 using System.ClientModel;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -20,7 +21,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         internal const string KeyRejected = "The key was rejected. Check it in Settings > AI.";
 
         /// <summary>Shown when nothing answered in time.</summary>
-        internal const string TimedOut = "The AI service did not answer within 60 seconds. Try again.";
+        internal const string TimedOut = "The AI service did not answer for 60 seconds. Try again.";
 
         /// <summary>Shown when the endpoint could not be reached at all.</summary>
         internal const string Unreachable = "Could not reach the AI service. Check the network, or the base URL in Settings > AI, and try again.";
@@ -41,6 +42,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         public static string Describe(Exception ex)
         {
             ArgumentNullException.ThrowIfNull(ex);
+            ex = Unwrap(ex);
             if (IsTimeout(ex)) return TimedOut;
 
             int status = StatusOf(ex);
@@ -67,12 +69,28 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         internal static bool IsToolsUnsupported(Exception ex)
         {
+            ex = Unwrap(ex);
             if (ex is OperationCanceledException || IsTimeout(ex)) return false;
             int status = StatusOf(ex);
             if (status is 401 or 403 or 429 || status >= 502) return false;
             if (status == 0 && (ex is HttpRequestException || ex is AnthropicIOException)) return false;
             string text = ServerMessage(ex);
             return ToolsRejected.IsMatch(text.Length > 0 ? text : ex.Message);
+        }
+
+        /// <summary>
+        /// The OpenAI SDK's retry policy reports a network failure as an AggregateException of the
+        /// attempts; the last attempt's own exception is the one to classify.
+        /// </summary>
+        private static Exception Unwrap(Exception ex)
+        {
+            while (ex is AggregateException aggregate)
+            {
+                Exception? inner = aggregate.Flatten().InnerExceptions.LastOrDefault();
+                if (inner == null) break;
+                ex = inner;
+            }
+            return ex;
         }
 
         private static bool IsTimeout(Exception ex)

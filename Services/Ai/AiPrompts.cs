@@ -38,7 +38,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// with what it has instead of asking for more.
         /// </summary>
         internal const string ToolLimitReached =
-            "You have used every tool call allowed for this question. Answer now with the data you already have, and say briefly what you could not check.";
+            "You have used every tool call allowed for this question. Answer the user's original question now, in the language the user asked it, with the data you already have, and say briefly what you could not check.";
 
         /// <summary>
         /// Appended to the question in limited mode (an endpoint that cannot call tools): a

@@ -77,9 +77,9 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 _date = date;
                 _count = count;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
-                                          or InvalidOperationException or FormatException)
+            catch (Exception)
             {
+                // Any unreadable file (bad JSON, duplicate keys, wrong types) counts as no usage yet.
                 // A damaged file costs at most one day's count; the limit protects spending, not history.
             }
         }

@@ -16,6 +16,7 @@ using Xunit;
 
 namespace Kil0bitSystemMonitor.Tests
 {
+    [Collection("AnthropicEnv")]
     public class AiAssistantTests : IDisposable
     {
         private readonly AiTestEnv _env = new();
@@ -34,8 +35,9 @@ namespace Kil0bitSystemMonitor.Tests
 
         private MicaTools Tools() => new(_data, new Redactor(@"C:\Users\alice", "alice", "DESK-7"));
 
-        private AiAssistant Assistant(bool isClaude = false, IChatClient? client = null) =>
-            new(client ?? _model, isClaude, Tools(), _usage, new AiAssistantOptions { DailyLimit = () => _limit });
+        private AiAssistant Assistant(bool isClaude = false, IChatClient? client = null, TimeSpan? silence = null) =>
+            new(client ?? _model, isClaude, Tools(), _usage,
+                new AiAssistantOptions { DailyLimit = () => _limit, InactivityTimeout = silence ?? TimeSpan.FromSeconds(60) });
 
         private async Task<List<AssistantUpdate>> AskAsync(AiAssistant assistant, string question, CancellationToken ct = default)
         {
@@ -203,6 +205,64 @@ namespace Kil0bitSystemMonitor.Tests
             List<AssistantUpdate> updates = await AskAsync(Assistant(), "Slow question", cts.Token);
 
             Assert.Single(updates);
+            Assert.Empty(_conversation.Messages);
+        }
+
+        [Fact]
+        public async Task A_silent_model_ends_with_the_timeout_sentence_and_forgets_the_question()
+        {
+            _model.Hang();
+
+            List<AssistantUpdate> updates = await AskAsync(Assistant(silence: TimeSpan.FromMilliseconds(200)), "Slow question");
+
+            Assert.Equal(new[] { AssistantUpdateKind.Error, AssistantUpdateKind.Done }, updates.Select(u => u.Kind));
+            Assert.Equal(AiErrorText.TimedOut, updates[0].Text);
+            Assert.Empty(_conversation.Messages);
+        }
+
+        [Fact]
+        public async Task A_slow_model_that_keeps_answering_within_the_deadline_finishes()
+        {
+            TimeSpan pause = TimeSpan.FromMilliseconds(250);
+            _model.Slow(pause, tool: ToolNames.GetLiveStatus).Slow(pause, text: "Worth the wait.");
+
+            List<AssistantUpdate> updates = await AskAsync(Assistant(silence: TimeSpan.FromMilliseconds(600)), "Slow but steady");
+
+            Assert.DoesNotContain(updates, u => u.Kind == AssistantUpdateKind.Error);
+            Assert.Equal("Worth the wait.", TextOf(updates));
+        }
+
+        [Fact]
+        public async Task Bad_tool_arguments_are_reported_to_the_model_which_can_try_again()
+        {
+            _model.Call(ToolNames.GetHistory).Call(ToolNames.GetHistory)
+                  .Call(ToolNames.GetHistory, new Dictionary<string, object?> { ["metric"] = "cpu", ["from"] = "-1h" })
+                  .Reply("Here is the history.");
+
+            List<AssistantUpdate> updates = await AskAsync(Assistant(), "CPU history?");
+
+            Assert.DoesNotContain(updates, u => u.Kind == AssistantUpdateKind.Error);
+            Assert.Equal("Here is the history.", TextOf(updates));
+            FunctionResultContent failed = Contents(_model.Requests[1]).OfType<FunctionResultContent>().First();
+            Assert.Contains("metric", failed.Result?.ToString(), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task A_network_failure_through_the_real_openai_sdk_reads_as_unreachable()
+        {
+            var handler = new ScriptedHttpHandler(_ => throw new HttpRequestException("No such host is known."));
+            var config = new AppConfig
+            {
+                AiProvider = AiProviders.OpenAiCompatible,
+                AiCompatibleBaseUrl = "http://localhost:11434/v1",
+                AiCompatibleModel = "gemma:2b",
+            };
+            AiClientResult local = AiProviderFactory.Create(config, new SecretStore(_env.PathOf("secrets.bin"), _ => { }), handler);
+
+            List<AssistantUpdate> updates = await AskAsync(Assistant(client: local.Client), "How is my PC?");
+
+            Assert.Equal(AssistantUpdateKind.Error, updates[0].Kind);
+            Assert.Equal(AiErrorText.Unreachable, updates[0].Text);
             Assert.Empty(_conversation.Messages);
         }
 

@@ -64,6 +64,20 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_retry_aggregate_is_classified_by_its_last_failure()
+        {
+            var network = new AggregateException("Retry failed after 3 tries.",
+                new HttpRequestException("first"), new HttpRequestException("No such host is known."));
+            var nested = new AggregateException(network);
+            var refused = new AggregateException(new ClientResultException("registry.ollama.ai/library/gemma:2b does not support tools"));
+
+            Assert.Equal(AiErrorText.Unreachable, AiErrorText.Describe(network));
+            Assert.Equal(AiErrorText.Unreachable, AiErrorText.Describe(nested));
+            Assert.False(AiErrorText.IsToolsUnsupported(network));
+            Assert.True(AiErrorText.IsToolsUnsupported(refused));
+        }
+
+        [Fact]
         public void Anything_else_keeps_its_first_line()
         {
             Assert.Equal("The AI request failed: boom", AiErrorText.Describe(new InvalidOperationException("boom\nstack")));

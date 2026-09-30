@@ -19,17 +19,32 @@ namespace Kil0bitSystemMonitor.Pad
     {
         private readonly MarkdownDocumentCache _cache;
         private readonly Func<PadPalette> _palette;
+        private readonly Action<Exception> _onFailure;
         private readonly Dictionary<PadColor, Brush> _brushes = new();
 
-        public MarkdownBackgroundRenderer(MarkdownDocumentCache cache, Func<PadPalette> palette)
+        /// <param name="onFailure">Told when drawing fails; nothing more is drawn this time.</param>
+        public MarkdownBackgroundRenderer(MarkdownDocumentCache cache, Func<PadPalette> palette, Action<Exception>? onFailure = null)
         {
             _cache = cache;
             _palette = palette;
+            _onFailure = onFailure ?? (_ => { });
         }
 
         public KnownLayer Layer => KnownLayer.Background;
 
         public void Draw(TextView textView, DrawingContext drawingContext)
+        {
+            try
+            {
+                DrawVisibleLines(textView, drawingContext);
+            }
+            catch (Exception ex)
+            {
+                _onFailure(ex);
+            }
+        }
+
+        private void DrawVisibleLines(TextView textView, DrawingContext drawingContext)
         {
             var document = textView.Document;
             if (document == null || !textView.VisualLinesValid) return;

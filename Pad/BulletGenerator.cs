@@ -13,21 +13,46 @@ namespace Kil0bitSystemMonitor.Pad
     {
         private const int ScanLength = 256;
         private readonly MarkdownDocumentCache _cache;
+        private readonly Action<Exception> _onFailure;
 
-        public BulletGenerator(MarkdownDocumentCache cache) => _cache = cache;
+        /// <param name="onFailure">Told when a line cannot be looked at; that line gets no bullet.</param>
+        public BulletGenerator(MarkdownDocumentCache cache, Action<Exception>? onFailure = null)
+        {
+            _cache = cache;
+            _onFailure = onFailure ?? (_ => { });
+        }
 
         public override int GetFirstInterestedOffset(int startOffset)
         {
-            var document = CurrentContext.Document;
-            var line = document.GetLineByOffset(startOffset);
-            if (_cache.KindOf(document, line.LineNumber) != MdFence.None) return -1;
+            try
+            {
+                var document = CurrentContext.Document;
+                var line = document.GetLineByOffset(startOffset);
+                if (_cache.KindOf(document, line.LineNumber) != MdFence.None) return -1;
 
-            int marker = MarkdownLineTokenizer.BulletOffset(document.GetText(line.Offset, Math.Min(line.Length, ScanLength)));
-            if (marker < 0) return -1;
-            int offset = line.Offset + marker;
-            return offset >= startOffset ? offset : -1;
+                int marker = MarkdownLineTokenizer.BulletOffset(document.GetText(line.Offset, Math.Min(line.Length, ScanLength)));
+                if (marker < 0) return -1;
+                int offset = line.Offset + marker;
+                return offset >= startOffset ? offset : -1;
+            }
+            catch (Exception ex)
+            {
+                _onFailure(ex);
+                return -1;
+            }
         }
 
-        public override VisualLineElement ConstructElement(int offset) => new FormattedTextElement("•", 1);
+        public override VisualLineElement? ConstructElement(int offset)
+        {
+            try
+            {
+                return new FormattedTextElement("•", 1);
+            }
+            catch (Exception ex)
+            {
+                _onFailure(ex);
+                return null;
+            }
+        }
     }
 }

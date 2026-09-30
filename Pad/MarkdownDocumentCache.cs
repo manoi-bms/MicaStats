@@ -14,9 +14,13 @@ namespace Kil0bitSystemMonitor.Pad
     {
         private static readonly char[] FenceChars = { '`', '~' };
 
+        private readonly Action<Exception> _onFailure;
         private TextDocument? _document;
         private MdFence[] _kinds = Array.Empty<MdFence>();
         private bool _stale = true;
+
+        /// <param name="onFailure">Told when following an edit fails; the edit itself never sees the exception.</param>
+        public MarkdownDocumentCache(Action<Exception>? onFailure = null) => _onFailure = onFailure ?? (_ => { });
 
         /// <summary>Raised after an edit changed which lines are fenced, so lines far from the edit repaint.</summary>
         public event Action? FencesChanged;
@@ -56,10 +60,18 @@ namespace Kil0bitSystemMonitor.Pad
             // that ran earlier in this change may already have detached the cache.
             var document = _document;
             if (document == null || !ReferenceEquals(sender, document)) return;
-            if (!_stale && !TouchesFences(document, e)) return;
-            var before = _kinds;
-            Recompute();
-            if (!before.AsSpan().SequenceEqual(_kinds)) FencesChanged?.Invoke();
+            try
+            {
+                if (!_stale && !TouchesFences(document, e)) return;
+                var before = _kinds;
+                Recompute();
+                if (!before.AsSpan().SequenceEqual(_kinds)) FencesChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _stale = true;
+                _onFailure(ex);
+            }
         }
 
         private bool TouchesFences(TextDocument document, DocumentChangeEventArgs e)

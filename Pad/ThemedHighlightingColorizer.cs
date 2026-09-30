@@ -21,29 +21,52 @@ namespace Kil0bitSystemMonitor.Pad
     internal sealed class ThemedHighlightingColorizer : HighlightingColorizer
     {
         private readonly Func<PadPalette> _palette;
+        private readonly Action<Exception> _onFailure;
         private readonly Dictionary<PadColor, Brush> _brushes = new();
 
-        public ThemedHighlightingColorizer(IHighlightingDefinition definition, Func<PadPalette> palette)
+        /// <param name="onFailure">Told when highlighting fails; the text is left uncolored.</param>
+        public ThemedHighlightingColorizer(IHighlightingDefinition definition, Func<PadPalette> palette, Action<Exception>? onFailure = null)
             : base(definition)
         {
             _palette = palette;
+            _onFailure = onFailure ?? (_ => { });
+        }
+
+        /// <summary>The highlighter itself (AvalonEdit's rule engine) runs in here; a failure leaves the line uncolored.</summary>
+        protected override void Colorize(ITextRunConstructionContext context)
+        {
+            try
+            {
+                base.Colorize(context);
+            }
+            catch (Exception ex)
+            {
+                _onFailure(ex);
+            }
         }
 
         protected override void ApplyColorToElement(VisualLineElement element, HighlightingColor color)
         {
-            var properties = element.TextRunProperties;
-
-            PadColor? original = color.Foreground?.GetColor(CurrentContext) is Color c ? new PadColor(c.A, c.R, c.G, c.B) : null;
-            if (SyntaxColors.Resolve(color.Name, original, _palette()) is PadColor paint)
-                properties.SetForegroundBrush(BrushFor(paint));
-
-            if (color.FontWeight != null || color.FontStyle != null)
+            try
             {
-                var face = properties.Typeface;
-                properties.SetTypeface(new Typeface(face.FontFamily, color.FontStyle ?? face.Style, color.FontWeight ?? face.Weight, face.Stretch));
+                var properties = element.TextRunProperties;
+
+                PadColor? original = color.Foreground?.GetColor(CurrentContext) is Color c ? new PadColor(c.A, c.R, c.G, c.B) : null;
+                if (SyntaxColors.Resolve(color.Name, original, _palette()) is PadColor paint)
+                    properties.SetForegroundBrush(BrushFor(paint));
+
+                if (color.FontWeight != null || color.FontStyle != null)
+                {
+                    var face = properties.Typeface;
+                    properties.SetTypeface(new Typeface(face.FontFamily, color.FontStyle ?? face.Style, color.FontWeight ?? face.Weight, face.Stretch));
+                }
+                if (color.Underline == true) properties.SetTextDecorations(TextDecorations.Underline);
+                if (color.Strikethrough == true) properties.SetTextDecorations(TextDecorations.Strikethrough);
             }
-            if (color.Underline == true) properties.SetTextDecorations(TextDecorations.Underline);
-            if (color.Strikethrough == true) properties.SetTextDecorations(TextDecorations.Strikethrough);
+            catch (Exception ex)
+            {
+                _onFailure(ex);
+            }
         }
 
         private Brush BrushFor(PadColor color)

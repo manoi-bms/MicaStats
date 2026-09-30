@@ -80,6 +80,57 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(FontWeights.Bold, bold.TextRunProperties.Typeface.Weight);
         });
 
+        private static void Render(TextView view)
+        {
+            view.Measure(new Size(600, 400));
+            view.Arrange(new Rect(0, 0, 600, 400));
+            view.EnsureVisualLines();
+        }
+
+        [Theory]
+        [InlineData("markdown", "# Title\n- item\n> quote\n```\ncode\n```")]
+        [InlineData("json", "{\n  \"a\": [1, true, \"x\"]\n}")]
+        public void A_colorizer_that_throws_is_caught_and_the_editor_falls_back_to_plain_text(string languageId, string text) => UiThread.Run(() =>
+        {
+            var editor = new ICSharpCode.AvalonEdit.TextEditor { Document = new TextDocument(text) };
+            var warnings = new System.Collections.Generic.List<string>();
+            var language = new EditorLanguage(editor, () => throw new System.InvalidOperationException("no palette"), folds: false)
+            {
+                Warn = warnings.Add,
+            };
+            language.Apply(PadLanguages.ById(languageId)!);
+            Assert.True(language.HasMarkdown || language.HasSyntaxColors);
+
+            Render(editor.TextArea.TextView);   // every line's colorizing throws; none of it escapes
+            PadLanguageWindowTests.Pump();
+
+            Assert.Single(warnings);
+            Assert.False(language.HasMarkdown);
+            Assert.False(language.HasSyntaxColors);
+            Assert.Same(PadLanguages.Plain, language.Current);
+
+            language.Apply(PadLanguages.ById(languageId)!);   // the window asking again keeps it plain
+            Assert.Same(PadLanguages.Plain, language.Current);
+        });
+
+        [Fact]
+        public void The_background_renderer_and_bullets_report_a_failure_instead_of_throwing() => UiThread.Run(() =>
+        {
+            var view = new TextView { Document = new TextDocument("```\ncode\n```\n- item") };
+            Render(view);
+            var failures = new System.Collections.Generic.List<System.Exception>();
+            var cache = new MarkdownDocumentCache(failures.Add);
+
+            var background = new MarkdownBackgroundRenderer(cache, () => throw new System.InvalidOperationException(), failures.Add);
+            using (var context = new System.Windows.Media.DrawingVisual().RenderOpen()) background.Draw(view, context);
+            Assert.Single(failures);
+
+            // Outside a line's construction there is no context to read: the generator bows out.
+            var bullets = new BulletGenerator(cache, failures.Add);
+            Assert.Equal(-1, bullets.GetFirstInterestedOffset(0));
+            Assert.Equal(2, failures.Count);
+        });
+
         [Fact]
         public void A_markdown_note_gets_the_colorizer_the_background_and_bullets() => PadLanguageWindowTests.WithWindow((window, env, config) =>
         {

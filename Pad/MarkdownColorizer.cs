@@ -19,26 +19,36 @@ namespace Kil0bitSystemMonitor.Pad
     {
         private readonly MarkdownDocumentCache _cache;
         private readonly Func<PadPalette> _palette;
+        private readonly Action<Exception> _onFailure;
         private readonly Dictionary<PadColor, Brush> _brushes = new();
 
-        public MarkdownColorizer(MarkdownDocumentCache cache, Func<PadPalette> palette)
+        /// <param name="onFailure">Told when a line cannot be formatted; that line is left as it is.</param>
+        public MarkdownColorizer(MarkdownDocumentCache cache, Func<PadPalette> palette, Action<Exception>? onFailure = null)
         {
             _cache = cache;
             _palette = palette;
+            _onFailure = onFailure ?? (_ => { });
         }
 
         protected override void ColorizeLine(DocumentLine line)
         {
-            var document = CurrentContext.Document;
-            var md = MarkdownLineTokenizer.Tokenize(document.GetText(line), _cache.KindOf(document, line.LineNumber));
-            var palette = _palette();
-            double baseSize = CurrentContext.GlobalTextRunProperties.FontRenderingEmSize;
-
-            foreach (var span in md.Spans)
+            try
             {
-                var look = MarkdownStyles.LookOf(span.Style, palette);
-                int start = line.Offset + span.Start;
-                ChangeLinePart(start, start + span.Length, element => Apply(element, look, baseSize));
+                var document = CurrentContext.Document;
+                var md = MarkdownLineTokenizer.Tokenize(document.GetText(line), _cache.KindOf(document, line.LineNumber));
+                var palette = _palette();
+                double baseSize = CurrentContext.GlobalTextRunProperties.FontRenderingEmSize;
+
+                foreach (var span in md.Spans)
+                {
+                    var look = MarkdownStyles.LookOf(span.Style, palette);
+                    int start = line.Offset + span.Start;
+                    ChangeLinePart(start, start + span.Length, element => Apply(element, look, baseSize));
+                }
+            }
+            catch (Exception ex)
+            {
+                _onFailure(ex);
             }
         }
 

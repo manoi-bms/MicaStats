@@ -164,6 +164,34 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_formatting_failure_warns_once_and_shows_that_note_as_plain_text() => WithWindow((window, env, config) =>
+        {
+            var warnings = new System.Collections.Generic.List<string>();
+            window.LanguageView.Warn = warnings.Add;
+            var failed = window.Editor.Document;
+            Assert.True(window.LanguageView.HasMarkdown);
+
+            window.LanguageView.ReportFailure(new InvalidOperationException("boom"));
+            window.LanguageView.ReportFailure(new InvalidOperationException("boom again"));
+            Assert.True(window.LanguageView.HasMarkdown);   // not torn down inside the failing hook
+            Pump();
+
+            Assert.Single(warnings);
+            Assert.Contains("InvalidOperationException", warnings[0]);
+            Assert.False(window.LanguageView.HasMarkdown);
+            Assert.Same(PadLanguages.Plain, window.LanguageView.Current);
+            Assert.Empty(window.Editor.TextArea.TextView.LineTransformers.OfType<MarkdownColorizer>());
+
+            window.NewTab();                                  // another note still formats
+            Assert.True(window.LanguageView.HasMarkdown);
+
+            window.SelectTab(0);                              // the failed one stays plain
+            Assert.Same(failed, window.Editor.Document);
+            Assert.False(window.LanguageView.HasMarkdown);
+            Assert.Single(warnings);
+        });
+
+        [Fact]
         public void The_language_menu_lists_auto_then_every_language() => WithWindow((window, env, config) =>
         {
             var menu = window.BuildLanguageMenu(env.Workspace.Active!);

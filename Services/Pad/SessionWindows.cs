@@ -21,8 +21,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// (written by v1.12, rebuilt from the notes, or brand new) becomes one window made from its
         /// old top-level fields. Windows without an id, with an id seen before, or with no note left
         /// are dropped; a note listed twice stays in the first window listing it; notes
-        /// <paramref name="noteExists"/> rejects are dropped; zoom is kept between 0.5 and 4. If no
-        /// window is left, one is made from the old fields.
+        /// <paramref name="noteExists"/> rejects are dropped; zoom is kept between 0.5 and 4. Notes
+        /// the old <see cref="SessionState.OpenNoteIds"/> lists that no kept window has (a dropped
+        /// window's) go to the end of the first window. If no window is left, one is made from the old fields.
         /// </summary>
         public static SessionState Normalize(SessionState session, Func<string, bool>? noteExists = null)
         {
@@ -49,6 +50,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
 
             if (windows.Count == 0) windows.Add(FromOldFields(session, noteExists));
+            else
+            {
+                // The mirror lists every window's notes: those of a window dropped above (a hand-edited
+                // file) join the first window rather than stay out of view, neither open nor closed.
+                foreach (string id in session.OpenNoteIds)
+                    if (!string.IsNullOrEmpty(id) && noteExists(id) && seenNotes.Add(id)) windows[0].NoteIds.Add(id);
+            }
             session.Windows = windows;
             return session;
         }

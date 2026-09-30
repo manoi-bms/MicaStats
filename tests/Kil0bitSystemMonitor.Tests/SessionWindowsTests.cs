@@ -162,6 +162,27 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Theory]
+        [InlineData("w1")]                                       // an id seen before
+        [InlineData("")]                                         // no id
+        public void The_notes_only_a_dropped_window_held_join_the_first_window(string badId)
+        {
+            string a = Note("a"), b = Note("b"), c = Note("c");
+            string gone = Guid.NewGuid().ToString("N");
+            // Hand-edited: the second window is dropped, and it alone lists b. The mirror, as MicaPad writes it, lists every window's notes.
+            File.WriteAllText(_store.SessionPath,
+                "{ \"OpenNoteIds\": [\"" + a + "\", \"" + b + "\", \"" + c + "\", \"" + gone + "\"], \"Windows\": [ " +
+                "{ \"Id\": \"w1\", \"NoteIds\": [\"" + a + "\"] }, " +
+                "{ \"Id\": \"" + badId + "\", \"NoteIds\": [\"" + b + "\"] }, " +
+                "{ \"Id\": \"w2\", \"NoteIds\": [\"" + c + "\"] } ] }");
+
+            var back = _store.LoadSession().Windows!;
+
+            Assert.Equal(new[] { "w1", "w2" }, back.Select(w => w.Id));
+            Assert.Equal(new[] { a, b }, back[0].NoteIds);
+            Assert.Equal(new[] { c }, back[1].NoteIds);
+        }
+
+        [Theory]
         [InlineData("garbage")]
         [InlineData("{ \"Windows\": 5 }")]
         [InlineData("{ \"Windows\": [ { \"Id\": 7 } ] }")]

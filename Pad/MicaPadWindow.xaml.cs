@@ -63,6 +63,8 @@ namespace Kil0bitSystemMonitor.Pad
         private AutoCloseHandler _autoClose = null!;
         private readonly BookmarkController _bookmarks = new();
         private BookmarkMargin _bookmarkMargin = null!;
+        private readonly OccurrenceHighlighter _occurrences = new();
+        private DispatcherTimer _occurrenceTimer = null!;
         private ResolvedLanguage _resolved = new(PadLanguages.Plain, false);
 
         /// <summary>The note whose tab is being renamed, or null; for tests (the popup itself needs a shown window).</summary>
@@ -83,6 +85,19 @@ namespace Kil0bitSystemMonitor.Pad
             _bookmarkMargin = new BookmarkMargin(() => _bookmarks.Lines(Editor.Document), () => _palette);
             Editor.TextArea.LeftMargins.Insert(0, _bookmarkMargin);
             _bookmarks.Changed += OnBookmarksChanged;
+            // Index 0: below the find-match renderer (FindBar.Attach added it with Add), so matches draw on top.
+            Editor.TextArea.TextView.BackgroundRenderers.Insert(0, _occurrences);
+            _occurrenceTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(150) };
+            _occurrenceTimer.Tick += (s, e) =>
+            {
+                _occurrenceTimer.Stop();
+                RefreshOccurrences();
+            };
+            Editor.TextArea.SelectionChanged += (s, e) =>
+            {
+                _occurrenceTimer.Stop();
+                _occurrenceTimer.Start();
+            };
             ApplyTheme();
             Editor.ContextMenu = EditorMenu;
             Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu();
@@ -278,10 +293,51 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnClosedForReal(object? sender, EventArgs e) => Detach();
 
+        // ---- occurrences ---------------------------------------------------------------------
+
+        /// <summary>The occurrence boxes; for tests.</summary>
+        internal OccurrenceHighlighter OccurrenceMarks => _occurrences;
+
+        /// <summary>
+        /// Marks every occurrence of the selected word and counts them in the status bar (spec 3.4),
+        /// or clears both when the selection is not exactly one whole word or the note is too large.
+        /// </summary>
+        internal void RefreshOccurrences()
+        {
+            var document = Editor.Document;
+            string word = "";
+            (IReadOnlyList<int> Offsets, bool Capped) found = (Array.Empty<int>(), false);
+
+            if (document != null && document.TextLength <= PadLanguages.MaxFormattedChars && Editor.SelectionLength > 0)
+            {
+                string text = document.Text;
+                if (OccurrenceFinder.IsWholeWordSelection(text, Editor.SelectionStart, Editor.SelectionLength))
+                {
+                    word = Editor.SelectedText;
+                    found = OccurrenceFinder.FindAll(text, word);
+                }
+            }
+
+            _occurrences.Offsets = found.Offsets;
+            _occurrences.Length = word.Length;
+            Editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
+
+            if (found.Offsets.Count > 0)
+            {
+                OccurrenceText.Text = OccurrenceFinder.Describe(found.Offsets.Count, found.Capped);
+                OccurrenceText.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                OccurrenceText.Visibility = Visibility.Collapsed;
+            }
+        }
+
         /// <summary>Stops the timer and unhooks from long-lived objects. Safe to call twice.</summary>
         private void Detach()
         {
             _tick.Stop();
+            _occurrenceTimer?.Stop();
             _config.PropertyChanged -= OnConfigChanged;
             _workspace.Open.CollectionChanged -= OnOpenChanged;
             if (ReferenceEquals(s_current, this)) s_current = null;
@@ -367,6 +423,7 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace.SetActive(note);
             Editor.Document = EnsureDocument(note);
             ApplyLanguage();
+            RefreshOccurrences();
             RestoreViewState(note);
             UpdateCaretText();
             UpdateCharsText();
@@ -1368,6 +1425,8 @@ namespace Kil0bitSystemMonitor.Pad
             _bookmarkMargin?.InvalidateVisual();
             PreviewEditor.TextArea.SelectionBrush = area.SelectionBrush;
             FindBar.ApplyPalette(_palette);
+            _occurrences.Fill = PadThemeApplier.ToBrush(_palette.Occurrence);
+            area.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
 
             // Sun (E706) offers the light theme, moon (E708) the dark one.
             ThemeButton.Content = _palette.IsDark ? "\uE706" : "\uE708";

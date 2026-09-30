@@ -248,6 +248,9 @@ selected. Line endings are kept, and each is a single **Ctrl+Z**.
 **F2** / **Shift+F2** jump to the next / previous one, wrapping around. They move with the text as
 you edit, and each tab keeps its own across restarts. **☰ → Clear bookmarks** removes them.
 
+**Occurrences**: select a whole word and every other place it appears (same case, whole words
+only) gets a soft box; the status bar counts them (`5 matches`, up to `10,000+`).
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

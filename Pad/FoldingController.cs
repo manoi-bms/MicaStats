@@ -74,9 +74,10 @@ namespace Kil0bitSystemMonitor.Pad
             if (_manager == null || _document == null) return;
             try
             {
-                _manager.UpdateFoldings(Compute(_document, _language), -1);
+                var foldings = Compute(_document, _language, out int firstError);
+                _manager.UpdateFoldings(foldings, firstError);
             }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.Xml.XmlException)
+            catch (Exception ex)
             {
                 DiagnosticsLog.Warn("pad", "Folding could not be updated (" + ex.GetType().Name + ")");
             }
@@ -88,12 +89,21 @@ namespace Kil0bitSystemMonitor.Pad
             _timer.Start();
         }
 
-        private static IEnumerable<NewFolding> Compute(TextDocument document, PadLanguage language) => language.Fold switch
+        /// <summary>The folds of the document; <paramref name="firstError"/> is where XML stopped parsing, or -1.</summary>
+        private static IEnumerable<NewFolding> Compute(TextDocument document, PadLanguage language, out int firstError)
         {
-            PadFoldKind.Xml => new XmlFoldingStrategy().CreateNewFoldings(document, out _),
-            PadFoldKind.Braces => BraceFolding.Compute(document.Text, BraceSyntax.For(language.Id)).Select(f => new NewFolding(f.Start, f.End)),
-            PadFoldKind.Headings => HeadingFolding.Compute(document.Text).Select(f => new NewFolding(f.Start, f.End)),
-            _ => Array.Empty<NewFolding>(),
-        };
+            firstError = -1;
+            switch (language.Fold)
+            {
+                case PadFoldKind.Xml:
+                    return new XmlFoldingStrategy().CreateNewFoldings(document, out firstError);
+                case PadFoldKind.Braces:
+                    return BraceFolding.Compute(document.Text, BraceSyntax.For(language.Id)).Select(f => new NewFolding(f.Start, f.End));
+                case PadFoldKind.Headings:
+                    return HeadingFolding.Compute(document.Text).Select(f => new NewFolding(f.Start, f.End));
+                default:
+                    return Array.Empty<NewFolding>();
+            }
+        }
     }
 }

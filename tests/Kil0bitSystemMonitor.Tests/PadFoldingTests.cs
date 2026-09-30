@@ -48,6 +48,44 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void PowerShell_backtick_escapes_and_a_trailing_backslash_does_not_hide_a_brace()
+        {
+            string ps = "if (Test-Path \"C:\\Temp\\\") {\n  Write-Host \"x\"\n}";
+            var folds = BraceFolding.Compute(ps, BraceSyntax.For("powershell"));
+            Assert.Single(folds);
+            Assert.Equal(ps.IndexOf('{'), folds[0].Start);
+            Assert.Equal(ps.Length, folds[0].End);
+        }
+
+        [Fact]
+        public void PowerShell_here_strings_hide_their_braces()
+        {
+            string ps = "$json = @\"\n{\n  \"a\": [\n    1\n  ]\n}\n\"@\nfunction F {\n  1\n}";
+            var folds = BraceFolding.Compute(ps, BraceSyntax.For("powershell"));
+            Assert.Equal(new[] { "{\n  1\n}" }, Folded(ps, folds));
+            string crlf = ps.Replace("\n", "\r\n");
+            Assert.Single(BraceFolding.Compute(crlf, BraceSyntax.For("powershell")));
+        }
+
+        [Fact]
+        public void Backtick_quotes_are_only_JavaScript_strings()
+        {
+            string cs = "var s = \"`\"; if (x) {\n}";
+            Assert.Single(BraceFolding.Compute(cs, BraceSyntax.For("csharp")));
+            string stray = "a `\n{\n  1\n}";
+            Assert.Single(BraceFolding.Compute(stray, BraceSyntax.For("csharp")));
+            Assert.Empty(BraceFolding.Compute(stray, BraceSyntax.For("javascript")));
+        }
+
+        [Fact]
+        public void PHP_hash_comments_are_ignored()
+        {
+            string php = "if (x) {\n# }\n  1;\n}";
+            var folds = BraceFolding.Compute(php, BraceSyntax.For("php"));
+            Assert.Equal(new[] { php.Substring(php.IndexOf('{')) }, Folded(php, folds));
+        }
+
+        [Fact]
         public void Headings_fold_to_the_next_heading_of_the_same_or_higher_level()
         {
             string md = "# A\ntext\n## B\nmore\n\n# C\nend";

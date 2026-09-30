@@ -7,6 +7,23 @@ using Kil0bitSystemMonitor.Models;
 
 namespace Kil0bitSystemMonitor.Services.Capture
 {
+    /// <summary>What a registered shortcut does.</summary>
+    internal enum HotkeyTarget
+    {
+        CaptureRegion,
+        CaptureWindow,
+        CaptureScreen,
+        Pad,
+        Ai,
+    }
+
+    /// <summary>One shortcut <see cref="CaptureHotkeys.Apply"/> registers, decided before any Win32 call.</summary>
+    /// <param name="Spec">The combination as configured, in <see cref="HotkeyParser"/> syntax.</param>
+    /// <param name="Area">The diagnostics log area its registration is reported under.</param>
+    /// <param name="Label">The name the log uses for it.</param>
+    /// <param name="Target">What pressing it does.</param>
+    internal readonly record struct HotkeyPlan(string? Spec, string Area, string Label, HotkeyTarget Target);
+
     /// <summary>
     /// System-wide capture shortcuts, via <c>RegisterHotKey</c> on a hidden message window.
     ///
@@ -18,8 +35,10 @@ namespace Kil0bitSystemMonitor.Services.Capture
     /// </para>
     ///
     /// <para>
-    /// The same hidden window also carries MicaPad's shortcut. Each registration maps to an
-    /// action, and MicaPad's key registers whether or not the capture shortcuts are switched on.
+    /// The same hidden window also carries MicaPad's shortcut and Ask MicaStats'. Each
+    /// registration maps to an action. MicaPad's key registers whether or not the capture
+    /// shortcuts are switched on; Ask MicaStats' only while the assistant is, so switching the
+    /// assistant off frees the combination for other programs.
     /// </para>
     /// </summary>
     public sealed class CaptureHotkeys : IDisposable
@@ -30,6 +49,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
         private readonly Func<AppConfig?> _config;
         private readonly Dictionary<int, Action> _registered = new();
         private readonly Action _openPad;
+        private readonly Action _openAi;
         private HwndSource? _source;
         private int _nextId = 0xA100;
 
@@ -37,11 +57,13 @@ namespace Kil0bitSystemMonitor.Services.Capture
         /// <param name="dispatcher">The UI dispatcher that capture runs on.</param>
         /// <param name="config">Supplies the current config, read on every Apply and every trigger.</param>
         /// <param name="openPad">Opens MicaPad; queued onto the dispatcher, never run inside the window procedure.</param>
-        public CaptureHotkeys(Dispatcher dispatcher, Func<AppConfig?> config, Action openPad)
+        /// <param name="openAi">Opens Ask MicaStats; queued the same way.</param>
+        public CaptureHotkeys(Dispatcher dispatcher, Func<AppConfig?> config, Action openPad, Action openAi)
         {
             _dispatcher = dispatcher;
             _config = config;
             _openPad = openPad;
+            _openAi = openAi;
         }
 
         /// <summary>Registers the configured shortcuts. Safe to call again to re-apply changes.</summary>
@@ -52,26 +74,50 @@ namespace Kil0bitSystemMonitor.Services.Capture
             var cfg = _config();
             if (cfg == null) return;
 
-            bool wantCapture = cfg.CaptureHotkeysEnabled;
-            bool wantPad = !string.IsNullOrWhiteSpace(cfg.PadHotkey);
-            if (!wantCapture && !wantPad) return;
+            var plan = Plan(cfg);
+            if (plan.Count == 0) return;
 
             EnsureWindow();
             if (_source == null) return;
 
-            if (wantCapture)
+            foreach (var entry in plan)
+                Register(entry.Spec, entry.Area, entry.Label, ActionFor(entry.Target));
+        }
+
+        /// <summary>
+        /// The shortcuts <paramref name="cfg"/> asks for, in registration order: the three capture
+        /// keys while capture shortcuts are on, MicaPad's when set, and Ask MicaStats' when set
+        /// and the assistant is on.
+        /// </summary>
+        internal static IReadOnlyList<HotkeyPlan> Plan(AppConfig cfg)
+        {
+            var plan = new List<HotkeyPlan>();
+            if (cfg.CaptureHotkeysEnabled)
             {
-                Register(cfg.CaptureHotkeyRegion, "capture", nameof(CaptureMode.Region),
-                    () => CaptureService.Start(CaptureMode.Region, _config(), _dispatcher));
-                Register(cfg.CaptureHotkeyWindow, "capture", nameof(CaptureMode.ActiveWindow),
-                    () => CaptureService.Start(CaptureMode.ActiveWindow, _config(), _dispatcher));
-                Register(cfg.CaptureHotkeyFullScreen, "capture", nameof(CaptureMode.Screen),
-                    () => CaptureService.Start(CaptureMode.Screen, _config(), _dispatcher));
+                plan.Add(new HotkeyPlan(cfg.CaptureHotkeyRegion, "capture", nameof(CaptureMode.Region), HotkeyTarget.CaptureRegion));
+                plan.Add(new HotkeyPlan(cfg.CaptureHotkeyWindow, "capture", nameof(CaptureMode.ActiveWindow), HotkeyTarget.CaptureWindow));
+                plan.Add(new HotkeyPlan(cfg.CaptureHotkeyFullScreen, "capture", nameof(CaptureMode.Screen), HotkeyTarget.CaptureScreen));
             }
 
-            // Queued, not called: the handler runs inside WndProc, and opening a window there would re-enter it.
-            if (wantPad) Register(cfg.PadHotkey, "pad", "MicaPad", () => _dispatcher.BeginInvoke(_openPad));
+            if (!string.IsNullOrWhiteSpace(cfg.PadHotkey))
+                plan.Add(new HotkeyPlan(cfg.PadHotkey, "pad", "MicaPad", HotkeyTarget.Pad));
+
+            if (cfg.AiAssistantEnabled && !string.IsNullOrWhiteSpace(cfg.AiHotkey))
+                plan.Add(new HotkeyPlan(cfg.AiHotkey, "ai", "Ask MicaStats", HotkeyTarget.Ai));
+
+            return plan;
         }
+
+        private Action ActionFor(HotkeyTarget target) => target switch
+        {
+            HotkeyTarget.CaptureRegion => () => CaptureService.Start(CaptureMode.Region, _config(), _dispatcher),
+            HotkeyTarget.CaptureWindow => () => CaptureService.Start(CaptureMode.ActiveWindow, _config(), _dispatcher),
+            HotkeyTarget.CaptureScreen => () => CaptureService.Start(CaptureMode.Screen, _config(), _dispatcher),
+            // Queued, not called: the handler runs inside WndProc, and opening a window there would re-enter it.
+            HotkeyTarget.Pad => () => _dispatcher.BeginInvoke(_openPad),
+            HotkeyTarget.Ai => () => _dispatcher.BeginInvoke(_openAi),
+            _ => () => { },
+        };
 
         private void EnsureWindow()
         {
@@ -137,6 +183,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
             _registered.Clear();
         }
 
+        /// <summary>Unregisters every shortcut and destroys the hidden window.</summary>
         public void Dispose()
         {
             Unregister();

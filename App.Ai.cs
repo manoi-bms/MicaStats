@@ -97,6 +97,10 @@ public partial class App
         }
         ApplyToolPipe();
         ApplyMcpHttp();
+        // Switching the assistant off closes Ask MicaStats, which also stops an answer in
+        // progress. The hotkey (App.xaml.cs) and the overlay menu item follow the same switch.
+        if (ConfigService?.Config.AiAssistantEnabled != true)
+            Current?.Dispatcher.BeginInvoke(new Action(Kil0bitSystemMonitor.Ai.AskWindow.CloseIfOpen));
         // AI anchor: apply
     }
 
@@ -301,6 +305,78 @@ public partial class App
         if (!secrets.Has(Kil0bitSystemMonitor.Services.Ai.SecretNames.McpToken))
             secrets.Set(Kil0bitSystemMonitor.Services.Ai.SecretNames.McpToken,
                 Kil0bitSystemMonitor.Services.Ai.SecretStore.NewToken());
+    }
+
+    // ---- Ask MicaStats -------------------------------------------------------------------
+
+    private static Kil0bitSystemMonitor.Services.Ai.SecretStore? s_aiSecrets;
+    private static Kil0bitSystemMonitor.Services.Ai.UsageMeter? s_aiUsage;
+
+    /// <summary>
+    /// The one DPAPI secret store (API keys and the MCP token), created on first use. One
+    /// instance for the whole app, so a key saved in Settings is the one the next question uses.
+    /// </summary>
+    internal static Kil0bitSystemMonitor.Services.Ai.SecretStore AiSecrets =>
+        System.Threading.LazyInitializer.EnsureInitialized(ref s_aiSecrets, () =>
+            new Kil0bitSystemMonitor.Services.Ai.SecretStore(
+                Kil0bitSystemMonitor.Services.Ai.SecretStore.DefaultPath,
+                message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", message)));
+
+    /// <summary>Today's question count, shared by every Send and Explain; created on first use.</summary>
+    internal static Kil0bitSystemMonitor.Services.Ai.UsageMeter AiUsage =>
+        System.Threading.LazyInitializer.EnsureInitialized(ref s_aiUsage, () =>
+            new Kil0bitSystemMonitor.Services.Ai.UsageMeter(
+                Kil0bitSystemMonitor.Services.Ai.UsageMeter.DefaultPath, () => DateTime.Now));
+
+    /// <summary>
+    /// Shows Ask MicaStats and, with a <paramref name="question"/>, asks it at once (the Explain
+    /// buttons). From the overlay menu, the hotkey and Explain.
+    /// </summary>
+    public static void OpenAsk(string? question = null)
+    {
+        try
+        {
+            Kil0bitSystemMonitor.Ai.AskWindow.ShowOrActivate(question);
+        }
+        catch (Exception ex)
+        {
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("ai", "Opening Ask MicaStats failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// What one Send or Explain needs, built fresh each time so a provider, model or key change
+    /// applies from the next question. Never throws: a problem comes back as the sentence to show.
+    /// </summary>
+    internal static Kil0bitSystemMonitor.Ai.AskSetup CreateAskSetup()
+    {
+        var config = ConfigService?.Config;
+        if (config == null)
+            return new Kil0bitSystemMonitor.Ai.AskSetup(null, "MicaStats is still starting. Try again in a moment.");
+        if (!config.AiAssistantEnabled)
+            return new Kil0bitSystemMonitor.Ai.AskSetup(null, "The assistant is off. Turn it on in Settings > AI.");
+        var tools = AiTools;
+        if (tools == null)
+            return new Kil0bitSystemMonitor.Ai.AskSetup(null, "The data tools are not ready yet. Try again in a moment.");
+
+        try
+        {
+            var result = Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets);
+            if (result.Client == null)
+                return new Kil0bitSystemMonitor.Ai.AskSetup(null,
+                    result.Problem ?? "The AI provider could not be set up. Check Settings > AI.");
+
+            var assistant = new Kil0bitSystemMonitor.Services.Ai.AiAssistant(
+                result.Client, result.IsClaude, tools, AiUsage,
+                new Kil0bitSystemMonitor.Services.Ai.AiAssistantOptions { DailyLimit = () => config.AiDailyLimit });
+            return new Kil0bitSystemMonitor.Ai.AskSetup(assistant.AskAsync, null, result.Client);
+        }
+        catch (Exception ex)
+        {
+            // The type only: a message could quote a URL or a server reply.
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Setting up the provider failed (" + ex.GetType().Name + ")");
+            return new Kil0bitSystemMonitor.Ai.AskSetup(null, Kil0bitSystemMonitor.Services.Ai.AiErrorText.Describe(ex));
+        }
     }
 
     // AI anchor: members

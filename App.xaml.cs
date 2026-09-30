@@ -245,13 +245,17 @@ namespace Kil0bitSystemMonitor
             // System-wide capture shortcuts. Re-applied whenever the user edits them, so a new
             // combination takes effect without a restart.
             m_captureHotkeys = new Kil0bitSystemMonitor.Services.Capture.CaptureHotkeys(
-                Dispatcher, () => m_config?.Config, () => OpenPad(null));
+                Dispatcher, () => m_config?.Config, () => OpenPad(null), () => OpenAsk(null));
             m_captureHotkeys.Apply();
             config.Config.PropertyChanged += (s, e) =>
             {
+                // The Ask MicaStats key registers only while the assistant is on, so the switch
+                // re-applies too: turning the assistant off frees the combination.
                 if (e.PropertyName != null &&
                     (e.PropertyName.StartsWith("CaptureHotkey", StringComparison.Ordinal) ||
-                     e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.PadHotkey)))
+                     e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.PadHotkey) ||
+                     e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.AiHotkey) ||
+                     e.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.AiAssistantEnabled)))
                     Dispatcher.BeginInvoke(new Action(() => m_captureHotkeys?.Apply()));
             };
 

@@ -1645,6 +1645,18 @@ namespace Kil0bitSystemMonitor
                 ? "\t" + Services.Capture.HotkeyParser.Describe(mods, vk)
                 : "";
 
+        /// <summary>
+        /// The menu's Ask MicaStats entry with its shortcut column, or null while the assistant is
+        /// off: the item is left out rather than shown doing nothing.
+        /// </summary>
+        internal static string? AskMenuText(AppConfig config)
+        {
+            if (!config.AiAssistantEnabled) return null;
+            return Services.Capture.HotkeyParser.TryParse(config.AiHotkey, out var mods, out uint vk)
+                ? "Ask MicaStats\u2026\t" + Services.Capture.HotkeyParser.Describe(mods, vk)
+                : "Ask MicaStats\u2026";
+        }
+
         private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
             if (msg == 0x0084) return (IntPtr)1;
@@ -1774,6 +1786,7 @@ namespace Kil0bitSystemMonitor
                     AppendMenu(hMenu, 0, 1001, "Settings");
                     AppendMenu(hMenu, 0, 1011, "Processes");
                     AppendMenu(hMenu, 0, 1012, "MicaPad" + PadShortcutLabel());
+                    if (AskMenuText(_config.Config) is string askText) AppendMenu(hMenu, 0, 1013, askText);
                     AppendMenu(hMenu, 0, 1002, "Task Manager");
                     AppendMenu(hMenu, 0x0800, 0, null);
                     AppendMenu(hMenu, 0, 1020, "Capture Region	Ctrl+Shift+1");
@@ -1826,6 +1839,7 @@ namespace Kil0bitSystemMonitor
                     // beside it for its other tabs, and for when MicaStats itself is the problem.
                     else if (ch == 1011) _dispatcher.BeginInvoke(() => TaskManagerWindow.ShowOrActivate(App.SharedProcessSampler));
                     else if (ch == 1012) _dispatcher.BeginInvoke(() => App.OpenPad(null));
+                    else if (ch == 1013) _dispatcher.BeginInvoke(() => App.OpenAsk(null));
                     else if (ch == 1002) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("taskmgr") { UseShellExecute = true });
                     // Capture runs on the dispatcher: the selector is a WPF window, and this
                     // handler is inside the native menu's message loop.

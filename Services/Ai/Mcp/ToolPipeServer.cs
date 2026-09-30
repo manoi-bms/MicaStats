@@ -48,6 +48,25 @@ public sealed class ToolPipeServer : IDisposable
     /// <summary>The idle bound above; tests shorten it before <see cref="Start"/>.</summary>
     internal TimeSpan RequestWaitLimit { get; set; } = DefaultRequestWaitLimit;
 
+    /// <summary>The pause after the first failure in a row; it doubles with each further one. Tests shorten it.</summary>
+    internal TimeSpan RetryDelayFirst { get; set; } = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>The longest pause between retries, however long the failures go on. Tests shorten it.</summary>
+    internal TimeSpan RetryDelayMax { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>Tests only: runs before every pipe instance after the first is created, and may throw to fail it.</summary>
+    internal Action? BeforeCreateInstance { get; set; }
+
+    /// <summary>
+    /// The pause after failure number <paramref name="failures"/> in a row (0 for the first):
+    /// <paramref name="first"/>, doubled for each further failure, never above <paramref name="max"/>.
+    /// </summary>
+    internal static TimeSpan RetryDelay(int failures, TimeSpan first, TimeSpan max)
+    {
+        double ms = first.TotalMilliseconds * Math.Pow(2, Math.Clamp(failures, 0, 30));
+        return ms >= max.TotalMilliseconds ? max : TimeSpan.FromMilliseconds(ms);
+    }
+
     /// <summary>A server for <paramref name="pipeName"/> (see <see cref="ToolPipeProtocol.DefaultPipeName"/>); nothing is created until <see cref="Start"/>.</summary>
     /// <param name="warn">Receives failure notes for the diagnostics log: never tool arguments or results.</param>
     public ToolPipeServer(string pipeName, ToolInvoker invoke, Action<string>? warn = null)
@@ -59,7 +78,10 @@ public sealed class ToolPipeServer : IDisposable
         _sddl = ToolPipeNative.SddlFor(identity.User ?? throw new InvalidOperationException("The current Windows user has no SID."));
     }
 
-    /// <summary>True from a successful <see cref="Start"/> until <see cref="Stop"/>, or until the accept loop fails.</summary>
+    /// <summary>
+    /// True from a successful <see cref="Start"/> until <see cref="Stop"/>: the accept loop logs
+    /// and outlasts any other failure.
+    /// </summary>
     public bool IsRunning
     {
         get { lock (_gate) return _loop is { IsCompleted: false }; }
@@ -126,58 +148,65 @@ public sealed class ToolPipeServer : IDisposable
 
     private async Task AcceptLoopAsync(NamedPipeServerStream listening, SemaphoreSlim slots, CancellationToken ct)
     {
-        // The loop ends only when the server is stopped: any other failure is logged and the
-        // listening instance is replaced, because a dead loop frees the name for a squatter.
+        // The loop ends only when the server is stopped, because a dead loop frees the name for a
+        // squatter. Any other failure is logged once per run of failures, with its cause, and the
+        // loop carries on after a pause that grows while the failures last, so a lasting fault
+        // neither spins nor fills the log. A connection handed off ends the run.
+        int failures = 0;
         try
         {
             while (!ct.IsCancellationRequested)
             {
+                NamedPipeServerStream? connected = null;
+                bool slotTaken = false;
                 try
                 {
-                    await listening.WaitForConnectionAsync(ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    return;
+                    try
+                    {
+                        await listening.WaitForConnectionAsync(ct).ConfigureAwait(false);
+                    }
+                    catch (IOException) when (!ct.IsCancellationRequested)
+                    {
+                        // A client connected and left before it was accepted: normal, not a failure.
+                        // Replace the instance, creating the new one first so the name is never
+                        // left without one.
+                        NamedPipeServerStream dropped = listening;
+                        listening = await NewListeningAsync(ct).ConfigureAwait(false);
+                        Close(dropped);
+                        continue;
+                    }
+
+                    connected = listening;
+                    await slots.WaitAsync(ct).ConfigureAwait(false);
+                    slotTaken = true;
+
+                    // The next instance exists before this one is served (and later closed).
+                    listening = await NewListeningAsync(ct).ConfigureAwait(false);
+                    NamedPipeServerStream serving = connected;
+                    connected = null;
+                    slotTaken = false;
+                    _ = Task.Run(() => ServeAsync(serving, slots, ct));
+                    failures = 0;
                 }
                 catch (Exception ex) when (!ct.IsCancellationRequested)
                 {
-                    // A client connected and left before it was accepted, or the instance failed.
-                    // Replace it, creating the new one first so the name is never left without one.
-                    if (ex is not IOException) _warn("The tool pipe listener failed: " + ex.GetType().Name);
+                    if (failures == 0) _warn("The tool pipe listener failed and keeps trying: " + Describe(ex));
+
+                    // Whatever broke, a fresh instance waits before the old one closes.
                     NamedPipeServerStream stale = listening;
                     listening = await NewListeningAsync(ct).ConfigureAwait(false);
                     Close(stale);
-                    continue;
-                }
+                    if (connected != null && !ReferenceEquals(connected, stale)) Close(connected);
+                    if (slotTaken) slots.Release();
 
-                NamedPipeServerStream connected = listening;
-                try
-                {
-                    await slots.WaitAsync(ct).ConfigureAwait(false);
+                    await Task.Delay(RetryDelay(failures, RetryDelayFirst, RetryDelayMax), ct).ConfigureAwait(false);
+                    failures++;
                 }
-                catch (OperationCanceledException)
-                {
-                    Close(connected);
-                    return;
-                }
-
-                // The next instance exists before this one is served (and later closed).
-                try
-                {
-                    listening = await NewListeningAsync(ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    Close(connected);
-                    slots.Release();
-                    return;
-                }
-                _ = Task.Run(() => ServeAsync(connected, slots, ct));
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception) when (ct.IsCancellationRequested)
         {
+            // Stopping: Stop cancels first, then disposes the instances under the loop.
         }
         finally
         {
@@ -185,23 +214,30 @@ public sealed class ToolPipeServer : IDisposable
         }
     }
 
-    /// <summary>Creates the next waiting instance, retrying until it works or the server stops.</summary>
+    /// <summary>
+    /// Creates the next waiting instance, retrying until it works or the server stops. A run of
+    /// failures is logged once, with its cause, and the pauses between tries grow up to
+    /// <see cref="RetryDelayMax"/>.
+    /// </summary>
     private async Task<NamedPipeServerStream> NewListeningAsync(CancellationToken ct)
     {
-        while (true)
+        for (int failures = 0; ; failures++)
         {
             ct.ThrowIfCancellationRequested();
             try
             {
                 return Track(CreateInstance(firstInstance: false));
             }
-            catch (IOException ex)
+            catch (Exception ex)
             {
-                _warn("The tool pipe could not create its next instance: " + ex.GetType().Name);
-                await Task.Delay(TimeSpan.FromMilliseconds(200), ct).ConfigureAwait(false);
+                if (failures == 0) _warn("The tool pipe could not create its next instance and keeps trying: " + Describe(ex));
+                await Task.Delay(RetryDelay(failures, RetryDelayFirst, RetryDelayMax), ct).ConfigureAwait(false);
             }
         }
     }
+
+    /// <summary>The exception type and message for the log. Pipe failures only: never tool arguments or results.</summary>
+    private static string Describe(Exception ex) => ex.GetType().Name + ": " + ex.Message;
 
     private async Task ServeAsync(NamedPipeServerStream pipe, SemaphoreSlim slots, CancellationToken ct)
     {
@@ -298,6 +334,7 @@ public sealed class ToolPipeServer : IDisposable
 
     private NamedPipeServerStream CreateInstance(bool firstInstance)
     {
+        if (!firstInstance) BeforeCreateInstance?.Invoke();
         try
         {
             // Two more instances than served clients: the one waiting for the next caller, and the

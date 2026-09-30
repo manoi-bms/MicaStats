@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Runtime.CompilerServices;
 using System.Security.Principal;
 using System.Text.Json.Nodes;
 using Kil0bitSystemMonitor.Services.Ai.Mcp;
@@ -374,6 +375,79 @@ public class McpPipeTests
         Assert.True(server.IsRunning);
         JsonNode result = await ToolPipeClient.CallAsync(name, "t", null, TenSeconds, CancellationToken.None);
         Assert.NotNull(result);
+    }
+
+    /// <summary>A server whose next instances fail to be created <paramref name="failures"/> times, with short pauses.</summary>
+    private static ToolPipeServer FlakyServer(string name, List<string> warnings, Func<Exception> failure, StrongBox<int> failures) =>
+        new(name, Constant(new JsonObject { ["n"] = 1 }), message =>
+        {
+            lock (warnings) warnings.Add(message);
+        })
+        {
+            RetryDelayFirst = TimeSpan.FromMilliseconds(10),
+            RetryDelayMax = TimeSpan.FromMilliseconds(40),
+            BeforeCreateInstance = () =>
+            {
+                if (Interlocked.Decrement(ref failures.Value) >= 0) throw failure();
+            },
+        };
+
+    [Fact]
+    public async Task An_unexpected_failure_creating_the_next_instance_is_logged_with_its_cause_and_serving_goes_on()
+    {
+        string name = TestPipeName();
+        var warnings = new List<string>();
+        var failures = new StrongBox<int>(3);
+        using ToolPipeServer server = FlakyServer(name, warnings, () => new UnauthorizedAccessException("Access to the pipe is denied."), failures);
+        server.Start();
+
+        JsonNode first = await ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None);
+        JsonNode second = await ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None);
+
+        Assert.Equal(1, (int?)first["n"]);
+        Assert.Equal(1, (int?)second["n"]);
+        Assert.True(server.IsRunning);
+        string warning;
+        lock (warnings) warning = Assert.Single(warnings);
+        Assert.Contains("UnauthorizedAccessException: Access to the pipe is denied.", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_create_failure_that_repeats_is_logged_once_per_run_of_failures()
+    {
+        string name = TestPipeName();
+        var warnings = new List<string>();
+        var failures = new StrongBox<int>(6);
+        using ToolPipeServer server = FlakyServer(name, warnings, () => new IOException("All pipe instances are busy."), failures);
+        server.Start();
+
+        await ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None);
+        lock (warnings) Assert.Single(warnings);
+
+        // A success ends the run: the next run of failures is logged again, once.
+        Volatile.Write(ref failures.Value, 2);
+        await ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None);
+        await ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None);
+
+        Assert.True(server.IsRunning);
+        lock (warnings)
+        {
+            Assert.Equal(2, warnings.Count);
+            Assert.All(warnings, w => Assert.Contains("IOException: All pipe instances are busy.", w, StringComparison.Ordinal));
+        }
+    }
+
+    [Theory]
+    [InlineData(0, 200)]
+    [InlineData(1, 400)]
+    [InlineData(2, 800)]
+    [InlineData(4, 3200)]
+    [InlineData(5, 5000)]
+    [InlineData(1000, 5000)]
+    public void Retries_back_off_from_200_ms_doubling_up_to_5_s(int failures, int expectedMs)
+    {
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMs),
+            ToolPipeServer.RetryDelay(failures, TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(5)));
     }
 
     [Fact]

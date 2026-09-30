@@ -112,12 +112,18 @@ namespace Kil0bitSystemMonitor.Services.History
 
             lock (_gate)
             {
+                bool anyFailed = false;
                 foreach (var file in DayFiles())
                 {
                     if (file.Day < from.Date || file.Day > to.Date) continue;
-                    foreach (HistoryRow row in ReadFile(file.FilePath))
+                    List<HistoryRow> fileRows = ReadFile(file.FilePath, out bool failed);
+                    anyFailed |= failed;
+                    foreach (HistoryRow row in fileRows)
                         if (row.Utc >= from && row.Utc <= to) rows.Add(row);
                 }
+                // A kind is reset only after a whole pass without a failure of that kind, so one
+                // stuck file next to healthy ones does not warn again on every read.
+                if (!anyFailed) Succeeded("read");
             }
             return rows.OrderBy(r => r.Utc).ToList();
         }
@@ -132,6 +138,7 @@ namespace Kil0bitSystemMonitor.Services.History
             DateTime now = MinuteAggregator.ToUtc(_utcClock());
             lock (_gate)
             {
+                bool anyFailed = false;
                 foreach (var file in DayFiles())
                 {
                     TimeSpan sinceDayEnded = now - file.Day.AddDays(1);
@@ -147,13 +154,14 @@ namespace Kil0bitSystemMonitor.Services.History
                         {
                             Thin(file.FilePath);
                         }
-                        Succeeded("maintain");
                     }
                     catch (Exception ex) when (IsIo(ex))
                     {
+                        anyFailed = true;
                         Failed("maintain", "History maintenance failed on " + file.FilePath + ": " + ex.Message);
                     }
                 }
+                if (!anyFailed) Succeeded("maintain");
             }
         }
 
@@ -226,8 +234,9 @@ namespace Kil0bitSystemMonitor.Services.History
         /// The complete rows of one file. Anything after the last line break is a line still being
         /// written (or cut short by a crash) and is ignored.
         /// </summary>
-        private List<HistoryRow> ReadFile(string path)
+        private List<HistoryRow> ReadFile(string path, out bool failed)
         {
+            failed = false;
             var rows = new List<HistoryRow>();
             string text;
             try
@@ -235,7 +244,6 @@ namespace Kil0bitSystemMonitor.Services.History
                 using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 using var reader = new StreamReader(stream, Utf8NoBom, detectEncodingFromByteOrderMarks: true);
                 text = reader.ReadToEnd();
-                Succeeded("read");
             }
             catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
             {
@@ -243,6 +251,7 @@ namespace Kil0bitSystemMonitor.Services.History
             }
             catch (Exception ex) when (IsIo(ex))
             {
+                failed = true;
                 Failed("read", "History could not be read from " + path + ": " + ex.Message);
                 return rows;
             }
@@ -257,7 +266,7 @@ namespace Kil0bitSystemMonitor.Services.History
         /// <summary>Rewrites one day file as 5-minute rows, atomically; a day with no 1-minute rows is left alone.</summary>
         private void Thin(string path)
         {
-            List<HistoryRow> rows = ReadFile(path);
+            List<HistoryRow> rows = ReadFile(path, out _);
             if (rows.Count == 0 || rows.All(r => r.Seconds >= ThinnedSeconds)) return;
 
             var text = new StringBuilder(Header());

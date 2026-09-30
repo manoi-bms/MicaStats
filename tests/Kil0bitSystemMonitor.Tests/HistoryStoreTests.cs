@@ -225,6 +225,61 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void One_stuck_file_next_to_a_healthy_one_warns_once_per_kind_and_resets_after_a_clean_pass()
+        {
+            using var env = new AiTestEnv();
+            var store = NewStore(env);
+            var day2 = T0.AddDays(1);
+            store.Append(Row(T0));
+            store.Append(Row(day2));
+            string stuck = Path.Combine(store.Folder, "20261001.csv");
+
+            var lockStream = new FileStream(stuck, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            try
+            {
+                for (int i = 0; i < 3; i++)
+                    Assert.Equal(new[] { T0 }, store.Read(T0, day2.AddHours(1)).Select(r => r.Utc));
+
+                Assert.Single(env.Warnings);
+            }
+            finally
+            {
+                lockStream.Dispose();
+            }
+
+            Assert.Equal(2, store.Read(T0, day2.AddHours(1)).Count);   // clean pass resets the kind
+            Assert.Single(env.Warnings);
+
+            using (new FileStream(stuck, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                store.Read(T0, day2.AddHours(1));
+                store.Read(T0, day2.AddHours(1));
+            }
+            Assert.Equal(2, env.Warnings.Count);   // a new failure warns again
+        }
+
+        [Fact]
+        public void Maintain_with_one_stuck_file_warns_once_across_passes()
+        {
+            using var env = new AiTestEnv();
+            var store = NewStore(env);
+            store.Append(Row(new DateTime(2026, 10, 2, 10, 0, 0, DateTimeKind.Utc)));
+            store.Append(Row(new DateTime(2026, 10, 3, 10, 0, 0, DateTimeKind.Utc)));
+            store.Append(Row(new DateTime(2026, 10, 9, 10, 0, 0, DateTimeKind.Utc)));
+            env.Clock.UtcNow = new DateTime(2026, 10, 12, 12, 0, 0, DateTimeKind.Utc);   // 1002 and 1003 are past retention
+
+            using (new FileStream(Path.Combine(store.Folder, "20261002.csv"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                store.Maintain();
+                store.Maintain();
+                store.Maintain();
+            }
+
+            Assert.False(File.Exists(Path.Combine(store.Folder, "20261003.csv")));   // the healthy one was still handled
+            Assert.Single(env.Warnings);
+        }
+
+        [Fact]
         public void Creating_and_reading_an_empty_store_touches_no_disk()
         {
             using var env = new AiTestEnv();

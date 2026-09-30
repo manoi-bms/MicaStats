@@ -73,7 +73,7 @@ namespace Kil0bitSystemMonitor.Ai
 
         private static string EndProcess(SuggestedAction action, ISuggestedActionHost host)
         {
-            if (action.Pid is not int pid || action.CreateTime is not long createTime || pid <= 0)
+            if (action.Pid is not int pid || action.CreateTime is not long createTime || pid <= 0 || createTime <= 0)
                 return "This suggestion does not say exactly which process to end, so nothing was ended. Open Processes to choose one.";
 
             if (pid == host.OwnProcessId)

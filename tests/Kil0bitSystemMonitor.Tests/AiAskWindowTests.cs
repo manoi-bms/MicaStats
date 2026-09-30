@@ -330,5 +330,112 @@ namespace Kil0bitSystemMonitor.Tests
                 window.Close();
             }
         });
+
+        [Fact]
+        public void An_exception_that_points_to_settings_offers_open_settings() => WithWindow((window, h) =>
+        {
+            h.Setups.Enqueue(new AskSetup((conversation, question, ct) => Throw(), null));
+
+            Send(window, "Hello?");
+
+            Assert.Contains("Settings > AI", window.StatusText.Text, StringComparison.Ordinal);
+            Assert.Equal(Visibility.Visible, window.SettingsButton.Visibility);
+            Assert.Equal(Visibility.Visible, window.RetryButton.Visibility);
+            Assert.Equal("Hello?", window.QuestionBox.Text);
+        });
+
+        private static async IAsyncEnumerable<AssistantUpdate> Throw()
+        {
+            await Task.Yield();
+            if (DateTime.Now.Year > 0) throw new System.Net.Http.HttpRequestException("down");
+            yield break;
+        }
+
+        /// <summary>A window over a real AiAssistant and a scripted model; <paramref name="seen"/> collects each question's conversation.</summary>
+        private static AskWindow RealWindow(ScriptedChatClient client, AiTestEnv env, List<AiConversation> seen)
+        {
+            var store = new HistoryStore(env.PathOf("history"), () => env.Clock.UtcNow);
+            var tools = new MicaTools(
+                new OfflineMicaData(store, env.PathOf("reports"), () => env.Clock.UtcNow),
+                new Redactor(@"C:\Users\tester", "tester", "TESTPC"));
+            var usage = new UsageMeter(env.PathOf("ai-usage.json"),
+                () => new DateTime(2026, 9, 30, 10, 0, 0, DateTimeKind.Local));
+            var assistant = new AiAssistant(client, false, tools, usage, new AiAssistantOptions());
+            return new AskWindow(
+                () => new AskSetup((conversation, question, ct) =>
+                {
+                    seen.Add(conversation);
+                    return assistant.AskAsync(conversation, question, ct);
+                }, null),
+                () => { }, _ => "");
+        }
+
+        private static Task ModelReached(ScriptedChatClient client) => Task.Run(async () =>
+        {
+            while (client.Requests.Count == 0) await Task.Delay(10);
+        });
+
+        [Fact]
+        public void Stop_over_a_real_assistant_keeps_the_question_and_drops_the_exchange() => UiThread.Run(() =>
+        {
+            using var env = new AiTestEnv();
+            var client = new ScriptedChatClient().Hang();
+            var seen = new List<AiConversation>();
+            var window = RealWindow(client, env, seen);
+            try
+            {
+                window.QuestionBox.Text = "Why is it slow?";
+                Click(window.SendButton);
+                UiPump.Wait(ModelReached(client));
+
+                Click(window.StopButton);
+                UiPump.Wait(window.Pending!);
+
+                Assert.Equal("Why is it slow?", window.QuestionBox.Text);
+                Assert.Equal("Stopped.", window.Turns[0].Note.Text);
+                Assert.StartsWith("Stopped.", window.StatusText.Text, StringComparison.Ordinal);
+                Assert.Empty(seen[0].Messages);
+                Assert.True(window.SendButton.IsEnabled);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        [Fact]
+        public void New_conversation_mid_answer_shows_no_error_and_the_next_question_works() => UiThread.Run(() =>
+        {
+            using var env = new AiTestEnv();
+            var client = new ScriptedChatClient().Hang();
+            var seen = new List<AiConversation>();
+            var window = RealWindow(client, env, seen);
+            try
+            {
+                window.QuestionBox.Text = "First?";
+                Click(window.SendButton);
+                var first = window.Pending!;
+                UiPump.Wait(ModelReached(client));
+
+                Click(window.NewButton);
+                UiPump.Wait(first);
+
+                Assert.Empty(window.Turns);
+                Assert.Equal("", window.StatusText.Text);
+                Assert.Equal(Visibility.Collapsed, window.RetryButton.Visibility);
+                Assert.Empty(seen[0].Messages);
+
+                Send(window, "Second?");
+
+                Assert.Equal("Done.", window.Turns[0].Answer.Text);
+                Assert.Equal(2, seen.Count);
+                Assert.NotSame(seen[0], seen[1]);
+                Assert.Equal("", window.StatusText.Text);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
     }
 }

@@ -36,7 +36,7 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly Func<AskSetup> _setup;
         private readonly Action _openSettings;
         private readonly Func<SuggestedAction, string> _runAction;
-        private readonly AiConversation _conversation = new();
+        private AiConversation _conversation = new();
         private readonly List<AskTurnView> _turns = new();
         private CancellationTokenSource? _cts;
 
@@ -119,7 +119,8 @@ namespace Kil0bitSystemMonitor.Ai
         {
             _cts?.Cancel();
             _generation++;
-            _conversation.Clear();
+            // A new instance, not Clear(): an orphaned stream rolls back its own conversation.
+            _conversation = new AiConversation();
             _turns.Clear();
             TranscriptPanel.Children.Clear();
             EmptyText.Visibility = Visibility.Visible;
@@ -164,10 +165,11 @@ namespace Kil0bitSystemMonitor.Ai
             UpdateButtons();
             StatusText.Text = "Thinking\u2026";
             bool failed = false;
+            AiConversation conversation = _conversation;
 
             try
             {
-                await foreach (AssistantUpdate update in ask(_conversation, question, cts.Token))
+                await foreach (AssistantUpdate update in ask(conversation, question, cts.Token))
                 {
                     switch (update.Kind)
                     {
@@ -200,19 +202,27 @@ namespace Kil0bitSystemMonitor.Ai
                     }
                     TranscriptScroll.ScrollToEnd();
                 }
+
+                // The assistant does not throw on cancellation: it drops the exchange from the
+                // conversation and ends with Done, so a stop is recognised here.
+                if (cts.IsCancellationRequested && !failed)
+                {
+                    failed = true;
+                    ShowStopped(turn, generation);
+                }
             }
             catch (OperationCanceledException)
             {
                 failed = true;
-                turn.ShowNote("Stopped.");
-                if (generation == _generation) StatusText.Text = "Stopped. Your question is still in the box.";
+                ShowStopped(turn, generation);
             }
             catch (Exception ex)
             {
                 failed = true;
                 string message = AiErrorText.Describe(ex);
                 turn.ShowNote(message);
-                ShowProblem(message, offerSettings: false, offerRetry: true);
+                if (generation == _generation)
+                    ShowProblem(message, offerSettings: message.Contains("Settings > AI", StringComparison.Ordinal), offerRetry: true);
             }
             finally
             {
@@ -229,6 +239,12 @@ namespace Kil0bitSystemMonitor.Ai
             if (turn.Answer.Text.Length == 0 && turn.ActionButtons.Count == 0)
                 turn.ShowNote("The model sent back no text. Try asking again.");
             StatusText.Text = turn.ActionButtons.Count > 0 ? "Suggestions do nothing until you click them." : "";
+        }
+
+        private void ShowStopped(AskTurnView turn, int generation)
+        {
+            turn.ShowNote("Stopped.");
+            if (generation == _generation) StatusText.Text = "Stopped. Your question is still in the box.";
         }
 
         private AskTurnView AddTurn(string question)

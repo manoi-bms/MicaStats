@@ -359,9 +359,10 @@ public partial class App
         if (tools == null)
             return new Kil0bitSystemMonitor.Ai.AskSetup(null, "The data tools are not ready yet. Try again in a moment.");
 
+        Kil0bitSystemMonitor.Services.Ai.AiClientResult? result = null;
         try
         {
-            var result = Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets);
+            result = Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets);
             if (result.Client == null)
                 return new Kil0bitSystemMonitor.Ai.AskSetup(null,
                     result.Problem ?? "The AI provider could not be set up. Check Settings > AI.");
@@ -373,6 +374,8 @@ public partial class App
         }
         catch (Exception ex)
         {
+            // The client was built but the assistant was not: nothing else owns it.
+            try { result?.Client?.Dispose(); } catch { }
             // The type only: a message could quote a URL or a server reply.
             Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Setting up the provider failed (" + ex.GetType().Name + ")");
             return new Kil0bitSystemMonitor.Ai.AskSetup(null, Kil0bitSystemMonitor.Services.Ai.AiErrorText.Describe(ex));

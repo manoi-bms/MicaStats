@@ -109,6 +109,9 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.StartsWith("This suggestion does not say exactly which process to end", noPid, System.StringComparison.Ordinal);
             Assert.StartsWith("This suggestion does not say exactly which process to end", noStart, System.StringComparison.Ordinal);
+
+            string zeroStart = SuggestedActionRunner.Run(End("chrome.exe", 1234, 0), host);
+            Assert.StartsWith("This suggestion does not say exactly which process to end", zeroStart, System.StringComparison.Ordinal);
             Assert.Empty(host.Ended);
         }
 

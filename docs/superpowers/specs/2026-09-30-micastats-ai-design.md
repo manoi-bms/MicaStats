@@ -222,13 +222,18 @@ roots, no-op logging) or launches MicaStats.
 through the stdio bridge; Claude Code over HTTP; MicaStats elevated with an unelevated client; a
 Thai question answered in Thai; Explain on a real slowdown report.
 
-## 12. To verify during planning
+## 12. Verified during planning
 
-- Current versions and APIs of `Anthropic`, `Microsoft.Extensions.AI(.OpenAI)` and
-  `ModelContextProtocol`, including prompt caching through `IChatClient` and streaming with tools.
-- Whether the MCP SDK's HTTP server can run without the ASP.NET Core runtime (for example over
-  `HttpListener`); if not, how local HTTP mode is delivered without adding a runtime for everyone.
-- That `MicaStats.exe` (a GUI-subsystem app) can serve stdio when launched with redirected handles;
-  if not, a tiny console companion executable is shipped instead.
-- The pipe security descriptor with a medium integrity label.
-- Which `SystemMetrics` fields back each history column.
+All of these were checked in a throwaway spike before the plan was written
+(`docs/superpowers/plans/2026-09-30-micastats-ai.md`, whose header lists the resulting amendments):
+
+- Packages: `Anthropic` 12.51.0, `Microsoft.Extensions.AI` 10.10.0,
+  `Microsoft.Extensions.AI.OpenAI` 10.10.1 and `ModelContextProtocol.Core` 2.2.0 restore and run on
+  `net8.0-windows`; prompt caching and the tool loop work through `IChatClient`.
+- Local HTTP mode runs on `HttpListener` with the SDK's stateless Streamable HTTP transport — no
+  ASP.NET Core runtime.
+- `MicaStats.exe` serves MCP over stdio when launched with redirected handles (UTF-8 streams), so no
+  companion executable is needed.
+- The pipe is created from an SDDL with the current user's SID and a medium integrity label.
+- History columns map to `SystemMetrics` fields as listed in plan Task 3; the top process per minute
+  comes from a 2-second sampler lease (plan amendment 1).

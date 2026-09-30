@@ -263,8 +263,8 @@ namespace Kil0bitSystemMonitor.Pad
             else if (modifiers == ModifierKeys.None && key == Key.F2) NextBookmark();
             else if (modifiers == ModifierKeys.Shift && key == Key.F2) PreviousBookmark();
             else if (EditingKeysAllowed && ctrl && key == Key.D) Run(Editor, (t, s, l) => LineOperations.Duplicate(t, s, l));
-            else if (EditingKeysAllowed && ctrlShift && key == Key.Up) Run(Editor, LineOperations.MoveUp);
-            else if (EditingKeysAllowed && ctrlShift && key == Key.Down) Run(Editor, LineOperations.MoveDown);
+            else if (EditingKeysAllowed && ctrlShift && key == Key.Up) MoveLines(down: false);
+            else if (EditingKeysAllowed && ctrlShift && key == Key.Down) MoveLines(down: true);
             else if (EditingKeysAllowed && ctrl && key == Key.J) Run(Editor, LineOperations.Join);
             else return false;
             return true;
@@ -508,6 +508,25 @@ namespace Kil0bitSystemMonitor.Pad
         private void GoToBookmark(int? line)
         {
             if (line is int l) GoToLine(l);
+        }
+
+        /// <summary>
+        /// Moves the selected lines past their neighbour (Ctrl+Shift+Up/Down and Lines ▸ Move both
+        /// come here), taking the bookmarks along: the block's move one line with it, and the
+        /// neighbour's jumps to the other side with the neighbour.
+        /// </summary>
+        internal void MoveLines(bool down)
+        {
+            var document = Editor.Document;
+            var marked = _bookmarks.Lines(document);
+            var (blockStart, blockEnd) = TextLines.Block(document.Text, Editor.SelectionStart, Editor.SelectionLength);
+            int first = document.GetLineByOffset(blockStart).LineNumber;
+            int last = document.GetLineByOffset(blockEnd).LineNumber;
+
+            if (!Run(Editor, down ? LineOperations.MoveDown : LineOperations.MoveUp) || marked.Count == 0) return;
+            _bookmarks.Remap(document, marked, down
+                ? line => line >= first && line <= last ? line + 1 : line == last + 1 ? first : line
+                : line => line >= first && line <= last ? line - 1 : line == first - 1 ? last : line);
         }
 
         private void OnBookmarksChanged()
@@ -1307,7 +1326,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(new Separator());
             if (ReferenceEquals(editor, Editor) && ReferenceEquals(_resolved.Effective, PadLanguages.Markdown))
                 menu.Items.Add(FormatMenu(editor));
-            menu.Items.Add(LinesMenu(editor));
+            menu.Items.Add(LinesMenu(editor, MoveLines));
 
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));

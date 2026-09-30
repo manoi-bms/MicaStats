@@ -46,6 +46,13 @@ namespace Kil0bitSystemMonitor.Pad
             Changed?.Invoke();
         }
 
+        /// <summary>
+        /// Puts the bookmarks recorded before an edit on the lines <paramref name="map"/> sends them
+        /// to, for an edit the anchors cannot follow by themselves: a Move swaps a block with its
+        /// neighbour line. Lines past the end are dropped.
+        /// </summary>
+        public void Remap(TextDocument document, IEnumerable<int> before, Func<int, int> map) => Load(document, before.Select(map));
+
         /// <summary>The next bookmarked line after <paramref name="line"/>, wrapping to the first; null without bookmarks.</summary>
         public int? Next(TextDocument document, int line)
         {

@@ -13,8 +13,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// <summary>
     /// Find and replace over a string. Every mode is compiled to one regex, so literal, whole-word
     /// and regex search share a single code path. Every regex carries a timeout: a pathological
-    /// pattern stops with a message instead of freezing the window. FindAll and TryReplaceAll
-    /// report timeouts to the caller; the single-match helpers (FindNext, FindPrevious, ExpandAt)
+    /// pattern stops with a message instead of freezing the window. FindAll, TryReplaceAll and
+    /// TryPlanReplaceAll report timeouts to the caller; the single-match helpers (FindNext, FindPrevious, ExpandAt)
     /// treat a timed-out search as no match.
     /// </summary>
     public static class FindReplaceEngine
@@ -167,21 +167,39 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public static bool TryReplaceAll(string text, Regex regex, string replacement, bool useRegex,
                                          out string result, out int count, out string? error)
         {
-            int replaced = 0;
+            result = text;
+            if (!TryPlanReplaceAll(text, regex, replacement, useRegex, out var edits, out count, out error)) return false;
+            if (edits.Count > 0)
+            {
+                var all = TextPieces.Combine(text, edits);
+                result = text.Substring(0, all.Offset) + all.Text + text.Substring(all.Offset + all.Length);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Replace All as separate edits, one per match (the same matches and replacements as
+        /// <see cref="TryReplaceAll"/>, zero-length matches included), ascending and never
+        /// overlapping, so an editor can apply them from the last and leave the text between the
+        /// matches, and whatever is anchored there, alone. False with <see cref="TimedOutMessage"/>
+        /// and no edits if the search times out.
+        /// </summary>
+        public static bool TryPlanReplaceAll(string text, Regex regex, string replacement, bool useRegex,
+                                             out IReadOnlyList<TextPiece> edits, out int count, out string? error)
+        {
+            var planned = new List<TextPiece>();
             try
             {
-                result = regex.Replace(text, m =>
-                {
-                    replaced++;
-                    return useRegex ? m.Result(replacement) : replacement;
-                });
-                count = replaced;
+                for (Match m = regex.Match(text); m.Success; m = m.NextMatch())
+                    planned.Add(new TextPiece(m.Index, m.Length, useRegex ? m.Result(replacement) : replacement));
+                edits = planned;
+                count = planned.Count;
                 error = null;
                 return true;
             }
             catch (RegexMatchTimeoutException)
             {
-                result = text;
+                edits = Array.Empty<TextPiece>();
                 count = 0;
                 error = TimedOutMessage;
                 return false;

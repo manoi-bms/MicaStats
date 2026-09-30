@@ -37,6 +37,103 @@ namespace Kil0bitSystemMonitor.Tests
         private static void GoToLine(MicaPadWindow window, int line) =>
             window.Editor.CaretOffset = window.Editor.Document.GetLineByNumber(line).Offset;
 
+        private static void Mark(MicaPadWindow window, params int[] lines)
+        {
+            foreach (int line in lines)
+            {
+                GoToLine(window, line);
+                window.ToggleBookmark();
+            }
+        }
+
+        private static System.Windows.Controls.MenuItem LinesItem(MicaPadWindow window, string header)
+        {
+            window.RefreshEditorMenu();
+            return PadMenuTests.ItemOf(window.EditorMenu, "Lines").Items.OfType<System.Windows.Controls.MenuItem>()
+                               .Single(m => (string)m.Header == header);
+        }
+
+        private const ModifierKeys CtrlShift = ModifierKeys.Control | ModifierKeys.Shift;
+
+        [Fact]
+        public void Trimming_the_whole_note_keeps_the_bookmarks_and_so_does_undo() => WithEnv((env, open) =>
+        {
+            var window = open();
+            const string original = "a  \nb  \nc  \nd  \ne  ";
+            window.Editor.Document.Text = original;
+            Mark(window, 2, 4);
+            window.Editor.CaretOffset = 0;                     // nothing selected: the whole note
+
+            PadMenuTests.Click(LinesItem(window, "Trim trailing whitespace"));
+            Assert.Equal("a\nb\nc\nd\ne", window.Editor.Document.Text);
+            Assert.Equal(new[] { 2, 4 }, window.BookmarkLines);
+
+            window.Editor.Undo();                              // one step, and the marks stay
+            Assert.Equal(original, window.Editor.Document.Text);
+            Assert.Equal(new[] { 2, 4 }, window.BookmarkLines);
+        });
+
+        [Fact]
+        public void Replace_all_leaves_the_bookmarks_where_they_are() => WithEnv((env, open) =>
+        {
+            var window = open();
+            const string original = "cat one\nkeep\ncat two\nkeep\ncat three";
+            window.Editor.Document.Text = original;
+            Mark(window, 2, 3, 4);
+
+            window.HandleShortcut(Key.H, ModifierKeys.Control);
+            window.FindBar.FindBox.Text = "cat";
+            window.FindBar.ReplaceBox.Text = "dog";
+            window.FindBar.Recompute();
+            window.FindBar.ReplaceAllButton.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+
+            Assert.Equal("dog one\nkeep\ndog two\nkeep\ndog three", window.Editor.Document.Text);
+            Assert.Equal(new[] { 2, 3, 4 }, window.BookmarkLines);
+
+            window.Editor.Undo();                              // still one undo step
+            Assert.Equal(original, window.Editor.Document.Text);
+            Assert.Equal(new[] { 2, 3, 4 }, window.BookmarkLines);
+        });
+
+        [Fact]
+        public void Moving_a_bookmarked_line_takes_its_bookmark_by_key_and_by_menu() => WithEnv((env, open) =>
+        {
+            var window = open();
+            window.Editor.Document.Text = "1\n2\n3";
+            Mark(window, 1);
+            GoToLine(window, 1);
+
+            Assert.True(window.HandleShortcut(Key.Down, CtrlShift));
+            Assert.Equal("2\n1\n3", window.Editor.Document.Text);
+            Assert.Equal(new[] { 2 }, window.BookmarkLines);
+            Assert.Equal(new[] { 2 }, env.Workspace.Session.Tabs[env.Workspace.Active!.Id].Bookmarks);
+
+            PadMenuTests.Click(LinesItem(window, "Move up"));   // the caret is still on the moved line
+            Assert.Equal("1\n2\n3", window.Editor.Document.Text);
+            Assert.Equal(new[] { 1 }, window.BookmarkLines);
+        });
+
+        [Fact]
+        public void Two_bookmarked_neighbours_both_survive_a_move() => WithEnv((env, open) =>
+        {
+            var window = open();
+            window.Editor.Document.Text = "1\n2\n3\n4";
+            Mark(window, 2, 3);
+            GoToLine(window, 3);
+
+            window.HandleShortcut(Key.Up, CtrlShift);
+            Assert.Equal("1\n3\n2\n4", window.Editor.Document.Text);
+            Assert.Equal(new[] { 2, 3 }, window.BookmarkLines);
+
+            // Only the line moved over is marked: its mark goes to the other side with it.
+            window.ClearBookmarks();
+            Mark(window, 3);                                   // "2"
+            GoToLine(window, 2);                               // "3"
+            window.HandleShortcut(Key.Down, CtrlShift);
+            Assert.Equal("1\n2\n3\n4", window.Editor.Document.Text);
+            Assert.Equal(new[] { 2 }, window.BookmarkLines);   // still on "2"
+        });
+
         [Fact]
         public void Ctrl_f2_toggles_a_bookmark_on_the_caret_line() => WithEnv((env, open) =>
         {

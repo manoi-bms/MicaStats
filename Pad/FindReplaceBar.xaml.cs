@@ -238,16 +238,34 @@ namespace Kil0bitSystemMonitor.Pad
 
             ReplacingAll?.Invoke();
             var document = _editor!.Document;
-            if (!FindReplaceEngine.TryReplaceAll(document.Text, _regex!, ReplaceBox.Text, Options.UseRegex,
-                                                 out string result, out int count, out string? error))
+            string text = document.Text;
+            if (!FindReplaceEngine.TryPlanReplaceAll(text, _regex!, ReplaceBox.Text, Options.UseRegex,
+                                                     out var edits, out int count, out string? error))
             {
                 CountText.Text = error ?? "";
                 CountText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.AlertRed");
                 return;
             }
 
-            // One Replace call: one undo step, however many matches.
-            if (count > 0) document.Replace(0, document.TextLength, result);
+            if (count > 0)
+            {
+                // One update group: one undo step, however many matches. Match by match, from the
+                // last, so bookmarks between the matches stay on their lines. Past the limit one
+                // replacement from the first match to the last instead: thousands of separate edits
+                // are slow, and bookmarks between those matches collapse then.
+                using (document.RunUpdate())
+                {
+                    if (edits.Count > TextPieces.MaxPieces)
+                    {
+                        var all = TextPieces.Combine(text, edits);
+                        document.Replace(all.Offset, all.Length, all.Text);
+                    }
+                    else
+                    {
+                        for (int i = edits.Count - 1; i >= 0; i--) document.Replace(edits[i].Offset, edits[i].Length, edits[i].Text);
+                    }
+                }
+            }
             Recompute();
             CountText.Text = count.ToString("N0", Inv) + " replaced";
         }

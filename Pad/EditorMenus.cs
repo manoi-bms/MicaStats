@@ -109,31 +109,36 @@ namespace Kil0bitSystemMonitor.Pad
             return format;
         }
 
-        /// <summary>Lines (spec 3.2): the line operations, each one undoable edit.</summary>
-        public static MenuItem LinesMenu(TextEditor editor)
+        /// <summary>
+        /// Lines (spec 3.2): the line operations, each one undoable edit. Move up and down go through
+        /// <paramref name="moveLines"/> (true for down), the window's own path, so the bookmarks move
+        /// with the lines the same way from the keys and from here.
+        /// </summary>
+        public static MenuItem LinesMenu(TextEditor editor, Action<bool> moveLines)
         {
-            var lines = new MenuItem { Header = "Lines", Icon = "" };
+            var lines = new MenuItem { Header = "Lines", Icon = "\uE8A4" };
             void Add(string header, string? gesture, Func<string, int, int, TextEdit?> operation, string? icon = null) =>
                 lines.Items.Add(Item(header, gesture, () => Run(editor, operation), icon: icon));
 
-            Add("Duplicate", "Ctrl+D", (t, s, l) => LineOperations.Duplicate(t, s, l), "");
-            Add("Move up", "Ctrl+Shift+Up", LineOperations.MoveUp, "");
-            Add("Move down", "Ctrl+Shift+Down", LineOperations.MoveDown, "");
+            Add("Duplicate", "Ctrl+D", (t, s, l) => LineOperations.Duplicate(t, s, l), "\uE8C8");
+            lines.Items.Add(Item("Move up", "Ctrl+Shift+Up", () => moveLines(false), icon: "\uE74A"));
+            lines.Items.Add(Item("Move down", "Ctrl+Shift+Down", () => moveLines(true), icon: "\uE74B"));
             Add("Join lines", "Ctrl+J", LineOperations.Join);
             lines.Items.Add(new Separator());
-            Add("Sort ascending", null, (t, s, l) => LineOperations.Sort(t, s, l, false, System.Globalization.CultureInfo.CurrentCulture), "");
+            Add("Sort ascending", null, (t, s, l) => LineOperations.Sort(t, s, l, false, System.Globalization.CultureInfo.CurrentCulture), "\uE8CB");
             Add("Sort descending", null, (t, s, l) => LineOperations.Sort(t, s, l, true, System.Globalization.CultureInfo.CurrentCulture));
             Add("Remove duplicate lines", null, LineOperations.RemoveDuplicates);
             Add("Trim trailing whitespace", null, LineOperations.TrimTrailing);
             return lines;
         }
 
-        /// <summary>Runs a line operation on the editor's text and selection; a null result changes nothing.</summary>
-        public static void Run(TextEditor editor, Func<string, int, int, TextEdit?> operation)
+        /// <summary>Runs a line operation on the editor's text and selection; a null result changes nothing. True when it edited.</summary>
+        public static bool Run(TextEditor editor, Func<string, int, int, TextEdit?> operation)
         {
-            if (editor.IsReadOnly) return;
-            if (operation(editor.Document.Text, editor.SelectionStart, editor.SelectionLength) is TextEdit edit)
-                ApplyEdit(editor, edit);
+            if (editor.IsReadOnly) return false;
+            if (operation(editor.Document.Text, editor.SelectionStart, editor.SelectionLength) is not TextEdit edit) return false;
+            ApplyEdit(editor, edit);
+            return true;
         }
 
         /// <summary>
@@ -142,8 +147,16 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         public static void ApplyEdit(TextEditor editor, TextEdit edit)
         {
-            editor.Document.Replace(edit.Offset, edit.Length, edit.Text);
-            int textLength = editor.Document.TextLength;
+            var document = editor.Document;
+            // Only the lines that change, from the last: bookmarks on the others stay put (Trim, Sort,
+            // Format prefixes), and Undo reverses line by line. One update group: one undo step.
+            var pieces = TextPieces.Plan(document.GetText(edit.Offset, edit.Length), edit.Text);
+            using (document.RunUpdate())
+            {
+                for (int i = pieces.Count - 1; i >= 0; i--)
+                    document.Replace(edit.Offset + pieces[i].Offset, pieces[i].Length, pieces[i].Text);
+            }
+            int textLength = document.TextLength;
             int start = Math.Clamp(edit.SelectionStart, 0, textLength);
             editor.Select(start, Math.Clamp(edit.SelectionLength, 0, textLength - start));
         }

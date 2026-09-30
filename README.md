@@ -164,6 +164,9 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Markdown as you type**: headings, bold, italic, code, lists, tasks and quotes are formatted in place, with the markers still visible; the file stays plain text
 * **Folding**: collapse braces, tags, Markdown sections and code blocks from the margin
 * **Editing helpers**: auto-closing brackets and quotes, notepad4-style line operations, bookmarks, and every occurrence of the selected word marked
+* **Links**: web and mail addresses are underlined and open with **Ctrl+Click**; nothing else in a note is ever opened
+* **Drag tabs** to reorder them (the order is kept), and **F11** for full screen
+* **Copy as RTF** pastes the note, or the selection, into Word or Outlook with its colors, bold and heading sizes
 * Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
 
 ### Ask MicaStats: answers about your PC
@@ -780,6 +783,9 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **Markdown ขณะพิมพ์**: หัวข้อ ตัวหนา ตัวเอียง โค้ด รายการ งานที่ต้องทำ และข้อความอ้างอิง แสดงผลตามรูปแบบทันที โดยยังเห็นเครื่องหมาย และไฟล์ยังเป็นข้อความธรรมดา
 * **ย่อ/ขยายโค้ด**: ย่อส่วนในวงเล็บปีกกา แท็ก หัวข้อ Markdown และบล็อกโค้ดได้จากขอบซ้าย
 * **ตัวช่วยแก้ไข**: ปิดวงเล็บและเครื่องหมายคำพูดอัตโนมัติ คำสั่งจัดการบรรทัดแบบ notepad4 บุ๊กมาร์ก และไฮไลต์คำเดียวกันทั้งหมดเมื่อเลือกคำ
+* **ลิงก์**: ที่อยู่เว็บและอีเมลมีขีดเส้นใต้ และเปิดได้ด้วย **Ctrl+Click** นอกจากนั้นไม่มีสิ่งใดในโน้ตถูกเปิดเลย
+* **ลากแท็บ** เพื่อจัดลำดับใหม่ (ลำดับถูกจำไว้) และกด **F11** เพื่อแสดงเต็มจอ
+* **Copy as RTF** คัดลอกโน้ตหรือส่วนที่เลือกไปวางใน Word หรือ Outlook พร้อมสี ตัวหนา และขนาดหัวข้อ
 * โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา

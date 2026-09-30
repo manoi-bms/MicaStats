@@ -198,8 +198,8 @@ remembered, and is also in **Settings → MicaPad → Theme**.
 
 ### Right-click menus
 
-Right-click in the text for **Undo**, **Redo**, **Cut**, **Copy**, **Paste**, **Delete**,
-**Select all**, **Find**, **Replace** and **Go to line**. The caret moves to where you clicked,
+Right-click in the text for **Undo**, **Redo**, **Cut**, **Copy**, **Copy as RTF**, **Paste**,
+**Delete**, **Select all**, **Find**, **Replace** and **Go to line**. The caret moves to where you clicked,
 unless you click inside the selection — then the selection stays, so Cut and Copy act on it.
 Right-click a history version for **Copy** and **Select all**.
 
@@ -259,13 +259,14 @@ spaces or punctuation).
 
 **Links**: `http://`, `https://` and `mailto:` addresses are underlined; **Ctrl+Click** opens them
 in your browser or mail program. Nothing else in a note is ever opened — not files, paths or other
-protocols.
+protocols. A link ends at a space, a quote, a brace or a square bracket, and before closing
+punctuation; parentheses stay in it only as a pair, as in Wikipedia addresses.
 
 **Tabs**: drag a tab to move it; the order is kept after a restart.
 
-**Full screen**: **F11** hides the title bar and fills the screen; **F11** again brings the window back. MicaPad always reopens windowed.
+**Full screen**: **F11** hides the title bar and fills the screen; **F11** again (or **Win+↓**) brings the window back. MicaPad always reopens windowed.
 
-**Copy as RTF** (right-click or **☰**): copies the selection — or the whole note — with its colors, bold, italic and heading sizes, ready to paste into Word or Outlook. It always uses light-theme colors, for white pages.
+**Copy as RTF** (right-click or **☰**): copies the selection — or the whole note — with its colors, bold, italic and heading sizes, ready to paste into Word or Outlook. It always uses light-theme colors, for white pages. A rectangular (**Alt**+drag) selection copies just the box, without colors; while a history version is shown, the ☰ item is off.
 
 ### Where notes live
 

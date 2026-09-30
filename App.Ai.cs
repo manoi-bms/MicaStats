@@ -73,6 +73,7 @@ public partial class App
         }
         // After AiTools exists (Task 7's code above this line).
         ApplyToolPipe();
+        ApplyMcpHttp();
         // AI anchor: start
     }
 
@@ -95,6 +96,7 @@ public partial class App
             DiagnosticsLog.Error("ai", "Applying the history setting failed", ex);
         }
         ApplyToolPipe();
+        ApplyMcpHttp();
         // AI anchor: apply
     }
 
@@ -115,6 +117,16 @@ public partial class App
             Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping the tool pipe failed", ex);
         }
         s_toolPipe = null;
+        // Guarded for the same reason as the tool pipe above: StopAi must never throw.
+        try
+        {
+            s_mcpHttp?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping local HTTP MCP failed", ex);
+        }
+        s_mcpHttp = null;
         // AI anchor: stop
         try
         {
@@ -189,6 +201,106 @@ public partial class App
         {
             Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "The tool pipe for the stdio bridge could not start", ex);
         }
+    }
+
+    /// <summary>The local HTTP MCP host; runs only while MCP is set to Local HTTP.</summary>
+    private static Kil0bitSystemMonitor.Services.Ai.Mcp.McpHttpHost? s_mcpHttp;
+
+    /// <summary>The port <see cref="s_mcpHttp"/> listens on, so a port change restarts it.</summary>
+    private static int s_mcpHttpPort;
+
+    /// <summary>
+    /// Why local HTTP mode is not serving, for example "Port 47831 is in use.", or null while it
+    /// serves or is not chosen. Settings shows it under the MCP choice.
+    /// </summary>
+    public static string? AiMcpHttpProblem { get; private set; }
+
+    /// <summary>
+    /// Starts, restarts (the port changed) or stops the local HTTP host to match the AI
+    /// settings. Idempotent: called at the end of <see cref="StartAi"/> and on every AI setting
+    /// change, so a port that was busy is tried again at the next change.
+    /// </summary>
+    private static void ApplyMcpHttp()
+    {
+        var config = ConfigService?.Config;
+        Kil0bitSystemMonitor.Services.Ai.Tools.MicaTools? tools = AiTools;
+        bool wanted = config != null && tools != null &&
+                      config.AiMcpMode == Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Http;
+        int port = config?.AiMcpHttpPort ?? 0;
+
+        if (s_mcpHttp != null && (!wanted || port != s_mcpHttpPort))
+        {
+            s_mcpHttp.Dispose();
+            s_mcpHttp = null;
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("mcp", "Local HTTP MCP stopped");
+        }
+        if (!wanted || tools == null)
+        {
+            AiMcpHttpProblem = null;
+            return;
+        }
+        if (s_mcpHttp != null) return;
+
+        try
+        {
+            EnsureMcpHttpToken();
+            string version = Kil0bitSystemMonitor.Services.Ai.Mcp.McpToolSet.CurrentVersion;
+            Kil0bitSystemMonitor.Services.Ai.Mcp.ToolInvoker invoke = tools.InvokeAsync;
+            var host = new Kil0bitSystemMonitor.Services.Ai.Mcp.McpHttpHost(
+                port,
+                ReadMcpHttpToken,
+                () => Kil0bitSystemMonitor.Services.Ai.Mcp.McpToolSet.CreateOptions(invoke, version),
+                message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("mcp", message));
+            if (host.TryStart(out string? problem))
+            {
+                s_mcpHttp = host;
+                s_mcpHttpPort = port;
+                AiMcpHttpProblem = null;
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("mcp",
+                    "Local HTTP MCP listening on 127.0.0.1:" + port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                host.Dispose();
+                // Logged once per new problem, not again at every settings change while it lasts.
+                if (problem != AiMcpHttpProblem)
+                    Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("mcp", "Local HTTP MCP did not start: " + problem);
+                AiMcpHttpProblem = problem;
+            }
+        }
+        catch (Exception ex)
+        {
+            AiMcpHttpProblem = "Local HTTP could not start. The diagnostics log has the details.";
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Local HTTP MCP could not start", ex);
+        }
+    }
+
+    /// <summary>
+    /// The local HTTP bearer token, read afresh for every request so a token regenerated in
+    /// Settings applies at once. Null when it cannot be read, which refuses the request.
+    /// </summary>
+    private static string? ReadMcpHttpToken()
+    {
+        try
+        {
+            return new Kil0bitSystemMonitor.Services.Ai.SecretStore(Kil0bitSystemMonitor.Services.Ai.SecretStore.DefaultPath)
+                .Get(Kil0bitSystemMonitor.Services.Ai.SecretNames.McpToken);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Creates the local HTTP bearer token the first time local HTTP mode starts.</summary>
+    private static void EnsureMcpHttpToken()
+    {
+        var secrets = new Kil0bitSystemMonitor.Services.Ai.SecretStore(
+            Kil0bitSystemMonitor.Services.Ai.SecretStore.DefaultPath,
+            message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", message));
+        if (!secrets.Has(Kil0bitSystemMonitor.Services.Ai.SecretNames.McpToken))
+            secrets.Set(Kil0bitSystemMonitor.Services.Ai.SecretNames.McpToken,
+                Kil0bitSystemMonitor.Services.Ai.SecretStore.NewToken());
     }
 
     // AI anchor: members

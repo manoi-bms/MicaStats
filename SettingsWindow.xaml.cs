@@ -557,6 +557,7 @@ namespace Kil0bitSystemMonitor
                 PadReopenToggle.IsOn = cfg.PadReopenAtLogin;
                 PadWrapToggle.IsOn = cfg.PadWordWrap;
                 PadLineNumbersToggle.IsOn = cfg.PadShowLineNumbers;
+                PadThemeBox.SelectedIndex = cfg.PadTheme == Kil0bitSystemMonitor.Services.Pad.PadThemes.Light ? 1 : 0;
                 PadFontBox.Text = cfg.PadFontFamily;
                 PadFontSizeBox.ItemsSource = PadFontSizes;
                 PadFontSizeBox.SelectedItem = PadFontSizes.OrderBy(s => Math.Abs(s - cfg.PadFontSize)).First();
@@ -629,6 +630,15 @@ namespace Kil0bitSystemMonitor
         {
             if (_loadingPad || PadHistoryBox.SelectedIndex < 0) return;
             _config.Config.PadHistoryDays = PadHistoryChoices[PadHistoryBox.SelectedIndex];
+            _config.SaveConfig();
+        }
+
+        private void OnPadThemeChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingPad || PadThemeBox.SelectedIndex < 0) return;
+            _config.Config.PadTheme = PadThemeBox.SelectedIndex == 1
+                ? Kil0bitSystemMonitor.Services.Pad.PadThemes.Light
+                : Kil0bitSystemMonitor.Services.Pad.PadThemes.Dark;
             _config.SaveConfig();
         }
 

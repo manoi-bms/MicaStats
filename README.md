@@ -158,6 +158,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Real files stay safe**: edits to an opened file are always kept, but the file itself changes only on Ctrl+S, in its original encoding (Thai TIS-620 / cp874 included) and line endings
 * Find and replace with regular expressions, go to line, zoom, word wrap
 * Open it from the overlay's right-click menu, **Ctrl+Alt+N** anywhere, the Start menu, or Explorer's **Open with**
+* **Light or dark**: MicaPad has its own theme switch (the sun and moon button), independent of the rest of MicaStats
 * Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
 
 ### Ask MicaStats: answers about your PC
@@ -764,6 +765,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **ไฟล์จริงปลอดภัย** การแก้ไขไฟล์ที่เปิดอยู่ถูกเก็บไว้เสมอ แต่ตัวไฟล์จะเปลี่ยนเมื่อกด Ctrl+S เท่านั้น โดยคงการเข้ารหัสเดิม (รวมถึง TIS-620 / cp874) และรูปแบบการขึ้นบรรทัดเดิม
 * ค้นหาและแทนที่ด้วย regular expression, ไปยังบรรทัด, ซูม, ตัดบรรทัดอัตโนมัติ
 * เปิดได้จากเมนูคลิกขวาของโอเวอร์เลย์, **Ctrl+Alt+N** จากที่ใดก็ได้, เมนู Start หรือ **Open with** ใน Explorer
+* **ธีมสว่างหรือมืด**: MicaPad มีปุ่มสลับธีมของตัวเอง (ปุ่มดวงอาทิตย์และพระจันทร์) โดยส่วนอื่นของ MicaStats ไม่เปลี่ยน
 * โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา

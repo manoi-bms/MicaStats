@@ -190,6 +190,12 @@ If another program changes the file, MicaPad reloads it — or, when you have ed
 asks **Reload from disk** or **Keep mine** (a reload first keeps your version in history). If the
 file is deleted, **Keep as note** turns the tab into an ordinary note.
 
+### Light or dark
+
+The sun button in MicaPad's tab strip switches MicaPad to a light theme; the moon button switches
+it back. Only MicaPad changes — Settings and the rest of MicaStats keep their look. The choice is
+remembered, and is also in **Settings → MicaPad → Theme**.
+
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`

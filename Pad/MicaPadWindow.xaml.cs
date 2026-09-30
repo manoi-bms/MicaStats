@@ -19,10 +19,8 @@ using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 
 // UseWindowsForms puts System.Windows.Forms and System.Drawing in scope; these names exist in both.
-using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
-using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Pen = System.Windows.Media.Pen;
@@ -58,6 +56,7 @@ namespace Kil0bitSystemMonitor.Pad
         private OpenNote? _renaming;
         private bool _suppressDirty;
         private bool _exiting;
+        private PadPalette _palette = PadPalette.Dark;
 
         /// <summary>Builds the window over a workspace; call <see cref="LoadSession"/> before showing it.</summary>
         public MicaPadWindow(PadWorkspace workspace, AppConfig config)
@@ -68,6 +67,7 @@ namespace Kil0bitSystemMonitor.Pad
 
             ConfigureEditor();
             FindBar.Attach(Editor);
+            ApplyTheme();
             HistoryPanel.VersionSelected += OnVersionSelected;
             HistoryPanel.CloseRequested += CloseHistory;
             FindBar.ReplacingAll += () =>
@@ -987,10 +987,10 @@ namespace Kil0bitSystemMonitor.Pad
             menu.IsOpen = true;
         }
 
-        private static ContextMenu NewMenu(UIElement target, PlacementMode placement)
+        internal ContextMenu NewMenu(UIElement target, PlacementMode placement)
         {
             var menu = new ContextMenu { PlacementTarget = target, Placement = placement };
-            ModernWpf.ThemeManager.SetRequestedTheme(menu, ModernWpf.ElementTheme.Dark);
+            ModernWpf.ThemeManager.SetRequestedTheme(menu, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
             return menu;
         }
 
@@ -1070,6 +1070,11 @@ namespace Kil0bitSystemMonitor.Pad
                 if (Dispatcher.CheckAccess()) ApplyEditorSettings();
                 else Dispatcher.BeginInvoke(new Action(ApplyEditorSettings));
             }
+            else if (e.PropertyName == nameof(AppConfig.PadTheme))
+            {
+                if (Dispatcher.CheckAccess()) ApplyTheme();
+                else Dispatcher.BeginInvoke(new Action(ApplyTheme));
+            }
         }
 
         private void ConfigureEditor()
@@ -1082,15 +1087,45 @@ namespace Kil0bitSystemMonitor.Pad
             options.ConvertTabsToSpaces = false;
 
             var area = Editor.TextArea;
-            area.SelectionBrush = new SolidColorBrush(Color.FromArgb(0x55, 0x3F, 0xD2, 0xE4));
             area.SelectionForeground = null;
             area.SelectionBorder = null;
             area.SelectionCornerRadius = 0;
-            area.Caret.CaretBrush = new SolidColorBrush(Color.FromRgb(0x3F, 0xD2, 0xE4));
-            area.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromArgb(0x0F, 0xFF, 0xFF, 0xFF));
             area.TextView.CurrentLineBorder = new Pen(Brushes.Transparent, 0);
-            Editor.LineNumbersForeground = new SolidColorBrush(Color.FromArgb(0x66, 0xED, 0xED, 0xF2));
         }
+
+        /// <summary>The palette MicaPad is painted with.</summary>
+        internal PadPalette Palette => _palette;
+
+        /// <summary>
+        /// Paints MicaPad in the theme the config names: the Pad.* brushes the XAML reads, the
+        /// ModernWpf controls, the editor and find highlights, the theme button and the title bar.
+        /// Only this window changes; the rest of MicaStats keeps its look.
+        /// </summary>
+        private void ApplyTheme()
+        {
+            _palette = PadPalette.For(_config.PadTheme);
+            PadThemeApplier.ApplyResources(Resources, _palette);
+            ModernWpf.ThemeManager.SetRequestedTheme(this, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
+
+            var area = Editor.TextArea;
+            area.SelectionBrush = PadThemeApplier.ToBrush(_palette.Selection);
+            area.Caret.CaretBrush = PadThemeApplier.ToBrush(_palette.Caret);
+            area.TextView.CurrentLineBackground = PadThemeApplier.ToBrush(_palette.CurrentLine);
+            Editor.LineNumbersForeground = PadThemeApplier.ToBrush(_palette.LineNumbers);
+            PreviewEditor.LineNumbersForeground = Editor.LineNumbersForeground;
+            PreviewEditor.TextArea.SelectionBrush = area.SelectionBrush;
+            FindBar.ApplyPalette(_palette);
+
+            // Sun (E706) offers the light theme, moon (E708) the dark one.
+            ThemeButton.Content = _palette.IsDark ? "" : "";
+            ThemeButton.ToolTip = _palette.IsDark ? "Switch to light theme" : "Switch to dark theme";
+            PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
+        }
+
+        /// <summary>The theme button: switches between dark and light, remembered in the config.</summary>
+        internal void ToggleTheme() => _config.PadTheme = _palette.IsDark ? PadThemes.Light : PadThemes.Dark;
+
+        private void OnThemeButtonClick(object sender, RoutedEventArgs e) => ToggleTheme();
 
         private void ApplyEditorSettings()
         {
@@ -1120,11 +1155,11 @@ namespace Kil0bitSystemMonitor.Pad
             if (_shown.SaveState == SaveState.Failed)
             {
                 SaveText.Text = "Not saved — retrying";
-                SaveText.Foreground = (Brush)FindResource("AlertRed");
+                SaveText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.AlertRed");
                 return;
             }
 
-            SaveText.Foreground = (Brush)FindResource("Muted");
+            SaveText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.Muted");
             if (_shown.SaveState == SaveState.Saving || _workspace.HasPendingChanges(_shown)) SaveText.Text = "Saving…";
             else if (_shown.LastSavedUtc is DateTime saved) SaveText.Text = PadText.SavedAgo(DateTime.UtcNow - saved);
             else SaveText.Text = "Saved";
@@ -1177,6 +1212,7 @@ namespace Kil0bitSystemMonitor.Pad
             string exe = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "MicaStats.exe");
             string icon = Path.Combine(AppContext.BaseDirectory, "micapad.ico");
             TaskbarIdentity.Apply(hwnd, "Kil0bit.SystemMonitor.MicaPad", "\"" + exe + "\" " + PadArguments.Flag, "MicaPad", icon + ",0");
+            PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
         }
 
         private void LoadIcon()

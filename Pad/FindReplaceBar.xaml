@@ -3,11 +3,12 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.modernwpf.com/2019"
-    Background="#141419">
+    Background="{DynamicResource Pad.Chrome}">
 
-    <!-- Find and replace for MicaPad. AvalonEdit's own SearchPanel cannot replace, hence this. -->
+    <!-- Find and replace for MicaPad. AvalonEdit's own SearchPanel cannot replace, hence this.
+         Colors are the MicaPad window's Pad.* brushes, so the bar follows its theme. -->
 
-    <Border BorderBrush="#1AFFFFFF" BorderThickness="0,0,0,1" Padding="10,6">
+    <Border BorderBrush="{DynamicResource Pad.Border}" BorderThickness="0,0,0,1" Padding="10,6">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -32,7 +33,7 @@
                         Padding="8,4" Click="OnNextClick" />
             </StackPanel>
             <TextBlock x:Name="CountText" Grid.Row="0" Grid.Column="2" Margin="12,0" VerticalAlignment="Center"
-                       FontSize="12" Foreground="#88EDEDF2" TextTrimming="CharacterEllipsis" />
+                       FontSize="12" Foreground="{DynamicResource Pad.Muted}" TextTrimming="CharacterEllipsis" />
             <Button Grid.Row="0" Grid.Column="3" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
                     FontSize="10" ToolTip="Close (Esc)" Padding="8,6" Click="OnCloseClick" />
 

@@ -12,7 +12,6 @@ using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services.Pad;
 
 using Brush = System.Windows.Media.Brush;
-using Color = System.Windows.Media.Color;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using UserControl = System.Windows.Controls.UserControl;
 
@@ -26,8 +25,6 @@ namespace Kil0bitSystemMonitor.Pad
     public partial class FindReplaceBar : UserControl
     {
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-        private static readonly Brush Muted = Frozen(Color.FromArgb(0x88, 0xED, 0xED, 0xF2));
-        private static readonly Brush AlertRed = Frozen(Color.FromRgb(0xFF, 0x6B, 0x6B));
 
         private readonly MatchHighlighter _highlighter = new();
         private readonly DispatcherTimer _refresh;
@@ -59,6 +56,16 @@ namespace Kil0bitSystemMonitor.Pad
             editor.DocumentChanged += (s, e) => ScheduleRefresh();
             editor.TextChanged += (s, e) => ScheduleRefresh();
         }
+
+        /// <summary>Takes the find-match color of the MicaPad theme and repaints the matches.</summary>
+        public void ApplyPalette(PadPalette palette)
+        {
+            _highlighter.Fill = PadThemeApplier.ToBrush(palette.FindMatch);
+            _editor?.TextArea.TextView.InvalidateLayer(_highlighter.Layer);
+        }
+
+        /// <summary>The brush behind each match, for tests.</summary>
+        internal Brush MatchFill => _highlighter.Fill;
 
         /// <summary>Shows the bar, seeded with a single-line selection, and focuses the find box.</summary>
         public void Open(bool replace)
@@ -122,7 +129,7 @@ namespace Kil0bitSystemMonitor.Pad
                 _timedOut = false;
                 _matches = Array.Empty<FindMatch>();
                 CountText.Text = error ?? "";
-                CountText.Foreground = AlertRed;
+                CountText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.AlertRed");
             }
 
             _highlighter.Matches = _matches;
@@ -132,7 +139,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void ShowTimedOut()
         {
             CountText.Text = FindReplaceEngine.TimedOutMessage;
-            CountText.Foreground = AlertRed;
+            CountText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.AlertRed");
         }
 
         private FindOptions Options => new(CaseToggle.IsChecked == true, WordToggle.IsChecked == true, RegexToggle.IsChecked == true);
@@ -157,7 +164,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void UpdateCount()
         {
-            CountText.Foreground = Muted;
+            CountText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.Muted");
             if (_editor == null) return;
             if (_matches.Count == 0)
             {
@@ -218,7 +225,7 @@ namespace Kil0bitSystemMonitor.Pad
                                                  out string result, out int count, out string? error))
             {
                 CountText.Text = error ?? "";
-                CountText.Foreground = AlertRed;
+                CountText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.AlertRed");
                 return;
             }
 
@@ -252,12 +259,5 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnNextClick(object sender, RoutedEventArgs e) => FindNext();
 
         private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
-
-        private static Brush Frozen(Color color)
-        {
-            var brush = new SolidColorBrush(color);
-            brush.Freeze();
-            return brush;
-        }
     }
 }

@@ -24,6 +24,7 @@ namespace Kil0bitSystemMonitor.Pad
         private FoldingManager? _manager;
         private TextDocument? _document;
         private PadLanguage _language = PadLanguages.Plain;
+        private bool _warned;
 
         public FoldingController(TextEditor editor)
         {
@@ -47,6 +48,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             Detach();
             _language = language;
+            _warned = false;
             if (language.Fold == PadFoldKind.None) return;
 
             _manager = FoldingManager.Install(_editor.TextArea);
@@ -79,6 +81,9 @@ namespace Kil0bitSystemMonitor.Pad
             }
             catch (Exception ex)
             {
+                // Once per attach: the recompute runs after every pause in typing.
+                if (_warned) return;
+                _warned = true;
                 DiagnosticsLog.Warn("pad", "Folding could not be updated (" + ex.GetType().Name + ")");
             }
         }

@@ -20,22 +20,36 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         public static string Write(string text, IReadOnlyList<RtfRun> runs, string fontFamily, double fontSizePx, PadColor foreground)
         {
-            var styles = new Style[text.Length];
+            // Style ids per character (4 bytes each) into a small deduplicated table; with no runs
+            // there is one style and no per-character array at all.
             var plain = new Style(foreground, null, false, false, false, 1);
-            for (int i = 0; i < styles.Length; i++) styles[i] = plain;
-            foreach (var run in runs)
+            var table = new List<Style> { plain };
+            int[]? ids = null;
+            if (runs.Count > 0)
             {
-                int end = Math.Min(text.Length, run.Start + run.Length);
-                for (int i = Math.Max(0, run.Start); i < end; i++)
+                var known = new Dictionary<Style, int> { [plain] = 0 };
+                ids = new int[text.Length];
+                foreach (var run in runs)
                 {
-                    var s = styles[i];
-                    styles[i] = new Style(
-                        run.Foreground ?? s.Foreground,
-                        run.Background ?? s.Background,
-                        s.Bold || run.Bold,
-                        s.Italic || run.Italic,
-                        s.Strike || run.Strike,
-                        run.SizeFactor != 1 ? run.SizeFactor : s.Size);
+                    int end = Math.Min(text.Length, run.Start + run.Length);
+                    for (int i = Math.Max(0, run.Start); i < end; i++)
+                    {
+                        var s = table[ids[i]];
+                        var merged = new Style(
+                            run.Foreground ?? s.Foreground,
+                            run.Background ?? s.Background,
+                            s.Bold || run.Bold,
+                            s.Italic || run.Italic,
+                            s.Strike || run.Strike,
+                            run.SizeFactor != 1 ? run.SizeFactor : s.Size);
+                        if (!known.TryGetValue(merged, out int id))
+                        {
+                            id = table.Count;
+                            table.Add(merged);
+                            known[merged] = id;
+                        }
+                        ids[i] = id;
+                    }
                 }
             }
 
@@ -49,7 +63,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
             int baseHalfPoints = (int)Math.Round(fontSizePx * 0.75 * 2, MidpointRounding.AwayFromZero);
             var body = new StringBuilder();
-            Style? current = null;
+            int current = -1;
             for (int i = 0; i < text.Length; i++)
             {
                 char c = text[i];
@@ -60,9 +74,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     continue;
                 }
 
-                var style = styles[i];
-                if (current != style)
+                int styleId = ids == null ? 0 : ids[i];
+                if (current != styleId)
                 {
+                    var style = table[styleId];
                     body.Append(@"\plain\f0")
                         .Append(@"\cf").Append(ColorIndex(style.Foreground).ToString(CultureInfo.InvariantCulture));
                     if (style.Bold) body.Append(@"\b");
@@ -71,7 +86,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     if (style.Background is PadColor bg) body.Append(@"\chcbpat").Append(ColorIndex(bg).ToString(CultureInfo.InvariantCulture));
                     int halfPoints = (int)Math.Round(baseHalfPoints * style.Size, MidpointRounding.AwayFromZero);
                     body.Append(@"\fs").Append(halfPoints.ToString(CultureInfo.InvariantCulture)).Append(' ');
-                    current = style;
+                    current = styleId;
                 }
 
                 switch (c)

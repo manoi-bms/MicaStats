@@ -1413,9 +1413,33 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         internal void CopyAsRtf()
         {
+            try
+            {
+                CopyAsRtfCore();
+            }
+            catch (Exception ex)
+            {
+                Warn("Copy as RTF failed (" + ex.GetType().Name + ": " + ex.Message + ")");
+                ShowStatus("Copy as RTF failed");
+            }
+        }
+
+        /// <summary>Where unexpected failures are logged; tests replace it.</summary>
+        internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("pad", message);
+
+        /// <summary>The most characters Copy as RTF will build in one go.</summary>
+        internal const int MaxRtfChars = 10_000_000;
+
+        private void CopyAsRtfCore()
+        {
             var document = Editor.Document;
             int start = Editor.SelectionLength > 0 ? Editor.SelectionStart : 0;
             int length = Editor.SelectionLength > 0 ? Editor.SelectionLength : document.TextLength;
+            if (length > MaxRtfChars)
+            {
+                ShowStatus("Too large to copy as RTF");
+                return;
+            }
             string text = document.GetText(start, length);
 
             var effective = _resolved.Effective;

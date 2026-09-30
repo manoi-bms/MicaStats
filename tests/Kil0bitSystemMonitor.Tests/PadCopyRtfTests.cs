@@ -24,7 +24,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal("**bold**", copied!.GetData(DataFormats.UnicodeText));
             string rtf = (string)copied.GetData(DataFormats.Rtf);
-            Assert.Contains(@"\b", rtf);
+            Assert.Matches(@"\\b\\fs\d+ \*\*bold\*\*|\\b\\fs\d+ bold", rtf);
             Assert.Contains("bold", rtf);
         });
 
@@ -91,6 +91,34 @@ namespace Kil0bitSystemMonitor.Tests
             window.RefreshEditorMenu();
             Assert.Contains("Copy as RTF", PadMenuTests.Headers(window.EditorMenu));
             Assert.Contains("Copy as RTF", PadMenuTests.Headers(window.BuildMainMenu()));
+        });
+
+        [Fact]
+        public void A_copy_over_the_size_cap_is_refused() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            int calls = 0;
+            window.TrySetClipboard = data => { calls++; return true; };
+            window.Editor.Document.Text = new string('a', MicaPadWindow.MaxRtfChars + 1);
+
+            window.CopyAsRtf();
+
+            Assert.Equal(0, calls);
+            Assert.Equal("Too large to copy as RTF", window.StatusMessage.Text);
+        });
+
+        [Fact]
+        public void An_unexpected_failure_is_logged_and_reported() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var warnings = new List<string>();
+            window.Warn = warnings.Add;
+            window.TrySetClipboard = data => throw new System.InvalidOperationException("boom");
+            window.Editor.Document.Text = "x";
+
+            window.CopyAsRtf();
+
+            Assert.Equal("Copy as RTF failed", window.StatusMessage.Text);
+            Assert.Single(warnings);
+            Assert.Contains("InvalidOperationException", warnings[0]);
         });
     }
 }

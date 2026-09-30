@@ -82,5 +82,14 @@ namespace Kil0bitSystemMonitor.Tests
             string rtf = Write("code", new RtfRun(0, 4, null, shade, false, false, false, 1));
             Assert.Contains(@"\chcbpat2", rtf);
         }
+
+        [Fact]
+        public void A_huge_text_without_runs_is_one_style_header_and_the_text()
+        {
+            string text = new string('a', 1_000_000);
+            string rtf = Write(text);
+            Assert.Single(System.Text.RegularExpressions.Regex.Matches(rtf, @"\\plain"));
+            Assert.Contains(@"\fs21 " + text + "}", rtf);
+        }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Document;
 using Kil0bitSystemMonitor.Services.Pad;
 
 namespace Kil0bitSystemMonitor.Pad
@@ -8,8 +9,8 @@ namespace Kil0bitSystemMonitor.Pad
     /// <summary>
     /// Everything a language adds to one editor, installed and removed together: syntax colors, or
     /// Markdown formatting (colorizer, background, bullets), and folding.
-    /// <see cref="Apply"/> always removes the previous language first, so switching tabs never
-    /// piles anything up.
+    /// <see cref="Apply"/> removes the previous language first, so switching tabs never piles
+    /// anything up; asked again for what is already shown, it does nothing.
     /// </summary>
     internal sealed class EditorLanguage
     {
@@ -21,6 +22,7 @@ namespace Kil0bitSystemMonitor.Pad
         private MarkdownBackgroundRenderer? _markdownBackground;
         private BulletGenerator? _bullets;
         private readonly FoldingController? _folding;
+        private TextDocument? _appliedTo;
 
         public EditorLanguage(TextEditor editor, Func<PadPalette> palette, bool folds)
         {
@@ -41,11 +43,19 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>True while Markdown formatting is installed.</summary>
         internal bool HasMarkdown => _markdown != null;
 
-        /// <summary>Shows the editor's text in <paramref name="language"/>.</summary>
+        /// <summary>
+        /// Shows the editor's text in <paramref name="language"/>. The same language on the same
+        /// document it was applied to is left as it is: re-installing would unfold everything and
+        /// recompute a big file's folds on every save.
+        /// </summary>
         public void Apply(PadLanguage language)
         {
+            var document = _editor.Document;
+            if (ReferenceEquals(language, Current) && ReferenceEquals(document, _appliedTo)) return;
+
             Clear();
             Current = language;
+            _appliedTo = document;
             var view = _editor.TextArea.TextView;
 
             if (ReferenceEquals(language, PadLanguages.Markdown))

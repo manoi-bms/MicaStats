@@ -139,6 +139,36 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Saving_keeps_what_is_folded() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            PadLanguageWindowTests.OpenFile(window, env, "a.json", "{\n  \"a\": 1,\n  \"b\": 2\n}");
+            var folding = window.LanguageView.Folding!;
+            folding.Update();
+            folding.Manager!.AllFoldings.Single().IsFolded = true;
+            window.Editor.Document.Insert(window.Editor.Document.TextLength, "\n");
+
+            Assert.True(window.HandleShortcut(System.Windows.Input.Key.S, System.Windows.Input.ModifierKeys.Control));
+
+            Assert.False(env.Workspace.Active!.HasUnsavedEdits);
+            Assert.Equal("JSON", window.LanguageButton.Content);
+            Assert.True(folding.Manager!.AllFoldings.Single().IsFolded);
+        });
+
+        [Fact]
+        public void The_markdown_switch_leaves_a_json_tab_folded() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            PadLanguageWindowTests.OpenFile(window, env, "a.json", "{\n  \"a\": 1,\n  \"b\": 2\n}");
+            var folding = window.LanguageView.Folding!;
+            folding.Update();
+            folding.Manager!.AllFoldings.Single().IsFolded = true;
+
+            config.PadMarkdown = false;
+            Assert.True(folding.Manager!.AllFoldings.Single().IsFolded);
+            config.PadMarkdown = true;
+            Assert.True(folding.Manager!.AllFoldings.Single().IsFolded);
+        });
+
+        [Fact]
         public void Switching_tabs_folds_the_new_document() => PadLanguageWindowTests.WithWindow((window, env, config) =>
         {
             window.Editor.Document.Text = "# A\ntext\n# B\nmore";

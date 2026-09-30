@@ -223,7 +223,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// The saved session. A missing or corrupt file is rebuilt from the notes that are not
-        /// closed, oldest change first; ids whose folder is gone are dropped.
+        /// closed, oldest change first; ids whose folder is gone are dropped. Always returns at least one
+        /// window (<see cref="SessionWindows.Normalize"/>).
         /// </summary>
         public SessionState LoadSession()
         {
@@ -242,7 +243,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                                 .Distinct()
                                 .ToList();
                             session.Tabs ??= new Dictionary<string, TabViewState>();
-                            return session;
+                            return SessionWindows.Normalize(session, id => Directory.Exists(NoteDir(id)));
                         }
                     }
                 }
@@ -251,7 +252,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     _warn("session.json is unreadable; rebuilding it from the notes: " + ex.Message);
                 }
 
-                return RebuildSession();
+                // Phase 1's rebuild, into one window (spec "Error handling"): also for a v2 file that cannot be read.
+                return SessionWindows.Normalize(RebuildSession());
             }
         }
 

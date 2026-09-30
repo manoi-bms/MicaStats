@@ -82,7 +82,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// Moves an open tab to the end of another window's tabs, where it becomes the active tab;
         /// its old window's active tab falls to a neighbour. The note itself, its text and its
-        /// unsaved edits are untouched, and nothing is closed.
+        /// unsaved edits are untouched, and nothing is closed. The session is not saved here: the
+        /// caller saves it (<see cref="SaveSession"/>) once the move is done.
         /// </summary>
         public void MoveToWindow(OpenNote note, string windowId)
         {

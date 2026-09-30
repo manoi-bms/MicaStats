@@ -367,5 +367,119 @@ namespace Kil0bitSystemMonitor.Tests
             first.Editor.TextArea.PerformTextInput("X");
             Assert.Equal("stXput", first.Editor.Document.Text);      // typing in the source window still works
         });
+
+        [Fact]
+        public void The_close_button_on_a_second_window_moves_its_tabs_into_the_other() => WithWindows((first, env, shown) =>
+        {
+            var second = first.NewWindow();
+            second.Editor.Document.Insert(0, "draft");
+            var draft = env.Workspace.ActiveIn(second.WindowId)!;
+
+            second.Close();                                           // what × does: OnClosing cancels it and posts the move
+            PadLanguageWindowTests.Pump();
+
+            Assert.DoesNotContain(second, MicaPadWindow.WindowsOf(env.Workspace));
+            Assert.Equal(new[] { first.WindowId }, env.Workspace.Windows.Select(w => w.Id));
+            Assert.Contains(draft, env.Workspace.TabsOf(first.WindowId));
+            Assert.Equal("draft", draft.TextProvider());
+            Assert.Empty(env.Workspace.ClosedNotes());
+        });
+
+        [Fact]
+        public void The_first_show_brings_back_the_other_windows_when_one_cannot_load() => UiThread.Run(() =>
+        {
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            using var env = new PadTestEnv(post: action => dispatcher.BeginInvoke(action));
+            var before = env.Workspace;
+            PadTestEnv.Type(before, before.NewNote(), "one");
+            var broken = before.NewWindow(before.Windows[0].Id);        // the least recently active: loaded first
+            PadTestEnv.Type(before, before.NewNote(broken.Id), "two");
+            env.Clock.Advance(1);
+            var third = before.NewWindow(before.Windows[0].Id);
+            PadTestEnv.Type(before, before.NewNote(third.Id), "three");
+            env.Clock.Advance(1);
+            before.ActivateWindow(before.Windows[0].Id);                // the first window was used last
+            Assert.True(before.FlushAll(TimeSpan.FromSeconds(5)));
+
+            var restarted = env.NewWorkspace(post: action => dispatcher.BeginInvoke(action));
+            var shown = new List<MicaPadWindow>();
+            var messages = new List<string>();
+            var previousShow = MicaPadWindow.ShowWindow;
+            var previousWarn = EditorMenus.Warn;
+            MicaPadWindow.ShowWindow = shown.Add;
+            EditorMenus.Warn = messages.Add;
+            MicaPadWindow.LoadStarting = id =>
+            {
+                if (id == broken.Id) throw new InvalidOperationException("cannot load");
+            };
+            try
+            {
+                var front = MicaPadWindow.ShowOrActivate(restarted, new AppConfig(), null);
+
+                Assert.Equal(restarted.Windows[0].Id, front.WindowId);
+                Assert.Equal(new[] { third.Id, front.WindowId }, shown.Select(w => w.WindowId));
+                Assert.Equal(2, MicaPadWindow.WindowsOf(restarted).Count);
+                Assert.Contains("cannot load", Assert.Single(messages));
+
+                MicaPadWindow.ShowOrActivate(restarted, new AppConfig(), null);   // the hotkey again: the windows are up, nothing is retried
+                Assert.Single(messages);
+            }
+            finally
+            {
+                MicaPadWindow.LoadStarting = null;
+                MicaPadWindow.ShowWindow = previousShow;
+                EditorMenus.Warn = previousWarn;
+                foreach (var window in MicaPadWindow.WindowsOf(restarted).ToList()) window.CloseForExit();
+            }
+        });
+
+        [Fact]
+        public void A_new_window_that_fails_to_load_leaves_no_handler_on_the_document_it_gave_back() => WithWindows((first, env, shown) =>
+        {
+            PadLanguageWindowTests.OpenFile(first, env, "log.txt", "v1\n");
+            var file = env.Workspace.ActiveIn(first.WindowId)!;
+            first.NewTab();
+            MicaPadWindow.LoadStarting = id =>
+            {
+                if (id != first.WindowId) throw new InvalidOperationException("cannot load");
+            };
+            try
+            {
+                Assert.Throws<InvalidOperationException>(() => first.MoveToNewWindow(file));   // the menu's Guard logs it
+            }
+            finally
+            {
+                MicaPadWindow.LoadStarting = null;
+            }
+            Assert.Equal(first.WindowId, file.WindowId);             // the tab came back
+            Assert.Single(env.Workspace.Windows);
+            first.SelectTab(env.Workspace.TabsOf(first.WindowId).IndexOf(file));
+
+            File.WriteAllText(env.FileOf("log.txt"), "v2 from outside\n");
+            first.CheckShownNoteOnDisk();                             // a clean file reloads without asking
+
+            Assert.Equal("v2 from outside\n", file.TextProvider());
+            Assert.False(file.HasUnsavedEdits);                      // a handler left by the failed window would mark it unsaved
+        });
+
+        [Fact]
+        public void Reload_and_line_endings_leave_another_windows_tab_alone() => WithWindows((first, env, shown) =>
+        {
+            var second = first.NewWindow();
+            PadLanguageWindowTests.OpenFile(first, env, "notes.txt", "one\r\ntwo\r\n");
+            var file = env.Workspace.ActiveIn(first.WindowId)!;
+            var stamp = file.Meta.SourceStamp;
+            var ending = file.Meta.LineEnding;
+            int versions = env.Store.ListSnapshots(file.Id).Count;
+            File.WriteAllText(env.FileOf("notes.txt"), "changed outside\n");
+
+            second.ConvertLineEndings(file, ending == LineEnding.Lf ? LineEnding.CrLf : LineEnding.Lf);
+            second.Reload(file);
+
+            Assert.Equal(ending, file.Meta.LineEnding);
+            Assert.Equal(stamp, file.Meta.SourceStamp);              // still out of step with the file: its own window will ask
+            Assert.DoesNotContain("changed outside", file.TextProvider());
+            Assert.Equal(versions, env.Store.ListSnapshots(file.Id).Count);
+        });
     }
 }

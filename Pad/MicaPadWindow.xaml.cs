@@ -224,7 +224,8 @@ namespace Kil0bitSystemMonitor.Pad
         /// window comes to the front — or, with <paramref name="path"/>, the window already showing
         /// that file. The first show in a run brings back every window of the session, each where it
         /// was (spec 5.3: reopen at login restores every window), so no tab can wait in a window
-        /// nobody shows; the target ends up in front.
+        /// nobody shows; the target ends up in front. A window that fails to load is logged and
+        /// skipped (its tabs wait in the session for the next start), so the others still come up.
         /// </summary>
         public static MicaPadWindow ShowOrActivate(PadWorkspace workspace, AppConfig config, Action? openSettings, string? path = null)
         {
@@ -235,7 +236,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 // Least recently active first, so each later one comes up in front of it.
                 foreach (string id in workspace.ActivationOrder.Reverse().Where(id => id != targetId).ToList())
-                    Create(workspace, config, id, openSettings).Present();
+                    Guard("Bringing back a MicaPad window", () => Create(workspace, config, id, openSettings).Present());
             }
             var window = Registered(workspace, targetId) ?? Create(workspace, config, targetId, openSettings);
             window.Present();
@@ -254,6 +255,13 @@ namespace Kil0bitSystemMonitor.Pad
             return window;
         }
 
+        /// <summary>
+        /// Called with a session window's id as <see cref="Create"/> starts loading it (after any
+        /// document was handed over); null in the app. Tests make it throw, standing in for a window
+        /// that cannot load.
+        /// </summary>
+        internal static Action<string>? LoadStarting { get; set; }
+
         /// <summary>Builds and loads a window for a session window. A half-loaded one is closed, never reused.</summary>
         private static MicaPadWindow Create(PadWorkspace workspace, AppConfig config, string windowId, Action? openSettings,
                                             Action<MicaPadWindow>? beforeLoad = null)
@@ -262,6 +270,7 @@ namespace Kil0bitSystemMonitor.Pad
             try
             {
                 beforeLoad?.Invoke(window);
+                LoadStarting?.Invoke(windowId);
                 window.LoadSession();
             }
             catch
@@ -359,7 +368,7 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace.CloseWindow(_windowId, target._windowId);
             foreach (var (note, document) in moving)
                 if (document != null && !target.AdoptDocument(note, document))
-                    Debug.WriteLine("MicaPad: window " + target._windowId + " already had a document for note " + note.Id + "; the handed-over one was dropped");
+                    Warn("Window " + target._windowId + " already had a document for note " + note.Id + "; the handed-over one was dropped");
             _workspace.SaveSession();
         }
 
@@ -590,7 +599,11 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
-        /// <summary>Stops the timer and unhooks from long-lived objects. Safe to call twice.</summary>
+        /// <summary>
+        /// Stops the timer and unhooks from long-lived objects, its documents among them: one handed
+        /// back to another window (a failed Move to new window) must not keep this window's change
+        /// handler. The notes still read their text from those documents. Safe to call twice.
+        /// </summary>
         private void Detach()
         {
             _previewGeneration++;
@@ -599,6 +612,8 @@ namespace Kil0bitSystemMonitor.Pad
             _statusTimer?.Stop();
             _config.PropertyChanged -= OnConfigChanged;
             _workspace.Open.CollectionChanged -= OnOpenChanged;
+            foreach (var (document, changed) in _docHandlers) document.Changed -= changed;
+            _docHandlers.Clear();
             s_windows.Remove(this);
         }
 
@@ -933,7 +948,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.TabsOf(_windowId).Count > 1));
 
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Move to new window", null, () => MoveToNewWindow(note), _workspace.TabsOf(_windowId).Count > 1, icon: ""));
+            menu.Items.Add(Item("Move to new window", null, () => MoveToNewWindow(note), _workspace.TabsOf(_windowId).Count > 1, icon: "\uE8A7"));
             var others = OtherWindows();
             if (others.Count > 0)
             {
@@ -966,8 +981,12 @@ namespace Kil0bitSystemMonitor.Pad
             MicaPadWindow window;
             try
             {
-                window = Create(_workspace, _config, state.Id, OpenSettingsRequested,
-                    beforeLoad: w => { if (document != null) w.AdoptDocument(note, document); });
+                window = Create(_workspace, _config, state.Id, OpenSettingsRequested, beforeLoad: w =>
+                {
+                    // Refused, the new window builds its own document from the note's text instead.
+                    if (document != null && !w.AdoptDocument(note, document))
+                        Warn("The new window " + state.Id + " did not take the document of note " + note.Id + "; it was rebuilt from the note's text");
+                });
             }
             catch
             {
@@ -1289,8 +1308,10 @@ namespace Kil0bitSystemMonitor.Pad
             if (_infoKind != null && ReferenceEquals(_infoNote, note)) HideInfo();
         }
 
-        private void Reload(OpenNote note)
+        /// <summary>Reads the note's file again into its document; only for this window's own tab (another window's document is not here).</summary>
+        internal void Reload(OpenNote note)
         {
+            if (note.WindowId != _windowId) return;   // before any change: the stamp must never say "in sync" over old text
             string? text = _workspace.ReloadFromDisk(note, out var status, out bool lossy);
             string name = Path.GetFileName(note.Meta.SourcePath) ?? note.Title;
             if (text == null)
@@ -1472,8 +1493,10 @@ namespace Kil0bitSystemMonitor.Pad
             menu.IsOpen = true;
         }
 
-        private void ConvertLineEndings(OpenNote note, LineEnding ending)
+        /// <summary>Converts the note's line endings as one undoable edit; only for this window's own tab.</summary>
+        internal void ConvertLineEndings(OpenNote note, LineEnding ending)
         {
+            if (note.WindowId != _windowId) return;   // before the workspace records the new ending
             string converted = _workspace.ConvertLineEndings(note, ending);
             if (EnsureDocument(note) is { } document && converted != document.Text) ReplaceText(note, converted, markUnsaved: true);
             UpdateFileText();

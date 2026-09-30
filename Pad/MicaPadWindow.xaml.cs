@@ -68,6 +68,11 @@ namespace Kil0bitSystemMonitor.Pad
             ConfigureEditor();
             FindBar.Attach(Editor);
             ApplyTheme();
+            Editor.ContextMenu = EditorMenu;
+            Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu();
+            Editor.TextArea.PreviewMouseRightButtonDown += OnEditorRightButtonDown;
+            PreviewEditor.ContextMenu = PreviewMenu;
+            PreviewEditor.ContextMenuOpening += (s, e) => RefreshPreviewMenu();
             HistoryPanel.VersionSelected += OnVersionSelected;
             HistoryPanel.CloseRequested += CloseHistory;
             FindBar.ReplacingAll += () =>
@@ -994,9 +999,9 @@ namespace Kil0bitSystemMonitor.Pad
             return menu;
         }
 
-        private static MenuItem Item(string header, string? gesture, Action action)
+        private static MenuItem Item(string header, string? gesture, Action action, bool enabled = true)
         {
-            var item = new MenuItem { Header = header, InputGestureText = gesture ?? "" };
+            var item = new MenuItem { Header = header, InputGestureText = gesture ?? "", IsEnabled = enabled };
             item.Click += (s, e) => action();
             return item;
         }
@@ -1007,6 +1012,90 @@ namespace Kil0bitSystemMonitor.Pad
             item.IsCheckable = true;
             item.IsChecked = isChecked;
             return item;
+        }
+
+        // ---- right-click menus --------------------------------------------------------------
+
+        /// <summary>The editor's right-click menu. One instance; its items are rebuilt each time it opens.</summary>
+        internal ContextMenu EditorMenu { get; } = new();
+
+        /// <summary>The history preview's right-click menu: copying only, because the preview is read-only.</summary>
+        internal ContextMenu PreviewMenu { get; } = new();
+
+        /// <summary>Rebuilds the editor menu for the current selection, undo state and theme.</summary>
+        internal void RefreshEditorMenu() => FillEditorMenu(EditorMenu, Editor, readOnly: false);
+
+        /// <summary>Rebuilds the history preview's menu.</summary>
+        internal void RefreshPreviewMenu() => FillEditorMenu(PreviewMenu, PreviewEditor, readOnly: true);
+
+        /// <summary>
+        /// The items of a text menu, each disabled when it cannot apply. Later parts add their groups
+        /// (Format, Lines, Tools) here, before the Find group.
+        /// </summary>
+        private void FillEditorMenu(ContextMenu menu, ICSharpCode.AvalonEdit.TextEditor editor, bool readOnly)
+        {
+            menu.Items.Clear();
+            ModernWpf.ThemeManager.SetRequestedTheme(menu, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
+
+            bool hasSelection = editor.SelectionLength > 0;
+            bool hasText = editor.Document != null && editor.Document.TextLength > 0;
+
+            if (!readOnly)
+            {
+                menu.Items.Add(Item("Undo", "Ctrl+Z", () => editor.Undo(), editor.CanUndo));
+                menu.Items.Add(Item("Redo", "Ctrl+Y", () => editor.Redo(), editor.CanRedo));
+                menu.Items.Add(new Separator());
+                menu.Items.Add(Item("Cut", "Ctrl+X", () => editor.Cut(), hasSelection));
+            }
+            menu.Items.Add(Item("Copy", "Ctrl+C", () => editor.Copy(), hasSelection));
+            if (!readOnly)
+            {
+                menu.Items.Add(Item("Paste", "Ctrl+V", () => editor.Paste(), ClipboardHasText()));
+                menu.Items.Add(Item("Delete", "Del", () => editor.SelectedText = "", hasSelection));
+            }
+            menu.Items.Add(Item("Select all", "Ctrl+A", () => editor.SelectAll(), hasText));
+
+            if (!readOnly)
+            {
+                menu.Items.Add(new Separator());
+                menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false)));
+                menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true)));
+                menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine));
+            }
+        }
+
+        /// <summary>True when Paste has something to paste. A busy clipboard counts as yes: Paste itself then tries.</summary>
+        private static bool ClipboardHasText()
+        {
+            try
+            {
+                return Clipboard.ContainsText();
+            }
+            catch (System.Runtime.InteropServices.ExternalException)
+            {
+                return true;
+            }
+        }
+
+        private void OnEditorRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
+            if (position is { } at) PlaceCaretForMenu(Editor.Document.GetOffset(at.Location));
+        }
+
+        /// <summary>
+        /// A right-click moves the caret to the click, like Notepad, unless it lands inside the
+        /// selection: then the selection stays, so Cut and Copy act on it.
+        /// </summary>
+        internal void PlaceCaretForMenu(int offset)
+        {
+            offset = Math.Clamp(offset, 0, Editor.Document.TextLength);
+            int start = Editor.SelectionStart;
+            int end = start + Editor.SelectionLength;
+            if (Editor.SelectionLength > 0 && offset >= start && offset <= end) return;
+
+            Editor.TextArea.ClearSelection();
+            Editor.CaretOffset = offset;
         }
 
         private void ToggleWordWrap() => _config.PadWordWrap = !_config.PadWordWrap;

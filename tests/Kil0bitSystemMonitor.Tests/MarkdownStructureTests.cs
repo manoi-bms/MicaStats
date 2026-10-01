@@ -75,7 +75,8 @@ namespace Kil0bitSystemMonitor.Tests
 
             string far = "---\n" + string.Join("\n", Enumerable.Repeat("k: v", 250)) + "\n---";
             Assert.All(Scan(far).Facts, f => Assert.False(f.FrontMatter));
-            Assert.True(Scan("---\n" + string.Join("\n", Enumerable.Repeat("k: v", 199)) + "\n...").Facts[0].FrontMatter);
+            Assert.True(Scan("---\n" + string.Join("\n", Enumerable.Repeat("k: v", 198)) + "\n...").Facts[0].FrontMatter);
+            Assert.False(Scan("---\n" + string.Join("\n", Enumerable.Repeat("k: v", 199)) + "\n...").Facts[0].FrontMatter);
         }
 
         [Fact]
@@ -86,6 +87,23 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { MdCallout.Warning, MdCallout.Warning, MdCallout.None, MdCallout.None, MdCallout.None }, s.Facts.Select(f => f.Callout));
             Assert.True(s.Facts[2].CalloutClass);
             Assert.False(s.Facts[4].CalloutClass);   // not under a quote
+        }
+
+        [Fact]
+        public void A_dollar_block_closes_only_on_exactly_two_dollars()
+        {
+            var s = Scan("$$\nx\n$$$\ny\n$$  \nz");
+
+            Assert.Equal(new[] { MdFence.Delimiter, MdFence.Inside, MdFence.Inside, MdFence.Inside, MdFence.Delimiter, MdFence.None }, s.Fences);
+        }
+
+        [Fact]
+        public void A_callout_class_line_is_never_heading_text()
+        {
+            var s = Scan("> q\n{.is-info}\n---");
+
+            Assert.True(s.Facts[1].CalloutClass);
+            Assert.Equal(0, s.Facts[1].SetextLevel);
         }
 
         [Fact]
@@ -166,6 +184,48 @@ namespace Kil0bitSystemMonitor.Tests
             int before = cache.Recomputes;
 
             document.Insert(1, " |");
+
+            Assert.Equal(before + 1, cache.Recomputes);
+        });
+
+        [Fact]
+        public void Editing_the_delimiter_row_turns_the_table_off_and_on() => UiThread.Run(() =>
+        {
+            var document = new TextDocument("| a | b |\n|---|---|\n| 1 | 2 |");
+            var cache = new MarkdownDocumentCache();
+            Assert.Equal(MdTableRole.Header, cache.FactsOf(document, 1).Table);
+
+            document.Insert(document.GetLineByNumber(2).Offset + 2, "x");
+            Assert.Equal(MdTableRole.None, cache.FactsOf(document, 1).Table);
+
+            document.Remove(document.GetLineByNumber(2).Offset + 2, 1);
+            Assert.Equal(MdTableRole.Header, cache.FactsOf(document, 1).Table);
+            Assert.Equal(MdTableRole.Delimiter, cache.FactsOf(document, 2).Table);
+        });
+
+        [Fact]
+        public void A_backslash_before_a_header_pipe_is_noticed() => UiThread.Run(() =>
+        {
+            var document = new TextDocument("| a | b |\n|---|---|");
+            var cache = new MarkdownDocumentCache();
+            Assert.Equal(MdTableRole.Header, cache.FactsOf(document, 1).Table);
+
+            document.Insert(document.GetLineByNumber(1).Offset + 4, "\\");   // | a | b | -> | a \| b |
+
+            Assert.Equal(MdTableRole.None, cache.FactsOf(document, 1).Table);
+        });
+
+        [Fact]
+        public void Many_edits_in_one_update_rescan_once() => UiThread.Run(() =>
+        {
+            var document = new TextDocument("a\nb");
+            var cache = new MarkdownDocumentCache();
+            cache.FactsOf(document, 1);
+            int before = cache.Recomputes;
+
+            document.BeginUpdate();
+            for (int i = 0; i < 100; i++) document.Insert(1, "|");
+            document.EndUpdate();
 
             Assert.Equal(before + 1, cache.Recomputes);
         });

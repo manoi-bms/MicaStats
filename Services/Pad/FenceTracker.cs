@@ -14,8 +14,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private static readonly Regex OpenRx = new(@"^ {0,3}(`{3,}|~{3,})(.*)$", RegexOptions.CultureInvariant);
         private static readonly Regex MathRx = new(@"^ {0,3}\$\$[ \t]*$", RegexOptions.CultureInvariant);
 
-        /// <summary>One entry per line: delimiter, inside, or neither.</summary>
-        public static MdFence[] Classify(IReadOnlyList<string> lines)
+        /// <summary>One entry per line: delimiter, inside, or neither. <paramref name="mathBlocks"/> false leaves <c>$$</c> lines as text (the AI chat).</summary>
+        public static MdFence[] Classify(IReadOnlyList<string> lines, bool mathBlocks = true)
         {
             var kinds = new MdFence[lines.Count];
             char fenceChar = '\0';
@@ -26,7 +26,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 if (fenceLength == 0)
                 {
                     if (!MayBeDelimiter(line)) continue;   // most lines: no regex run at all
-                    if (MathRx.IsMatch(line))
+                    if (mathBlocks && MathRx.IsMatch(line))
                     {
                         // A line of only $$ opens a math block (spec 2); the next such line closes it.
                         fenceChar = '$';
@@ -117,7 +117,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             while (i < line.Length && i < 3 && line[i] == ' ') i++;
             int run = 0;
             while (i + run < line.Length && line[i + run] == c) run++;
-            if (run < length) return false;
+            if (run < length || (c == '$' && run != length)) return false;
             for (int k = i + run; k < line.Length; k++)
                 if (!char.IsWhiteSpace(line[k])) return false;
             return true;

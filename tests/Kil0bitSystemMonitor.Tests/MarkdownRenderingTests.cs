@@ -19,7 +19,7 @@ namespace Kil0bitSystemMonitor.Tests
             var document = new TextDocument("a\n```\nx\n```\nb");
             var cache = new MarkdownDocumentCache();
             int changes = 0;
-            cache.StructureChanged +=() => changes++;
+            cache.StructureChanged += () => changes++;
 
             Assert.Equal(MdFence.Inside, cache.KindOf(document, 3));
             Assert.Equal(MdFence.None, cache.KindOf(document, 5));

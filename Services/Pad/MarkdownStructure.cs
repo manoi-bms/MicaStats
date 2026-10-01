@@ -46,7 +46,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// </summary>
     public sealed class MarkdownStructure
     {
-        /// <summary>How far down front matter may close (line index).</summary>
+        /// <summary>Front matter must close within this many first lines (the closing line index is at most one less).</summary>
         public const int FrontMatterSearch = 200;
 
         private static readonly Regex DelimiterCellRx = new(@"^:?-+:?$", RegexOptions.CultureInvariant);
@@ -134,7 +134,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private static void MarkFrontMatter(IReadOnlyList<string> lines, MdLineFacts[] facts)
         {
             if (lines.Count < 2 || At(lines, 0).TrimEnd() != "---") return;
-            int last = Math.Min(lines.Count - 1, FrontMatterSearch);
+            int last = Math.Min(lines.Count - 1, FrontMatterSearch - 1);
             for (int k = 1; k <= last; k++)
             {
                 string text = At(lines, k).TrimEnd();
@@ -177,7 +177,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 if (!m.Success || m.Groups[1].Length < 2 || !Free(facts[i]) || !Free(facts[i - 1]) || facts[i - 1].SetextUnderline) continue;
 
                 string text = At(lines, i - 1);
-                if (string.IsNullOrWhiteSpace(text) || MarkdownLineTokenizer.BlockOf(text, MdFence.None) != MdBlock.Paragraph) continue;
+                if (string.IsNullOrWhiteSpace(text) || CalloutRx.IsMatch(text) || MarkdownLineTokenizer.BlockOf(text, MdFence.None) != MdBlock.Paragraph) continue;
 
                 facts[i - 1] = facts[i - 1] with { SetextLevel = m.Groups[1].Value[0] == '=' ? 1 : 2 };
                 facts[i] = facts[i] with { SetextUnderline = true };

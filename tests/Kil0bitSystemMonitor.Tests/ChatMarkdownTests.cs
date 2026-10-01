@@ -39,6 +39,15 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Double_dollar_lines_are_text_in_a_chat_reply_not_a_code_fence()
+        {
+            var blocks = ChatMarkdown.Parse("$$\nx^2\n$$");
+
+            Assert.DoesNotContain(blocks, b => b.Kind == ChatBlockKind.Code);
+            Assert.Contains(blocks.SelectMany(b => b.Runs), r => r.Text.Contains("$$"));
+        }
+
+        [Fact]
         public void A_single_newline_inside_a_paragraph_is_a_line_break()
         {
             Assert.Equal(new[] { Plain("one"), Break, Plain("two") }, Runs("one\ntwo"));

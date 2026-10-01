@@ -113,7 +113,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             if (string.IsNullOrEmpty(text)) return blocks;
 
             string[] lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
-            MdFence[] fences = FenceTracker.Classify(lines);
+            MdFence[] fences = FenceTracker.Classify(lines, mathBlocks: false);
 
             var levels = new List<int>();   // the indentation of each open list level
             ChatBlock? open = null;         // a paragraph, quote or item the next line may continue

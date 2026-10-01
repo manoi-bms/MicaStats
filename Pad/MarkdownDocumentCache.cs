@@ -10,20 +10,24 @@ namespace Kil0bitSystemMonitor.Pad
     /// The structure of the shown Markdown document (<see cref="MarkdownStructure"/>: fences, $$
     /// blocks, tables, setext headings, front matter, callouts, abbreviations), shared by the
     /// colorizer, the background renderer, the generators and the diagram pictures. Rescans only
-    /// after an edit that can change it (R3), so ordinary typing never walks the whole note.
+    /// after an edit that can change it (R3): typing in an ordinary paragraph, a fenced block or a
+    /// table cell never walks the whole note (typing in a list or quote line does rescan).
     /// </summary>
     internal sealed class MarkdownDocumentCache
     {
         /// <summary>Characters whose typing or removal can change the structure.</summary>
-        private static readonly char[] Triggers = { '`', '~', '|', '$', '=', '-', '>', '{', '[', '*' };
+        private static readonly char[] Triggers = { '`', '~', '|', '$', '=', '-', '>', '{', '[', '*', '\\' };
 
         /// <summary>Characters that start a structural line (a table pipe does not: typing in a row changes nothing).</summary>
-        private static readonly char[] LineStarts = { '`', '~', '$', '=', '-', '>', '{', '*' };
+        private static readonly char[] LineStarts = { '`', '~', '$', '=', '-', '>', '{', '*', '.' };
+
+        private static readonly char[] SetextStarts = { '=', '-' };
 
         private readonly Action<Exception> _onFailure;
         private TextDocument? _document;
         private MarkdownStructure _structure = MarkdownStructure.Empty;
         private bool _stale = true;
+        private bool _pending;
 
         /// <param name="onFailure">Told when following an edit fails; the edit itself never sees the exception.</param>
         public MarkdownDocumentCache(Action<Exception>? onFailure = null) => _onFailure = onFailure ?? (_ => { });
@@ -61,7 +65,12 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Stops following the document.</summary>
         public void Detach()
         {
-            if (_document != null) _document.Changed -= OnChanged;
+            if (_document != null)
+            {
+                _document.Changed -= OnChanged;
+                _document.UpdateFinished -= OnUpdateFinished;
+            }
+            _pending = false;
             _document = null;
             _structure = MarkdownStructure.Empty;
             _stale = true;
@@ -82,6 +91,7 @@ namespace Kil0bitSystemMonitor.Pad
             Detach();
             _document = document;
             _document.Changed += OnChanged;
+            _document.UpdateFinished += OnUpdateFinished;
         }
 
         private void OnChanged(object? sender, DocumentChangeEventArgs e)
@@ -93,16 +103,43 @@ namespace Kil0bitSystemMonitor.Pad
             try
             {
                 if (!_stale && !TouchesStructure(document, e)) return;
-                var before = _structure;
-                Recompute();
-                if (!before.Facts.AsSpan().SequenceEqual(_structure.Facts) || !before.Abbreviations.SetEquals(_structure.Abbreviations))
-                    StructureChanged?.Invoke();
+                if (document.IsInUpdate)
+                {
+                    // Replace All: thousands of edits in one update group rescan once, when it ends.
+                    _pending = true;
+                    return;
+                }
+                Rescan();
             }
             catch (Exception ex)
             {
                 _stale = true;
                 _onFailure(ex);
             }
+        }
+
+        private void OnUpdateFinished(object? sender, EventArgs e)
+        {
+            var document = _document;
+            if (!_pending || document == null || !ReferenceEquals(sender, document)) return;
+            _pending = false;
+            try
+            {
+                Rescan();
+            }
+            catch (Exception ex)
+            {
+                _stale = true;
+                _onFailure(ex);
+            }
+        }
+
+        private void Rescan()
+        {
+            var before = _structure;
+            Recompute();
+            if (!before.Facts.AsSpan().SequenceEqual(_structure.Facts) || !before.Abbreviations.SetEquals(_structure.Abbreviations))
+                StructureChanged?.Invoke();
         }
 
         /// <summary>Whether an edit can change the structure (R3).</summary>
@@ -117,13 +154,18 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 var facts = _structure.Facts[number - 1];
                 if (facts.Fence == MdFence.Delimiter || facts.Table == MdTableRole.Header || facts.SetextLevel != 0
-                    || facts.SetextUnderline || facts.FrontMatter || facts.CalloutClass) return true;
+                    || facts.SetextUnderline || facts.FrontMatter || facts.CalloutClass || facts.Callout != MdCallout.None
+                    || facts.Table == MdTableRole.Delimiter) return true;
+                if (IsDelimiterAt(document, number) || (number < document.LineCount && IsDelimiterAt(document, number + 1))) return true;
                 if (StartsWithAny(document, number, LineStarts)) return true;
                 // Text typed on a line may make the dashes below it a setext underline.
-                if (number < document.LineCount && StartsWithAny(document, number + 1, new[] { '=', '-' })) return true;
+                if (number < document.LineCount && StartsWithAny(document, number + 1, SetextStarts)) return true;
             }
             return false;
         }
+
+        private static bool IsDelimiterAt(TextDocument document, int number) =>
+            MarkdownStructure.IsDelimiterRow(document.GetText(document.GetLineByNumber(number)), out _);
 
         /// <summary>The line's first character after at most three spaces is one of <paramref name="chars"/>.</summary>
         private static bool StartsWithAny(TextDocument document, int number, char[] chars)

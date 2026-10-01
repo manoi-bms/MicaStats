@@ -152,5 +152,48 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.True(encrypt > 0 && encrypt < prune);
         }
+
+        [Fact]
+        public void Diagrams_default_to_drawing_offline_only()
+        {
+            var config = new AppConfig();
+
+            Assert.True(config.PadDiagrams);
+            Assert.False(config.PadKroki);
+            Assert.Equal("https://kroki.io", config.PadKrokiServer);
+        }
+
+        [Fact]
+        public void An_older_config_gets_the_diagram_defaults()
+        {
+            var config = JsonSerializer.Deserialize<AppConfig>("{\"PadMarkdown\": true}")!;
+
+            Assert.True(config.PadDiagrams);
+            Assert.False(config.PadKroki);
+            Assert.Equal("https://kroki.io", config.PadKrokiServer);
+        }
+
+        [Theory]
+        [InlineData("ftp://kroki.io")]
+        [InlineData("not a server")]
+        [InlineData("")]
+        public void An_invalid_kroki_server_reads_as_the_default(string server)
+        {
+            var config = JsonSerializer.Deserialize<AppConfig>("{\"PadKrokiServer\": " + JsonSerializer.Serialize(server) + "}")!;
+
+            Assert.Equal("https://kroki.io", config.PadKrokiServer);
+        }
+
+        [Fact]
+        public void Diagram_settings_survive_a_round_trip()
+        {
+            var config = new AppConfig { PadDiagrams = false, PadKroki = true, PadKrokiServer = "http://localhost:8000/" };
+
+            var back = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(config))!;
+
+            Assert.False(back.PadDiagrams);
+            Assert.True(back.PadKroki);
+            Assert.Equal("http://localhost:8000", back.PadKrokiServer);
+        }
     }
 }

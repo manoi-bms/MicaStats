@@ -10,7 +10,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// <summary>
     /// Draws diagrams for every MicaPad window (spec 2.3, 2.4): one draw at a time, a newer request
     /// for the same block replacing a waiting older one, results kept in memory (64, least
-    /// recently used out; nothing on disk). Built-in kinds go to the drawing page. The page is
+    /// recently used out; nothing on disk). Built-in kinds go to the drawing page; Kroki kinds first go
+    /// to the Kroki server (when one is set), then to the page as an SVG. The page is
     /// created on the first draw and replaced after it breaks or a draw runs over the limit.
     /// Never throws: every failure is a result, and a warning names only the engine and the
     /// exception type. The queue and cache are locked; the page is created, used and dropped only by
@@ -23,6 +24,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private readonly Func<Task<IDiagramPage>> _createPage;
         private readonly Action<string> _warn;
         private readonly TimeSpan _drawLimit;
+        private readonly KrokiClient? _kroki;
         private readonly DiagramCache _cache = new();
         private readonly List<Job> _waiting = new();
         private readonly object _gate = new();
@@ -31,11 +33,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private bool _pumping;
         private bool _disposed;
 
-        public DiagramRenderer(Func<Task<IDiagramPage>> createPage, Action<string>? warn = null, TimeSpan? drawLimit = null)
+        public DiagramRenderer(Func<Task<IDiagramPage>> createPage, Action<string>? warn = null, TimeSpan? drawLimit = null, KrokiClient? kroki = null)
         {
             _createPage = createPage;
             _warn = warn ?? (_ => { });
             _drawLimit = drawLimit ?? DefaultDrawLimit;
+            _kroki = kroki;
         }
 
         /// <summary>How many results the cache holds; for tests.</summary>
@@ -97,6 +100,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             foreach (var job in left) job.Done.TrySetResult(DiagramResult.Failure(DiagramText.Failed, lasting: false));
             _shutdown.Cancel();
             DropPage();
+            _kroki?.Dispose();
         }
 
         private async Task PumpAsync()
@@ -138,9 +142,21 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private async Task<DiagramResult> DrawAsync(DiagramRequest request)
         {
-            if (request.Kind.NeedsKroki) return DiagramResult.Failure(DiagramText.NeedsKroki(request.Kind), lasting: false);
-            var page = new PageRequest(request.Kind.PageKind, request.Source, request.Dark, request.Foreground, request.Background);
-            return await DrawOnPageAsync(request.Kind, page, paper: false);
+            if (!request.Kind.NeedsKroki)
+            {
+                var page = new PageRequest(request.Kind.PageKind, request.Source, request.Dark, request.Foreground, request.Background);
+                return await DrawOnPageAsync(request.Kind, page, paper: false);
+            }
+
+            if (request.KrokiServer == null || _kroki == null)
+                return DiagramResult.Failure(DiagramText.NeedsKroki(request.Kind), lasting: false);
+
+            var kroki = await _kroki.DrawAsync(request.KrokiServer, request.Kind.KrokiType!, request.Source, _shutdown.Token);
+            if (kroki.Svg == null) return DiagramResult.Failure(kroki.Error ?? DiagramText.Failed, kroki.Lasting);
+
+            // Kroki's colors cannot follow the theme: the picture goes on a light card in both (spec 3).
+            var drawn = await DrawOnPageAsync(request.Kind, new PageRequest("svg", kroki.Svg, false, "#000000", "#FFFFFF"), paper: true);
+            return drawn.IsPicture ? drawn : DiagramResult.Failure(drawn.Error ?? DiagramText.Failed, lasting: false, drawn.HelpLink);
         }
 
         private async Task<DiagramResult> DrawOnPageAsync(DiagramKind kind, PageRequest request, bool paper)

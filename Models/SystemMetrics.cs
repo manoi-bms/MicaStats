@@ -542,6 +542,9 @@ namespace Kil0bitSystemMonitor.Models
         private string _padTheme = Kil0bitSystemMonitor.Services.Pad.PadThemes.Dark;
         private bool _padMarkdown = true;
         private bool _padAutoClose = true;
+        private bool _padDiagrams = true;
+        private bool _padKroki;
+        private string _padKrokiServer = Kil0bitSystemMonitor.Services.Pad.KrokiClient.DefaultServer;
 
         /// <summary>Global shortcut that shows MicaPad, in <c>HotkeyParser</c> syntax. Empty turns it off.</summary>
         public string PadHotkey { get => _padHotkey; set { Set(ref _padHotkey, value ?? ""); } }
@@ -589,6 +592,27 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>Auto-close brackets and quotes in MicaPad.</summary>
         public bool PadAutoClose { get => _padAutoClose; set { Set(ref _padAutoClose, value); } }
+
+        /// <summary>Draw a picture under each diagram block (Mermaid, Graphviz, Markmap; the rest through Kroki) in Markdown tabs.</summary>
+        public bool PadDiagrams { get => _padDiagrams; set { Set(ref _padDiagrams, value); } }
+
+        /// <summary>
+        /// Draw the types MicaPad cannot draw itself (PlantUML, D2, ...) by sending that block's
+        /// text to <see cref="PadKrokiServer"/>. Off by default: nothing leaves the PC until it is on.
+        /// </summary>
+        public bool PadKroki { get => _padKroki; set { Set(ref _padKroki, value); } }
+
+        /// <summary>The Kroki server: an http or https address, kept without its trailing slash; anything else reads as https://kroki.io.</summary>
+        public string PadKrokiServer
+        {
+            get => _padKrokiServer;
+            set
+            {
+                Set(ref _padKrokiServer, Kil0bitSystemMonitor.Services.Pad.KrokiClient.TryParseServer(value, out var server)
+                    ? server
+                    : Kil0bitSystemMonitor.Services.Pad.KrokiClient.DefaultServer);
+            }
+        }
 
         private bool _useGpuRendering;
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -78,6 +79,31 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.True(DateTime.UtcNow < deadline, "Timed out waiting for " + what);
                 Thread.Sleep(5);
             }
+        }
+    }
+
+    /// <summary>A renderer that records each request and answers when the test says; lasting answers are cached, as the real one does.</summary>
+    internal sealed class FakeRenderer : IDiagramRenderer
+    {
+        public Dictionary<string, DiagramResult> Cache { get; } = new();
+
+        public List<(DiagramRequest Request, object Slot, TaskCompletionSource<DiagramResult> Done)> Calls { get; } = new();
+
+        public bool TryGetCached(string key, [MaybeNullWhen(false)] out DiagramResult result) => Cache.TryGetValue(key, out result);
+
+        public Task<DiagramResult> RenderAsync(DiagramRequest request, object slot)
+        {
+            var done = new TaskCompletionSource<DiagramResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Calls.Add((request, slot, done));
+            return done.Task;
+        }
+
+        /// <summary>Answers call <paramref name="index"/>; the caller's continuation runs at the next dispatcher pump.</summary>
+        public void Finish(int index, DiagramResult result)
+        {
+            var call = Calls[index];
+            if (result.Lasting) Cache[call.Request.Key] = result;
+            call.Done.TrySetResult(result);
         }
     }
 }

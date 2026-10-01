@@ -1091,11 +1091,11 @@ namespace Kil0bitSystemMonitor.Pad
         /// Opens Explorer with the file or folder selected. One that is no longer there is reported
         /// rather than opening some other folder.
         /// </summary>
-        internal void ShowInFolder(string path)
+        internal void ShowInFolder(string path, bool folder = false)
         {
             if (!File.Exists(path) && !Directory.Exists(path))
             {
-                ShowNotice("That file is no longer at " + path + ".");
+                ShowNotice("That " + (folder ? "folder" : "file") + " is no longer at " + path + ".");
                 return;
             }
             try
@@ -1230,7 +1230,7 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace.LockedNoticeShown = true;   // in-run guard: the store forgets the folder, but a failed marker delete must not repeat the notice
             _workspace.Store.ForgetLockedFolder();
             ShowInfo("MicaPad could not decrypt the notes saved before on this Windows account, so they were moved to "
-                     + folder + ". Nothing was deleted.", null, "Show folder", () => ShowInFolder(folder));
+                     + folder + ". Nothing was deleted.", null, "Show folder", () => ShowInFolder(folder, folder: true));
         }
 
         /// <summary>Hides the info bar and forgets its actions.</summary>

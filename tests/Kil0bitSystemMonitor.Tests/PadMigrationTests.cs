@@ -138,6 +138,30 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("plain current", store.LoadText(id));
         }
 
+        private static readonly byte[] PlainFirst = Encoding.UTF8.GetBytes("plain first");
+        private static readonly byte[] Zeros = new byte[11];
+        private static readonly byte[] Encrypted = { 0xFF, 0x4D, 0x50, 0x45, 0x01, 9, 9 };
+
+        [Fact]
+        public void A_plain_read_followed_by_zeros_and_no_ready_keeps_the_first_bytes()
+        {
+            Assert.Same(PlainFirst, NoteStore.NewerThanPlain(PlainFirst, () => null, () => Zeros));
+        }
+
+        [Fact]
+        public void A_plain_read_followed_by_a_ready_uses_the_ready()
+        {
+            byte[] ready = Encoding.UTF8.GetBytes("newer");
+
+            Assert.Same(ready, NoteStore.NewerThanPlain(PlainFirst, () => ready, () => Zeros));
+        }
+
+        [Fact]
+        public void A_plain_read_followed_by_an_encrypted_target_uses_the_target()
+        {
+            Assert.Same(Encrypted, NoteStore.NewerThanPlain(PlainFirst, () => null, () => Encrypted));
+        }
+
         [Fact]
         public void Zero_fill_keeps_the_length_and_leaves_only_zeros()
         {

@@ -64,12 +64,29 @@ namespace Kil0bitSystemMonitor.Tests
                 window.ShowLockedFolderNotice();
                 Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
                 Assert.Null(env.Store.LockedFolder);
+
+                // As if deleting the marker had failed: the in-run guard still keeps it quiet.
+                env.Store.LockedFolder = folder;
+                window.ShowLockedFolderNotice();
+                Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
             }
             finally
             {
                 MicaPadWindow.StartExplorer = original;
                 Directory.Delete(folder, recursive: true);
             }
+        });
+
+        [Fact]
+        public void A_locked_folder_that_is_gone_is_called_a_folder() => WithWindow((window, env, config) =>
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "micapad-locked-gone-" + Guid.NewGuid().ToString("N"));
+            env.Store.LockedFolder = folder;
+            window.ShowLockedFolderNotice();
+
+            window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+            Assert.Equal("That folder is no longer at " + folder + ".", window.InfoText.Text);
         });
 
         [Fact]

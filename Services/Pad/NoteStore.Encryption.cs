@@ -47,7 +47,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 NotesKey.Load(Root, () => false, out key);
                 _cipher = new StoreCipher(key!);
                 CryptographicOperations.ZeroMemory(key);
-                WriteData(LockedMarkerPath, Utf8NoBom.GetBytes(LockedFolder));   // a later start, in a run with no window yet, still tells the user
+                try
+                {
+                    WriteData(LockedMarkerPath, Utf8NoBom.GetBytes(LockedFolder));   // a later start, in a run with no window yet, still tells the user
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _warn("Could not write " + LockedMarkerPath + ": " + ex.Message);
+                }
                 return;
             }
 
@@ -129,11 +136,25 @@ namespace Kil0bitSystemMonitor.Services.Pad
             string ready = path + AtomicFile.ReadySuffix;
             byte[]? bytes = ReadIfExists(ready) ?? ReadIfExists(path);
 
-            // The migration may have moved the finished copy to .ready and zeroed the target between
-            // the two reads; the .ready (or, once committed, the target) is then the truth.
-            if (bytes != null && !StoreCipher.IsEncrypted(bytes))
-                bytes = ReadIfExists(ready) ?? ReadIfExists(path) ?? bytes;
+            if (bytes != null)
+                bytes = NewerThanPlain(bytes, () => ReadIfExists(ready), () => ReadIfExists(path));
             return TextOf(path, bytes);
+        }
+
+        /// <summary>
+        /// After a plain read, the migration may have moved a finished copy to <c>.ready</c> and zeroed
+        /// the target. Only evidence of a newer complete copy replaces the first bytes: a <c>.ready</c>,
+        /// or a target that now starts encrypted. Zeros in the target are never evidence.
+        /// </summary>
+        internal static byte[] NewerThanPlain(byte[] first, Func<byte[]?> readReady, Func<byte[]?> readTarget)
+        {
+            if (StoreCipher.IsEncrypted(first)) return first;
+
+            byte[]? ready = readReady();
+            if (ready != null) return ready;
+
+            byte[]? target = readTarget();
+            return target != null && StoreCipher.IsEncrypted(target) ? target : first;
         }
 
         private static byte[]? ReadIfExists(string path)

@@ -272,6 +272,45 @@ public class McpPipeTests
     }
 
     [Fact]
+    public async Task A_call_waits_for_a_free_instance_longer_than_the_connect_check_while_the_pipe_exists()
+    {
+        // Every instance is held by a silent connection for 1.5 s, so no instance accepts a new
+        // caller for longer than the client's 1 s connect check. MicaStats is there (the pipe
+        // exists), so the call must wait for an instance within its own time limit instead of
+        // reporting "nothing answered".
+        string name = TestPipeName();
+        using var server = new ToolPipeServer(name, Constant(new JsonObject { ["n"] = 1 })) { RequestWaitLimit = TimeSpan.FromMilliseconds(1500) };
+        server.Start();
+        var idle = new List<NamedPipeClientStream>();
+        try
+        {
+            for (int i = 0; i < ToolPipeServer.MaxClients; i++)
+            {
+                var pipe = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
+                idle.Add(pipe);
+                await pipe.ConnectAsync(5000);
+            }
+
+            JsonNode result = await ToolPipeClient.CallAsync(name, "get_battery", null, TenSeconds, CancellationToken.None);
+
+            Assert.Equal(1, (int?)result["n"]);
+        }
+        finally
+        {
+            foreach (NamedPipeClientStream pipe in idle) pipe.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task A_missing_pipe_is_still_reported_quickly()
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        await Assert.ThrowsAsync<ToolPipeUnavailableException>(
+            () => ToolPipeClient.CallAsync(TestPipeName(), "get_battery", null, TenSeconds, CancellationToken.None));
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(3), "took " + watch.Elapsed);
+    }
+
+    [Fact]
     public async Task A_squatter_with_a_default_descriptor_is_refused_before_any_request_is_sent()
     {
         string name = TestPipeName();

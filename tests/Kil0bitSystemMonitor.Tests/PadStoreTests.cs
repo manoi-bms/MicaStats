@@ -138,7 +138,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(meta.Id, rebuilt!.Id);
             Assert.Equal("First line", rebuilt.Title);
             Assert.Null(rebuilt.ClosedAtUtc);
-            Assert.Contains("\"Id\"", File.ReadAllText(_store.MetaPath(meta.Id)));
+            Assert.Contains("\"Id\"", _store.ReadStoreText(_store.MetaPath(meta.Id)));
         }
 
         [Fact]
@@ -159,7 +159,7 @@ namespace Kil0bitSystemMonitor.Tests
             meta.LineEnding = LineEnding.Lf;
             _store.SaveNote(meta, null, 2);
 
-            string json = File.ReadAllText(_store.MetaPath(meta.Id));
+            string json = _store.ReadStoreText(_store.MetaPath(meta.Id))!;
             Assert.Contains("\"Utf16Le\"", json);
             Assert.Contains("\"Lf\"", json);
         }
@@ -293,7 +293,8 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal("new", File.ReadAllText(file));
             Assert.Equal("created", File.ReadAllText(_dir.PathOf("fresh.txt")));
-            Assert.Equal(2, Directory.GetFiles(_dir.Root).Length);
+            // The store's own key sits in the same folder; only user files are counted.
+            Assert.Equal(2, Directory.GetFiles(_dir.Root).Count(f => Path.GetFileName(f) != NotesKey.FileName));
         }
     }
 }

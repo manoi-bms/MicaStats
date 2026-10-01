@@ -70,12 +70,8 @@ namespace Kil0bitSystemMonitor.Tests
             workspace.NotifyChanged(note);
         }
 
-        /// <summary>The note's <c>current.txt</c>, or null when it has none.</summary>
-        public string? DiskText(OpenNote note)
-        {
-            string path = Store.CurrentPath(note.Id);
-            return File.Exists(path) ? File.ReadAllText(path) : null;
-        }
+        /// <summary>The note's <c>current.txt</c>, decrypted, or null when it has none.</summary>
+        public string? DiskText(OpenNote note) => Store.ReadStoreText(Store.CurrentPath(note.Id));
 
         public void Dispose()
         {

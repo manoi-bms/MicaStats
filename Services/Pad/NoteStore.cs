@@ -10,8 +10,8 @@ using System.Text.Json.Serialization;
 namespace Kil0bitSystemMonitor.Services.Pad
 {
     /// <summary>
-    /// MicaPad's notes on disk: one folder per note, plain UTF-8 text a user can open in Explorer
-    /// if MicaStats itself is broken.
+    /// MicaPad's notes on disk: one folder per note, each file encrypted with the notes key
+    /// (<see cref="StoreCipher"/>, <see cref="NotesKey"/>); files an earlier version wrote plain are read as before.
     ///
     /// <code>
     /// Root\session.json
@@ -45,11 +45,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Initializes a note store rooted at the given folder.</summary>
         /// <param name="root">The MicaPad folder. Created if missing.</param>
         /// <param name="warn">Where recoverable problems are reported; the diagnostics log by default.</param>
+        /// <exception cref="IOException"><c>key.bin</c> exists but cannot be read right now; try again later.</exception>
         public NoteStore(string root, Action<string>? warn = null)
         {
             Root = root;
             _warn = warn ?? (message => DiagnosticsLog.Warn("pad", message));
             Directory.CreateDirectory(NotesDir);
+            OpenKey();
         }
 
         /// <summary><c>%APPDATA%\MicaStats\MicaPad</c>, beside <c>config.json</c>.</summary>
@@ -106,8 +108,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 if (_written.TryGetValue(meta.Id, out long done) && version <= done) return false;
 
                 Directory.CreateDirectory(NoteDir(meta.Id));
-                if (text != null) AtomicFile.Write(CurrentPath(meta.Id), Utf8NoBom.GetBytes(text));
-                AtomicFile.Write(MetaPath(meta.Id), JsonSerializer.SerializeToUtf8Bytes(meta, Json));
+                if (text != null) WriteData(CurrentPath(meta.Id), Utf8NoBom.GetBytes(text));
+                WriteData(MetaPath(meta.Id), JsonSerializer.SerializeToUtf8Bytes(meta, Json));
                 _written[meta.Id] = version;
                 return true;
             }
@@ -133,7 +135,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 try
                 {
-                    text = AtomicFile.ReadText(CurrentPath(id));
+                    text = ReadStoreText(CurrentPath(id));
                     if (text != null) return true;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -176,7 +178,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
                 try
                 {
-                    string? json = AtomicFile.ReadText(MetaPath(id));
+                    string? json = ReadStoreText(MetaPath(id));
                     if (json != null)
                     {
                         var meta = JsonSerializer.Deserialize<NoteMeta>(json, Json);
@@ -232,7 +234,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 try
                 {
-                    string? json = AtomicFile.ReadText(SessionPath);
+                    string? json = ReadStoreText(SessionPath);
                     if (json != null)
                     {
                         var session = JsonSerializer.Deserialize<SessionState>(json, Json);
@@ -266,7 +268,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             lock (_sessionLock)
             {
                 Directory.CreateDirectory(Root);
-                AtomicFile.Write(SessionPath, Utf8NoBom.GetBytes(json));
+                WriteData(SessionPath, Utf8NoBom.GetBytes(json));
             }
         }
 
@@ -288,8 +290,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 while (File.Exists(path = SnapshotPath(id, stamp))) stamp = stamp.AddMilliseconds(1);
 
                 byte[] bytes = Utf8NoBom.GetBytes(text);
-                AtomicFile.Write(path, bytes);
-                return new SnapshotInfo(path, stamp, bytes.Length);
+                long size = bytes.Length;
+                WriteData(path, bytes);
+                return new SnapshotInfo(path, stamp, size);
             }
         }
 
@@ -304,7 +307,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 if (!string.Equals(file.Extension, ".txt", StringComparison.OrdinalIgnoreCase)) continue;
                 if (!HistoryPolicy.TryParseStamp(Path.GetFileNameWithoutExtension(file.Name), out DateTime stamp)) continue;
-                list.Add(new SnapshotInfo(file.FullName, stamp, file.Length));
+                list.Add(new SnapshotInfo(file.FullName, stamp, TextLength(file)));
             }
 
             list.Sort((a, b) => b.Stamp.CompareTo(a.Stamp));
@@ -316,7 +319,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
             try
             {
-                return File.ReadAllText(snapshot.FilePath, Utf8NoBom);
+                return ReadStoreText(snapshot.FilePath);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -348,7 +351,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
             try
             {
-                AtomicFile.Write(MetaPath(id), JsonSerializer.SerializeToUtf8Bytes(meta, Json));
+                WriteData(MetaPath(id), JsonSerializer.SerializeToUtf8Bytes(meta, Json));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

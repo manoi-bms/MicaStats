@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Highlighting;
 using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services.Pad;
 
@@ -17,11 +18,13 @@ namespace Kil0bitSystemMonitor.Pad
     /// <see cref="MarkdownStyles.LookOf"/> gives it - heading sizes, bold, italic, strike, link and
     /// marker colors, monospace code, raised and lowered scripts, dotted abbreviations. While the
     /// reading font is on (a mono family is given), code, table and front-matter lines are drawn in
-    /// the editor's monospace font (R2). Only how text is drawn changes; the document is never touched.
+    /// the editor's monospace font (R2). Lines inside a fence whose info word names a MicaPad
+    /// language get that language's colors (<see cref="FenceHighlighter"/>). Only how text is drawn changes; the document is never touched.
     /// </summary>
     internal sealed class MarkdownColorizer : DocumentColorizingTransformer
     {
         private readonly MarkdownDocumentCache _cache;
+        private readonly FenceHighlighter _fences;
         private readonly Func<PadPalette> _palette;
         private readonly Action<Exception> _onFailure;
         private readonly Func<FontFamily?> _monoFont;
@@ -33,6 +36,7 @@ namespace Kil0bitSystemMonitor.Pad
         public MarkdownColorizer(MarkdownDocumentCache cache, Func<PadPalette> palette, Action<Exception>? onFailure = null, Func<FontFamily?>? monoFont = null)
         {
             _cache = cache;
+            _fences = new FenceHighlighter(cache);
             _palette = palette;
             _onFailure = onFailure ?? (_ => { });
             _monoFont = monoFont ?? (() => null);
@@ -51,6 +55,17 @@ namespace Kil0bitSystemMonitor.Pad
 
                 if (mono != null && line.Length > 0 && (md.Block is MdBlock.Fence or MdBlock.Table or MdBlock.FrontMatter))
                     ChangeLinePart(line.Offset, line.EndOffset, element => SetFamily(element, mono));
+
+                if (facts.Fence == MdFence.Inside && _fences.HighlightLine(document, line.LineNumber) is { } highlighted)
+                {
+                    foreach (var section in highlighted.Sections)
+                    {
+                        if (section.Color == null || section.Length == 0) continue;
+                        var color = section.Color;
+                        ChangeLinePart(section.Offset, section.Offset + section.Length,
+                            element => SyntaxPaint.Apply(element, color, palette, CurrentContext, BrushFor));
+                    }
+                }
 
                 foreach (var span in md.Spans)
                 {

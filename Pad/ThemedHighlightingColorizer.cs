@@ -7,7 +7,6 @@ using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services.Pad;
 
 using Brush = System.Windows.Media.Brush;
-using Color = System.Windows.Media.Color;
 
 namespace Kil0bitSystemMonitor.Pad
 {
@@ -49,19 +48,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             try
             {
-                var properties = element.TextRunProperties;
-
-                PadColor? original = color.Foreground?.GetColor(CurrentContext) is Color c ? new PadColor(c.A, c.R, c.G, c.B) : null;
-                if (SyntaxColors.Resolve(color.Name, original, _palette()) is PadColor paint)
-                    properties.SetForegroundBrush(BrushFor(paint));
-
-                if (color.FontWeight != null || color.FontStyle != null)
-                {
-                    var face = properties.Typeface;
-                    properties.SetTypeface(new Typeface(face.FontFamily, color.FontStyle ?? face.Style, color.FontWeight ?? face.Weight, face.Stretch));
-                }
-                if (color.Underline == true) properties.SetTextDecorations(TextDecorations.Underline);
-                if (color.Strikethrough == true) properties.SetTextDecorations(TextDecorations.Strikethrough);
+                SyntaxPaint.Apply(element, color, _palette(), CurrentContext, BrushFor);
             }
             catch (Exception ex)
             {

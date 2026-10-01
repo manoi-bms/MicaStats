@@ -196,6 +196,34 @@ If another program changes the file, MicaPad reloads it — or, when you have ed
 asks **Reload from disk** or **Keep mine** (a reload first keeps your version in history). If the
 file is deleted, **Keep as note** turns the tab into an ordinary note.
 
+### Credentials and encryption
+
+Your notes are encrypted for this Windows account on this PC, so another account, or the same
+files copied to another PC, cannot read them. If you move to a new PC, use **Save As** on each
+note you want to take along.
+
+To keep a password, token or other secret out of sight, select it (4 or more characters), right-click
+and choose **Store as credential**, then give it a label. Every copy of that text in the note is
+replaced by a small pill with the label, and older versions of the note are scrubbed too. This cannot
+be undone with Ctrl+Z, but **Unmask** on the pill puts the text back.
+
+Click a pill for its menu: **Reveal** (shows the value for 30 seconds), **Copy secret** (kept out of
+the Win+V clipboard history and cleared after 30 seconds), **Rename label**, **Unmask**,
+**Delete credential**, **Copy reference** and **Lock now**.
+
+The first time you store something, MicaPad asks you to create a PIN of 6 to 12 digits. Entering it
+unlocks the credentials for 5 minutes, and they lock again when Windows locks or goes to sleep.
+After 5 wrong PINs you must wait, and the wait doubles each time, up to 15 minutes. Within 6 to 12 digits, a longer PIN is
+stronger.
+
+**Settings → MicaPad → Credentials** has **Change PIN**, **Lock now** and **Reset vault**. If you
+forget the PIN, **Reset vault** is the way out: it deletes every stored credential, and references
+left in your notes show as missing.
+
+What this does not protect against: a malicious program running as you while MicaPad is open,
+keyloggers, administrators of this PC, and plain copies made before this version, such as notes
+already in the Recycle Bin.
+
 ### Light or dark
 
 The sun button in MicaPad's tab strip switches MicaPad to a light theme; the moon button switches

@@ -667,6 +667,20 @@ namespace Kil0bitSystemMonitor
             }
         }
 
+        /// <summary>Opens MicaPad and shows its Change PIN card (Settings, Credentials).</summary>
+        internal static void OpenPadVault()
+        {
+            try
+            {
+                OpenPad(null);
+                Kil0bitSystemMonitor.Pad.MicaPadWindow.Current?.ShowChangePin();
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Opening the Change PIN card failed", ex);
+            }
+        }
+
         /// <summary>Opens Settings on one section.</summary>
         public static void ShowSettingsSection(string section)
         {

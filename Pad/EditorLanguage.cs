@@ -181,9 +181,14 @@ namespace Kil0bitSystemMonitor.Pad
 
             _editor.Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (ReferenceEquals(_editor.Document, document)) Apply(Current);
+                if (!ReferenceEquals(_editor.Document, document)) return;
+                Apply(Current);
+                FellBackToPlain?.Invoke();
             }));
         }
+
+        /// <summary>Raised after a formatting failure showed the document as Plain text, so the window puts the editor back in its own font.</summary>
+        internal event Action? FellBackToPlain;
 
         /// <summary>
         /// Emoji failed (a missing or corrupt table): the generator already stopped showing any, so

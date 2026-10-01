@@ -151,6 +151,17 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_list_line_in_front_matter_gets_no_bullet() => UiThread.Run(() =>
+        {
+            var view = new TextView { Document = new TextDocument("---\ntags:\n  - a\n---\n- b") };
+            view.ElementGenerators.Add(new BulletGenerator(new MarkdownDocumentCache()));
+            Render(view);
+
+            Assert.DoesNotContain(view.GetVisualLine(3)!.Elements, e => e is FormattedTextElement);
+            Assert.Contains(view.GetVisualLine(5)!.Elements, e => e is FormattedTextElement);
+        });
+
+        [Fact]
         public void A_markdown_note_gets_the_colorizer_the_background_and_bullets() => PadLanguageWindowTests.WithWindow((window, env, config) =>
         {
             var view = window.Editor.TextArea.TextView;

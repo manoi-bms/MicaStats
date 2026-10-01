@@ -5,9 +5,9 @@ using Kil0bitSystemMonitor.Services.Pad;
 namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
-    /// Draws a list item's <c>-</c>, <c>*</c> or <c>+</c> as <c>•</c>. The element stands for exactly
-    /// one character of the document, so the caret, selection and copying are unaffected; the
-    /// Markdown colorizer paints it in the list-marker color.
+    /// Draws a list item's <c>-</c>, <c>*</c> or <c>+</c> as <c>•</c>, outside fenced blocks and front
+    /// matter. The element stands for exactly one character of the document, so the caret, selection
+    /// and copying are unaffected; the Markdown colorizer paints it in the list-marker color.
     /// </summary>
     internal sealed class BulletGenerator : VisualLineElementGenerator
     {
@@ -28,7 +28,8 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 var document = CurrentContext.Document;
                 var line = document.GetLineByOffset(startOffset);
-                if (_cache.KindOf(document, line.LineNumber) != MdFence.None) return -1;
+                var facts = _cache.FactsOf(document, line.LineNumber);
+                if (facts.Fence != MdFence.None || facts.FrontMatter) return -1;
 
                 int marker = MarkdownLineTokenizer.BulletOffset(document.GetText(line.Offset, Math.Min(line.Length, ScanLength)));
                 if (marker < 0) return -1;

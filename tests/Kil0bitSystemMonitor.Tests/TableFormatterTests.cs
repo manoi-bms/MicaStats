@@ -74,6 +74,17 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("before\r\n| a   | b   |\r\n| --- | --- |\r\n| 1   | 2   |\r\nafter", Apply(text, 12));
         }
 
+        [Theory]
+        [InlineData("\t")]
+        [InlineData("    ")]
+        [InlineData("  \t ")]
+        public void A_table_under_a_list_item_keeps_its_indent(string indent)
+        {
+            string text = "- item\n" + indent + "| a | bb |\n" + indent + "|-|-|\n" + indent + "| 1 | 2 |";
+
+            Assert.Equal("- item\n" + indent + "| a   | bb  |\n" + indent + "| --- | --- |\n" + indent + "| 1   | 2   |", Apply(text, text.IndexOf('a')));
+        }
+
         [Fact]
         public void A_formatted_table_stays_the_same_and_other_text_is_no_table()
         {

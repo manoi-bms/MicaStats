@@ -73,6 +73,22 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_formatting_failure_puts_the_editor_back_in_its_monospace_font() => WithWindow((window, env, config) =>
+        {
+            var warnings = new System.Collections.Generic.List<string>();
+            window.LanguageView.Warn = warnings.Add;
+            Assert.Equal(MicaPadWindow.ReadingFont.Source, window.Editor.FontFamily.Source);
+
+            window.LanguageView.ReportFailure(new InvalidOperationException("forced"));   // what a throwing colorizer reports
+            Pump();
+
+            Assert.Single(warnings);
+            Assert.Same(PadLanguages.Plain, window.LanguageView.Current);
+            Assert.StartsWith("Cascadia Mono", window.Editor.FontFamily.Source);
+            Assert.Null(window.LanguageView.MonoFont);
+        });
+
+        [Fact]
         public void A_note_is_markdown_and_says_so() => WithWindow((window, env, config) =>
         {
             Assert.Equal("Markdown", window.LanguageButton.Content);

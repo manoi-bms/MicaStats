@@ -124,10 +124,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return left && right ? Align.Center : right ? Align.Right : left ? Align.Left : Align.None;
         }
 
+        /// <summary>The header line's leading spaces and tabs, verbatim: a table under a list item stays in the item.</summary>
         private static string Indent(string line)
         {
             int i = 0;
-            while (i < line.Length && i < 3 && line[i] == ' ') i++;
+            while (i < line.Length && line[i] is ' ' or '\t') i++;
             return line.Substring(0, i);
         }
 

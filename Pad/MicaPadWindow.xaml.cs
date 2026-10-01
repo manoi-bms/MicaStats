@@ -114,6 +114,7 @@ namespace Kil0bitSystemMonitor.Pad
             Editor.TextArea.TextView.MouseHoverStopped += (s, e) => _linkTip.IsOpen = false;
             FindBar.Attach(Editor);
             _language = new EditorLanguage(Editor, () => _palette, folds: true);
+            _language.FellBackToPlain += ApplyEditorFont;
             _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette, folds: false);
             ConfigureDiagrams();
             _diff = new DiffPreview(PreviewEditor, () => _palette);
@@ -2263,10 +2264,6 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Prose in Markdown tabs while Settings -> MicaPad -> Reading font is on (Wiki.js spec 1.1).</summary>
         internal static readonly FontFamily ReadingFont = new("Segoe UI Variable Text, Segoe UI");
 
-        /// <summary>
-        /// The editor's font for the shown tab: the reading font for a Markdown tab while it is on,
-        /// with code, inline code and tables kept in the editor font; the editor font otherwise.
-        /// </summary>
         private string? _monoSource;
         private FontFamily? _monoFamily;
 
@@ -2285,6 +2282,10 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
+        /// <summary>
+        /// The editor's font for the shown tab: the reading font for a Markdown tab while it is on,
+        /// with code, inline code and tables kept in the editor font; the editor font otherwise.
+        /// </summary>
         private void ApplyEditorFont()
         {
             var mono = MonoFamily;

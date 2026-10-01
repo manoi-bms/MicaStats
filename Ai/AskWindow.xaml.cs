@@ -1,18 +1,22 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using Kil0bitSystemMonitor.Services.Ai;
 
-// UseWindowsForms puts System.Windows.Forms in scope, which has its own KeyEventArgs.
+// UseWindowsForms puts System.Windows.Forms in scope, which has its own KeyEventArgs and Button.
+using Button = System.Windows.Controls.Button;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 
 namespace Kil0bitSystemMonitor.Ai
 {
     /// <summary>
-    /// Ask MicaStats: a conversation about this PC.
+    /// Ask MicaStats: a conversation about this PC, shown as a chat.
     ///
     /// <para>
     /// Deliberately thin. Providers, the tool loop, limits and the limited-mode fallback live in
@@ -31,11 +35,24 @@ namespace Kil0bitSystemMonitor.Ai
         private const string LimitedModeNote =
             "Limited mode: this model could not use MicaStats' tools, so the answer rests on a short summary of the PC right now.";
 
+        /// <summary>How close to the bottom the transcript must be for new content to keep it there.</summary>
+        private const double FollowDistance = 40;
+
+        /// <summary>The starter questions on the empty screen; a click asks one at once.</summary>
+        internal static readonly string[] PromptQuestions =
+        {
+            "Why was my PC slow earlier?",
+            "What is using the most memory?",
+            "Is my CPU running too hot?",
+            "\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E0A\u0E49\u0E32\u0E40\u0E1E\u0E23\u0E32\u0E30\u0E2D\u0E30\u0E44\u0E23",
+        };
+
         private static AskWindow? s_current;
 
         private readonly Func<AskSetup> _setup;
         private readonly Action _openSettings;
         private readonly Func<SuggestedAction, string> _runAction;
+        private readonly Func<string?>? _modelLabel;
         private AiConversation _conversation = new();
         private readonly List<AskTurnView> _turns = new();
         private CancellationTokenSource? _cts;
@@ -43,16 +60,29 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>Raised by New conversation; a suggestion from an earlier conversation no longer runs.</summary>
         private int _generation;
 
+        /// <summary>True while the transcript is at (or near) its end, so growing content keeps it there.</summary>
+        private bool _follow = true;
+
         /// <summary>Builds the window over its collaborators; the app passes the live ones.</summary>
         /// <param name="setup">Builds what one Send needs, or says why it cannot.</param>
         /// <param name="openSettings">Opens Settings on the AI section.</param>
         /// <param name="runAction">Runs a clicked suggestion and returns the sentence to show.</param>
-        internal AskWindow(Func<AskSetup> setup, Action openSettings, Func<SuggestedAction, string> runAction)
+        /// <param name="modelLabel">Names the model in use for the header, read on open and on each Send; null hides the line.</param>
+        internal AskWindow(Func<AskSetup> setup, Action openSettings, Func<SuggestedAction, string> runAction,
+                           Func<string?>? modelLabel = null)
         {
             InitializeComponent();
             _setup = setup;
             _openSettings = openSettings;
             _runAction = runAction;
+            _modelLabel = modelLabel;
+
+            foreach (string question in PromptQuestions)
+            {
+                var chip = new Button { Style = (Style)FindResource("ChatPromptChip"), Content = question };
+                chip.Click += (s, e) => Ask(question);
+                PromptPanel.Children.Add(chip);
+            }
 
             // Closing the window cancels an answer in progress, like Stop.
             Closed += (s, e) =>
@@ -61,6 +91,7 @@ namespace Kil0bitSystemMonitor.Ai
                 if (ReferenceEquals(s_current, this)) s_current = null;
             };
             UpdateButtons();
+            RefreshModelLabel();
         }
 
         /// <summary>The open window, or null.</summary>
@@ -75,9 +106,14 @@ namespace Kil0bitSystemMonitor.Ai
             var window = s_current;
             if (window == null)
             {
-                window = new AskWindow(App.CreateAskSetup, () => App.ShowSettingsSection("AI"), SuggestedActionRunner.Run);
+                window = new AskWindow(App.CreateAskSetup, () => App.ShowSettingsSection("AI"), SuggestedActionRunner.Run,
+                    App.AskModelLabel);
                 s_current = window;
                 window.Show();
+            }
+            else
+            {
+                window.RefreshModelLabel();
             }
 
             if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
@@ -93,6 +129,9 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>The turns shown, oldest first.</summary>
         internal IReadOnlyList<AskTurnView> Turns => _turns;
 
+        /// <summary>The starter-question buttons of the empty screen.</summary>
+        internal IReadOnlyList<Button> PromptChips => PromptPanel.Children.OfType<Button>().ToList();
+
         /// <summary>The latest Send, for tests to wait on.</summary>
         internal Task? Pending { get; private set; }
 
@@ -105,7 +144,7 @@ namespace Kil0bitSystemMonitor.Ai
             QuestionBox.Text = question;
             if (IsBusy)
             {
-                StatusText.Text = "Your question is in the box. Press Send when this answer has finished, or Stop it first.";
+                SetStatus("Your question is in the box. Press Send when this answer has finished, or Stop it first.");
                 return Task.CompletedTask;
             }
             return StartSend();
@@ -123,10 +162,15 @@ namespace Kil0bitSystemMonitor.Ai
             _conversation = new AiConversation();
             _turns.Clear();
             TranscriptPanel.Children.Clear();
-            EmptyText.Visibility = Visibility.Visible;
+            EmptyState.Visibility = Visibility.Visible;
+            _follow = true;
             HideProblem();
-            StatusText.Text = "";
+            SetStatus("");
         }
+
+        /// <summary>True when the transcript is within <see cref="FollowDistance"/> of its end.</summary>
+        internal static bool IsNearEnd(double verticalOffset, double scrollableHeight) =>
+            scrollableHeight - verticalOffset <= FollowDistance;
 
         private Task StartSend()
         {
@@ -139,6 +183,7 @@ namespace Kil0bitSystemMonitor.Ai
             string question = QuestionBox.Text.Trim();
             if (question.Length == 0 || IsBusy) return;
             HideProblem();
+            RefreshModelLabel();
 
             AskSetup setup;
             try
@@ -163,7 +208,7 @@ namespace Kil0bitSystemMonitor.Ai
             var cts = new CancellationTokenSource();
             _cts = cts;
             UpdateButtons();
-            StatusText.Text = "Thinking\u2026";
+            SetStatus("");
             bool failed = false;
             AiConversation conversation = _conversation;
 
@@ -175,14 +220,9 @@ namespace Kil0bitSystemMonitor.Ai
                     {
                         case AssistantUpdateKind.Text:
                             if (!string.IsNullOrEmpty(update.Text)) turn.AppendText(update.Text);
-                            StatusText.Text = "";
                             break;
                         case AssistantUpdateKind.ToolUsed:
-                            if (!string.IsNullOrEmpty(update.ToolName))
-                            {
-                                turn.AddTool(update.ToolName, update.ToolArgs);
-                                StatusText.Text = "Looking up " + update.ToolName + "\u2026";
-                            }
+                            if (!string.IsNullOrEmpty(update.ToolName)) turn.AddTool(update.ToolName, update.ToolArgs);
                             break;
                         case AssistantUpdateKind.Suggestion:
                             if (update.Suggestion is { } action)
@@ -200,7 +240,6 @@ namespace Kil0bitSystemMonitor.Ai
                         case AssistantUpdateKind.Done:
                             break;
                     }
-                    TranscriptScroll.ScrollToEnd();
                 }
 
                 // The assistant does not throw on cancellation: it drops the exchange from the
@@ -229,6 +268,7 @@ namespace Kil0bitSystemMonitor.Ai
                 _cts = null;
                 cts.Dispose();
                 setup.Resource?.Dispose();
+                turn.Complete(DateTime.Now);
                 UpdateButtons();
             }
 
@@ -236,23 +276,25 @@ namespace Kil0bitSystemMonitor.Ai
 
             // Only the question that was answered is cleared; anything typed meanwhile stays.
             if (QuestionBox.Text.Trim() == question) QuestionBox.Clear();
-            if (turn.Answer.Text.Length == 0 && turn.ActionButtons.Count == 0)
+            if (turn.RawText.Length == 0 && turn.ActionButtons.Count == 0)
                 turn.ShowNote("The model sent back no text. Try asking again.");
-            StatusText.Text = turn.ActionButtons.Count > 0 ? "Suggestions do nothing until you click them." : "";
+            SetStatus(turn.ActionButtons.Count > 0 ? "Suggestions do nothing until you click them." : "");
         }
 
         private void ShowStopped(AskTurnView turn, int generation)
         {
             turn.ShowNote("Stopped.");
-            if (generation == _generation) StatusText.Text = "Stopped. Your question is still in the box.";
+            if (generation == _generation) SetStatus("Stopped. Your question is still in the box.");
         }
 
+        /// <summary>Adds a turn for <paramref name="question"/>; sending always shows the end of the transcript.</summary>
         private AskTurnView AddTurn(string question)
         {
             var turn = new AskTurnView(question);
             _turns.Add(turn);
             TranscriptPanel.Children.Add(turn.Root);
-            EmptyText.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = Visibility.Collapsed;
+            _follow = true;
             TranscriptScroll.ScrollToEnd();
             return turn;
         }
@@ -261,18 +303,40 @@ namespace Kil0bitSystemMonitor.Ai
         {
             if (generation != _generation)
             {
-                StatusText.Text = "That suggestion belongs to a conversation that was cleared, so it does nothing now.";
+                SetStatus("That suggestion belongs to a conversation that was cleared, so it does nothing now.");
                 return;
             }
 
             try
             {
-                StatusText.Text = _runAction(action);
+                SetStatus(_runAction(action));
             }
             catch (Exception ex)
             {
-                StatusText.Text = "That did not work: " + ex.Message;
+                SetStatus("That did not work: " + ex.Message);
             }
+        }
+
+        /// <summary>Reads the model label again: settings may have changed since the last look.</summary>
+        private void RefreshModelLabel()
+        {
+            string? label = null;
+            try
+            {
+                label = _modelLabel?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Reading the model label failed (" + ex.GetType().Name + ")");
+            }
+            ModelText.Text = label ?? "";
+            ModelText.Visibility = string.IsNullOrWhiteSpace(label) ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private void SetStatus(string text)
+        {
+            StatusText.Text = text;
+            UpdateStatusRow();
         }
 
         private void ShowProblem(string message, bool offerSettings, bool offerRetry)
@@ -280,18 +344,45 @@ namespace Kil0bitSystemMonitor.Ai
             StatusText.Text = message;
             SettingsButton.Visibility = offerSettings ? Visibility.Visible : Visibility.Collapsed;
             RetryButton.Visibility = offerRetry ? Visibility.Visible : Visibility.Collapsed;
+            UpdateStatusRow();
         }
 
         private void HideProblem()
         {
             SettingsButton.Visibility = Visibility.Collapsed;
             RetryButton.Visibility = Visibility.Collapsed;
+            UpdateStatusRow();
         }
 
+        /// <summary>The status line takes no room while it has nothing to say.</summary>
+        private void UpdateStatusRow()
+        {
+            bool empty = StatusText.Text.Length == 0
+                         && SettingsButton.Visibility != Visibility.Visible
+                         && RetryButton.Visibility != Visibility.Visible;
+            StatusRow.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        /// <summary>Send while idle, Stop in the same spot while an answer streams.</summary>
         private void UpdateButtons()
         {
-            SendButton.IsEnabled = !IsBusy;
-            StopButton.IsEnabled = IsBusy;
+            bool busy = IsBusy;
+            SendButton.IsEnabled = !busy;
+            StopButton.IsEnabled = busy;
+            SendButton.Visibility = busy ? Visibility.Collapsed : Visibility.Visible;
+            StopButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// New content keeps the end in view only if the reader was already there: reading an
+        /// earlier answer is never interrupted. A scroll by the reader decides which it is.
+        /// </summary>
+        private void OnTranscriptScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (e.ExtentHeightChange == 0 && e.ViewportHeightChange == 0)
+                _follow = IsNearEnd(TranscriptScroll.VerticalOffset, TranscriptScroll.ScrollableHeight);
+            else if (_follow)
+                TranscriptScroll.ScrollToEnd();
         }
 
         private void OnSend(object sender, RoutedEventArgs e) => StartSend();
@@ -303,6 +394,12 @@ namespace Kil0bitSystemMonitor.Ai
         private void OnNewConversation(object sender, RoutedEventArgs e) => NewConversation();
 
         private void OnOpenSettings(object sender, RoutedEventArgs e) => _openSettings();
+
+        /// <summary>A click anywhere in the composer puts the caret in the question box.</summary>
+        private void OnComposerMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (!QuestionBox.IsKeyboardFocusWithin) QuestionBox.Focus();
+        }
 
         /// <summary>Enter sends, Shift+Enter adds a line, Escape stops an answer in progress.</summary>
         private void OnQuestionKeyDown(object sender, KeyEventArgs e)

@@ -33,7 +33,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// <summary>A piece of the answer text, to append to what is shown.</summary>
         Text,
 
-        /// <summary>A tool ran: <see cref="AssistantUpdate.ToolName"/> with <see cref="AssistantUpdate.ToolArgs"/> (JSON), for the Details line.</summary>
+        /// <summary>A tool ran: <see cref="AssistantUpdate.ToolName"/> with <see cref="AssistantUpdate.ToolArgs"/> (JSON), for the turn's tool chips.</summary>
         ToolUsed,
 
         /// <summary>A suggested-action button (<see cref="AssistantUpdate.Suggestion"/>).</summary>

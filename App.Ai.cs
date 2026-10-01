@@ -362,6 +362,20 @@ public partial class App
     }
 
     /// <summary>
+    /// The model line under the Ask window's title, read from the config each time the window
+    /// opens or a question is sent: "Claude · model", or "model · host" for an OpenAI-compatible
+    /// server (the host only, never the path or a key). Null while the config is not loaded.
+    /// </summary>
+    internal static string? AskModelLabel()
+    {
+        var config = ConfigService?.Config;
+        return config == null
+            ? null
+            : Kil0bitSystemMonitor.Services.Ai.AiModelLabel.For(
+                config.AiProvider, config.AiClaudeModel, config.AiCompatibleModel, config.AiCompatibleBaseUrl);
+    }
+
+    /// <summary>
     /// What one Send or Explain needs, built fresh each time so a provider, model or key change
     /// applies from the next question. Never throws: a problem comes back as the sentence to show.
     /// </summary>

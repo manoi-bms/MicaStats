@@ -1,0 +1,386 @@
+using System;
+using System.Collections.Generic;
+using System.Windows;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using Kil0bitSystemMonitor.Pad;
+using Kil0bitSystemMonitor.Services.Pad;
+using Xunit;
+using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using ContextMenu = System.Windows.Controls.ContextMenu;
+using DataFormats = System.Windows.DataFormats;
+using MenuItem = System.Windows.Controls.MenuItem;
+using WpfButton = System.Windows.Controls.Button;
+using DataObject = System.Windows.DataObject;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+
+namespace Kil0bitSystemMonitor.Tests
+{
+    /// <summary>The vault card: what each question shows, what it accepts, what it refuses.</summary>
+    public class VaultCardTests
+    {
+        private static void Click(ButtonBase button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+        [Fact]
+        public void Creating_a_pin_needs_the_same_valid_pin_twice() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            var created = new List<string>();
+            card.ShowCreatePin(created.Add);
+            Assert.Equal("Create a PIN for your credentials", card.TitleText.Text);
+
+            card.PinBox.Password = "12345";
+            card.PinBox2.Password = "12345";
+            Click(card.PrimaryButton);
+            Assert.Equal("Use 6 to 12 digits.", card.ErrorText.Text);
+
+            card.PinBox.Password = "123456";
+            card.PinBox2.Password = "123457";
+            Click(card.PrimaryButton);
+            Assert.Equal("The two PINs differ.", card.ErrorText.Text);
+
+            card.PinBox2.Password = "123456";
+            Click(card.PrimaryButton);
+            Assert.Equal(new[] { "123456" }, created);
+            Assert.False(card.IsOpen);
+            Assert.Equal("", card.PinBox.Password);
+        });
+
+        [Fact]
+        public void Wrong_pins_show_the_tries_left_then_a_countdown() => UiThread.Run(() =>
+        {
+            var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
+            var card = new VaultCard { UtcNow = () => now };
+            var results = new Queue<UnlockResult>(new[]
+            {
+                new UnlockResult(UnlockOutcome.WrongPin, 1),
+                new UnlockResult(UnlockOutcome.WrongPin, 0, now.AddSeconds(30)),
+            });
+            bool unlocked = false;
+            card.ShowEnterPin("To reveal \u201CBank\u201D.", _ => results.Dequeue(), () => unlocked = true);
+
+            card.PinBox.Password = "000000";
+            Click(card.PrimaryButton);
+            Assert.Equal("Wrong PIN. 1 more try before a wait.", card.ErrorText.Text);
+            Assert.True(card.IsOpen);
+
+            card.PinBox.Password = "000000";
+            Click(card.PrimaryButton);
+            Assert.Equal("Too many wrong PINs. Try again in 0:30.", card.ErrorText.Text);
+            Assert.False(card.PinBox.IsEnabled);
+            Assert.False(card.PrimaryButton.IsEnabled);
+            Assert.False(unlocked);
+        });
+
+        [Fact]
+        public void The_right_pin_closes_the_card_and_continues() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            bool unlocked = false;
+            card.ShowEnterPin("To reveal it.", pin => new UnlockResult(pin == "246810" ? UnlockOutcome.Unlocked : UnlockOutcome.WrongPin, 4), () => unlocked = true);
+
+            card.PinBox.Password = "246810";
+            Click(card.PrimaryButton);
+
+            Assert.True(unlocked);
+            Assert.False(card.IsOpen);
+        });
+
+        [Theory]
+        [InlineData(30, "Too many wrong PINs. Try again in 0:30.")]
+        [InlineData(61, "Too many wrong PINs. Try again in 1:01.")]
+        [InlineData(900, "Too many wrong PINs. Try again in 15:00.")]
+        public void Wait_text(int seconds, string expected) => Assert.Equal(expected, VaultCard.WaitText(TimeSpan.FromSeconds(seconds)));
+
+        [Fact]
+        public void Store_shows_the_length_and_the_copies_never_the_secret() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            string? stored = "unset";
+            card.ShowStore(12, 3, label => stored = label);
+
+            Assert.Contains("(12 characters)", card.BodyText.Text);
+            Assert.Contains("Appears 3 times in this note \u2014 every copy will be masked.", card.BodyText.Text);
+            card.LabelBox.Text = "  Bank  ";
+            Click(card.PrimaryButton);
+
+            Assert.Equal("Bank", stored);
+            Assert.Equal(CredentialVault.MaxLabelLength, card.LabelBox.MaxLength);
+        });
+
+        [Fact]
+        public void One_copy_says_nothing_about_copies() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            card.ShowStore(8, 1, _ => { });
+
+            Assert.DoesNotContain("Appears", card.BodyText.Text);
+        });
+
+        [Fact]
+        public void A_reveal_shows_the_value_and_hides_by_itself() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            int copied = 0;
+            card.ShowReveal("Bank", "hunter2", () => copied++);
+
+            Assert.Equal("hunter2", card.ValueBox.Text);
+            Assert.True(card.ValueBox.IsReadOnly);
+            Click(card.CopyButton);
+            Assert.Equal(1, copied);
+
+            card.OnRevealTimer();   // the 30-second timer
+            Assert.False(card.IsOpen);
+            Assert.Equal("", card.ValueBox.Text);
+        });
+
+        [Fact]
+        public void A_new_question_drops_the_previous_one() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            bool firstCalled = false;
+            card.ShowRename("Old", _ => firstCalled = true);
+            card.ShowConfirm("Delete credential", "Delete it?", "Delete", () => { });
+
+            Assert.Equal("Confirm", card.Mode);
+            Click(card.SecondaryButton);
+            Assert.False(firstCalled);
+            Assert.False(card.IsOpen);
+        });
+
+        // Beyond the brief: the digits-only boxes and the Enter/Escape keys, raised without a window.
+
+        [Fact]
+        public void Pin_boxes_refuse_anything_but_digits() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            card.ShowEnterPin("To reveal it.", _ => new UnlockResult(UnlockOutcome.WrongPin, 4), () => { });
+
+            Assert.True(Type(card.PinBox, "a").Handled);
+            Assert.True(Type(card.PinBox, "\u0661").Handled);   // an Arabic-Indic one: a digit, not an ASCII one
+            Assert.False(Type(card.PinBox, "7").Handled);
+            Assert.True(Paste(card.PinBox, "12 34").CommandCancelled);
+            Assert.False(Paste(card.PinBox, "123456").CommandCancelled);
+            Assert.Equal(12, card.PinBox.MaxLength);
+        });
+
+        [Fact]
+        public void Enter_answers_the_card_and_escape_cancels_it() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            var created = new List<string>();
+            card.ShowCreatePin(created.Add);
+            card.PinBox.Password = "123456";
+            card.PinBox2.Password = "123456";
+            Press(card.PinBox2, Key.Enter);
+            Assert.Equal(new[] { "123456" }, created);
+
+            bool confirmed = false;
+            int closed = 0;
+            card.Closed += (s, e) => closed++;
+            card.ShowConfirm("Delete credential", "Delete it?", "Delete", () => confirmed = true);
+            Press(card.TitleText, Key.Escape);
+            Assert.False(confirmed);
+            Assert.False(card.IsOpen);
+            Assert.Equal(1, closed);
+        });
+
+        // Fix round 1.
+
+        [Fact]
+        public void A_reveal_hides_when_focus_leaves_even_for_another_app_but_a_question_stays() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            card.ShowReveal("Bank", "hunter2", () => { });
+            var menu = new ContextMenu { PlacementTarget = card.ValueBox };
+            var copyItem = new MenuItem { Header = "Copy" };
+            menu.Items.Add(copyItem);
+
+            card.OnFocusLeft(copyItem);   // the value box's own context menu
+            Assert.True(card.IsOpen);
+            Assert.Equal("hunter2", card.ValueBox.Text);
+
+            card.OnFocusLeft(null);       // alt-tab, or Windows locking
+            Assert.False(card.IsOpen);
+            Assert.Equal("", card.ValueBox.Text);
+
+            card.ShowReveal("Bank", "hunter2", () => { });
+            card.OnFocusLeft(new WpfButton());   // anything else
+            Assert.False(card.IsOpen);
+            Assert.Equal("", card.ValueBox.Text);
+
+            card.ShowEnterPin("To reveal it.", _ => new UnlockResult(UnlockOutcome.WrongPin, 4), () => { });
+            card.OnFocusLeft(null);
+            Assert.True(card.IsOpen);
+            Assert.Equal("EnterPin", card.Mode);
+        });
+
+        [Fact]
+        public void The_wait_counts_down_then_lets_the_right_pin_in() => UiThread.Run(() =>
+        {
+            var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
+            var until = now.AddSeconds(30);
+            var card = new VaultCard { UtcNow = () => now };
+            bool unlocked = false;
+            card.ShowEnterPin(
+                "To reveal it.",
+                pin => pin == "246810" ? new UnlockResult(UnlockOutcome.Unlocked) : new UnlockResult(UnlockOutcome.WrongPin, 0, until),
+                () => unlocked = true);
+
+            card.PinBox.Password = "000000";
+            Click(card.PrimaryButton);
+            Assert.Equal("Too many wrong PINs. Try again in 0:30.", card.ErrorText.Text);
+
+            now = until.AddSeconds(-12.3);
+            card.OnWaitTimer();
+            Assert.Equal("Too many wrong PINs. Try again in 0:13.", card.ErrorText.Text);
+            Assert.False(card.PinBox.IsEnabled);
+            Assert.False(card.PrimaryButton.IsEnabled);
+
+            now = until.AddSeconds(1);
+            card.OnWaitTimer();
+            Assert.Equal("", card.ErrorText.Text);
+            Assert.Equal(Visibility.Collapsed, card.ErrorText.Visibility);
+            Assert.True(card.PinBox.IsEnabled);
+            Assert.True(card.PrimaryButton.IsEnabled);
+
+            card.PinBox.Password = "246810";
+            Click(card.PrimaryButton);
+            Assert.True(unlocked);
+            Assert.False(card.IsOpen);
+        });
+
+        [Fact]
+        public void A_new_question_ends_a_running_wait() => UiThread.Run(() =>
+        {
+            var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
+            var card = new VaultCard { UtcNow = () => now };
+            card.ShowEnterPin("To reveal it.", _ => new UnlockResult(UnlockOutcome.Waiting, 0, now.AddMinutes(1)), () => { });
+            card.PinBox.Password = "000000";
+            Click(card.PrimaryButton);
+            Assert.Equal("Too many wrong PINs. Try again in 1:00.", card.ErrorText.Text);
+            Assert.False(card.PinBox.IsEnabled);
+
+            card.ShowChangePin((_, _) => new UnlockResult(UnlockOutcome.Unlocked));
+            Assert.Equal("ChangePin", card.Mode);
+            Assert.Equal("", card.ErrorText.Text);
+            Assert.True(card.PinBox.IsEnabled);
+            Assert.True(card.PinBox2.IsEnabled);
+            Assert.True(card.PinBox3.IsEnabled);
+            Assert.True(card.PrimaryButton.IsEnabled);
+
+            card.OnWaitTimer();   // a tick already on its way finds no wait
+            Assert.Equal("", card.ErrorText.Text);
+            Assert.True(card.PinBox.IsEnabled);
+        });
+
+        [Fact]
+        public void Copying_from_the_reveal_box_goes_through_the_card() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            int copied = 0;
+            card.ShowReveal("Bank", "hunter2", () => copied++);
+
+            Assert.True(ApplicationCommands.Copy.CanExecute(null, card.ValueBox));
+            ApplicationCommands.Copy.Execute(null, card.ValueBox);
+            Assert.Equal(1, copied);
+            ApplicationCommands.Cut.Execute(null, card.ValueBox);
+            Assert.Equal(2, copied);
+
+            card.Hide();
+            Assert.False(ApplicationCommands.Copy.CanExecute(null, card.ValueBox));
+        });
+
+        // Final review: the state the card opens with (item 6).
+
+        [Fact]
+        public void A_wait_left_from_earlier_shows_its_countdown_as_the_card_opens() => UiThread.Run(() =>
+        {
+            var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
+            var card = new VaultCard { UtcNow = () => now };
+            int checks = 0;
+            bool unlocked = false;
+            card.ShowEnterPin("To reveal it.", _ => { checks++; return new UnlockResult(UnlockOutcome.Unlocked); }, () => unlocked = true,
+                              new PinState(0, now.AddSeconds(75)));
+
+            Assert.Equal("Too many wrong PINs. Try again in 1:15.", card.ErrorText.Text);
+            Assert.False(card.PinBox.IsEnabled);
+            Assert.False(card.PrimaryButton.IsEnabled);
+            card.PinBox.Password = "246810";
+            card.OnPrimary();                          // Enter during the wait checks nothing
+            Assert.Equal(0, checks);
+
+            now = now.AddSeconds(76);
+            card.OnWaitTimer();
+            Assert.True(card.PinBox.IsEnabled);
+            Assert.True(card.PrimaryButton.IsEnabled);
+            card.PinBox.Password = "246810";
+            Click(card.PrimaryButton);
+            Assert.True(unlocked);
+
+            card.ShowChangePin((_, _) => new UnlockResult(UnlockOutcome.Unlocked), new PinState(0, now.AddSeconds(30)));
+            Assert.Equal("Too many wrong PINs. Try again in 0:30.", card.ErrorText.Text);
+            Assert.False(card.PinBox.IsEnabled);
+            Assert.False(card.PinBox2.IsEnabled);
+            Assert.False(card.PinBox3.IsEnabled);
+            Assert.False(card.PrimaryButton.IsEnabled);
+        });
+
+        [Fact]
+        public void Tries_left_from_earlier_show_as_the_card_opens() => UiThread.Run(() =>
+        {
+            var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
+            var card = new VaultCard { UtcNow = () => now };
+            Func<string, UnlockResult> check = _ => new UnlockResult(UnlockOutcome.WrongPin, 1);
+
+            card.ShowEnterPin("To reveal it.", check, () => { }, new PinState(2, null));
+            Assert.Equal("2 more tries before a wait.", card.ErrorText.Text);
+            Assert.True(card.PinBox.IsEnabled);
+
+            card.ShowEnterPin("To reveal it.", check, () => { }, new PinState(1, null));
+            Assert.Equal("1 more try before a wait.", card.ErrorText.Text);
+
+            card.ShowEnterPin("To reveal it.", check, () => { }, new PinState(0, now.AddSeconds(-1)));   // a wait already over
+            Assert.Equal("The next wrong PIN starts a wait.", card.ErrorText.Text);
+            Assert.True(card.PinBox.IsEnabled);
+
+            card.ShowEnterPin("To reveal it.", check, () => { }, new PinState(CredentialVault.TriesBeforeFirstWait, null));
+            Assert.Equal("", card.ErrorText.Text);
+            Assert.Equal(Visibility.Collapsed, card.ErrorText.Visibility);
+
+            card.ShowChangePin((_, _) => new UnlockResult(UnlockOutcome.Unlocked), new PinState(3, null));
+            Assert.Equal("3 more tries before a wait.", card.ErrorText.Text);
+        });
+
+        private static TextCompositionEventArgs Type(UIElement target, string text)
+        {
+            var args = new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, target, text))
+            {
+                RoutedEvent = UIElement.PreviewTextInputEvent,
+            };
+            target.RaiseEvent(args);
+            return args;
+        }
+
+        private static DataObjectPastingEventArgs Paste(UIElement target, string text)
+        {
+            var args = new DataObjectPastingEventArgs(new DataObject(DataFormats.UnicodeText, text), false, DataFormats.UnicodeText);
+            target.RaiseEvent(args);
+            return args;
+        }
+
+        private static void Press(UIElement target, Key key) =>
+            target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, new NoSource(), 0, key) { RoutedEvent = Keyboard.KeyDownEvent });
+
+        /// <summary>A key event needs a source; this one has no window behind it.</summary>
+        private sealed class NoSource : PresentationSource
+        {
+            public override Visual? RootVisual { get; set; }
+
+            public override bool IsDisposed => false;
+
+            protected override CompositionTarget? GetCompositionTargetCore() => null;
+        }
+    }
+}

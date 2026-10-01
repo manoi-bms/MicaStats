@@ -56,6 +56,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>Code page for files that are neither Unicode-marked nor valid UTF-8.</summary>
         public int AnsiCodePage { get; init; } = TextFileCodec.SystemAnsiCodePage;
+
+        /// <summary>The credential vault MicaPad's windows use; null leaves the credential commands disabled. The app passes its one vault; tests pass their own.</summary>
+        public CredentialVault? Vault { get; init; }
     }
 
     /// <summary>
@@ -123,11 +126,21 @@ namespace Kil0bitSystemMonitor.Services.Pad
             _warn = options.Warn;
             _error = options.Error;
             _ansiCodePage = options.AnsiCodePage;
+            Vault = options.Vault;
             Open.CollectionChanged += (s, e) => SyncTabs();   // first subscriber: every window's tab list is in step before a window's own handler runs
         }
 
         /// <summary>The store this workspace reads and writes.</summary>
         public NoteStore Store => _store;
+
+        /// <summary>The credential vault, shared by every window and by Settings; null when the app gave none.</summary>
+        public CredentialVault? Vault { get; }
+
+        /// <summary>Whether a window already told the user the vault was moved aside: once per run.</summary>
+        public bool VaultNoticeShown { get; set; }
+
+        /// <summary>Whether a window already told the user about <see cref="NoteStore.LockedFolder"/>: once per run.</summary>
+        public bool LockedNoticeShown { get; set; }
 
         /// <summary>Open notes in tab order. Changed on the UI thread only.</summary>
         public ObservableCollection<OpenNote> Open { get; } = new();
@@ -585,6 +598,47 @@ namespace Kil0bitSystemMonitor.Services.Pad
             string json = NoteStore.SerializeSession(PrepareSession());
             _writer.Enqueue(SessionKey, Logged(SessionKey, "Writing the MicaPad session failed; it will be retried",
                 () => _store.WriteSessionJson(json)));
+        }
+
+        /// <summary>Scrubs a closing window could not finish with no other window left to take them; see <see cref="RunPendingScrubs"/>.</summary>
+        private readonly List<PendingScrub> _pendingScrubs = new();
+
+        /// <summary>How many scrubs wait for <see cref="RunPendingScrubs"/>.</summary>
+        public int PendingScrubCount => _pendingScrubs.Count;
+
+        /// <summary>
+        /// Takes a scrub over from a window that closed before its versions were clean (the writer
+        /// was behind, or a version could not be rewritten) and had no other window to hand it to.
+        /// </summary>
+        public void AddPendingScrub(PendingScrub scrub) => _pendingScrubs.Add(scrub ?? throw new ArgumentNullException(nameof(scrub)));
+
+        /// <summary>
+        /// Runs every waiting scrub once, at exit after <see cref="FlushAll"/>. Best effort: never
+        /// throws, and logs ids only. A scrub that leaves no version holding its value is dropped
+        /// with the value; any other stays for the next call.
+        /// </summary>
+        /// <returns>How many scrubs still wait.</returns>
+        public int RunPendingScrubs()
+        {
+            foreach (var scrub in _pendingScrubs.ToList())
+            {
+                try
+                {
+                    int left = _store.ScrubSnapshots(scrub.NoteId, scrub.Value, scrub.Reference);
+                    if (left == 0)
+                    {
+                        _pendingScrubs.Remove(scrub);
+                        continue;
+                    }
+                    _warn("Stored credential " + scrub.Id + ": " + left.ToString(CultureInfo.InvariantCulture)
+                          + " older version(s) of note " + scrub.NoteId + " may still hold it");
+                }
+                catch (Exception ex)
+                {
+                    _warn("Removing stored credential " + scrub.Id + " from the older versions of note " + scrub.NoteId + " failed (" + ex.GetType().Name + ")");
+                }
+            }
+            return _pendingScrubs.Count;
         }
 
         /// <summary>Releases the writer when this workspace created it; a shared one is left to its owner.</summary>

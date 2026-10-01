@@ -29,6 +29,8 @@ namespace Kil0bitSystemMonitor
         private System.Windows.Threading.DispatcherTimer? m_padMaintenanceTimer;
         private static Kil0bitSystemMonitor.Services.Pad.NoteStore? s_padStore;
         private static Kil0bitSystemMonitor.Services.Pad.PadWorkspace? s_pad;
+        private static Kil0bitSystemMonitor.Services.Pad.CredentialVault? s_padVault;
+        private static Kil0bitSystemMonitor.Pad.VaultSession? s_vaultSession;
 
         // ---- diagnostics ----------------------------------------------------------------
 
@@ -609,6 +611,26 @@ namespace Kil0bitSystemMonitor
 
         // ---- MicaPad ----------------------------------------------------------------------
 
+        /// <summary>
+        /// MicaPad's credential vault (<c>vault.bin</c> beside the notes), one for the process: every
+        /// MicaPad window and Settings share it and its unlock. Created on first use; loaded by
+        /// whoever needs it (<see cref="Kil0bitSystemMonitor.Services.Pad.CredentialVault.EnsureLoaded"/>).
+        /// </summary>
+        internal static Kil0bitSystemMonitor.Services.Pad.CredentialVault PadVault
+        {
+            get
+            {
+                if (s_padVault != null) return s_padVault;
+                s_padVault = new Kil0bitSystemMonitor.Services.Pad.CredentialVault(
+                    System.IO.Path.Combine(Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot, Kil0bitSystemMonitor.Services.Pad.CredentialVault.FileName),
+                    () => DateTime.UtcNow);
+                var dispatcher = Current.Dispatcher;
+                s_vaultSession = new Kil0bitSystemMonitor.Pad.VaultSession(s_padVault, () => DateTime.UtcNow, action => dispatcher.BeginInvoke(action));
+                s_vaultSession.Start();
+                return s_padVault;
+            }
+        }
+
         /// <summary>The MicaPad store, created on first use so a user who never opens MicaPad gets no folder.</summary>
         private static Kil0bitSystemMonitor.Services.Pad.NoteStore PadStore =>
             s_padStore ??= new Kil0bitSystemMonitor.Services.Pad.NoteStore(Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot);
@@ -633,6 +655,7 @@ namespace Kil0bitSystemMonitor
                         new Kil0bitSystemMonitor.Services.Pad.PadWorkspaceOptions
                         {
                             Post = action => dispatcher.BeginInvoke(action),
+                            Vault = PadVault,
                         });
                 }
 
@@ -644,6 +667,20 @@ namespace Kil0bitSystemMonitor
             }
         }
 
+        /// <summary>Opens MicaPad and shows its Change PIN card (Settings, Credentials).</summary>
+        internal static void OpenPadVault()
+        {
+            try
+            {
+                OpenPad(null);
+                Kil0bitSystemMonitor.Pad.MicaPadWindow.Current?.ShowChangePin();
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Opening the Change PIN card failed", ex);
+            }
+        }
+
         /// <summary>Opens Settings on one section.</summary>
         public static void ShowSettingsSection(string section)
         {
@@ -652,13 +689,18 @@ namespace Kil0bitSystemMonitor
             SettingsWindow?.SelectSection(section);
         }
 
-        /// <summary>Everything MicaPad holds goes to disk. Never shows UI and never cancels anything.</summary>
+        /// <summary>
+        /// Everything MicaPad holds goes to disk, then the stored credentials a closed window could
+        /// not yet scrub from older versions are scrubbed (best effort; ids only in the log). Never
+        /// shows UI and never cancels anything.
+        /// </summary>
         private static void FlushPad()
         {
             try
             {
                 Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit();
                 s_pad?.FlushAll(TimeSpan.FromSeconds(2));
+                s_pad?.RunPendingScrubs();
             }
             catch (Exception ex)
             {
@@ -690,7 +732,7 @@ namespace Kil0bitSystemMonitor
             m_padMaintenanceTimer.Start();
         }
 
-        /// <summary>Prunes history and purges long-closed notes, off the UI thread.</summary>
+        /// <summary>Encrypts files an earlier version left plain, prunes history and purges long-closed notes, off the UI thread.</summary>
         private static void RunPadMaintenance()
         {
             // The whole body is guarded: the NoteStore constructor creates a folder, and an exception
@@ -705,6 +747,9 @@ namespace Kil0bitSystemMonitor
                 {
                     try
                     {
+                        int encrypted = store.EncryptPlainFiles();
+                        if (encrypted > 0)
+                            Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("pad", "Encrypted " + encrypted + " MicaPad files written by an earlier version");
                         store.PruneAll(DateTime.UtcNow, days, Kil0bitSystemMonitor.Services.Pad.RecycleBin.Instance);
                     }
                     catch (Exception ex)
@@ -741,6 +786,9 @@ namespace Kil0bitSystemMonitor
                 // WPF has already closed MicaPad by now, so the window-state recording relies on Quit or
                 // SessionEnding having called PrepareForExit first. This flush is the writer-thread drain.
                 FlushPad();
+                s_vaultSession?.Dispose();
+                s_padVault?.Lock();
+                Kil0bitSystemMonitor.Pad.SecretClipboard.ClearIfStillOurs();
                 m_padMaintenanceTimer?.Stop();
                 s_pad?.Dispose();
                 m_captureHotkeys?.Dispose();

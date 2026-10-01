@@ -196,6 +196,43 @@ If another program changes the file, MicaPad reloads it — or, when you have ed
 asks **Reload from disk** or **Keep mine** (a reload first keeps your version in history). If the
 file is deleted, **Keep as note** turns the tab into an ordinary note.
 
+### Credentials and encryption
+
+Your notes are encrypted for this Windows account on this PC, so another account, or the same
+files copied to another PC, cannot read them. A reset Windows password makes them unreadable the
+same way, as if they were on another PC; changing your password in the usual way, with the old one,
+does not. If you move to a new PC, use **Save As** on each note you want to take along.
+
+To keep a password, token or other secret out of sight, select it (4 or more characters), right-click
+and choose **Store as credential**, then give it a label. Every copy of that text in the note is
+replaced by a small pill with the label, and older versions of the note are scrubbed too. This cannot
+be undone with Ctrl+Z, but **Unmask** on the pill puts the text back.
+
+Right-click a pill (or press the menu key) for its menu: **Reveal** (shows the value for 30 seconds),
+**Copy secret** (kept out of the Win+V clipboard history and cleared after 30 seconds),
+**Rename label**, **Unmask**, **Delete credential**, **Copy reference** and **Lock now**.
+
+The first time you store something, MicaPad asks you to create a PIN of 6 to 12 digits. Entering it
+unlocks the credentials for 5 minutes, and they lock again when Windows locks or goes to sleep.
+After 5 wrong PINs you must wait, and the wait doubles each time, up to 15 minutes. Any length from
+6 to 12 digits works, but a longer PIN is stronger; the list below says why.
+
+**Settings → MicaPad → Credentials** has **Change PIN**, **Lock now** and **Reset vault**. If you
+forget the PIN, **Reset vault** is the way out: it deletes every stored credential, and references
+left in your notes show as missing. **Change PIN** is there once you have a PIN.
+
+What this does not protect against:
+
+- A harmful program running as you. While MicaPad is open it can read the screen and MicaPad's
+  memory, and open your notes just as you can. It can also copy the credential vault and guess PINs
+  offline, where no wait after wrong PINs slows it down: a 6-digit PIN can fall within days, while a
+  12-digit one will not. That is why a longer PIN is stronger.
+- Keyloggers that catch the PIN as you type it, administrators of this PC, and programs running as
+  SYSTEM.
+- A value is in memory while it is shown or in the editor, where such a program could read it.
+- Plain copies made before this version: notes already in the Recycle Bin, and old copies an SSD
+  keeps after a file is overwritten.
+
 ### Light or dark
 
 The sun button in MicaPad's tab strip switches MicaPad to a light theme; the moon button switches

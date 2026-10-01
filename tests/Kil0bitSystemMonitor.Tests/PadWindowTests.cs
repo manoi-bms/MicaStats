@@ -36,6 +36,68 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void The_locked_folder_notice_shows_once() => WithWindow((window, env, config) =>
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "micapad-locked-notice-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder);
+            var started = new System.Collections.Generic.List<System.Diagnostics.ProcessStartInfo>();
+            var original = MicaPadWindow.StartExplorer;
+            MicaPadWindow.StartExplorer = started.Add;
+            try
+            {
+                env.Store.LockedFolder = folder;
+
+                window.ShowLockedFolderNotice();
+
+                Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
+                Assert.Equal("MicaPad could not decrypt the notes saved before on this Windows account, so they were moved to "
+                             + folder + ". Nothing was deleted.", window.InfoText.Text);
+                Assert.Equal("Show folder", window.InfoPrimary.Content);
+                Assert.Equal(Visibility.Visible, window.InfoPrimary.Visibility);
+
+                window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+                Assert.Equal("/select,\"" + folder + "\"", Assert.Single(started).Arguments);
+                Assert.DoesNotContain("no longer at", window.InfoText.Text, StringComparison.Ordinal);
+                Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+
+                window.ShowLockedFolderNotice();
+                Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+                Assert.Null(env.Store.LockedFolder);
+
+                // As if deleting the marker had failed: the in-run guard still keeps it quiet.
+                env.Store.LockedFolder = folder;
+                window.ShowLockedFolderNotice();
+                Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+            }
+            finally
+            {
+                MicaPadWindow.StartExplorer = original;
+                Directory.Delete(folder, recursive: true);
+            }
+        });
+
+        [Fact]
+        public void A_locked_folder_that_is_gone_is_called_a_folder() => WithWindow((window, env, config) =>
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "micapad-locked-gone-" + Guid.NewGuid().ToString("N"));
+            env.Store.LockedFolder = folder;
+            window.ShowLockedFolderNotice();
+
+            window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+            Assert.Equal("That folder is no longer at " + folder + ".", window.InfoText.Text);
+        });
+
+        [Fact]
+        public void No_notice_when_the_store_opened_normally() => WithWindow((window, env, config) =>
+        {
+            window.ShowLockedFolderNotice();
+
+            Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+        });
+
+        [Fact]
         public void The_window_starts_with_one_empty_note() => WithWindow((window, env, config) =>
         {
             Assert.Single(env.Workspace.Open);

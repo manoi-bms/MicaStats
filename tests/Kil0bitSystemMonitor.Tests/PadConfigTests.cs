@@ -142,5 +142,15 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(render < firstWindow, "the switch must come before the first WPF window is created");
             Assert.Contains("if (!config.Config.UseGpuRendering)", app, System.StringComparison.Ordinal);
         }
+
+        [Fact]
+        public void Maintenance_encrypts_plain_files_before_pruning()
+        {
+            string app = System.IO.File.ReadAllText(System.IO.Path.Combine(PadWindowTests.RepoRoot(), "App.xaml.cs"));
+            int encrypt = app.IndexOf("store.EncryptPlainFiles()", StringComparison.Ordinal);
+            int prune = app.IndexOf("store.PruneAll(", StringComparison.Ordinal);
+
+            Assert.True(encrypt > 0 && encrypt < prune);
+        }
     }
 }

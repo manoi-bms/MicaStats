@@ -196,6 +196,6 @@ namespace Kil0bitSystemMonitor.Services.Pad
         string FilePath,
         /// <summary>Local time when this version was taken, parsed from the file name.</summary>
         DateTime Stamp,
-        /// <summary>File size in bytes.</summary>
+        /// <summary>Size of the version's text in bytes (UTF-8), whether or not the file is encrypted.</summary>
         long Size);
 }

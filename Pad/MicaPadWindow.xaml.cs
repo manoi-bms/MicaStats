@@ -109,6 +109,7 @@ namespace Kil0bitSystemMonitor.Pad
             ConfigureEditor();
             ConfigureLinks(Editor);
             ConfigureLinks(PreviewEditor);
+            ConfigureVault();
             Editor.TextArea.TextView.MouseHover += OnEditorMouseHover;
             Editor.TextArea.TextView.MouseHoverStopped += (s, e) => _linkTip.IsOpen = false;
             FindBar.Attach(Editor);
@@ -136,10 +137,10 @@ namespace Kil0bitSystemMonitor.Pad
             };
             ApplyTheme();
             Editor.ContextMenu = EditorMenu;
-            Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu();
+            Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu(OpenedByMouse(e));
             Editor.TextArea.PreviewMouseRightButtonDown += OnEditorRightButtonDown;
             PreviewEditor.ContextMenu = PreviewMenu;
-            PreviewEditor.ContextMenuOpening += (s, e) => RefreshPreviewMenu();
+            PreviewEditor.ContextMenuOpening += (s, e) => RefreshPreviewMenu(OpenedByMouse(e));
             HistoryPanel.VersionSelected += OnVersionSelected;
             HistoryPanel.CloseRequested += CloseHistory;
             FindBar.ReplacingAll += () =>
@@ -161,6 +162,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 _workspace.Tick();
                 UpdateSaveText();
+                RetryPendingScrubsOnTick();
             };
 
             LoadIcon();
@@ -252,6 +254,8 @@ namespace Kil0bitSystemMonitor.Pad
         {
             var window = ShowOrActivate(workspace, config, openSettings, path);
             if (!string.IsNullOrWhiteSpace(path)) window.OpenPath(path);
+            window.ShowLockedFolderNotice();
+            window.ShowVaultMovedNotice();
             return window;
         }
 
@@ -614,6 +618,7 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace.Open.CollectionChanged -= OnOpenChanged;
             foreach (var (document, changed) in _docHandlers) document.Changed -= changed;
             _docHandlers.Clear();
+            DetachVault();
             s_windows.Remove(this);
         }
 
@@ -1056,15 +1061,21 @@ namespace Kil0bitSystemMonitor.Pad
                 if (!ReferenceEquals(other, keep)) CloseTab(other);
         }
 
-        private void CopyFilePath(string path)
+        private void CopyFilePath(string path) => CopyPlainText(path, "a file path");
+
+        /// <summary>Puts plain text on the clipboard. Tests replace it.</summary>
+        internal Action<string> SetClipboardText { get; set; } = text => Clipboard.SetText(text);
+
+        /// <summary>Copies plain text; a busy clipboard is logged as "Copying <paramref name="what"/> failed" and told in a notice.</summary>
+        private void CopyPlainText(string text, string what)
         {
             try
             {
-                Clipboard.SetText(path);
+                SetClipboardText(text);
             }
             catch (System.Runtime.InteropServices.ExternalException ex)
             {
-                DiagnosticsLog.Warn("pad", "Copying a file path failed: " + ex.Message);
+                Warn("Copying " + what + " failed: " + ex.Message);
                 ShowNotice("The clipboard is busy. Try again in a moment.");
             }
         }
@@ -1083,20 +1094,23 @@ namespace Kil0bitSystemMonitor.Pad
             ShowInfo(message, null);
         }
 
+        /// <summary>How Explorer is started; tests swap it so none is launched.</summary>
+        internal static Action<ProcessStartInfo> StartExplorer { get; set; } = info => Process.Start(info);
+
         /// <summary>
-        /// Opens Explorer with the file selected. A file that is no longer there is reported rather
-        /// than opening some other folder.
+        /// Opens Explorer with the file or folder selected. One that is no longer there is reported
+        /// rather than opening some other folder.
         /// </summary>
-        internal void ShowInFolder(string path)
+        internal void ShowInFolder(string path, bool folder = false)
         {
-            if (!File.Exists(path))
+            if (!File.Exists(path) && !Directory.Exists(path))
             {
-                ShowNotice("That file is no longer at " + path + ".");
+                ShowNotice("That " + (folder ? "folder" : "file") + " is no longer at " + path + ".");
                 return;
             }
             try
             {
-                Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
+                StartExplorer(new ProcessStartInfo("explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
@@ -1212,6 +1226,21 @@ namespace Kil0bitSystemMonitor.Pad
             InfoSecondary.Content = secondaryLabel;
             InfoSecondary.Visibility = secondary == null ? Visibility.Collapsed : Visibility.Visible;
             InfoBar.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>
+        /// Once per run: the notes this Windows account could not decrypt were moved to
+        /// <see cref="NoteStore.LockedFolder"/>. Nothing was deleted.
+        /// </summary>
+        internal void ShowLockedFolderNotice()
+        {
+            string? folder = _workspace.Store.LockedFolder;
+            if (folder == null || _workspace.LockedNoticeShown) return;
+
+            _workspace.LockedNoticeShown = true;   // in-run guard: the store forgets the folder, but a failed marker delete must not repeat the notice
+            _workspace.Store.ForgetLockedFolder();
+            ShowInfo("MicaPad could not decrypt the notes saved before on this Windows account, so they were moved to "
+                     + folder + ". Nothing was deleted.", null, "Show folder", () => ShowInFolder(folder, folder: true));
         }
 
         /// <summary>Hides the info bar and forgets its actions.</summary>
@@ -1780,6 +1809,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
+            if (KeyBelongsToVaultCard(e)) return;
             Key key = e.Key == Key.System ? e.SystemKey : e.Key;
             var modifiers = Keyboard.Modifiers;
             bool handled = false;
@@ -1850,11 +1880,22 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The history preview's right-click menu: copying only, because the preview is read-only.</summary>
         internal ContextMenu PreviewMenu { get; } = new();
 
-        /// <summary>Rebuilds the editor menu for the current selection, undo state and theme.</summary>
-        internal void RefreshEditorMenu() => FillEditorMenu(EditorMenu, Editor, readOnly: false);
+        /// <summary>
+        /// Rebuilds the editor menu for the current selection, undo state and theme; on a pill (under
+        /// the mouse, or at the caret from the keyboard), the pill menu instead.
+        /// </summary>
+        internal void RefreshEditorMenu(bool byMouse = false)
+        {
+            if (MenuReference(Editor, byMouse) is { } reference) FillPillMenu(EditorMenu, reference);
+            else FillEditorMenu(EditorMenu, Editor, readOnly: false);
+        }
 
-        /// <summary>Rebuilds the history preview's menu.</summary>
-        internal void RefreshPreviewMenu() => FillEditorMenu(PreviewMenu, PreviewEditor, readOnly: true);
+        /// <summary>Rebuilds the history preview's menu; on a pill, its read-only pill menu.</summary>
+        internal void RefreshPreviewMenu(bool byMouse = false)
+        {
+            if (MenuReference(PreviewEditor, byMouse) is { } reference) FillPillMenu(PreviewMenu, reference, readOnly: true);
+            else FillEditorMenu(PreviewMenu, PreviewEditor, readOnly: true);
+        }
 
         /// <summary>
         /// The items of a text menu, each disabled when it cannot apply. Later parts add their groups
@@ -1873,6 +1914,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 int copyAt = menu.Items.Cast<object>().ToList().FindIndex(i => i is MenuItem { Header: "Copy" });
                 if (copyAt >= 0) menu.Items.Insert(copyAt + 1, Item("Copy as RTF", null, CopyAsRtf));
+                AddStoreItem(menu);
             }
 
             menu.Items.Add(new Separator());

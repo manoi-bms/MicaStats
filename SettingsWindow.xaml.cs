@@ -565,6 +565,8 @@ namespace Kil0bitSystemMonitor
                 PadFontSizeBox.SelectedItem = PadFontSizes.OrderBy(s => Math.Abs(s - cfg.PadFontSize)).First();
                 int days = PadHistoryChoices.OrderBy(d => Math.Abs(d - cfg.PadHistoryDays)).First();
                 PadHistoryBox.SelectedIndex = Array.IndexOf(PadHistoryChoices, days);
+                RefreshPadVault();
+                SubscribePadVault();
             }
             catch (Exception ex)
             {
@@ -574,6 +576,79 @@ namespace Kil0bitSystemMonitor
             {
                 _loadingPad = false;
             }
+        }
+
+        private bool _padVaultSubscribed;
+
+        /// <summary>Follows the vault while this window is open; the handler is removed in OnClosed.</summary>
+        private void SubscribePadVault()
+        {
+            if (_padVaultSubscribed) return;
+            _padVaultSubscribed = true;
+            App.PadVault.Changed += OnPadVaultChanged;
+        }
+
+        private void OnPadVaultChanged(object? sender, EventArgs e)
+        {
+            if (Dispatcher.CheckAccess()) RefreshPadVault();
+            else Dispatcher.BeginInvoke(new Action(RefreshPadVault));
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            if (_padVaultSubscribed)
+            {
+                _padVaultSubscribed = false;
+                App.PadVault.Changed -= OnPadVaultChanged;
+            }
+            base.OnClosed(e);
+        }
+
+        private void RefreshPadVault()
+        {
+            try
+            {
+                var vault = App.PadVault;
+                bool loaded = vault.EnsureLoaded();
+                bool exists = loaded && vault.Exists;
+                bool unlocked = exists && vault.IsUnlocked;
+                PadVaultStatus.Text = Kil0bitSystemMonitor.Services.Pad.VaultStatusText.Describe(loaded, exists, exists ? vault.Credentials.Count : 0, unlocked);
+                var buttons = Kil0bitSystemMonitor.Services.Pad.VaultStatusText.Buttons(loaded, exists, unlocked);
+                PadVaultChangePin.IsEnabled = buttons.ChangePin;   // no vault: nothing to change; the status says how to make one
+                PadVaultLock.IsEnabled = buttons.LockNow;
+                PadVaultReset.IsEnabled = buttons.Reset;
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Could not read the credential vault state", ex);
+            }
+        }
+
+        private void OnPadVaultChangePin(object sender, RoutedEventArgs e) => App.OpenPadVault();
+
+        private void OnPadVaultLock(object sender, RoutedEventArgs e)
+        {
+            try { App.PadVault.Lock(); }
+            catch (Exception ex) { Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Locking the credential vault failed", ex); }
+            RefreshPadVault();
+        }
+
+        private async void OnPadVaultReset(object sender, RoutedEventArgs e)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Reset the credential vault?",
+                Content = "Deletes every stored credential. References in your notes will show as missing. This cannot be undone.",
+                PrimaryButtonText = "Reset vault",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close
+            };
+            ModernWpf.ThemeManager.SetRequestedTheme(dialog, ModernWpf.ElementTheme.Dark);
+
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            try { App.PadVault.Reset(); }
+            catch (Exception ex) { Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Resetting the credential vault failed", ex); }
+            RefreshPadVault();
         }
 
         private void OnPadToggled(object sender, RoutedEventArgs e)

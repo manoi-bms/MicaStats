@@ -72,6 +72,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The soft box behind each occurrence of the selected word (below find matches).</summary>
         public PadColor Occurrence { get; private init; }
 
+        /// <summary>The fill of a stored-credential pill.</summary>
+        public PadColor PillBack { get; private init; }
+
+        /// <summary>The outline of a stored-credential pill.</summary>
+        public PadColor PillBorder { get; private init; }
+
+        /// <summary>The lock and label of a pill for a stored credential.</summary>
+        public PadColor PillText { get; private init; }
+
+        /// <summary>The lock and label of a pill whose credential is missing.</summary>
+        public PadColor PillMissingText { get; private init; }
+
         /// <summary>Syntax colors (spec 2.2): one per category, each at least 4.5:1 on the background.</summary>
         public PadColor SyntaxComment { get; private init; }
         public PadColor SyntaxString { get; private init; }
@@ -134,6 +146,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
             CurrentLine = PadColor.Parse("#0FFFFFFF"),
             FindMatch = PadColor.Parse("#40FFC857"),
             Occurrence = PadColor.Parse("#2E3FD2E4"),
+            PillBack = PadColor.Parse("#12303A"),
+            PillBorder = PadColor.Parse("#2A6A75"),
+            PillText = PadColor.Parse("#3FD2E4"),
+            PillMissingText = PadColor.Parse("#9A9AA3"),
             SyntaxComment = PadColor.Parse("#6A9955"),
             SyntaxString = PadColor.Parse("#CE9178"),
             SyntaxKeyword = PadColor.Parse("#569CD6"),
@@ -194,6 +210,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
             CurrentLine = PadColor.Parse("#0A000000"),
             FindMatch = PadColor.Parse("#66FFC857"),
             Occurrence = PadColor.Parse("#2406707C"),
+            PillBack = PadColor.Parse("#DCEFF1"),
+            PillBorder = PadColor.Parse("#9FD0D6"),
+            PillText = PadColor.Parse("#06707C"),
+            PillMissingText = PadColor.Parse("#5C5C66"),
             SyntaxComment = PadColor.Parse("#1E7A1E"),
             SyntaxString = PadColor.Parse("#A31515"),
             SyntaxKeyword = PadColor.Parse("#0000E0"),
@@ -252,6 +272,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
             Pair(nameof(CurrentLine), CurrentLine),
             Pair(nameof(FindMatch), FindMatch),
             Pair(nameof(Occurrence), Occurrence),
+            Pair(nameof(PillBack), PillBack),
+            Pair(nameof(PillBorder), PillBorder),
+            Pair(nameof(PillText), PillText),
+            Pair(nameof(PillMissingText), PillMissingText),
             Pair(nameof(SyntaxComment), SyntaxComment),
             Pair(nameof(SyntaxString), SyntaxString),
             Pair(nameof(SyntaxKeyword), SyntaxKeyword),

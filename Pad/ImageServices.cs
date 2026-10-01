@@ -24,6 +24,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>How long typing must pause before an image is loaded (the diagrams' 600 ms). Tests lengthen it.</summary>
         public TimeSpan Pause { get; init; } = TimeSpan.FromMilliseconds(600);
 
+        /// <summary>How long a width change must rest before the previews are fitted to it again. Tests lengthen it.</summary>
+        internal TimeSpan ResizePause { get; init; } = TimeSpan.FromMilliseconds(200);
+
         /// <summary>Loaded images by source (64, memory only), shared by the window's tabs (R13).</summary>
         public DiagramCache Cache { get; init; } = new();
 

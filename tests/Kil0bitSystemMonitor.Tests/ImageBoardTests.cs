@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Rendering;
@@ -49,7 +50,8 @@ namespace Kil0bitSystemMonitor.Tests
     {
         private sealed class Fixture : IDisposable
         {
-            public Fixture()
+            /// <param name="resizePause">An hour unless a test says otherwise: the first layout's width change must not redraw rows inside a test.</param>
+            public Fixture(TimeSpan? resizePause = null)
             {
                 Folder = Dir.Root;
                 Sources = new ImageSources(Handler);
@@ -65,6 +67,7 @@ namespace Kil0bitSystemMonitor.Tests
                         WebImages = () => Web,
                         BaseFolder = () => Folder,
                         Pause = TimeSpan.FromHours(1),
+                        ResizePause = resizePause ?? TimeSpan.FromHours(1),
                         Warn = Warnings.Add,
                     },
                 };
@@ -94,10 +97,12 @@ namespace Kil0bitSystemMonitor.Tests
 
             public double Height { get; set; } = 400;
 
+            public double Width { get; set; } = 600;
+
             public void Render()
             {
-                View.Measure(new Size(600, Height));
-                View.Arrange(new Rect(0, 0, 600, Height));
+                View.Measure(new Size(Width, Height));
+                View.Arrange(new Rect(0, 0, Width, Height));
                 View.EnsureVisualLines();
             }
 
@@ -450,6 +455,86 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(50, f.PictureUnder(30).Image!.Width);
             Assert.InRange(f.Board.RowsRedrawn - before, 1, 3);   // its own line, not all thirty
             Assert.Equal(11, f.PictureUnder(1).Image!.Width);
+        });
+
+        /// <summary>
+        /// Blocks the UI thread while the file reads end on the thread pool, so their completions
+        /// wait in the dispatcher's queue and run back to back, before the next layout.
+        /// </summary>
+        private static void LetTheReadsEndTogether() => Thread.Sleep(300);
+
+        [Fact]
+        public void Images_on_several_lines_whose_loads_end_together_all_show() => UiThread.Run(() =>
+        {
+            using var f = new Fixture();
+            void Write(int width)
+            {
+                for (int i = 1; i <= 4; i++) File.WriteAllBytes(f.Dir.PathOf("p" + i + ".png"), ImageFakes.Png(width * i, 4));
+            }
+            double?[] Widths() => Enumerable.Range(1, 4).Select(n => f.PictureUnder(n).Image?.Width).ToArray();
+            Write(10);
+            f.Show("![](p1.png)\n![](p2.png)\n![](p3.png)\n![](p4.png)");
+            Assert.All(Enumerable.Range(1, 4), n => Assert.True(f.PictureUnder(n).IsDrawing));
+
+            LetTheReadsEndTogether();
+            f.Settle();
+            Assert.Equal(new double?[] { 10, 20, 30, 40 }, Widths());
+
+            var first = f.Editor.Document;
+            f.Show("other text");
+            Write(15);   // changed while the tab is away
+            f.Editor.Document = first;
+            f.Language.Apply(PadLanguages.Markdown);
+            f.Render();
+            Assert.Equal(new double?[] { 10, 20, 30, 40 }, Widths());   // at once, from the window's cache
+
+            LetTheReadsEndTogether();
+            f.Settle();
+            Assert.Equal(new double?[] { 15, 30, 45, 60 }, Widths());   // each file read once more, every line redrawn
+        });
+
+        [Fact]
+        public void The_pause_loads_a_typed_image_even_right_after_another_line_was_redrawn() => UiThread.Run(() =>
+        {
+            using var f = new Fixture();
+            File.WriteAllBytes(f.Dir.PathOf("a.png"), ImageFakes.Png(40, 20));
+            File.WriteAllBytes(f.Dir.PathOf("b.png"), ImageFakes.Png(80, 20));
+            f.Show("![a](a.png)\n![b](a.png)");
+            f.Settle();
+            var document = f.Editor.Document;
+
+            document.Replace(document.GetLineByNumber(2).Offset + 5, 1, "b");   // line 2 now shows b.png
+            f.PumpAndRender();
+            Assert.Equal(1, f.Board.Loads);
+
+            f.View.Redraw(document.GetLineByNumber(1), DispatcherPriority.Normal);   // as a load ending on line 1 does, just before the pause
+            f.Board.DrawDue();
+            f.PumpAndRender();
+
+            Assert.Equal(2, f.Board.Loads);
+            f.Settle();
+            Assert.Equal(80, f.PictureUnder(2).Image!.Width);
+        });
+
+        [Fact]
+        public void A_width_change_fits_every_row_to_the_new_width_after_its_pause() => UiThread.Run(() =>
+        {
+            using var f = new Fixture(resizePause: TimeSpan.FromMilliseconds(1));
+            File.WriteAllBytes(f.Dir.PathOf("wide.jpg"), ImageFakes.Jpeg(2000, 100));
+            f.Show("![a](wide.jpg)\ntext\n![b](wide.jpg)");
+            f.Settle();
+            PumpUntil(() => f.Board.RowsRedrawn > 0, "the first layout's width change");   // from 0 to 600
+            f.PumpAndRender();
+            Assert.Equal(568, f.PictureUnder(1).Image!.Width);
+            int before = f.Board.RowsRedrawn;
+
+            f.Width = 400;
+            f.Render();
+            PumpUntil(() => f.Board.RowsRedrawn - before == 2, "the rows to be redrawn after the resize");
+            f.PumpAndRender();
+
+            Assert.Equal(368, f.PictureUnder(1).Image!.Width);   // 400 less the margin and the gap
+            Assert.Equal(368, f.PictureUnder(3).Image!.Width);
         });
 
         [Fact]

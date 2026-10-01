@@ -24,11 +24,15 @@ namespace Kil0bitSystemMonitor.Pad
     /// <summary>The previews under one line (spec 6.3, R9): one picture per image, side by side while they fit, wrapping otherwise.</summary>
     internal sealed class ImageRow : WrapPanel
     {
-        public ImageRow(double maxWidth)
+        public ImageRow(DocumentLine line, double maxWidth)
         {
+            Line = line;
             Orientation = Orientation.Horizontal;
             MaxWidth = maxWidth;
         }
+
+        /// <summary>The document line this row was built for, the one a redraw builds again.</summary>
+        internal DocumentLine Line { get; }
 
         /// <summary>The previews, in the order of the images on the line.</summary>
         internal IReadOnlyList<DiagramPicture> Pictures => Children.OfType<DiagramPicture>().ToList();
@@ -55,7 +59,6 @@ namespace Kil0bitSystemMonitor.Pad
         private const double MinRowWidth = 120;
         private const long MaxPixels = 100_000_000;
         private const double RowMargin = 24;
-        private static readonly TimeSpan ResizePause = TimeSpan.FromMilliseconds(200);
 
         private readonly TextEditor _editor;
         private readonly ImageServices _services;
@@ -64,6 +67,7 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly DispatcherTimer _pauseTimer;
         private readonly DispatcherTimer _resizeTimer;
         private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+        private readonly Dictionary<DocumentLine, ImageRow> _rows = new();
         private readonly ConditionalWeakTable<DocumentLine, DiagramResult?[]> _lastShown = new();
         private readonly List<Task> _running = new();
         private bool _attached = true;
@@ -84,7 +88,7 @@ namespace Kil0bitSystemMonitor.Pad
                 _pauseTimer.Stop();
                 DrawDue();
             };
-            _resizeTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = ResizePause };
+            _resizeTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = services.ResizePause };
             _resizeTimer.Tick += (s, e) =>
             {
                 _resizeTimer.Stop();
@@ -93,6 +97,7 @@ namespace Kil0bitSystemMonitor.Pad
 
             _document.Changed += OnChanged;
             _editor.TextArea.TextView.SizeChanged += OnViewSizeChanged;
+            _editor.TextArea.TextView.VisualLinesChanged += OnVisualLinesChanged;
         }
 
         /// <summary>The document the previews belong to.</summary>
@@ -119,6 +124,8 @@ namespace Kil0bitSystemMonitor.Pad
             _resizeTimer.Stop();
             _document.Changed -= OnChanged;
             _editor.TextArea.TextView.SizeChanged -= OnViewSizeChanged;
+            _editor.TextArea.TextView.VisualLinesChanged -= OnVisualLinesChanged;
+            _rows.Clear();
         }
 
         /// <summary>A setting changed: every preview is asked for again; files are read again, failed downloads tried again (R13).</summary>
@@ -168,7 +175,7 @@ namespace Kil0bitSystemMonitor.Pad
             var before = _lastShown.TryGetValue(line, out var last) ? last : Array.Empty<DiagramResult?>();
             var shown = new DiagramResult?[images.Count];
 
-            var row = new ImageRow(room);
+            var row = new ImageRow(line, room);
             for (int i = 0; i < images.Count; i++)
             {
                 var image = images[i];
@@ -194,6 +201,7 @@ namespace Kil0bitSystemMonitor.Pad
                 row.Children.Add(picture);
             }
             _lastShown.AddOrUpdate(line, shown);
+            _rows[line] = row;
             return row;
         }
 
@@ -324,18 +332,41 @@ namespace Kil0bitSystemMonitor.Pad
             _resizeTimer.Start();
         }
 
-        /// <summary>Builds again the lines in view that hold previews, so each fits the width and shows its latest result.</summary>
+        private void OnVisualLinesChanged(object? sender, EventArgs e) => RowsInView();
+
+        /// <summary>
+        /// Builds again the lines in view whose rows are <paramref name="due"/>, so each fits the width
+        /// and shows its latest result. It goes by the line each row was built for, not by the view's
+        /// visual lines: those are invalid from the first redraw until the next layout, and loads that
+        /// end together run back to back before it.
+        /// </summary>
         private void RedrawRows(Func<ImageRow, bool> due)
         {
             if (!_attached) return;
             var view = _editor.TextArea.TextView;
-            if (!view.VisualLinesValid) return;
-            foreach (var line in view.VisualLines.ToList())
-                if (line.Elements.OfType<DiagramElement>().Any(e => e.Picture is ImageRow row && due(row)))
+            foreach (var row in RowsInView())
+                if (due(row))
                 {
                     RowsRedrawn++;
-                    view.Redraw(line, DispatcherPriority.Normal);
+                    view.Redraw(row.Line, DispatcherPriority.Normal);
                 }
+        }
+
+        /// <summary>
+        /// The rows still shown; the rest (their line deleted, scrolled away or built again) are
+        /// dropped, so the board holds only the rows in view.
+        /// </summary>
+        private List<ImageRow> RowsInView()
+        {
+            var view = _editor.TextArea.TextView;
+            var shown = new List<ImageRow>(_rows.Count);
+            foreach (var (line, row) in _rows.ToList())
+            {
+                if (!line.IsDeleted && view.GetVisualLine(line.LineNumber) is { } visual
+                    && visual.Elements.OfType<DiagramElement>().Any(e => ReferenceEquals(e.Picture, row))) shown.Add(row);
+                else _rows.Remove(line);
+            }
+            return shown;
         }
 
         /// <summary>One source's preview in this board: the result shown, a load running, and whether its load ended (in which settings generation).</summary>

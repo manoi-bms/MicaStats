@@ -1,9 +1,9 @@
 "use strict";
-// MicaPad's diagram page. The app posts { id, kind, source, dark, fg, bg }; the page answers
+// MicaPad's diagram page. The app posts { id, kind, source, dark, fg, bg, image }; the page answers
 // { id, ok: true, svg, png, width, height } or { id, ok: false, error }. kind is "mermaid", "dot",
 // "markmap", "math" (TeX and \ce chemistry, drawn by MathJax) or "svg" (a picture Kroki drew, or an
-// SVG image from a note). Nothing here reaches the network: the page's Content-Security-Policy and
-// the app's request filter both refuse it.
+// SVG image from a note, which comes with image: true). Nothing here reaches the network: the page's
+// Content-Security-Policy and the app's request filter both refuse it.
 (function () {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const SCALE = 2;
@@ -19,6 +19,12 @@
     if (!m) return 0;
     const n = parseFloat(m[1]);
     return m[2] === "pt" ? n * 4 / 3 : n;
+  }
+
+  // A length in px or without a unit; 0 for any other.
+  function pixels(text) {
+    const m = /^\s*([0-9.]+)\s*(px)?\s*$/.exec(text || "");
+    return m ? parseFloat(m[1]) : 0;
   }
 
   // Drops what could run where the markup is opened later (Save as SVG writes it): script elements,
@@ -39,9 +45,10 @@
     }
   }
 
-  // Gives the picture a fixed size in px (size when given, else the viewBox's, else its width and height)
+  // Gives the picture a fixed size in px (size when given; for an SVG image from a note, its width and
+  // height when both are in px, as a browser sizes it; else the viewBox's, else its width and height)
   // and returns its markup. The markup is parsed, never put into the page, so nothing in a picture runs or loads.
-  function finish(svgText, size) {
+  function finish(svgText, size, image) {
     const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
     const el = doc.documentElement;
     if (!el || el.localName !== "svg" || doc.getElementsByTagName("parsererror").length) {
@@ -50,7 +57,9 @@
     disarm(el);
     let w = 0, h = 0;
     const box = (el.getAttribute("viewBox") || "").trim().split(/[\s,]+/).map(Number);
+    const iw = image ? pixels(el.getAttribute("width")) : 0, ih = image ? pixels(el.getAttribute("height")) : 0;
     if (size) { w = size.width; h = size.height; }
+    else if (iw > 0 && ih > 0) { w = iw; h = ih; }
     else if (box.length === 4 && box[2] > 0 && box[3] > 0) { w = box[2]; h = box[3]; }
     else { w = length(el.getAttribute("width")); h = length(el.getAttribute("height")); }
     if (!(w > 0 && h > 0)) throw new Error("The picture has no size.");
@@ -138,7 +147,17 @@
     holder.style.color = req.fg;
     stage().appendChild(holder);
     try {
-      const node = MathJax.tex2svg(req.source, { display: true });
+      let node;
+      try {
+        node = MathJax.tex2svg(req.source, { display: true });
+      } catch (x) {
+        // \require of a package MathJax does not have: it asks to retry once the package loads, which never happens here.
+        if (x && (x.retry || x.message === "MathJax retry")) {
+          if (x.retry && x.retry.catch) x.retry.catch(() => {});
+          throw new Error("Unknown TeX package or extension.");
+        }
+        throw x;
+      }
       holder.appendChild(node);
       const el = node.querySelector("svg");
       const err = el.querySelector("[data-mjx-error]");
@@ -178,7 +197,7 @@
       : req.kind === "mermaid" ? await drawMermaid(req)
       : req.kind === "dot" ? await drawDot(req)
       : req.kind === "markmap" ? await drawMarkmap(req)
-      : req.kind === "svg" ? finish(req.source)
+      : req.kind === "svg" ? finish(req.source, null, req.image === true)
       : null;
     if (!drawn) throw new Error("Unknown diagram kind.");
     const png = await toPng(drawn.svg, drawn.width, drawn.height);

@@ -160,7 +160,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
             if (!request.Kind.NeedsKroki)
             {
-                var page = new PageRequest(request.Kind.PageKind, request.Source, request.Dark, request.Foreground, request.Background);
+                var page = new PageRequest(request.Kind.PageKind, request.Source, request.Dark, request.Foreground, request.Background,
+                                           Image: request.Kind.Engine == DiagramEngine.Svg);
                 return await DrawOnPageAsync(request.Kind, page, paper: false);
             }
 

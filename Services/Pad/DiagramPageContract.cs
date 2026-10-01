@@ -6,10 +6,12 @@ using System.Threading.Tasks;
 namespace Kil0bitSystemMonitor.Services.Pad
 {
     /// <summary>
-    /// What the drawing page is asked: <see cref="Kind"/> is "mermaid", "dot", "markmap" or "svg"
-    /// (a picture Kroki drew); the colors are CSS <c>#RRGGBB</c>.
+    /// What the drawing page is asked: <see cref="Kind"/> is "mermaid", "dot", "markmap", "math" or
+    /// "svg" (a picture Kroki drew, or an SVG image); the colors are CSS <c>#RRGGBB</c>.
+    /// <see cref="Image"/> marks an SVG image from a note: it is sized as a browser sizes it, by its
+    /// width and height in px before its viewBox; a Kroki picture keeps its viewBox's size.
     /// </summary>
-    public sealed record PageRequest(string Kind, string Source, bool Dark, string Foreground, string Background);
+    public sealed record PageRequest(string Kind, string Source, bool Dark, string Foreground, string Background, bool Image = false);
 
     /// <summary>The page's answer: the SVG and a PNG with the picture's size in device-independent pixels, or an error.</summary>
     public sealed record PageDrawing(string? Svg, byte[]? Png, double Width, double Height, string? Error);

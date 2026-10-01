@@ -219,6 +219,42 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains("#ededf2", dark.Svg, StringComparison.OrdinalIgnoreCase);
         });
 
+        private static Task<PageDrawing> DrawImage(DiagramPage page, string svg) =>
+            page.DrawAsync(new PageRequest("svg", svg, false, "#1B1B1F", "#FBFBFD", Image: true), CancellationToken.None);
+
+        [Fact]
+        public void An_svg_image_is_sized_by_its_width_and_height_in_px_before_its_viewbox() => WithPage(async page =>
+        {
+            const string icon = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 -960 960 960\">"
+                                + "<path d=\"M480-80 80-480l400-400 400 400z\"/></svg>";
+
+            var image = await DrawImage(page, icon);
+            Assert.Null(image.Error);
+            Assert.Equal(24, image.Width, 3);
+            Assert.Equal(24, image.Height, 3);
+            Assert.Equal((48, 48), PngSize(image.Png!));
+
+            var px = await DrawImage(page, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"30px\" height=\"10px\" viewBox=\"0 0 3 1\"/>");
+            Assert.Equal((30.0, 10.0), (px.Width, px.Height));
+
+            // Without both in px (or unitless) an image falls back to its viewBox.
+            var percent = await DrawImage(page, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"24\" viewBox=\"0 0 48 12\"/>");
+            Assert.Equal((48.0, 12.0), (percent.Width, percent.Height));
+
+            // A Kroki picture keeps today's size: its viewBox's.
+            var kroki = await Draw(page, "svg", icon);
+            Assert.Equal((960.0, 960.0), (kroki.Width, kroki.Height));
+        });
+
+        [Fact]
+        public void An_unknown_tex_package_says_so_and_the_page_still_draws() => WithPage(async page =>
+        {
+            Assert.Equal("Unknown TeX package or extension.", (await Draw(page, "math", @"\require{nosuchpkg} x + 1")).Error);
+
+            Assert.Null((await Draw(page, "math", "a + b")).Error);
+            Assert.Equal(0, page.RefusedRequests);   // MathJax asked the network for nothing
+        });
+
         [Fact]
         public void The_page_cannot_reach_the_network() => WithPage(async page =>
         {

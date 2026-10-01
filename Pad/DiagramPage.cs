@@ -161,6 +161,7 @@ namespace Kil0bitSystemMonitor.Pad
                 dark = request.Dark,
                 fg = request.Foreground,
                 bg = request.Background,
+                image = request.Image,
             }));
             return done.Task;
         }

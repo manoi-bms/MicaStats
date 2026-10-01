@@ -327,6 +327,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(task.Result.IsPicture);
             Assert.False(task.Result.Paper);
             Assert.Equal("svg", Assert.Single(page.Requests).Kind);
+            Assert.True(page.Requests[0].Image);   // sized by its width and height in px, as a browser does
             Assert.Equal("image/svg", DiagramKinds.SvgImage.EngineId);
             Assert.Equal(request.Key, (request with { Theme = PadThemes.Light }).Key);   // the same picture in both themes
             Assert.NotEqual(request.Key, (request with { Source = "<svg/>" }).Key);

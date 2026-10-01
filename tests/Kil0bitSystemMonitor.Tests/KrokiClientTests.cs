@@ -237,6 +237,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("svg", drawn.Kind);
             Assert.Equal("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"80\" height=\"40\"/>", drawn.Source);
             Assert.False(drawn.Dark);
+            Assert.False(drawn.Image);   // sized by its viewBox, as before
             Assert.True(renderer.TryGetCached(request.Key, out _));
         }
 

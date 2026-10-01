@@ -329,6 +329,37 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
         }
 
+        /// <summary>
+        /// Rewrites every version of the note that holds <paramref name="value"/>, each copy
+        /// replaced by <paramref name="reference"/>. Stamps and file names stay; versions without it
+        /// are not touched.
+        /// </summary>
+        /// <returns>How many versions may still hold it, because they could not be read or rewritten.</returns>
+        public int ScrubSnapshots(string id, string value, string reference)
+        {
+            lock (LockFor(id))
+            {
+                int failed = 0;
+                foreach (var snapshot in ListSnapshots(id))
+                {
+                    try
+                    {
+                        string? text = ReadStoreText(snapshot.FilePath);
+                        if (text == null) continue;
+
+                        string scrubbed = SecretScrubber.Replace(text, value, reference, out int count);
+                        if (count > 0) WriteData(snapshot.FilePath, Utf8NoBom.GetBytes(scrubbed));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        _warn("Could not remove a stored credential from a version of note " + id + ": " + ex.Message);
+                        failed++;
+                    }
+                }
+                return failed;
+            }
+        }
+
         private object LockFor(string id) => _locks.GetOrAdd(id, _ => new object());
 
         private string SnapshotPath(string id, DateTime stamp) =>

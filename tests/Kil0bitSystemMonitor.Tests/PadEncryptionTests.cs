@@ -296,5 +296,37 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("second", store.ReadSnapshot(first));
             Assert.True(File.Exists(ready));
         }
+
+        [Fact]
+        public void Versions_holding_a_secret_are_rewritten_with_its_reference()
+        {
+            var store = Open();
+            var meta = Save(store, "now");
+            var a = store.WriteSnapshot(meta.Id, "pw=hunter2", new DateTime(2026, 10, 1, 9, 0, 0));
+            var b = store.WriteSnapshot(meta.Id, "no secret here", new DateTime(2026, 10, 1, 9, 1, 0));
+            var c = store.WriteSnapshot(meta.Id, "hunter2 and hunter2", new DateTime(2026, 10, 1, 9, 2, 0));
+            byte[] untouched = File.ReadAllBytes(b.FilePath);
+
+            Assert.Equal(0, store.ScrubSnapshots(meta.Id, "hunter2", "{{secret:K7Q2M9XD}}"));
+
+            var versions = store.ListSnapshots(meta.Id);
+            Assert.Equal(new[] { c.Stamp, b.Stamp, a.Stamp }, versions.Select(v => v.Stamp).ToArray());
+            Assert.Equal("{{secret:K7Q2M9XD}} and {{secret:K7Q2M9XD}}", store.ReadSnapshot(versions[0]));
+            Assert.Equal("pw={{secret:K7Q2M9XD}}", store.ReadSnapshot(versions[2]));
+            Assert.Equal(untouched, File.ReadAllBytes(b.FilePath));
+            Assert.All(versions, v => Assert.True(StoreCipher.IsEncrypted(File.ReadAllBytes(v.FilePath))));
+        }
+
+        [Fact]
+        public void A_version_that_cannot_be_read_counts_as_still_holding_the_secret()
+        {
+            var store = Open();
+            var meta = Save(store, "now");
+            var damaged = store.WriteSnapshot(meta.Id, "pw=hunter2", new DateTime(2026, 10, 1, 9, 0, 0));
+            Damage(damaged.FilePath, -1);
+
+            Assert.Equal(1, store.ScrubSnapshots(meta.Id, "hunter2", "{{secret:K7Q2M9XD}}"));
+            Assert.DoesNotContain(_warnings, w => w.Contains("hunter2", StringComparison.Ordinal));
+        }
     }
 }

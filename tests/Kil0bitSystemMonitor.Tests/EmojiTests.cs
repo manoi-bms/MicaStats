@@ -55,6 +55,25 @@ namespace Kil0bitSystemMonitor.Tests
         public void A_code_next_to_punctuation_or_a_space_is_an_emoji(string line, int start) =>
             Assert.Equal(start, Assert.Single(Emoji.Find(line)).Start);
 
+        [Theory]
+        [InlineData("\u0E04\u0E23\u0E31\u0E1A:smile:", 4)]                  // "khrap": its last letter is a Thai consonant
+        [InlineData("\u0E14\u0E35:smile:", 2)]                              // "di": it ends in a vowel mark
+        [InlineData("\u0E14\u0E35 :smile:\u0E04\u0E23\u0E31\u0E1A", 3)]     // Thai right after the code
+        public void A_code_next_to_thai_text_is_an_emoji(string line, int start) =>
+            Assert.Equal(start, Assert.Single(Emoji.Find(line)).Start);
+
+        [Fact]
+        public void A_code_glued_to_ascii_letters_or_digits_stays_text()
+        {
+            Assert.Empty(Emoji.Find("user:id:42"));
+            Assert.Empty(Emoji.Find("a:smile:"));
+            Assert.Empty(Emoji.Find(":smile:9"));
+        }
+
+        [Fact]
+        public void The_closing_colon_of_an_unknown_name_can_open_the_next_code() =>
+            Assert.Equal(4, Assert.Single(Emoji.Find(":qq_:smile:")).Start);
+
         [Fact]
         public void Two_codes_back_to_back_are_both_emoji() =>
             Assert.Equal(new[] { (0, 4), (4, 7) }, Emoji.Find(":+1::smile:").Select(f => (f.Start, f.Length)));

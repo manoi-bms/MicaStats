@@ -23,8 +23,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// Every known <c>:name:</c> in the line, outside backtick code spans: where it starts, its
-        /// length with both colons, and its emoji. A code glued to a letter or digit on either side
-        /// (<c>user:id:42</c>, <c>1:100:2</c>) is text. Lines over the inline limit give none.
+        /// length with both colons, and its emoji. A code glued to an ASCII letter or digit on either
+        /// side (<c>user:id:42</c>, <c>1:100:2</c>) is text; Thai and other scripts written without
+        /// spaces may touch it. Lines over the inline limit give none.
         /// </summary>
         public static IReadOnlyList<(int Start, int Length, string Glyph)> Find(string line)
         {
@@ -48,7 +49,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 int j = i + 1;
                 while (j < s.Length && j - i <= MaxNameLength && IsNameChar(s[j])) j++;
                 bool closed = j < s.Length && s[j] == ':';
-                bool apart = (i == 0 || !char.IsLetterOrDigit(s[i - 1])) && (j + 1 >= s.Length || !char.IsLetterOrDigit(s[j + 1]));
+                bool apart = (i == 0 || !char.IsAsciiLetterOrDigit(s[i - 1])) && (j + 1 >= s.Length || !char.IsAsciiLetterOrDigit(s[j + 1]));
                 if (closed && j > i + 1 && apart && GlyphOf(s.Substring(i + 1, j - i - 1)) is { } glyph)
                 {
                     found.Add((i, j - i + 1, glyph));

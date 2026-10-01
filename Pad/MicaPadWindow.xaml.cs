@@ -162,6 +162,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 _workspace.Tick();
                 UpdateSaveText();
+                RetryPendingScrubsOnTick();
             };
 
             LoadIcon();
@@ -1060,15 +1061,21 @@ namespace Kil0bitSystemMonitor.Pad
                 if (!ReferenceEquals(other, keep)) CloseTab(other);
         }
 
-        private void CopyFilePath(string path)
+        private void CopyFilePath(string path) => CopyPlainText(path, "a file path");
+
+        /// <summary>Puts plain text on the clipboard. Tests replace it.</summary>
+        internal Action<string> SetClipboardText { get; set; } = text => Clipboard.SetText(text);
+
+        /// <summary>Copies plain text; a busy clipboard is logged as "Copying <paramref name="what"/> failed" and told in a notice.</summary>
+        private void CopyPlainText(string text, string what)
         {
             try
             {
-                Clipboard.SetText(path);
+                SetClipboardText(text);
             }
             catch (System.Runtime.InteropServices.ExternalException ex)
             {
-                DiagnosticsLog.Warn("pad", "Copying a file path failed: " + ex.Message);
+                Warn("Copying " + what + " failed: " + ex.Message);
                 ShowNotice("The clipboard is busy. Try again in a moment.");
             }
         }

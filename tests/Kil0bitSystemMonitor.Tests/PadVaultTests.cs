@@ -695,6 +695,177 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Same(window.HistoryButton, FocusManager.GetFocusedElement(window));
         });
 
+        // ---- fix round 1 --------------------------------------------------------------------
+
+        private const string StillSaving = " \u2014 older versions are still being saved; they will be cleaned when that finishes";
+        private const string Gone = "This credential is no longer stored.";
+
+        [Fact]
+        public void Versions_still_being_written_are_cleaned_once_the_writer_is_done() => WithWindow((window, env, config) =>
+        {
+            env.Vault.Load();
+            env.Vault.Create(Pin);
+            var note = env.Workspace.Open.Single();
+            window.Editor.Text = "pw=hunter2";
+            var gate = new ManualResetEventSlim();   // not disposed: the writer thread may still be leaving Wait
+            try
+            {
+                env.Writer.Enqueue("busy", () => gate.Wait());                 // the writer is stuck on other work
+                env.Workspace.SnapshotNow(note, SnapshotReason.Pause);         // a version of the old text waits behind it
+                window.Editor.SelectAll();
+                window.StoreSelection();
+                Click(window.VaultCard.PrimaryButton);
+
+                string id = Assert.Single(env.Vault.Credentials).Id;
+                Assert.Equal("Stored as " + id + StillSaving, window.StatusMessage.Text);
+                Assert.Equal(1, window.RetryPendingScrubs());                  // the tick: the writer is still busy, so it waits
+            }
+            finally
+            {
+                gate.Set();
+            }
+
+            Assert.True(env.Workspace.FlushWrites(TimeSpan.FromSeconds(5)));
+            Assert.Contains(env.Store.ListSnapshots(note.Id), v => env.Store.ReadSnapshot(v)!.Contains("hunter2", StringComparison.Ordinal));   // it landed after the first scrub
+
+            Assert.Equal(0, window.RetryPendingScrubs());                      // the tick, with the writer idle
+            Assert.Equal(0, window.PendingScrubCount);
+            Assert.All(env.Store.ListSnapshots(note.Id), v => Assert.DoesNotContain("hunter2", env.Store.ReadSnapshot(v)));
+        });
+
+        [Fact]
+        public void A_window_closing_first_cleans_the_versions_on_its_way_out() => WithWindow((window, env, config) =>
+        {
+            env.Vault.Load();
+            env.Vault.Create(Pin);
+            var note = env.Workspace.Open.Single();
+            window.Editor.Text = "pw=hunter2";
+            var gate = new ManualResetEventSlim();
+            try
+            {
+                env.Writer.Enqueue("busy", () => gate.Wait());
+                env.Workspace.SnapshotNow(note, SnapshotReason.Pause);
+                window.Editor.SelectAll();
+                window.StoreSelection();
+                Click(window.VaultCard.PrimaryButton);
+                Assert.Equal(1, window.PendingScrubCount);
+            }
+            finally
+            {
+                gate.Set();                                                    // the writer catches up as the window closes
+            }
+
+            window.CloseForExit();
+
+            Assert.Equal(0, window.PendingScrubCount);
+            Assert.True(env.Workspace.FlushWrites(TimeSpan.FromSeconds(5)));
+            Assert.NotEmpty(env.Store.ListSnapshots(note.Id));
+            Assert.All(env.Store.ListSnapshots(note.Id), v => Assert.DoesNotContain("hunter2", env.Store.ReadSnapshot(v)));
+        });
+
+        [Fact]
+        public void A_file_backed_note_says_its_file_keeps_the_value_until_saved() => WithWindow((window, env, config) =>
+        {
+            env.Vault.Load();
+            env.Vault.Create(Pin);
+            string path = env.FileOf("keys.txt");
+            File.WriteAllText(path, "pw=hunter2");
+            window.OpenPath(path);
+            window.Editor.Select(3, 7);
+
+            window.StoreSelection();
+            Click(window.VaultCard.PrimaryButton);
+
+            string id = Assert.Single(env.Vault.Credentials).Id;
+            Assert.Equal("pw=" + SecretTokens.Format(id), window.Editor.Text);
+            Assert.Equal("Stored as " + id + " \u2014 save the file (Ctrl+S) to remove it there", window.StatusMessage.Text);
+            Assert.Equal("pw=hunter2", File.ReadAllText(path));   // MicaPad never writes the user's file by itself
+        });
+
+        [Fact]
+        public void A_pin_set_meanwhile_is_reported() => WithWindow((window, env, config) =>
+        {
+            env.Vault.Load();
+            window.Editor.Text = "hunter2";
+            window.Editor.SelectAll();
+            window.StoreSelection();
+            Assert.Equal("CreatePin", window.VaultCard.Mode);
+
+            env.Vault.Create("13579246");                     // another window, or Settings, set a PIN while the card waited
+            window.VaultCard.PinBox.Password = Pin;
+            window.VaultCard.PinBox2.Password = Pin;
+            Click(window.VaultCard.PrimaryButton);
+
+            Assert.Equal("A PIN was set meanwhile; try again.", window.StatusMessage.Text);
+            Assert.False(window.VaultCard.IsOpen);
+            Assert.Empty(env.Vault.Credentials);
+            Assert.Equal("hunter2", window.Editor.Text);
+            Assert.Equal(UnlockOutcome.Unlocked, env.Vault.Unlock("13579246").Outcome);
+        });
+
+        [Fact]
+        public void A_vault_reset_while_the_card_waited_stores_nothing() => WithWindow((window, env, config) =>
+        {
+            env.Vault.Load();
+            env.Vault.Create(Pin);
+            window.Editor.Text = "hunter2";
+            window.Editor.SelectAll();
+            window.StoreSelection();
+            Assert.Equal("Store", window.VaultCard.Mode);
+
+            env.Vault.Reset();                                 // Settings > Reset vault
+            Click(window.VaultCard.PrimaryButton);
+
+            Assert.Equal("The credential vault was reset; nothing was stored.", window.StatusMessage.Text);
+            Assert.Equal("hunter2", window.Editor.Text);
+            Assert.False(env.Vault.Exists);
+        });
+
+        [Fact]
+        public void A_credential_deleted_while_the_pin_card_waited_is_reported() => WithWindow((window, env, config) =>
+        {
+            string id = Bank(env);
+            window.RevealCredential(id);
+            Assert.Equal("EnterPin", window.VaultCard.Mode);
+
+            env.Vault.Unlock(Pin);                             // another window deletes it meanwhile
+            env.Vault.Delete(id);
+            env.Vault.Lock();
+            window.VaultCard.PinBox.Password = Pin;
+            Click(window.VaultCard.PrimaryButton);
+
+            Assert.Equal(Gone, window.StatusMessage.Text);
+            Assert.False(window.VaultCard.IsOpen);
+
+            // A menu built before the deletion says so too.
+            window.ShowStatus("");
+            window.CopyCredential(id);
+            Assert.Equal(Gone, window.StatusMessage.Text);
+            Assert.False(window.VaultCard.IsOpen);
+        });
+
+        [Fact]
+        public void Copy_reference_copies_the_reference_as_plain_text() => WithWindow((window, env, config) =>
+        {
+            string id = Bank(env);
+            window.Editor.Text = SecretTokens.Format(id);
+            var copied = new List<string>();
+            window.SetClipboardText = copied.Add;
+            var menu = new ContextMenu();
+            window.FillPillMenu(menu, window.ReferenceAt(0)!.Value);
+            var item = menu.Items.OfType<MenuItem>().Single(i => (string)i.Header == "Copy reference");
+
+            Click(item);
+            Assert.Equal(new[] { SecretTokens.Format(id) }, copied);
+
+            var warnings = new List<string>();
+            window.Warn = warnings.Add;
+            window.SetClipboardText = _ => throw new System.Runtime.InteropServices.ExternalException("busy");
+            Click(item);
+            Assert.Equal("Copying a credential reference failed: busy", Assert.Single(warnings));
+            Assert.Equal("The clipboard is busy. Try again in a moment.", window.InfoText.Text);
+        });
+
         // ---- helpers ------------------------------------------------------------------------
 
         /// <summary>Flips a bit of the first credential's tag inside the sealed vault file, so its value no longer decrypts.</summary>

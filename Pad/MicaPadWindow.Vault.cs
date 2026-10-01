@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -30,6 +31,7 @@ namespace Kil0bitSystemMonitor.Pad
         private const string VaultSaveFailedText = "The credential vault could not be saved right now.";
         private const string DecryptFailedText = "This credential could not be decrypted.";
         private const string NoteChangedText = "The note changed; nothing was stored.";
+        private const string GoneText = "This credential is no longer stored.";
 
         /// <summary>The shortest selection Store as credential takes.</summary>
         private const int MinStoreLength = 4;
@@ -61,9 +63,13 @@ namespace Kil0bitSystemMonitor.Pad
             vault.Changed += OnVaultChanged;
         }
 
-        /// <summary>The close path: the shared vault must not keep this window alive, and an open card empties its boxes.</summary>
+        /// <summary>
+        /// The close path: versions still waiting for a scrub get it now, the shared vault must not
+        /// keep this window alive, and an open card empties its boxes.
+        /// </summary>
         private void DetachVault()
         {
+            FinishPendingScrubs();
             if (Vault is { } vault) vault.Changed -= OnVaultChanged;
             VaultCard.Closed -= OnVaultCardClosed;
             VaultCard.Hide();
@@ -164,8 +170,9 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>
         /// Runs a vault step from a menu or a card answer, never throwing into MicaStats. A vault that
-        /// cannot be saved, or, for a step that reveals, a value that does not decrypt, is reported
-        /// in the status bar; anything else is logged by <see cref="EditorMenus.Guard"/>.
+        /// cannot be saved, for a step that reveals a value that does not decrypt, and a credential
+        /// deleted (or a vault reset) elsewhere while a card waited are reported in the status bar;
+        /// anything else is logged by <see cref="EditorMenus.Guard"/>.
         /// </summary>
         private void VaultStep(string what, Action step, bool reveals = false)
         {
@@ -185,7 +192,19 @@ namespace Kil0bitSystemMonitor.Pad
                     Warn(what + ": a stored credential could not be decrypted (" + ex.GetType().Name + ")");
                     ShowStatus(DecryptFailedText);
                 }
+                catch (Exception ex) when (ex is KeyNotFoundException || (ex is InvalidOperationException && Vault is { Exists: false }))
+                {
+                    ShowStatus(GoneText);
+                }
             });
+        }
+
+        /// <summary>The credential, or null after saying it is gone: deleted, or the vault reset, since the menu or card was shown.</summary>
+        private CredentialInfo? Stored(CredentialVault vault, string id)
+        {
+            var info = vault.Find(id);
+            if (info == null) ShowStatus(GoneText);
+            return info;
         }
 
         /// <summary>
@@ -279,7 +298,16 @@ namespace Kil0bitSystemMonitor.Pad
             }
             VaultCard.ShowCreatePin(pin => VaultStep("Creating the credential PIN", () =>
             {
-                vault.Create(pin);
+                try
+                {
+                    vault.Create(pin);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Another window, or Settings, created the vault while this card waited: this PIN is not its PIN.
+                    ShowStatus("A PIN was set meanwhile; try again.");
+                    return;
+                }
                 ShowStoreCard(vault, note, document, value);
             }));
         }
@@ -310,6 +338,11 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 id = vault.Add(value, label, note.Id);
             }
+            catch (InvalidOperationException) when (!vault.Exists)
+            {
+                ShowStatus("The credential vault was reset; nothing was stored.");   // by Settings, while the card waited
+                return;
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
             {
                 Warn("Storing a credential: the credential vault could not be saved (" + ex.GetType().Name + ": " + ex.Message + ")");
@@ -330,13 +363,81 @@ namespace Kil0bitSystemMonitor.Pad
             }
             document.UndoStack.ClearAll();
 
+            // The note on disk and its versions. A version of the old text still queued (a pause, a
+            // replace, a close) can land after this scrub while the writer is behind: then the scrub
+            // runs again once the writer is idle (RetryPendingScrubs), keeping the value until then.
             _workspace.FlushPending();
-            _workspace.FlushWrites(TimeSpan.FromSeconds(2));
+            bool written = _workspace.FlushWrites(TimeSpan.FromSeconds(2));
             int left = _workspace.Store.ScrubSnapshots(note.Id, value, reference);
-            ShowStatus(left == 0 ? "Stored as " + id
-                : left == 1 ? "Stored as " + id + " \u2014 1 older version still holds it"
-                : "Stored as " + id + " \u2014 " + left.ToString(CultureInfo.InvariantCulture) + " older versions still hold it");
+            if (!written) _pendingScrubs.Add(new PendingScrub(note.Id, id, value, reference));
+
+            string status = written ? StoredText(id, left)
+                : "Stored as " + id + " \u2014 older versions are still being saved; they will be cleaned when that finishes";
+            // MicaPad never writes the user's file by itself: it keeps the value until the user saves it.
+            if (note.Meta.IsFileBacked) status += " \u2014 save the file (Ctrl+S) to remove it there";
+            ShowStatus(status);
             if (HistoryPanel.Visibility == Visibility.Visible) ShowHistory();
+        }
+
+        private static string StoredText(string id, int left) =>
+            left == 0 ? "Stored as " + id
+            : left == 1 ? "Stored as " + id + " \u2014 1 older version still holds it"
+            : "Stored as " + id + " \u2014 " + left.ToString(CultureInfo.InvariantCulture) + " older versions still hold it";
+
+        /// <summary>A note's versions to scrub again once the writer has caught up; it holds the value until then.</summary>
+        private sealed record PendingScrub(string NoteId, string Id, string Value, string Reference);
+
+        private readonly List<PendingScrub> _pendingScrubs = new();
+
+        /// <summary>When the tick may next ask whether the writer is idle (asking makes it retry failed work at once).</summary>
+        private long _nextScrubTryMs;
+
+        /// <summary>Scrubs still waiting for the writer; for tests.</summary>
+        internal int PendingScrubCount => _pendingScrubs.Count;
+
+        /// <summary>The window tick: at most every two seconds, the pending scrubs run once the writer is idle.</summary>
+        private void RetryPendingScrubsOnTick()
+        {
+            if (_pendingScrubs.Count == 0 || Environment.TickCount64 < _nextScrubTryMs) return;
+            _nextScrubTryMs = Environment.TickCount64 + 2000;
+            Guard("Removing a stored credential from older versions", () => RetryPendingScrubs());
+        }
+
+        /// <summary>
+        /// Once the writer is idle (every queued version is on disk), scrubs the versions again and
+        /// forgets the values; a version that still cannot be rewritten is reported. Returns how
+        /// many scrubs still wait.
+        /// </summary>
+        internal int RetryPendingScrubs()
+        {
+            if (_pendingScrubs.Count == 0 || !_workspace.FlushWrites(TimeSpan.Zero)) return _pendingScrubs.Count;
+
+            var due = _pendingScrubs.ToList();
+            _pendingScrubs.Clear();
+            foreach (var scrub in due)
+            {
+                int left = _workspace.Store.ScrubSnapshots(scrub.NoteId, scrub.Value, scrub.Reference);
+                if (left > 0) ShowStatus(StoredText(scrub.Id, left));
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// The close path: the scrubs still waiting get a short flush and run now. If the writer is
+        /// still behind, another open window of the workspace takes them over and keeps retrying.
+        /// </summary>
+        private void FinishPendingScrubs()
+        {
+            if (_pendingScrubs.Count == 0) return;
+            bool idle = _workspace.FlushWrites(TimeSpan.FromSeconds(1));
+            var heir = idle ? null : OtherWindows().FirstOrDefault();
+            var due = _pendingScrubs.ToList();
+            _pendingScrubs.Clear();
+            foreach (var scrub in due)
+            {
+                Guard("Removing a stored credential from older versions", () => _workspace.Store.ScrubSnapshots(scrub.NoteId, scrub.Value, scrub.Reference));
+                heir?._pendingScrubs.Add(scrub);
+            }
         }
 
         // ---- the pill menu (spec 3.3, R8) ----------------------------------------------------
@@ -401,14 +502,14 @@ namespace Kil0bitSystemMonitor.Pad
                 }
                 menu.Items.Add(new Separator());
             }
-            menu.Items.Add(Item("Copy reference", null, () => CopyFilePath(SecretTokens.Format(id)), icon: "\uE71B"));
+            menu.Items.Add(Item("Copy reference", null, () => CopyPlainText(SecretTokens.Format(id), "a credential reference"), icon: "\uE71B"));
             if (stored && !readOnly && vault!.IsUnlocked) menu.Items.Add(Item("Lock now", null, () => LockVault(vault), icon: "\uE72E"));
         }
 
         /// <summary>Reveal...: the value in the card for 30 seconds, after the PIN unless unlocked. Its Copy is Copy secret.</summary>
         internal void RevealCredential(string id)
         {
-            if (LoadedVault() is not { } vault || vault.Find(id) is not { } info) return;
+            if (LoadedVault() is not { } vault || Stored(vault, id) is not { } info) return;
             string label = SecretPillGenerator.LabelOf(info);
             WithUnlocked(vault, "To reveal " + Quoted(info) + ".", "Revealing a credential",
                 () => VaultCard.ShowReveal(label, vault.Reveal(id), () => CopyCredential(id)), reveals: true);
@@ -417,7 +518,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Copy secret: the value on the clipboard, kept out of clipboard history and cleared after 30 seconds.</summary>
         internal void CopyCredential(string id)
         {
-            if (LoadedVault() is not { } vault || vault.Find(id) is not { } info) return;
+            if (LoadedVault() is not { } vault || Stored(vault, id) is not { } info) return;
             WithUnlocked(vault, "To copy " + Quoted(info) + ".", "Copying a credential",
                 () => ShowStatus(SecretClipboard.Copy(vault.Reveal(id)) ? "Copied \u2014 clears in 30 s" : "Clipboard busy, try again"),
                 reveals: true);
@@ -426,7 +527,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Unmask: the reference becomes its value again, as an ordinary undoable edit. The vault keeps the credential.</summary>
         internal void UnmaskCredential(SecretReference reference)
         {
-            if (LoadedVault() is not { } vault || vault.Find(reference.Id) is not { } info) return;
+            if (LoadedVault() is not { } vault || Stored(vault, reference.Id) is not { } info) return;
             var document = Editor.Document;
             WithUnlocked(vault, "To unmask " + Quoted(info) + ".", "Unmasking a credential", () =>
             {
@@ -447,7 +548,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Delete credential...: after the PIN, a confirmation; the notes keep their references, shown as missing.</summary>
         internal void DeleteCredential(string id)
         {
-            if (LoadedVault() is not { } vault || vault.Find(id) is not { } info) return;
+            if (LoadedVault() is not { } vault || Stored(vault, id) is not { } info) return;
             string purpose = "To delete " + Quoted(info) + ".";
             WithUnlocked(vault, purpose, "Deleting a credential", () => VaultCard.ShowConfirm(
                 "Delete credential",
@@ -460,7 +561,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Rename label...: labels are not secret, so no PIN.</summary>
         internal void RenameCredential(string id)
         {
-            if (LoadedVault() is not { } vault || vault.Find(id) is not { } info) return;
+            if (LoadedVault() is not { } vault || Stored(vault, id) is not { } info) return;
             VaultCard.ShowRename(info.Label, label => VaultStep("Renaming a credential", () => vault.Rename(id, label)));
         }
 

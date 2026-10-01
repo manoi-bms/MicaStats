@@ -81,7 +81,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (ReferenceEquals(language, PadLanguages.Markdown))
             {
                 _markdownCache = new MarkdownDocumentCache(ReportFailure);
-                _markdownCache.FencesChanged += OnFencesChanged;
+                _markdownCache.StructureChanged += OnStructureChanged;
                 _markdown = new MarkdownColorizer(_markdownCache, _palette, ReportFailure);
                 _markdownBackground = new MarkdownBackgroundRenderer(_markdownCache, _palette, ReportFailure);
                 _bullets = new BulletGenerator(_markdownCache, ReportFailure);
@@ -172,8 +172,8 @@ namespace Kil0bitSystemMonitor.Pad
             }));
         }
 
-        /// <summary>A fence moved: lines far from the edit changed look, so repaint them all once the edit is done.</summary>
-        private void OnFencesChanged() =>
+        /// <summary>The structure moved (a fence, a table, a heading underline): lines far from the edit changed look, so repaint them all once the edit is done.</summary>
+        private void OnStructureChanged() =>
             _editor.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(Redraw));
 
         private void Clear()
@@ -191,7 +191,7 @@ namespace Kil0bitSystemMonitor.Pad
                 view.LineTransformers.Remove(_markdown);
                 view.BackgroundRenderers.Remove(_markdownBackground!);
                 view.ElementGenerators.Remove(_bullets!);
-                _markdownCache!.FencesChanged -= OnFencesChanged;
+                _markdownCache!.StructureChanged -= OnStructureChanged;
                 _markdownCache.Detach();
                 _markdown = null;
                 _markdownBackground = null;

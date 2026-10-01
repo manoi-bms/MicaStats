@@ -36,6 +36,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The size of sub- and superscript and footnote references, as a multiple of the text around them.</summary>
         public const double SmallSize = 0.75;
 
+        /// <summary>The alpha of a callout's background tint (15%).</summary>
+        public const byte CalloutTintAlpha = 0x26;
+
+        /// <summary>A callout's bar color; its background is the same color at <see cref="CalloutTintAlpha"/>.</summary>
+        public static PadColor CalloutColor(MdCallout kind, PadPalette palette) => kind switch
+        {
+            MdCallout.Success => palette.MdCalloutSuccess,
+            MdCallout.Warning => palette.MdCalloutWarning,
+            MdCallout.Danger => palette.MdCalloutDanger,
+            _ => palette.MdCalloutInfo,
+        };
+
         public static MdLook LookOf(MdStyle style, PadPalette palette)
         {
             if (style >= MdStyle.Heading1 && style <= MdStyle.Heading6)

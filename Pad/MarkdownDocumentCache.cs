@@ -1,60 +1,61 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using ICSharpCode.AvalonEdit.Document;
 using Kil0bitSystemMonitor.Services.Pad;
 
 namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
-    /// Which lines of the shown document are fenced code, shared by the Markdown colorizer, the
-    /// background renderer, the bullet generator and the diagram pictures (which fence closes which). Rescans only after an edit that can move a
-    /// fence (a backtick or tilde, a new or removed line, or an edit on a line that was or may now
-    /// be a delimiter), so ordinary typing never walks the whole note.
+    /// The structure of the shown Markdown document (<see cref="MarkdownStructure"/>: fences, $$
+    /// blocks, tables, setext headings, front matter, callouts, abbreviations), shared by the
+    /// colorizer, the background renderer, the generators and the diagram pictures. Rescans only
+    /// after an edit that can change it (R3), so ordinary typing never walks the whole note.
     /// </summary>
     internal sealed class MarkdownDocumentCache
     {
-        private static readonly char[] FenceChars = { '`', '~' };
+        /// <summary>Characters whose typing or removal can change the structure.</summary>
+        private static readonly char[] Triggers = { '`', '~', '|', '$', '=', '-', '>', '{', '[', '*' };
+
+        /// <summary>Characters that start a structural line (a table pipe does not: typing in a row changes nothing).</summary>
+        private static readonly char[] LineStarts = { '`', '~', '$', '=', '-', '>', '{', '*' };
 
         private readonly Action<Exception> _onFailure;
         private TextDocument? _document;
-        private MdFence[] _kinds = Array.Empty<MdFence>();
-        private int[] _openings = Array.Empty<int>();
-        private int[] _closings = Array.Empty<int>();
+        private MarkdownStructure _structure = MarkdownStructure.Empty;
         private bool _stale = true;
 
         /// <param name="onFailure">Told when following an edit fails; the edit itself never sees the exception.</param>
         public MarkdownDocumentCache(Action<Exception>? onFailure = null) => _onFailure = onFailure ?? (_ => { });
 
-        /// <summary>Raised after an edit changed which lines are fenced, so lines far from the edit repaint.</summary>
-        public event Action? FencesChanged;
+        /// <summary>Raised after an edit changed the structure, so lines far from the edit repaint.</summary>
+        public event Action? StructureChanged;
 
         /// <summary>How many times the whole document was scanned; for tests.</summary>
         internal int Recomputes { get; private set; }
 
         /// <summary>The fence kind of a line (1-based) of <paramref name="document"/>.</summary>
-        public MdFence KindOf(TextDocument document, int lineNumber)
-        {
-            Track(document);
-            if (_stale) Recompute();
-            int index = lineNumber - 1;
-            return index >= 0 && index < _kinds.Length ? _kinds[index] : MdFence.None;
-        }
+        public MdFence KindOf(TextDocument document, int lineNumber) => Get(document, s => s.Fences, lineNumber, MdFence.None);
+
+        /// <summary>What line <paramref name="lineNumber"/> is in its document.</summary>
+        public MdLineFacts FactsOf(TextDocument document, int lineNumber) =>
+            Get(document, s => s.Facts, lineNumber, new MdLineFacts(MdFence.None));
 
         /// <summary>The 1-based line that opened the fence line <paramref name="lineNumber"/> closes, or 0 when it closes none.</summary>
-        public int OpeningLineOf(TextDocument document, int lineNumber)
-        {
-            Track(document);
-            if (_stale) Recompute();
-            int index = lineNumber - 1;
-            return index >= 0 && index < _openings.Length ? _openings[index] : 0;
-        }
+        public int OpeningLineOf(TextDocument document, int lineNumber) => Get(document, s => s.Openings, lineNumber, 0);
 
         /// <summary>The 1-based line that closes the fence line <paramref name="lineNumber"/> opens, or 0 (it opens none, or never closes).</summary>
-        public int ClosingLineOf(TextDocument document, int lineNumber)
+        public int ClosingLineOf(TextDocument document, int lineNumber) => Get(document, s => s.Closings, lineNumber, 0);
+
+        /// <summary>For a line inside a fenced or $$ block, the 1-based line that opened it; else 0.</summary>
+        public int BlockOpeningOf(TextDocument document, int lineNumber) => Get(document, s => s.BlockOpenings, lineNumber, 0);
+
+        /// <summary>The abbreviation terms the document defines.</summary>
+        public IReadOnlySet<string> AbbreviationsOf(TextDocument document)
         {
             Track(document);
             if (_stale) Recompute();
-            int index = lineNumber - 1;
-            return index >= 0 && index < _closings.Length ? _closings[index] : 0;
+            return _structure.Abbreviations;
         }
 
         /// <summary>Stops following the document.</summary>
@@ -62,10 +63,17 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (_document != null) _document.Changed -= OnChanged;
             _document = null;
-            _kinds = Array.Empty<MdFence>();
-            _openings = Array.Empty<int>();
-            _closings = Array.Empty<int>();
+            _structure = MarkdownStructure.Empty;
             _stale = true;
+        }
+
+        private T Get<T>(TextDocument document, Func<MarkdownStructure, T[]> part, int lineNumber, T none)
+        {
+            Track(document);
+            if (_stale) Recompute();
+            var values = part(_structure);
+            int index = lineNumber - 1;
+            return index >= 0 && index < values.Length ? values[index] : none;
         }
 
         private void Track(TextDocument document)
@@ -84,10 +92,11 @@ namespace Kil0bitSystemMonitor.Pad
             if (document == null || !ReferenceEquals(sender, document)) return;
             try
             {
-                if (!_stale && !TouchesFences(document, e)) return;
-                var before = _kinds;
+                if (!_stale && !TouchesStructure(document, e)) return;
+                var before = _structure;
                 Recompute();
-                if (!before.AsSpan().SequenceEqual(_kinds)) FencesChanged?.Invoke();
+                if (!before.Facts.AsSpan().SequenceEqual(_structure.Facts) || !before.Abbreviations.SetEquals(_structure.Abbreviations))
+                    StructureChanged?.Invoke();
             }
             catch (Exception ex)
             {
@@ -96,23 +105,34 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
-        private bool TouchesFences(TextDocument document, DocumentChangeEventArgs e)
+        /// <summary>Whether an edit can change the structure (R3).</summary>
+        private bool TouchesStructure(TextDocument document, DocumentChangeEventArgs e)
         {
-            if (document.LineCount != _kinds.Length) return true;
-            if (e.InsertedText.Text.IndexOfAny(FenceChars) >= 0 || e.RemovedText.Text.IndexOfAny(FenceChars) >= 0) return true;
+            if (document.LineCount != _structure.LineCount) return true;
+            if (e.InsertedText.Text.IndexOfAny(Triggers) >= 0 || e.RemovedText.Text.IndexOfAny(Triggers) >= 0) return true;
 
-            // Each line the edit left text on: a delimiter before it, or one now. Removing the
-            // indent or a character before ``` makes a fence without any backtick typed.
             int first = document.GetLineByOffset(Math.Min(e.Offset, document.TextLength)).LineNumber;
             int last = document.GetLineByOffset(Math.Min(e.Offset + e.InsertionLength, document.TextLength)).LineNumber;
             for (int number = first; number <= last; number++)
             {
-                if (_kinds[number - 1] == MdFence.Delimiter) return true;
-                var line = document.GetLineByNumber(number);
-                // A delimiter has at most three spaces before its first backtick or tilde.
-                if (FenceTracker.MayBeDelimiter(document.GetText(line.Offset, Math.Min(line.Length, 4)))) return true;
+                var facts = _structure.Facts[number - 1];
+                if (facts.Fence == MdFence.Delimiter || facts.Table == MdTableRole.Header || facts.SetextLevel != 0
+                    || facts.SetextUnderline || facts.FrontMatter || facts.CalloutClass) return true;
+                if (StartsWithAny(document, number, LineStarts)) return true;
+                // Text typed on a line may make the dashes below it a setext underline.
+                if (number < document.LineCount && StartsWithAny(document, number + 1, new[] { '=', '-' })) return true;
             }
             return false;
+        }
+
+        /// <summary>The line's first character after at most three spaces is one of <paramref name="chars"/>.</summary>
+        private static bool StartsWithAny(TextDocument document, int number, char[] chars)
+        {
+            var line = document.GetLineByNumber(number);
+            string start = document.GetText(line.Offset, Math.Min(line.Length, 4));
+            int i = 0;
+            while (i < start.Length && i < 3 && start[i] == ' ') i++;
+            return i < start.Length && chars.Contains(start[i]);
         }
 
         private void Recompute()
@@ -120,11 +140,7 @@ namespace Kil0bitSystemMonitor.Pad
             var document = _document!;
             var lines = new string[document.LineCount];
             foreach (var line in document.Lines) lines[line.LineNumber - 1] = document.GetText(line);
-            _kinds = FenceTracker.Classify(lines);
-            _openings = FenceTracker.Openings(_kinds);
-            _closings = new int[_kinds.Length];
-            for (int i = 0; i < _openings.Length; i++)
-                if (_openings[i] > 0) _closings[_openings[i] - 1] = i + 1;
+            _structure = MarkdownStructure.Scan(lines);
             _stale = false;
             Recomputes++;
         }

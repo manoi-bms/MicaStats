@@ -104,15 +104,19 @@ namespace Kil0bitSystemMonitor.Ai
             return document;
         }
 
-        private static FlowDocument NewDocument() => new()
+        private static FlowDocument NewDocument()
         {
-            PagePadding = new Thickness(0),
-            FontFamily = ChatPalette.TextFont,
-            FontSize = ChatPalette.TextSize,
-            Foreground = ChatPalette.Ink,
-            LineHeight = ChatPalette.LineHeight,
-            TextAlignment = TextAlignment.Left,
-        };
+            var document = new FlowDocument
+            {
+                PagePadding = new Thickness(0),
+                FontFamily = ChatPalette.TextFont,
+                FontSize = ChatPalette.TextSize,
+                LineHeight = ChatPalette.LineHeight,
+                TextAlignment = TextAlignment.Left,
+            };
+            document.SetResourceReference(TextElement.ForegroundProperty, "Ask.Ink");
+            return document;
+        }
 
         private static Paragraph Paragraph(IReadOnlyList<ChatRun> runs, Thickness margin)
         {
@@ -134,10 +138,10 @@ namespace Kil0bitSystemMonitor.Ai
         private static Paragraph Quote(ChatBlock block)
         {
             var quote = Paragraph(block.Runs, ParagraphSpacing);
-            quote.BorderBrush = ChatPalette.Accent;
             quote.BorderThickness = new Thickness(3, 0, 0, 0);
             quote.Padding = new Thickness(10, 2, 0, 2);
-            quote.Foreground = ChatPalette.Muted;
+            quote.SetResourceReference(TextElement.ForegroundProperty, "Ask.Muted");
+            quote.SetResourceReference(Block.BorderBrushProperty, "Ask.Accent");
             return quote;
         }
 
@@ -153,19 +157,20 @@ namespace Kil0bitSystemMonitor.Ai
             };
             var box = new Border
             {
-                Background = ChatPalette.CodeBack,
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(10),
                 Child = text,
             };
+            box.SetResourceReference(Border.BackgroundProperty, "Ask.CodeBack");
             return new BlockUIContainer(box) { Margin = ParagraphSpacing };
         }
 
-        private static BlockUIContainer Rule() =>
-            new(new Border { Height = 1, Background = ChatPalette.Divider, Margin = new Thickness(0, 4, 0, 4) })
-            {
-                Margin = ParagraphSpacing,
-            };
+        private static BlockUIContainer Rule()
+        {
+            var line = new Border { Height = 1, Margin = new Thickness(0, 4, 0, 4) };
+            line.SetResourceReference(Border.BackgroundProperty, "Ask.Divider");
+            return new BlockUIContainer(line) { Margin = ParagraphSpacing };
+        }
 
         /// <summary>
         /// Adds a list item, opening, nesting and closing lists by depth. A numbered list starts at
@@ -214,10 +219,10 @@ namespace Kil0bitSystemMonitor.Ai
 
                 var link = new Hyperlink
                 {
-                    Foreground = ChatPalette.Accent,
                     Cursor = Cursors.Hand,
                     ToolTip = uri.AbsoluteUri,
                 };
+                link.SetResourceReference(TextElement.ForegroundProperty, "Ask.Accent");
                 link.Click += (s, e) => Open(uri);
                 while (k < runs.Count && ReferenceEquals(runs[k].Link, uri))
                 {
@@ -247,7 +252,7 @@ namespace Kil0bitSystemMonitor.Ai
             {
                 text.FontFamily = ChatPalette.MonoFont;
                 text.FontSize = ChatPalette.CodeSize;
-                text.Background = ChatPalette.InlineCodeBack;
+                text.SetResourceReference(TextElement.BackgroundProperty, "Ask.InlineCodeBack");
             }
             return text;
         }

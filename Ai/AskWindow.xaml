@@ -7,8 +7,8 @@
     Title="Ask MicaStats"
     Width="640" Height="720" MinWidth="420" MinHeight="420"
     WindowStartupLocation="CenterScreen"
-    Background="#0E0E13"
-    Foreground="#EDEDF2"
+    Background="{DynamicResource Ask.Background}"
+    Foreground="{DynamicResource Ask.Ink}"
     FontFamily="Segoe UI Variable Text, Segoe UI"
     FontSize="14"
     ui:ThemeManager.RequestedTheme="Dark"
@@ -39,7 +39,7 @@
         </Grid.RowDefinitions>
 
         <!-- Header: avatar, title, the model in use, New chat. -->
-        <Border Grid.Row="0" Background="#141419" BorderBrush="#1AFFFFFF" BorderThickness="0,0,0,1"
+        <Border Grid.Row="0" Background="{DynamicResource Ask.Chrome}" BorderBrush="{DynamicResource Ask.Divider}" BorderThickness="0,0,0,1"
                 MinHeight="56" Padding="16,8,10,8">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -50,13 +50,18 @@
                 <ContentControl Style="{StaticResource ChatAvatar}" VerticalAlignment="Center" />
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,8,0">
                     <TextBlock Text="Ask MicaStats" FontSize="15" FontWeight="SemiBold" />
-                    <TextBlock x:Name="ModelText" FontSize="11.5" Foreground="#88EDEDF2"
+                    <TextBlock x:Name="ModelText" FontSize="11.5" Foreground="{DynamicResource Ask.Muted}"
                                TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
                 </StackPanel>
-                <Button x:Name="NewButton" Grid.Column="2" Style="{StaticResource ChatIconButton}"
-                        Content="&#xE710;" ToolTip="New chat (clears this conversation)"
-                        AutomationProperties.Name="New chat" VerticalAlignment="Center"
-                        Click="OnNewConversation" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="ThemeButton" Style="{StaticResource ChatIconButton}"
+                            AutomationProperties.Name="Switch theme" Margin="0,0,2,0"
+                            Click="OnThemeButtonClick" />
+                    <Button x:Name="NewButton" Style="{StaticResource ChatIconButton}"
+                            Content="&#xE710;" ToolTip="New chat (clears this conversation)"
+                            AutomationProperties.Name="New chat"
+                            Click="OnNewConversation" />
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -71,7 +76,7 @@
                                     HorizontalAlignment="Center" />
                     <TextBlock Text="How can I help?" FontSize="20" FontWeight="SemiBold"
                                HorizontalAlignment="Center" Margin="0,14,0,6" />
-                    <TextBlock x:Name="EmptyText" Foreground="#88EDEDF2" TextWrapping="Wrap" TextAlignment="Center"
+                    <TextBlock x:Name="EmptyText" Foreground="{DynamicResource Ask.Muted}" TextWrapping="Wrap" TextAlignment="Center"
                                FontSize="13" LineHeight="19"
                                Text="Ask anything about this PC: why it was slow a minute ago, what is using the memory, whether the CPU runs too hot. A question in Thai is answered in Thai." />
                     <WrapPanel x:Name="PromptPanel" HorizontalAlignment="Center" Margin="0,18,0,0" />
@@ -87,28 +92,28 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="StatusText" FontSize="11.5" Foreground="#A0EDEDF2" TextWrapping="Wrap"
+            <TextBlock x:Name="StatusText" FontSize="11.5" Foreground="{DynamicResource Ask.Muted}" TextWrapping="Wrap"
                        VerticalAlignment="Center" />
             <Button x:Name="SettingsButton" Grid.Column="1" Style="{StaticResource ChatFlatButton}"
-                    Foreground="#3FD2E4" Content="Open Settings &gt; AI" Click="OnOpenSettings"
+                    Foreground="{DynamicResource Ask.Accent}" Content="Open Settings &gt; AI" Click="OnOpenSettings"
                     Visibility="Collapsed" Margin="8,0,0,0" />
             <Button x:Name="RetryButton" Grid.Column="2" Style="{StaticResource ChatFlatButton}"
-                    Foreground="#3FD2E4" Content="Retry" Click="OnRetry"
+                    Foreground="{DynamicResource Ask.Accent}" Content="Retry" Click="OnRetry"
                     Visibility="Collapsed" Margin="4,0,0,0" />
         </Grid>
 
         <!-- Composer: the question box with Send (Stop while an answer streams). -->
-        <Border Grid.Row="3" Background="#141419" BorderBrush="#1AFFFFFF" BorderThickness="0,1,0,0"
+        <Border Grid.Row="3" Background="{DynamicResource Ask.Chrome}" BorderBrush="{DynamicResource Ask.Divider}" BorderThickness="0,1,0,0"
                 Padding="16,12,16,8">
             <StackPanel MaxWidth="860">
-                <Border x:Name="Composer" CornerRadius="20" Background="#1C1C24" BorderThickness="1"
+                <Border x:Name="Composer" CornerRadius="20" Background="{DynamicResource Ask.Surface}" BorderThickness="1"
                         Padding="16,0,5,0" MouseLeftButtonDown="OnComposerMouseDown">
                     <Border.Style>
                         <Style TargetType="Border">
-                            <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource Ask.Border}" />
                             <Style.Triggers>
                                 <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                    <Setter Property="BorderBrush" Value="#3FD2E4" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource Ask.Accent}" />
                                 </Trigger>
                             </Style.Triggers>
                         </Style>
@@ -125,17 +130,17 @@
                                  AutomationProperties.Name="Question" />
                         <Grid Grid.Column="1" VerticalAlignment="Bottom" Margin="8,0,0,5">
                             <Button x:Name="SendButton" Style="{StaticResource ChatRoundButton}"
-                                    Background="#3FD2E4" Foreground="#0E0E13" Content="&#xE724;"
+                                    Background="{DynamicResource Ask.SendBack}" Foreground="{DynamicResource Ask.SendGlyph}" Content="&#xE724;"
                                     ToolTip="Send (Enter)" AutomationProperties.Name="Send" Click="OnSend" />
                             <Button x:Name="StopButton" Style="{StaticResource ChatRoundButton}"
-                                    Background="#33FFFFFF" Foreground="#EDEDF2" Content="&#xE71A;"
+                                    Background="{DynamicResource Ask.StopBack}" Foreground="{DynamicResource Ask.Ink}" Content="&#xE71A;"
                                     ToolTip="Stop (Esc)" AutomationProperties.Name="Stop" Click="OnStop"
                                     IsEnabled="False" Visibility="Collapsed" />
                         </Grid>
                     </Grid>
                 </Border>
                 <TextBlock Text="Enter to send &#x00B7; Shift+Enter for a new line" FontSize="11"
-                           Foreground="#88EDEDF2" HorizontalAlignment="Center" Margin="0,6,0,0" />
+                           Foreground="{DynamicResource Ask.Muted}" HorizontalAlignment="Center" Margin="0,6,0,0" />
             </StackPanel>
         </Border>
     </Grid>

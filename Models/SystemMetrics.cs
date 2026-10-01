@@ -684,6 +684,18 @@ namespace Kil0bitSystemMonitor.Models
         /// <summary>Loopback port of the local HTTP MCP server; kept out of the privileged range.</summary>
         public int AiMcpHttpPort { get => _aiMcpHttpPort; set { Set(ref _aiMcpHttpPort, Math.Clamp(value, 1024, 65535)); } }
 
+        private string _askTheme = Kil0bitSystemMonitor.Services.Pad.PadThemes.Dark;
+
+        /// <summary>
+        /// The Ask MicaStats window's own theme, "Dark" or "Light"; any other value reads as Dark.
+        /// Independent of <see cref="PadTheme"/>: neither follows the other.
+        /// </summary>
+        public string AskTheme
+        {
+            get => _askTheme;
+            set { Set(ref _askTheme, Kil0bitSystemMonitor.Services.Pad.PadThemes.Normalize(value)); }
+        }
+
         [System.Text.Json.Serialization.JsonIgnore]
         public System.Windows.Media.Color AccentColor { get => HexToColor(AccentColorHex); set => AccentColorHex = ColorToHex(value); }
 

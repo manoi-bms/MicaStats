@@ -158,6 +158,27 @@
             </Grid>
         </Border>
 
+        <!-- Theme -->
+        <Border Style="{StaticResource Card}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:FontIcon Glyph="&#xE706;" Style="{StaticResource CardIcon}" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="Theme" Style="{StaticResource CardTitle}" />
+                    <TextBlock Style="{StaticResource CardHint}"
+                               Text="Dark or light, for Ask MicaStats only. The sun and moon button in the Ask window switches it too." />
+                </StackPanel>
+                <ComboBox Grid.Column="2" x:Name="AskThemeBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnAskThemeChanged">
+                    <ComboBoxItem Content="Dark" />
+                    <ComboBoxItem Content="Light" />
+                </ComboBox>
+            </Grid>
+        </Border>
+
         <!-- History -->
         <Border Style="{StaticResource Card}">
             <Grid>

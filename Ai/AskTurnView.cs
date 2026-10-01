@@ -65,12 +65,12 @@ namespace Kil0bitSystemMonitor.Ai
             };
             var bubble = new Border
             {
-                Background = ChatPalette.Bubble,
                 CornerRadius = new CornerRadius(16, 16, 4, 16),
                 Padding = new Thickness(14, 10, 14, 10),
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Child = Question,
             };
+            bubble.SetResourceReference(Border.BackgroundProperty, "Ask.Bubble");
             // The bubble may take 78% of the width, and only what its text needs.
             var questionRow = new Grid { Margin = new Thickness(0, 0, 0, 12) };
             questionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22, GridUnitType.Star) });
@@ -88,7 +88,8 @@ namespace Kil0bitSystemMonitor.Ai
             };
             for (int i = 0; i < _dots.Length; i++)
             {
-                _dots[i] = new Ellipse { Width = 6, Height = 6, Fill = ChatPalette.Muted, Margin = new Thickness(0, 0, 5, 0) };
+                _dots[i] = new Ellipse { Width = 6, Height = 6, Margin = new Thickness(0, 0, 5, 0) };
+                _dots[i].SetResourceReference(Shape.FillProperty, "Ask.Muted");
                 typing.Children.Add(_dots[i]);
             }
             Typing = typing;
@@ -103,19 +104,19 @@ namespace Kil0bitSystemMonitor.Ai
             NoteText = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = ChatPalette.Ink,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            NoteText.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Ink");
             var noteGlyph = new TextBlock
             {
                 Text = ChatPalette.WarningGlyph,
                 FontFamily = ChatPalette.IconFont,
                 FontSize = 14,
-                Foreground = ChatPalette.Amber,
                 Margin = new Thickness(0, 1, 9, 0),
                 VerticalAlignment = VerticalAlignment.Top,
             };
+            noteGlyph.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Amber");
             var noteRow = new Grid();
             noteRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             noteRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -124,7 +125,6 @@ namespace Kil0bitSystemMonitor.Ai
             noteRow.Children.Add(NoteText);
             Note = new Border
             {
-                Background = ChatPalette.NoteBack,
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(10, 7, 12, 7),
                 Margin = new Thickness(0, 8, 0, 0),
@@ -132,6 +132,7 @@ namespace Kil0bitSystemMonitor.Ai
                 Visibility = Visibility.Collapsed,
                 Child = noteRow,
             };
+            Note.SetResourceReference(Border.BackgroundProperty, "Ask.NoteBack");
 
             Actions = new WrapPanel { Margin = new Thickness(0, 10, 0, 0), Visibility = Visibility.Collapsed };
 
@@ -156,10 +157,10 @@ namespace Kil0bitSystemMonitor.Ai
             TimeText = new TextBlock
             {
                 FontSize = 11.5,
-                Foreground = ChatPalette.Muted,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(6, 0, 0, 0),
             };
+            TimeText.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Muted");
             Footer = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
@@ -464,28 +465,29 @@ namespace Kil0bitSystemMonitor.Ai
             {
                 Text = label,
                 FontSize = 11.5,
-                Foreground = ChatPalette.Muted,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            Label.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Muted");
             var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(new TextBlock
+            var check = new TextBlock
             {
                 Text = ChatPalette.CheckGlyph,
                 FontFamily = ChatPalette.IconFont,
                 FontSize = 10,
-                Foreground = ChatPalette.Accent,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 1, 5, 0),
-            });
+            };
+            check.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Accent");
+            row.Children.Add(check);
             row.Children.Add(Label);
             Element = new Border
             {
-                Background = ChatPalette.ChipBack,
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(8, 3, 10, 3),
                 Margin = new Thickness(0, 0, 6, 6),
                 Child = row,
             };
+            Element.SetResourceReference(Border.BackgroundProperty, "Ask.ChipBack");
         }
 
         /// <summary>The tool's name, as the model called it.</summary>

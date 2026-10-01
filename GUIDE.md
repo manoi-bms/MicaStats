@@ -361,7 +361,9 @@ answer is on its way. Under a finished answer, **Copy** copies it as Markdown, n
 arrived. The line under the title names the model in use.
 
 The send button turns into **Stop** while an answer streams (**Esc** stops too); the **+** at
-the top right starts a new chat. An empty chat offers a few starter questions to click. Links in
+the top right starts a new chat; the sun or moon button beside it switches the window between
+dark and light at once (its own setting, also in **Settings → AI → Theme**, and separate from
+MicaPad's theme). An empty chat offers a few starter questions to click. Links in
 an answer open in your browser, and only `http`, `https` and `mailto` links work. If something
 fails, the question stays in the box and **Retry** sends it again; a missing key or model offers
 **Open Settings > AI**.

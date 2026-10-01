@@ -57,6 +57,7 @@ namespace Kil0bitSystemMonitor.Ai
                 HotkeyHint.Text = HotkeyHelp;
                 LimitBox.Text = cfg.AiDailyLimit.ToString(CultureInfo.InvariantCulture);
                 HistoryToggle.IsOn = cfg.AiHistoryEnabled;
+                AskThemeBox.SelectedIndex = cfg.AskTheme == Kil0bitSystemMonitor.Services.Pad.PadThemes.Light ? 1 : 0;
                 McpModeBox.SelectedIndex = cfg.AiMcpMode switch
                 {
                     AiMcpModes.Stdio => 1,
@@ -326,6 +327,17 @@ namespace Kil0bitSystemMonitor.Ai
                 : "Used today: " + usage.UsedToday.ToString(CultureInfo.InvariantCulture) + " of "
                   + _host.Config.AiDailyLimit.ToString(CultureInfo.InvariantCulture) + ". ";
             LimitHint.Text = used + "Each Send or Explain counts once, however many lookups it takes; Test connection does not count. Resets at midnight.";
+        }
+
+        // ---- theme ---------------------------------------------------------------------------
+
+        private void OnAskThemeChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading || _host == null || AskThemeBox.SelectedIndex < 0) return;
+            _host.Config.AskTheme = AskThemeBox.SelectedIndex == 1
+                ? Kil0bitSystemMonitor.Services.Pad.PadThemes.Light
+                : Kil0bitSystemMonitor.Services.Pad.PadThemes.Dark;
+            _host.Save();
         }
 
         // ---- history -------------------------------------------------------------------------

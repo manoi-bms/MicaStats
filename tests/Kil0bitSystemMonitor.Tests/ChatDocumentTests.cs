@@ -20,7 +20,18 @@ namespace Kil0bitSystemMonitor.Tests
     /// <summary>The FlowDocument an answer's Markdown becomes. Built on the UI test thread, never shown.</summary>
     public class ChatDocumentTests
     {
-        private static FlowDocument Build(string markdown) => ChatDocument.Build(ChatMarkdown.Parse(markdown));
+        /// <summary>
+        /// The document, hosted in a box that carries the dark Ask.* brushes (as the window does), so
+        /// the resource references the document makes resolve. Never shown.
+        /// </summary>
+        private static FlowDocument Build(string markdown, AskPalette? palette = null)
+        {
+            var host = new System.Windows.Controls.RichTextBox();
+            AskThemeApplier.ApplyResources(host.Resources, palette ?? AskPalette.Dark);
+            var document = ChatDocument.Build(ChatMarkdown.Parse(markdown));
+            host.Document = document;
+            return document;
+        }
 
         private static List<T> All<T>(DependencyObject root) where T : DependencyObject =>
             AiAskWindowTests.Descendants<T>(root);

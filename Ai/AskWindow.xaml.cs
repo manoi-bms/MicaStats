@@ -6,7 +6,11 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.ComponentModel;
+using Kil0bitSystemMonitor.Models;
+using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Ai;
+using Kil0bitSystemMonitor.Services.Pad;
 
 // UseWindowsForms puts System.Windows.Forms in scope, which has its own KeyEventArgs and Button.
 using Button = System.Windows.Controls.Button;
@@ -53,6 +57,8 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly Action _openSettings;
         private readonly Func<SuggestedAction, string> _runAction;
         private readonly Func<string?>? _modelLabel;
+        private readonly AppConfig _config;
+        private AskPalette _palette = AskPalette.Dark;
         private AiConversation _conversation = new();
         private readonly List<AskTurnView> _turns = new();
         private CancellationTokenSource? _cts;
@@ -68,14 +74,20 @@ namespace Kil0bitSystemMonitor.Ai
         /// <param name="openSettings">Opens Settings on the AI section.</param>
         /// <param name="runAction">Runs a clicked suggestion and returns the sentence to show.</param>
         /// <param name="modelLabel">Names the model in use for the header, read on open and on each Send; null hides the line.</param>
+        /// <param name="config">The live config: <see cref="AppConfig.AskTheme"/> is read and written here. Null uses a private default config (tests).</param>
         internal AskWindow(Func<AskSetup> setup, Action openSettings, Func<SuggestedAction, string> runAction,
-                           Func<string?>? modelLabel = null)
+                           Func<string?>? modelLabel = null, AppConfig? config = null)
         {
             InitializeComponent();
             _setup = setup;
             _openSettings = openSettings;
             _runAction = runAction;
             _modelLabel = modelLabel;
+            _config = config ?? new AppConfig();
+
+            ApplyTheme();
+            _config.PropertyChanged += OnConfigChanged;
+            SourceInitialized += (s, e) => PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
 
             foreach (string question in PromptQuestions)
             {
@@ -88,10 +100,45 @@ namespace Kil0bitSystemMonitor.Ai
             Closed += (s, e) =>
             {
                 _cts?.Cancel();
+                _config.PropertyChanged -= OnConfigChanged;
                 if (ReferenceEquals(s_current, this)) s_current = null;
             };
             UpdateButtons();
             RefreshModelLabel();
+        }
+
+        /// <summary>The palette the window is painted with.</summary>
+        internal AskPalette Palette => _palette;
+
+        /// <summary>The sun and moon button in the header.</summary>
+        internal Button ThemeToggle => ThemeButton;
+
+        /// <summary>Flips the Ask theme in the config; the window repaints from the change notice.</summary>
+        internal void ToggleTheme() => _config.AskTheme = _palette.IsDark ? PadThemes.Light : PadThemes.Dark;
+
+        private void OnThemeButtonClick(object sender, RoutedEventArgs e) => ToggleTheme();
+
+        private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(AppConfig.AskTheme)) return;
+            if (Dispatcher.CheckAccess()) ApplyTheme();
+            else Dispatcher.BeginInvoke(new Action(ApplyTheme));
+        }
+
+        /// <summary>
+        /// Paints the window in the theme the config names: the Ask.* brushes the XAML and the turns
+        /// read, the ModernWpf controls, the theme button and the title bar. Only this window changes.
+        /// </summary>
+        private void ApplyTheme()
+        {
+            _palette = AskPalette.For(_config.AskTheme);
+            AskThemeApplier.ApplyResources(Resources, _palette);
+            ModernWpf.ThemeManager.SetRequestedTheme(this, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
+
+            // Sun (E706) offers the light theme, moon (E708) the dark one.
+            ThemeButton.Content = _palette.IsDark ? "\uE706" : "\uE708";
+            ThemeButton.ToolTip = _palette.IsDark ? "Switch to light theme" : "Switch to dark theme";
+            PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
         }
 
         /// <summary>The open window, or null.</summary>
@@ -107,7 +154,7 @@ namespace Kil0bitSystemMonitor.Ai
             if (window == null)
             {
                 window = new AskWindow(App.CreateAskSetup, () => App.ShowSettingsSection("AI"), SuggestedActionRunner.Run,
-                    App.AskModelLabel);
+                    App.AskModelLabel, App.ConfigService?.Config);
                 s_current = window;
                 window.Show();
             }

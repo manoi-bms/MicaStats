@@ -1,0 +1,213 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Kil0bitSystemMonitor.Services.Pad
+{
+    /// <summary>
+    /// Draws diagrams for every MicaPad window (spec 2.3, 2.4): one draw at a time, a newer request
+    /// for the same block replacing a waiting older one, results kept in memory (64, least
+    /// recently used out; nothing on disk). Built-in kinds go to the drawing page. The page is
+    /// created on the first draw and replaced after it breaks or a draw runs over the limit.
+    /// Never throws: every failure is a result, and a warning names only the engine and the
+    /// exception type. Call <see cref="RenderAsync"/> from one thread (the UI thread in the app).
+    /// </summary>
+    public sealed class DiagramRenderer : IDiagramRenderer, IDisposable
+    {
+        public static readonly TimeSpan DefaultDrawLimit = TimeSpan.FromSeconds(15);
+
+        private readonly Func<Task<IDiagramPage>> _createPage;
+        private readonly Action<string> _warn;
+        private readonly TimeSpan _drawLimit;
+        private readonly DiagramCache _cache = new();
+        private readonly List<Job> _waiting = new();
+        private readonly object _gate = new();
+        private readonly CancellationTokenSource _shutdown = new();
+        private IDiagramPage? _page;
+        private bool _pumping;
+        private bool _disposed;
+
+        public DiagramRenderer(Func<Task<IDiagramPage>> createPage, Action<string>? warn = null, TimeSpan? drawLimit = null)
+        {
+            _createPage = createPage;
+            _warn = warn ?? (_ => { });
+            _drawLimit = drawLimit ?? DefaultDrawLimit;
+        }
+
+        /// <summary>How many results the cache holds; for tests.</summary>
+        internal int CachedCount
+        {
+            get { lock (_gate) return _cache.Count; }
+        }
+
+        public bool TryGetCached(string key, [MaybeNullWhen(false)] out DiagramResult result)
+        {
+            lock (_gate) return _cache.TryGet(key, out result);
+        }
+
+        public Task<DiagramResult> RenderAsync(DiagramRequest request, object slot)
+        {
+            Job job;
+            lock (_gate)
+            {
+                if (_disposed) return Task.FromResult(DiagramResult.Failure(DiagramText.Failed, lasting: false));
+                if (_cache.TryGet(request.Key, out var cached)) return Task.FromResult(cached);
+
+                job = new Job(request, slot);
+                int waiting = _waiting.FindIndex(j => ReferenceEquals(j.Slot, slot));
+                if (waiting >= 0)
+                {
+                    _waiting[waiting].Done.TrySetResult(DiagramResult.Replaced);
+                    _waiting[waiting] = job;
+                }
+                else
+                {
+                    _waiting.Add(job);
+                }
+                if (_pumping) return job.Done.Task;
+                _pumping = true;
+            }
+            _ = PumpAsync();
+            return job.Done.Task;
+        }
+
+        /// <summary>Answers every draw still waiting, abandons the running one and closes the page.</summary>
+        public void Dispose()
+        {
+            List<Job> left;
+            lock (_gate)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                left = new List<Job>(_waiting);
+                _waiting.Clear();
+            }
+            foreach (var job in left) job.Done.TrySetResult(DiagramResult.Failure(DiagramText.Failed, lasting: false));
+            _shutdown.Cancel();
+            DropPage();
+        }
+
+        private async Task PumpAsync()
+        {
+            while (true)
+            {
+                Job job;
+                lock (_gate)
+                {
+                    if (_waiting.Count == 0 || _disposed)
+                    {
+                        _pumping = false;
+                        return;
+                    }
+                    job = _waiting[0];
+                    _waiting.RemoveAt(0);
+                }
+
+                DiagramResult result;
+                try
+                {
+                    result = await DrawAsync(job.Request);
+                }
+                catch (Exception ex)
+                {
+                    _warn(job.Request.Kind.Name + " drawing failed (" + ex.GetType().Name + ")");
+                    DropPage();
+                    result = DiagramResult.Failure(DiagramText.Failed, lasting: false);
+                }
+
+                lock (_gate)
+                {
+                    if (_disposed) result = DiagramResult.Failure(DiagramText.Failed, lasting: false);
+                    else if (result.Lasting) _cache.Add(job.Request.Key, result);
+                }
+                job.Done.TrySetResult(result);
+            }
+        }
+
+        private async Task<DiagramResult> DrawAsync(DiagramRequest request)
+        {
+            if (request.Kind.NeedsKroki) return DiagramResult.Failure(DiagramText.NeedsKroki(request.Kind), lasting: false);
+            var page = new PageRequest(request.Kind.PageKind, request.Source, request.Dark, request.Foreground, request.Background);
+            return await DrawOnPageAsync(request.Kind, page, paper: false);
+        }
+
+        private async Task<DiagramResult> DrawOnPageAsync(DiagramKind kind, PageRequest request, bool paper)
+        {
+            if (_page is { IsBroken: true }) DropPage();
+
+            IDiagramPage page;
+            try
+            {
+                page = _page ??= await _createPage();
+            }
+            catch (DiagramRuntimeMissingException)
+            {
+                return DiagramResult.Failure(DiagramText.RuntimeMissing, lasting: false, DiagramText.RuntimeDownload);
+            }
+
+            PageDrawing drawing;
+            using (var limit = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token))
+            {
+                limit.CancelAfter(_drawLimit);
+                try
+                {
+                    drawing = await page.DrawAsync(request, limit.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    if (_shutdown.IsCancellationRequested) return DiagramResult.Failure(DiagramText.Failed, lasting: false);
+                    _warn(kind.Name + " drawing took longer than "
+                          + _drawLimit.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s; the page was closed");
+                    DropPage();
+                    return DiagramResult.Failure(DiagramText.TookTooLong, lasting: false);
+                }
+            }
+
+            if (page.IsBroken)
+            {
+                DropPage();
+                return DiagramResult.Failure(DiagramText.EngineStopped, lasting: false);
+            }
+            if (drawing.Error != null) return DiagramResult.Failure(drawing.Error, lasting: true);
+            if (drawing.Png == null || drawing.Svg == null || !(drawing.Width > 0) || !(drawing.Height > 0))
+                return DiagramResult.Failure(DiagramText.Failed, lasting: false);
+            return DiagramResult.Picture(drawing.Png, drawing.Svg, drawing.Width, drawing.Height, paper);
+        }
+
+        private void DropPage()
+        {
+            IDiagramPage? page;
+            lock (_gate)
+            {
+                page = _page;
+                _page = null;
+            }
+            try
+            {
+                page?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _warn("Closing the diagram page failed (" + ex.GetType().Name + ")");
+            }
+        }
+
+        private sealed class Job
+        {
+            public Job(DiagramRequest request, object slot)
+            {
+                Request = request;
+                Slot = slot;
+            }
+
+            public DiagramRequest Request { get; }
+
+            public object Slot { get; }
+
+            public TaskCompletionSource<DiagramResult> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+}

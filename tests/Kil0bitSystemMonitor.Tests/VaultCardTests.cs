@@ -8,7 +8,10 @@ using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Pad;
 using Xunit;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using ContextMenu = System.Windows.Controls.ContextMenu;
 using DataFormats = System.Windows.DataFormats;
+using MenuItem = System.Windows.Controls.MenuItem;
+using WpfButton = System.Windows.Controls.Button;
 using DataObject = System.Windows.DataObject;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
@@ -181,6 +184,112 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(confirmed);
             Assert.False(card.IsOpen);
             Assert.Equal(1, closed);
+        });
+
+        // Fix round 1.
+
+        [Fact]
+        public void A_reveal_hides_when_focus_leaves_even_for_another_app_but_a_question_stays() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            card.ShowReveal("Bank", "hunter2", () => { });
+            var menu = new ContextMenu { PlacementTarget = card.ValueBox };
+            var copyItem = new MenuItem { Header = "Copy" };
+            menu.Items.Add(copyItem);
+
+            card.OnFocusLeft(copyItem);   // the value box's own context menu
+            Assert.True(card.IsOpen);
+            Assert.Equal("hunter2", card.ValueBox.Text);
+
+            card.OnFocusLeft(null);       // alt-tab, or Windows locking
+            Assert.False(card.IsOpen);
+            Assert.Equal("", card.ValueBox.Text);
+
+            card.ShowReveal("Bank", "hunter2", () => { });
+            card.OnFocusLeft(new WpfButton());   // anything else
+            Assert.False(card.IsOpen);
+            Assert.Equal("", card.ValueBox.Text);
+
+            card.ShowEnterPin("To reveal it.", _ => new UnlockResult(UnlockOutcome.WrongPin, 4), () => { });
+            card.OnFocusLeft(null);
+            Assert.True(card.IsOpen);
+            Assert.Equal("EnterPin", card.Mode);
+        });
+
+        [Fact]
+        public void The_wait_counts_down_then_lets_the_right_pin_in() => UiThread.Run(() =>
+        {
+            var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
+            var until = now.AddSeconds(30);
+            var card = new VaultCard { UtcNow = () => now };
+            bool unlocked = false;
+            card.ShowEnterPin(
+                "To reveal it.",
+                pin => pin == "246810" ? new UnlockResult(UnlockOutcome.Unlocked) : new UnlockResult(UnlockOutcome.WrongPin, 0, until),
+                () => unlocked = true);
+
+            card.PinBox.Password = "000000";
+            Click(card.PrimaryButton);
+            Assert.Equal("Too many wrong PINs. Try again in 0:30.", card.ErrorText.Text);
+
+            now = until.AddSeconds(-12.3);
+            card.OnWaitTimer();
+            Assert.Equal("Too many wrong PINs. Try again in 0:13.", card.ErrorText.Text);
+            Assert.False(card.PinBox.IsEnabled);
+            Assert.False(card.PrimaryButton.IsEnabled);
+
+            now = until.AddSeconds(1);
+            card.OnWaitTimer();
+            Assert.Equal("", card.ErrorText.Text);
+            Assert.Equal(Visibility.Collapsed, card.ErrorText.Visibility);
+            Assert.True(card.PinBox.IsEnabled);
+            Assert.True(card.PrimaryButton.IsEnabled);
+
+            card.PinBox.Password = "246810";
+            Click(card.PrimaryButton);
+            Assert.True(unlocked);
+            Assert.False(card.IsOpen);
+        });
+
+        [Fact]
+        public void A_new_question_ends_a_running_wait() => UiThread.Run(() =>
+        {
+            var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
+            var card = new VaultCard { UtcNow = () => now };
+            card.ShowEnterPin("To reveal it.", _ => new UnlockResult(UnlockOutcome.Waiting, 0, now.AddMinutes(1)), () => { });
+            card.PinBox.Password = "000000";
+            Click(card.PrimaryButton);
+            Assert.Equal("Too many wrong PINs. Try again in 1:00.", card.ErrorText.Text);
+            Assert.False(card.PinBox.IsEnabled);
+
+            card.ShowChangePin((_, _) => new UnlockResult(UnlockOutcome.Unlocked));
+            Assert.Equal("ChangePin", card.Mode);
+            Assert.Equal("", card.ErrorText.Text);
+            Assert.True(card.PinBox.IsEnabled);
+            Assert.True(card.PinBox2.IsEnabled);
+            Assert.True(card.PinBox3.IsEnabled);
+            Assert.True(card.PrimaryButton.IsEnabled);
+
+            card.OnWaitTimer();   // a tick already on its way finds no wait
+            Assert.Equal("", card.ErrorText.Text);
+            Assert.True(card.PinBox.IsEnabled);
+        });
+
+        [Fact]
+        public void Copying_from_the_reveal_box_goes_through_the_card() => UiThread.Run(() =>
+        {
+            var card = new VaultCard();
+            int copied = 0;
+            card.ShowReveal("Bank", "hunter2", () => copied++);
+
+            Assert.True(ApplicationCommands.Copy.CanExecute(null, card.ValueBox));
+            ApplicationCommands.Copy.Execute(null, card.ValueBox);
+            Assert.Equal(1, copied);
+            ApplicationCommands.Cut.Execute(null, card.ValueBox);
+            Assert.Equal(2, copied);
+
+            card.Hide();
+            Assert.False(ApplicationCommands.Copy.CanExecute(null, card.ValueBox));
         });
 
         private static TextCompositionEventArgs Type(UIElement target, string text)

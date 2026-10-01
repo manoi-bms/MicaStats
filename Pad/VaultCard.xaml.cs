@@ -4,9 +4,11 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services.Pad;
 
+using ContextMenu = System.Windows.Controls.ContextMenu;
 using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
@@ -20,11 +22,12 @@ namespace Kil0bitSystemMonitor.Pad
     ///
     /// <para>
     /// Each Show* replaces whatever the card was showing; the previous question's callbacks are
-    /// dropped, never called. Enter is the primary button, Escape the secondary. The card closes as
-    /// Cancel when keyboard focus moves to something else in the window; focus leaving the window
-    /// (another app, Windows locking) comes back with it, so the question stays answerable. On
-    /// close every box is emptied and the timers stop. A PIN or a value is never kept anywhere but
-    /// the boxes.
+    /// dropped, never called. Enter is the primary button, Escape the secondary. A question closes
+    /// as Cancel when keyboard focus moves to something else in the window; focus leaving the window
+    /// (another app, Windows locking) comes back with it, so the question stays answerable. A reveal
+    /// hides as soon as focus leaves the card, the window included. On close every box is emptied
+    /// and the timers stop. A PIN or a value is never kept anywhere but the boxes, and a revealed
+    /// value is copied only through the card's Copy.
     /// </para>
     /// </summary>
     internal partial class VaultCard : UserControl
@@ -64,6 +67,12 @@ namespace Kil0bitSystemMonitor.Pad
                 box.PreviewKeyDown += OnPinPreviewKeyDown;
                 DataObject.AddPastingHandler(box, OnPinPasting);
             }
+
+            // The revealed value leaves the box only through the card's Copy (the secret clipboard):
+            // copy commands run it, and any plain copy or drag of the text is cancelled.
+            ValueBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, OnValueCopy, OnValueCanCopy));
+            ValueBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Cut, OnValueCopy, OnValueCanCopy));
+            DataObject.AddCopyingHandler(ValueBox, (s, e) => e.CancelCommand());
 
             _revealTimer = new DispatcherTimer { Interval = RevealDuration };
             _revealTimer.Tick += (s, e) => OnRevealTimer();
@@ -470,14 +479,67 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnFocusWithinChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
-            if ((bool)e.NewValue || _reconfiguring || !IsOpen) return;
+            if (!(bool)e.NewValue) OnFocusLeft(Keyboard.FocusedElement as DependencyObject);
+        }
 
-            // Focus that left the window, or went to a menu of one of the boxes, comes back to the card;
-            // only focus taken by something else in this window answers the card with Cancel.
-            if (Keyboard.FocusedElement is not DependencyObject now) return;
+        /// <summary>
+        /// Keyboard focus left the card for <paramref name="now"/> - null when it left the window
+        /// (another app, Windows locking). A context menu of one of the card's boxes keeps the card.
+        /// Otherwise a reveal hides, whatever took focus. A question closes as Cancel only when
+        /// something else in this window took focus; focus that left the window comes back to it.
+        /// </summary>
+        internal void OnFocusLeft(DependencyObject? now)
+        {
+            if (_reconfiguring || !IsOpen) return;
+            if (now != null && IsInOwnMenu(now)) return;
+            if (Mode == "Reveal")
+            {
+                Close();
+                return;
+            }
+
+            if (now == null) return;
             var source = PresentationSource.FromDependencyObject(this);
             if (source == null || PresentationSource.FromDependencyObject(now) != source) return;
             Close();
+        }
+
+        /// <summary>True when <paramref name="element"/> is in a context menu opened on one of the card's own boxes.</summary>
+        private bool IsInOwnMenu(DependencyObject element)
+        {
+            for (DependencyObject? d = element; d != null; d = ParentOf(d))
+            {
+                if (d is ContextMenu menu)
+                    return menu.PlacementTarget is UIElement target && IsInCard(target);
+            }
+
+            return false;
+        }
+
+        private bool IsInCard(DependencyObject element)
+        {
+            for (DependencyObject? d = element; d != null; d = ParentOf(d))
+            {
+                if (d == this) return true;
+            }
+
+            return false;
+        }
+
+        private static DependencyObject? ParentOf(DependencyObject d) =>
+            (d is Visual ? VisualTreeHelper.GetParent(d) : null) ?? LogicalTreeHelper.GetParent(d);
+
+        /// <summary>Ctrl+C, Ctrl+Insert, Cut or the menu's Copy in the reveal box: the card's Copy, never the plain clipboard.</summary>
+        private void OnValueCopy(object sender, ExecutedRoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (Mode == "Reveal") _copy?.Invoke();
+        }
+
+        private void OnValueCanCopy(object sender, CanExecuteRoutedEventArgs e)
+        {
+            e.CanExecute = Mode == "Reveal";
+            e.Handled = true;
         }
 
         private static void OnPinTextInput(object sender, TextCompositionEventArgs e)

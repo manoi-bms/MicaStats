@@ -63,6 +63,8 @@
     <ItemGroup>
         <!-- MicaPad's own highlighting definitions, loaded by Pad/PadHighlighting.cs. -->
         <EmbeddedResource Include="Pad\Highlighting\*.xshd" LogicalName="MicaPad.Highlighting.%(Filename)%(Extension)" />
+        <!-- Emoji names (gemoji 4.1.0, MIT), loaded by Services/Pad/Emoji.cs. -->
+        <EmbeddedResource Include="Services\Pad\Emoji.tsv" LogicalName="MicaPad.Emoji.tsv" />
     </ItemGroup>
 
     <!--

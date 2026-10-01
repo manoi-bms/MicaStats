@@ -12,7 +12,7 @@ namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
     /// Everything a language adds to one editor, installed and removed together: syntax colors, or
-    /// Markdown formatting (colorizer, background, bullets, diagram pictures), and folding.
+    /// Markdown formatting (colorizer, background, bullets, emoji, diagram pictures), and folding.
     /// <see cref="Apply"/> removes the previous language first, so switching tabs never piles
     /// anything up; asked again for what is already shown, it does nothing.
     /// </summary>
@@ -27,6 +27,7 @@ namespace Kil0bitSystemMonitor.Pad
         private MarkdownColorizer? _markdown;
         private MarkdownBackgroundRenderer? _markdownBackground;
         private BulletGenerator? _bullets;
+        private EmojiGenerator? _emoji;
         private DiagramBoard? _diagramBoard;
         private DiagramGenerator? _diagramGenerator;
         private readonly FoldingController? _folding;
@@ -94,6 +95,8 @@ namespace Kil0bitSystemMonitor.Pad
                 // First, so the fence shading is drawn under AvalonEdit's current-line highlight.
                 view.BackgroundRenderers.Insert(0, _markdownBackground);
                 view.ElementGenerators.Add(_bullets);
+                _emoji = new EmojiGenerator(_markdownCache, ReportFailure);
+                view.ElementGenerators.Add(_emoji);
                 InstallDiagrams();
             }
             else if (PadHighlighting.For(language) is { } definition)
@@ -196,11 +199,13 @@ namespace Kil0bitSystemMonitor.Pad
                 view.LineTransformers.Remove(_markdown);
                 view.BackgroundRenderers.Remove(_markdownBackground!);
                 view.ElementGenerators.Remove(_bullets!);
+                view.ElementGenerators.Remove(_emoji!);
                 _markdownCache!.StructureChanged -= OnStructureChanged;
                 _markdownCache.Detach();
                 _markdown = null;
                 _markdownBackground = null;
                 _bullets = null;
+                _emoji = null;
                 _markdownCache = null;
             }
         }

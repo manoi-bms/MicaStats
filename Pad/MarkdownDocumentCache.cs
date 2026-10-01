@@ -232,7 +232,10 @@ namespace Kil0bitSystemMonitor.Pad
             return false;
         }
 
-        /// <summary>Facts an edit to the line can take away: typing inside a fenced block or a table row cannot change them without a trigger character.</summary>
+        /// <summary>
+        /// The line had facts an edit to it can take away. Inside lines of a fence and table rows are
+        /// left out: typing there changes nothing unless it types or removes a trigger character.
+        /// </summary>
         private static bool WasStructural(MdLineFacts facts) =>
             facts.Fence == MdFence.Delimiter || facts.Table is MdTableRole.Header or MdTableRole.Delimiter || facts.SetextLevel != 0
             || facts.SetextUnderline || facts.FrontMatter || facts.CalloutClass || facts.Callout != MdCallout.None;

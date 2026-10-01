@@ -92,7 +92,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="StatusText" FontSize="11.5" Foreground="{DynamicResource Ask.Muted}" TextWrapping="Wrap"
+            <TextBlock x:Name="StatusText" FontSize="11.5" Foreground="{DynamicResource Ask.Status}" TextWrapping="Wrap"
                        VerticalAlignment="Center" />
             <Button x:Name="SettingsButton" Grid.Column="1" Style="{StaticResource ChatFlatButton}"
                     Foreground="{DynamicResource Ask.Accent}" Content="Open Settings &gt; AI" Click="OnOpenSettings"

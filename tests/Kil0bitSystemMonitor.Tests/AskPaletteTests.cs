@@ -31,7 +31,7 @@ namespace Kil0bitSystemMonitor.Tests
             {
                 ("Ink", "Background", 4.5), ("Ink", "Bubble", 4.5), ("Ink", "Surface", 4.5),
                 ("Ink", "CodeBack", 4.5), ("Ink", "NoteBack", 4.5), ("Ink", "Chrome", 4.5),
-                ("Accent", "Background", 4.5), ("SendGlyph", "SendBack", 4.5),
+                ("Accent", "Background", 4.5), ("SendGlyph", "SendBack", 4.5), ("Status", "Background", 4.5),
                 ("Muted", "Background", 4.5),
             };
             foreach (string theme in new[] { PadThemes.Dark, PadThemes.Light })

@@ -169,6 +169,23 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void The_ask_theme_choice_loads_from_and_writes_to_the_config() => WithPanel((panel, rig) =>
+        {
+            rig.Config.AskTheme = "Light";
+            panel.Load(rig.Host());
+            Assert.Equal(1, panel.AskThemeBox.SelectedIndex);
+            Assert.Equal(0, rig.Saves);
+
+            panel.AskThemeBox.SelectedIndex = 0;
+            Assert.Equal("Dark", rig.Config.AskTheme);
+            Assert.Equal(1, rig.Saves);
+
+            panel.AskThemeBox.SelectedIndex = 1;
+            Assert.Equal("Light", rig.Config.AskTheme);
+            Assert.Equal("Dark", rig.Config.PadTheme);   // MicaPad's own choice is a separate setting
+        });
+
+        [Fact]
         public void Changing_a_control_writes_the_config_and_saves() => WithPanel((panel, rig) =>
         {
             panel.AssistantToggle.IsOn = true;

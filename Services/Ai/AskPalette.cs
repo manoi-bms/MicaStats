@@ -27,6 +27,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// <summary>Text.</summary>
         public PadColor Ink { get; private init; }
         public PadColor Muted { get; private init; }
+        /// <summary>The status line under the transcript.</summary>
+        public PadColor Status { get; private init; }
         /// <summary>Links, pills, the chip check, the focus border.</summary>
         public PadColor Accent { get; private init; }
         /// <summary>Composer box and prompt chips.</summary>
@@ -64,6 +66,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             Divider = PadColor.Parse("#1AFFFFFF"),
             Ink = PadColor.Parse("#EDEDF2"),
             Muted = PadColor.Parse("#88EDEDF2"),
+            Status = PadColor.Parse("#A0EDEDF2"),
             Accent = PadColor.Parse("#3FD2E4"),
             Surface = PadColor.Parse("#1C1C24"),
             Border = PadColor.Parse("#33FFFFFF"),
@@ -94,6 +97,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             Divider = PadColor.Parse("#1A000000"),
             Ink = PadColor.Parse("#1B1B1F"),
             Muted = PadColor.Parse("#666670"),
+            Status = PadColor.Parse("#666670"),
             Accent = PadColor.Parse("#06707C"),
             Surface = PadColor.Parse("#FFFFFF"),
             Border = PadColor.Parse("#26000000"),
@@ -126,6 +130,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             Pair(nameof(Divider), Divider),
             Pair(nameof(Ink), Ink),
             Pair(nameof(Muted), Muted),
+            Pair(nameof(Status), Status),
             Pair(nameof(Accent), Accent),
             Pair(nameof(Surface), Surface),
             Pair(nameof(Border), Border),

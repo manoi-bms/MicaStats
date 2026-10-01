@@ -57,7 +57,7 @@ namespace Kil0bitSystemMonitor.Ai
             }
         }
 
-        /// <summary>The document for <paramref name="blocks"/>, styled for the dark chat.</summary>
+        /// <summary>The document for <paramref name="blocks"/>, styled for the chat.</summary>
         public static FlowDocument Build(IReadOnlyList<ChatBlock> blocks)
         {
             var document = NewDocument();
@@ -145,7 +145,7 @@ namespace Kil0bitSystemMonitor.Ai
             return quote;
         }
 
-        /// <summary>A rounded dark box with the code, selectable and wrapped, in a monospace font.</summary>
+        /// <summary>A rounded box with the code, selectable and wrapped, in a monospace font.</summary>
         private static BlockUIContainer CodeBlock(ChatBlock block)
         {
             var text = new TextBox
@@ -162,6 +162,7 @@ namespace Kil0bitSystemMonitor.Ai
                 Child = text,
             };
             box.SetResourceReference(Border.BackgroundProperty, "Ask.CodeBack");
+            AskMenus.Install(text, editable: false);
             return new BlockUIContainer(box) { Margin = ParagraphSpacing };
         }
 

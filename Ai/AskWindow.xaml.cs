@@ -85,6 +85,7 @@ namespace Kil0bitSystemMonitor.Ai
             _modelLabel = modelLabel;
             _config = config ?? new AppConfig();
 
+            AskMenus.Install(QuestionBox, editable: true);
             ApplyTheme();
             _config.PropertyChanged += OnConfigChanged;
             SourceInitialized += (s, e) => PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
@@ -109,9 +110,6 @@ namespace Kil0bitSystemMonitor.Ai
 
         /// <summary>The palette the window is painted with.</summary>
         internal AskPalette Palette => _palette;
-
-        /// <summary>The sun and moon button in the header.</summary>
-        internal Button ThemeToggle => ThemeButton;
 
         /// <summary>Flips the Ask theme in the config; the window repaints from the change notice.</summary>
         internal void ToggleTheme() => _config.AskTheme = _palette.IsDark ? PadThemes.Light : PadThemes.Dark;
@@ -138,6 +136,7 @@ namespace Kil0bitSystemMonitor.Ai
             // Sun (E706) offers the light theme, moon (E708) the dark one.
             ThemeButton.Content = _palette.IsDark ? "\uE706" : "\uE708";
             ThemeButton.ToolTip = _palette.IsDark ? "Switch to light theme" : "Switch to dark theme";
+            AskMenus.Retheme(this, _palette);
             PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
         }
 

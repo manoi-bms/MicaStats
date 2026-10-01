@@ -53,6 +53,16 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void The_light_palette_paints_the_document_too() => UiThread.Run(() =>
+        {
+            var document = Build("a [b](https://example.com) `c`", AskPalette.Light);
+
+            Assert.Equal(Color.FromRgb(0x1B, 0x1B, 0x1F), ColorOf(document.Foreground));
+            var link = All<Hyperlink>(document).First();
+            Assert.Equal(Color.FromRgb(0x06, 0x70, 0x7C), ColorOf(link.Foreground));
+        });
+
+        [Fact]
         public void Paragraphs_are_spaced_eight_pixels_apart() => UiThread.Run(() =>
         {
             var blocks = Build("one\n\ntwo").Blocks.ToList();

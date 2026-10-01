@@ -15,6 +15,13 @@
         <GradientStop Color="#2B7FD8" Offset="1" />
     </LinearGradientBrush>
 
+    <!-- Tooltips (chips, links, buttons) in the Ask theme; the colors come from the window's Ask.* brushes. -->
+    <Style TargetType="ToolTip" BasedOn="{StaticResource {x:Type ToolTip}}">
+        <Setter Property="Background" Value="{DynamicResource Ask.Surface}" />
+        <Setter Property="Foreground" Value="{DynamicResource Ask.Ink}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Ask.Border}" />
+    </Style>
+
     <!-- The assistant's round avatar: set Width, Height and FontSize (the glyph) on the control. -->
     <Style x:Key="ChatAvatar" TargetType="ContentControl">
         <Setter Property="Width" Value="28" />

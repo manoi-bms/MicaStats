@@ -11,6 +11,9 @@ using Kil0bitSystemMonitor.Services.Pad;
 using Xunit;
 
 using Border = System.Windows.Controls.Border;
+using ContextMenu = System.Windows.Controls.ContextMenu;
+using MenuItem = System.Windows.Controls.MenuItem;
+using ToolTip = System.Windows.Controls.ToolTip;
 using Color = System.Windows.Media.Color;
 
 namespace Kil0bitSystemMonitor.Tests
@@ -90,8 +93,8 @@ namespace Kil0bitSystemMonitor.Tests
         {
             Assert.Same(AskPalette.Light, window.Palette);
             Assert.Equal(Wpf(AskPalette.Light.Background), BrushColor(window.Resources["Ask.Background"]));
-            Assert.Equal("\uE708", window.ThemeToggle.Content);
-            Assert.Equal("Switch to dark theme", window.ThemeToggle.ToolTip);
+            Assert.Equal("\uE708", window.ThemeButton.Content);
+            Assert.Equal("Switch to dark theme", window.ThemeButton.ToolTip);
             Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(window));
         });
 
@@ -112,25 +115,25 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void The_theme_button_switches_live_and_remembers_the_choice() => WithWindow("Dark", (window, config) =>
         {
-            Assert.Equal("\uE706", window.ThemeToggle.Content);
-            Assert.Equal("Switch to light theme", window.ThemeToggle.ToolTip);
+            Assert.Equal("\uE706", window.ThemeButton.Content);
+            Assert.Equal("Switch to light theme", window.ThemeButton.ToolTip);
             Assert.Equal(Wpf(AskPalette.Dark.Background), BrushColor(window.Resources["Ask.Background"]));
 
-            window.ThemeToggle.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            window.ThemeButton.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
 
             Assert.Equal("Light", config.AskTheme);
             Assert.Same(AskPalette.Light, window.Palette);
             Assert.Equal(Wpf(AskPalette.Light.Background), BrushColor(window.Resources["Ask.Background"]));
             Assert.Equal(Wpf(AskPalette.Light.Background), BrushColor(window.Background));
-            Assert.Equal("\uE708", window.ThemeToggle.Content);
-            Assert.Equal("Switch to dark theme", window.ThemeToggle.ToolTip);
+            Assert.Equal("\uE708", window.ThemeButton.Content);
+            Assert.Equal("Switch to dark theme", window.ThemeButton.ToolTip);
             Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(window));
 
             window.ToggleTheme();
 
             Assert.Equal("Dark", config.AskTheme);
             Assert.Equal(Wpf(AskPalette.Dark.Background), BrushColor(window.Background));
-            Assert.Equal("\uE706", window.ThemeToggle.Content);
+            Assert.Equal("\uE706", window.ThemeButton.Content);
             Assert.Equal(ModernWpf.ElementTheme.Dark, ModernWpf.ThemeManager.GetRequestedTheme(window));
         });
 
@@ -161,6 +164,62 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Wpf(AskPalette.Light.Muted), BrushColor(turn.ToolChips[0].Label.Foreground));
         });
 
+
+        [Fact]
+        public void Text_box_menus_follow_the_ask_theme_both_ways() => WithWindow("Dark", (window, config) =>
+        {
+            var turn = AddFullTurn(window);
+            var boxes = new System.Windows.Controls.Primitives.TextBoxBase[] { window.QuestionBox, turn.Question, turn.Answer };
+
+            foreach (var box in boxes)
+            {
+                var menu = Assert.IsType<ContextMenu>(box.ContextMenu);
+                Assert.Equal(ModernWpf.ElementTheme.Dark, ModernWpf.ThemeManager.GetRequestedTheme(menu));
+                Assert.Equal(Wpf(AskPalette.Dark.Surface), BrushColor(menu.Background));
+            }
+            Assert.Contains(window.QuestionBox.ContextMenu!.Items.OfType<MenuItem>(), i => i.Command == System.Windows.Input.ApplicationCommands.Paste);
+            Assert.DoesNotContain(turn.Answer.ContextMenu!.Items.OfType<MenuItem>(), i => i.Command == System.Windows.Input.ApplicationCommands.Paste);
+
+            config.AskTheme = "Light";
+
+            foreach (var box in boxes)
+            {
+                var menu = box.ContextMenu!;
+                Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(menu));
+                Assert.Equal(Wpf(AskPalette.Light.Surface), BrushColor(menu.Background));
+                Assert.Equal(Wpf(AskPalette.Light.Ink), BrushColor(menu.Foreground));
+            }
+
+            config.AskTheme = "Dark";
+
+            Assert.Equal(ModernWpf.ElementTheme.Dark, ModernWpf.ThemeManager.GetRequestedTheme(turn.Question.ContextMenu!));
+        });
+
+        [Fact]
+        public void A_code_block_menu_follows_the_theme_too() => WithWindow("Dark", (window, config) =>
+        {
+            var turn = new AskTurnView("q");
+            window.TranscriptPanel.Children.Add(turn.Root);
+            turn.AppendText("```\ncode\n```");
+            turn.Complete(DateTime.Now);
+            var code = AiAskWindowTests.Descendants<System.Windows.Controls.TextBox>(turn.Answer.Document)
+                .First(t => t.ContextMenu != null);
+
+            config.AskTheme = "Light";
+
+            Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(code.ContextMenu));
+        });
+
+        [Fact]
+        public void Tooltips_use_an_ask_themed_style() => WithWindow("Light", (window, config) =>
+        {
+            var style = Assert.IsType<System.Windows.Style>(window.FindResource(typeof(ToolTip)));
+            Assert.Contains(style.Setters.OfType<System.Windows.Setter>(), s => s.Property == System.Windows.Controls.Control.BackgroundProperty);
+            var chip = new AskTurnView("q");
+            window.TranscriptPanel.Children.Add(chip.Root);
+            chip.AddTool("get_live_status", null);
+            Assert.Equal(Wpf(AskPalette.Light.Surface), BrushColor(window.FindResource("Ask.Surface")));
+        });
         [Fact]
         public void A_theme_set_elsewhere_reaches_an_open_window() => WithWindow("Dark", (window, config) =>
         {
@@ -168,7 +227,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Same(AskPalette.Light, window.Palette);
             Assert.Equal(Wpf(AskPalette.Light.Chrome), BrushColor(window.Resources["Ask.Chrome"]));
-            Assert.Equal("\uE708", window.ThemeToggle.Content);
+            Assert.Equal("\uE708", window.ThemeButton.Content);
         });
 
         [Fact]

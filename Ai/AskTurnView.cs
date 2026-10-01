@@ -63,6 +63,7 @@ namespace Kil0bitSystemMonitor.Ai
                 Text = question,
                 FontSize = ChatPalette.TextSize,
             };
+            AskMenus.Install(Question, editable: false);
             var bubble = new Border
             {
                 CornerRadius = new CornerRadius(16, 16, 4, 16),
@@ -101,6 +102,7 @@ namespace Kil0bitSystemMonitor.Ai
                 Visibility = Visibility.Collapsed,
             };
 
+            AskMenus.Install(Answer, editable: false);
             NoteText = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,

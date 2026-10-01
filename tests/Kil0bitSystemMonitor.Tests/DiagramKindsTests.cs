@@ -55,11 +55,11 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
-        public void There_are_34_words_all_lower_case()
+        public void There_are_38_words_all_lower_case()
         {
             var words = DiagramKinds.Words.ToList();
 
-            Assert.Equal(34, words.Count);
+            Assert.Equal(38, words.Count);
             Assert.All(words, w => Assert.Equal(w.ToLowerInvariant(), w));
         }
 
@@ -100,5 +100,61 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("mermaid")]
         [InlineData("")]
         public void Other_lines_name_no_kind(string line) => Assert.Null(DiagramKinds.FromFence(line));
+
+        [Theory]
+        [InlineData("math")]
+        [InlineData("latex")]
+        [InlineData("TeX")]
+        public void Math_words_name_the_math_engine(string word)
+        {
+            var kind = DiagramKinds.FromWord(word);
+
+            Assert.Same(DiagramKinds.Math, kind);
+            Assert.Equal(DiagramEngine.Math, kind!.Engine);
+            Assert.Equal("Math", kind.Name);
+            Assert.Equal("math", kind.EngineId);
+            Assert.Equal("math", kind.PageKind);
+            Assert.False(kind.NeedsKroki);
+        }
+
+        [Theory]
+        [InlineData("$$")]
+        [InlineData("   $$  ")]
+        [InlineData("```math")]
+        public void A_dollar_line_or_a_math_fence_opens_a_math_block(string line) => Assert.Same(DiagramKinds.Math, DiagramKinds.FromFence(line));
+
+        [Theory]
+        [InlineData("$$ x")]
+        [InlineData("    $$")]
+        [InlineData("$$$")]
+        [InlineData("$")]
+        public void Other_dollar_lines_open_nothing(string line) => Assert.Null(DiagramKinds.FromFence(line));
+
+        [Theory]
+        [InlineData("plantuml", "PlantUML", "plantuml", DiagramEngine.Kroki)]
+        [InlineData("  D2 ", "D2", "d2", DiagramEngine.Kroki)]
+        [InlineData("vega-lite", "Vega-Lite", "vegalite", DiagramEngine.Kroki)]
+        [InlineData("mermaid", "Mermaid", null, DiagramEngine.Mermaid)]
+        [InlineData("graphviz", "Graphviz", null, DiagramEngine.Graphviz)]
+        [InlineData("svgbob2", "svgbob2", "svgbob2", DiagramEngine.Kroki)]
+        public void A_kroki_type_line_names_its_kind(string line, string name, string? type, DiagramEngine engine)
+        {
+            var kind = DiagramKinds.FromKrokiType(line);
+
+            Assert.NotNull(kind);
+            Assert.Equal(name, kind!.Name);
+            Assert.Equal(type, kind.KrokiType);
+            Assert.Equal(engine, kind.Engine);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData(null)]
+        [InlineData("Not a type")]
+        [InlineData("Foo")]
+        [InlineData("my-type")]
+        [InlineData("kroki")]
+        [InlineData("math")]
+        public void Other_kroki_type_lines_name_no_kind(string? line) => Assert.Null(DiagramKinds.FromKrokiType(line));
     }
 }

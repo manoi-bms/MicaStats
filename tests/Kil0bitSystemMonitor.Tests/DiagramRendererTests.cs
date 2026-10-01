@@ -354,5 +354,19 @@ namespace Kil0bitSystemMonitor.Tests
 
         [Fact]
         public void Css_colors_drop_the_alpha() => Assert.Equal("#0E0E13", DiagramRequest.Css(PadColor.Parse("#FF0E0E13")));
+
+        [Fact]
+        public void A_math_block_is_drawn_on_the_page_as_math_in_the_text_color()
+        {
+            var page = new FakePage { Answer = _ => DiagramFakes.Drawn(80, 20) };
+            using var renderer = Over(page);
+            var request = DiagramFakes.Request("math", "E = mc^2", PadThemes.Dark);
+
+            var result = Wait(renderer.RenderAsync(request, new object()));
+
+            Assert.True(result.IsPicture);
+            Assert.False(result.Paper);
+            Assert.Equal(new PageRequest("math", "E = mc^2", true, "#EDEDF2", "#0E0E13"), Assert.Single(page.Requests));
+        }
     }
 }

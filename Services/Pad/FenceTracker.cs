@@ -92,6 +92,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return i < line.Length && line[i] is '`' or '~' or '$';
         }
 
+        /// <summary>True for a line that is only <c>$$</c> (at most three spaces before it): it opens or closes a math block.</summary>
+        public static bool IsMathDelimiter(string line) => MathRx.IsMatch(line ?? "");
+
         /// <summary>
         /// The first word of an opening fence line's info string (<c>```cs title</c> gives "cs"), or
         /// null when the line is no backtick or tilde fence (at most three spaces before it) or has

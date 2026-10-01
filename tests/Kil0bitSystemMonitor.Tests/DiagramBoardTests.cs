@@ -481,5 +481,42 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Single(board.Renderer.Calls);   // every export came from the cache
             Assert.Empty(board.Status);
         });
+
+        [Fact]
+        public void A_dollar_block_and_a_math_fence_get_math_pictures() => UiThread.Run(() =>
+        {
+            var board = new Board("Energy:\n$$\nE = mc^2\n$$\n```latex\n\\int_0^1 x\\,dx\n```");
+
+            Assert.Null(board.PictureUnder(2));   // the opening $$ gets none
+            Assert.True(board.PictureUnder(4)!.IsDrawing);
+            Assert.NotNull(board.PictureUnder(7));
+            Assert.Equal(2, board.Renderer.Calls.Count);
+            Assert.All(board.Renderer.Calls, c => Assert.Same(DiagramKinds.Math, c.Request.Kind));
+            Assert.Equal("E = mc^2", board.Renderer.Calls[0].Request.Source);
+            Assert.Equal("\\int_0^1 x\\,dx", board.Renderer.Calls[1].Request.Source);
+            Assert.Null(board.Renderer.Calls[0].Request.KrokiServer);
+        });
+
+        [Fact]
+        public void The_kroki_form_takes_its_type_from_the_first_line() => UiThread.Run(() =>
+        {
+            var board = new Board("```kroki\nplantuml\n@startuml\na -> b\n@enduml\n```\n\n```kroki\nmermaid\nflowchart LR\n  a --> b\n```");
+
+            Assert.Equal("PlantUML needs Kroki \u2014 turn it on in Settings \u2192 MicaPad.", board.PictureUnder(6)!.ErrorText!.Text);
+            var offline = Assert.Single(board.Renderer.Calls);   // mermaid under kroki is drawn on this PC
+            Assert.Equal(DiagramEngine.Mermaid, offline.Request.Kind.Engine);
+            Assert.Equal("flowchart LR\n  a --> b", offline.Request.Source);
+            Assert.Null(offline.Request.KrokiServer);
+
+            board.Server = "https://kroki.io";
+            board.Language.RefreshDiagrams();
+            board.Render();
+
+            Assert.Equal(2, board.Renderer.Calls.Count);
+            var kroki = board.Renderer.Calls[1].Request;
+            Assert.Equal("plantuml", kroki.Kind.KrokiType);
+            Assert.Equal("@startuml\na -> b\n@enduml", kroki.Source);
+            Assert.Equal("https://kroki.io", kroki.KrokiServer);
+        });
     }
 }

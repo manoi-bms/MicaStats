@@ -90,5 +90,33 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(DiagramEngine.Mermaid, block.Kind.Engine);
         }
+
+        [Fact]
+        public void Math_blocks_are_dollar_blocks_and_math_fences()
+        {
+            var blocks = Find("$$\nx^2\n$$\n```tex\n\\sqrt{2}\n```\n$$ not alone");
+
+            Assert.Equal(2, blocks.Count);
+            Assert.Same(DiagramKinds.Math, blocks[0].Kind);
+            Assert.Equal("x^2", blocks[0].Source);
+            Assert.Equal(1, blocks[0].OpenLine);
+            Assert.Equal(3, blocks[0].CloseLine);
+            Assert.Same(DiagramKinds.Math, blocks[1].Kind);
+            Assert.Equal("\\sqrt{2}", blocks[1].Source);
+        }
+
+        [Fact]
+        public void The_kroki_form_reads_its_type_line()
+        {
+            var blocks = Find("```kroki\nd2\na -> b\n```\n```kroki\nbpmnx2\n<x/>\n```\n```kroki\nNot A Type\nx\n```\n```kroki\nplantuml\n```");
+
+            Assert.Equal(2, blocks.Count);
+            Assert.Equal("D2", blocks[0].Kind.Name);
+            Assert.Equal("a -> b", blocks[0].Source);
+            Assert.Equal(1, blocks[0].OpenLine);
+            Assert.Equal(4, blocks[0].CloseLine);
+            Assert.Equal("bpmnx2", blocks[1].Kind.KrokiType);
+            Assert.Equal("<x/>", blocks[1].Source);
+        }
     }
 }

@@ -5,14 +5,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
 {
     /// <summary>
     /// A diagram block: its kind, its opening and closing fence lines (1-based) and its source,
-    /// the text between them joined with "\n". A source over <see cref="DiagramBlocks.MaxSourceLength"/>
+    /// the text between them joined with "\n" (in the kroki form, the lines after the type line).
+    /// A source over <see cref="DiagramBlocks.MaxSourceLength"/>
     /// characters is not read: <see cref="TooLarge"/> is set and the source is empty.
     /// </summary>
     public sealed record DiagramBlock(DiagramKind Kind, int OpenLine, int CloseLine, string Source, bool TooLarge);
 
     /// <summary>
     /// Finds the diagram blocks of a document (spec section 1): a closed fenced block whose info
-    /// string's first word is a diagram word, with something other than whitespace inside (R4).
+    /// string's first word is a diagram word, or a closed <c>$$</c> math block (Markdown spec 6.1),
+    /// with something other than whitespace inside (R4). A kroki block takes its kind from its
+    /// first inside line (Markdown spec 6.2).
     /// </summary>
     public static class DiagramBlocks
     {
@@ -35,7 +38,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// The block between the fence on <paramref name="openLine"/> and the one on
         /// <paramref name="closeLine"/> (1-based, already known to pair), or null when the opening
-        /// fence names no diagram or the source is blank.
+        /// line names no diagram, a kroki block's type line names none, or the source is blank.
         /// </summary>
         public static DiagramBlock? Read(Func<int, string> lineText, int openLine, int closeLine)
         {
@@ -43,10 +46,19 @@ namespace Kil0bitSystemMonitor.Services.Pad
             var kind = DiagramKinds.FromFence(lineText(openLine));
             if (kind == null) return null;
 
+            int first = openLine + 1;
+            if (ReferenceEquals(kind, DiagramKinds.KrokiForm))
+            {
+                if (first >= closeLine) return null;
+                kind = DiagramKinds.FromKrokiType(lineText(first));
+                if (kind == null) return null;
+                first++;
+            }
+
             var parts = new List<string>();
             int length = 0;
             bool blank = true;
-            for (int n = openLine + 1; n < closeLine; n++)
+            for (int n = first; n < closeLine; n++)
             {
                 string text = lineText(n) ?? "";
                 length += text.Length + (parts.Count > 0 ? 1 : 0);

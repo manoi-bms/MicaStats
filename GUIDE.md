@@ -265,9 +265,9 @@ and choosing the level a line already has removes the heading. Each is a single 
 
 ### Diagrams
 
-A fenced block whose first word names a diagram type gets a picture right under it in Markdown
-notes. The code stays above the picture and stays editable; the picture follows a moment after
-you stop typing.
+A fenced block whose first word names a diagram type — or a math block between two `$$` lines —
+gets a picture right under it in Markdown notes. The code stays above the picture and stays
+editable; the picture follows a moment after you stop typing.
 
 ```mermaid
 mindmap
@@ -281,6 +281,7 @@ mindmap
 | Mermaid — flowchart, sequence, class, state, ER, Gantt, pie, mindmap, timeline and more | `mermaid`, `mmd` |
 | Graphviz | `dot`, `graphviz`, `gv` |
 | Markmap — a mindmap from a Markdown outline | `markmap` |
+| Math — TeX formulas and `\ce{}` chemistry, by MathJax | `math`, `latex`, `tex`, or a block between two `$$` lines |
 
 Every other type is drawn by a **Kroki** server, which stays off until you turn on
 **Settings → MicaPad → Draw other types with Kroki**: `plantuml`, `puml`, `c4plantuml`, `d2`,
@@ -290,6 +291,10 @@ Every other type is drawn by a **Kroki** server, which stays off until you turn 
 text is sent, to `https://kroki.io` unless you enter your own server. For private notes run Kroki
 yourself (`docker run -d -p 8000:8000 yuzutech/kroki`) and enter `http://localhost:8000`. Kroki
 pictures sit on a white card in both themes.
+
+Wiki.js's `kroki` form works too: in a ```` ```kroki ```` block the first line names the type
+(`plantuml`, `d2`, …) and the rest is the diagram. A type MicaPad draws itself (`mermaid`, `dot`)
+is drawn on this PC; any other type needs Kroki, as above.
 
 Hover a picture for **Hide code** (folds the block's lines away; **Show code** brings them back).
 Right-click it for **Copy picture**, **Save as PNG…** and **Save as SVG…** — these always give the

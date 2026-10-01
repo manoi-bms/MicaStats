@@ -52,6 +52,7 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly DispatcherTimer _renderTimer;
         private readonly Stopwatch _sinceRender = new();
         private bool _rendered;
+        private bool _renderFailed;
 
         /// <summary>Builds the visuals for one question.</summary>
         public AskTurnView(string question)
@@ -243,6 +244,12 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>When the answer finished, HH:mm.</summary>
         public TextBlock TimeText { get; }
 
+        /// <summary>Turns the answer's Markdown into the document shown. Tests replace it to make rendering fail.</summary>
+        internal Func<string, FlowDocument> BuildDocument { get; set; } = raw => ChatDocument.Build(ChatMarkdown.Parse(raw));
+
+        /// <summary>Where a render failure is reported, once per answer. Tests replace it so nothing reaches the real log.</summary>
+        internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("ai", message);
+
         /// <summary>The shortest time between two renders of a streaming answer.</summary>
         internal TimeSpan RenderInterval { get; set; } = TimeSpan.FromMilliseconds(100);
 
@@ -315,12 +322,37 @@ namespace Kil0bitSystemMonitor.Ai
             Footer.Visibility = Visibility.Visible;
         }
 
-        /// <summary>Renders <see cref="RawText"/> now, cancelling a pending render.</summary>
+        /// <summary>
+        /// Renders <see cref="RawText"/> now, cancelling a pending render. Never throws: it runs on
+        /// a timer tick and from the window's <c>finally</c>, where an exception would take MicaStats
+        /// down or leave the window busy. If the Markdown cannot be rendered, the answer is shown as
+        /// plain text and the failure is reported once.
+        /// </summary>
         internal void RenderNow()
         {
             _renderTimer.Stop();
             string raw = RawText;
-            Answer.Show(ChatDocument.Build(ChatMarkdown.Parse(raw)));
+            try
+            {
+                Answer.Show(BuildDocument(raw));
+            }
+            catch (Exception ex)
+            {
+                if (!_renderFailed)
+                {
+                    _renderFailed = true;
+                    // The type only: the message could quote the answer.
+                    Warn("Rendering an answer failed (" + ex.GetType().Name + "); it is shown as plain text");
+                }
+                try
+                {
+                    Answer.Show(ChatDocument.Plain(raw));
+                }
+                catch (Exception)
+                {
+                    // Nothing simpler is left to show it with; the answer stays as it was.
+                }
+            }
             Answer.Visibility = raw.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             _rendered = true;
             _sinceRender.Restart();

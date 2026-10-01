@@ -62,7 +62,8 @@
     <Style x:Key="ChatAnswer" TargetType="RichTextBox">
         <Setter Property="IsReadOnly" Value="True" />
         <Setter Property="IsDocumentEnabled" Value="True" />
-        <Setter Property="IsTabStop" Value="False" />
+        <!-- Reachable with Tab, so keyboard users can select and copy the answer. -->
+        <Setter Property="IsTabStop" Value="True" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0" />

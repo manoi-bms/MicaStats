@@ -175,6 +175,29 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("\u0E17\u0E33\u0E44\u0E21\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E0A\u0E49\u0E32?", turn.Question.Text);
             Assert.True(turn.Answer.IsReadOnly);
             Assert.True(turn.Answer.IsDocumentEnabled);
+            Assert.True(turn.Answer.IsTabStop);   // keyboard users can reach the answer to select and copy it
+        });
+
+        [Fact]
+        public void A_render_failure_shows_the_raw_text_and_is_reported_once() => UiThread.Run(() =>
+        {
+            var warnings = new List<string>();
+            var turn = new AskTurnView("q")
+            {
+                RenderInterval = TimeSpan.FromSeconds(30),
+                BuildDocument = _ => throw new InvalidOperationException("broken"),
+                Warn = warnings.Add,
+            };
+
+            turn.AppendText("**bold**\nline two");   // renders at once: the first failure
+            turn.AppendText(" and more");
+            turn.Complete(DateTime.Now);             // renders again: no second report
+
+            Assert.Equal("**bold**\nline two and more", Rendered(turn).Replace("\r\n", "\n", StringComparison.Ordinal));
+            Assert.Equal(Visibility.Visible, turn.Answer.Visibility);
+            Assert.Equal(Visibility.Visible, turn.Footer.Visibility);
+            var warning = Assert.Single(warnings);
+            Assert.Contains("InvalidOperationException", warning, StringComparison.Ordinal);
         });
     }
 }

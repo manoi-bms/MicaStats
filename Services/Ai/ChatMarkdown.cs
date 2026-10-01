@@ -92,10 +92,16 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         public const int MaxInlineLength = 4000;
 
+        /// <summary>
+        /// The deepest list nesting kept; deeper items stay at this depth. Each level is a nested
+        /// WPF List, and layout recursing thousands of levels deep could overflow the stack.
+        /// </summary>
+        public const int MaxListDepth = 6;
+
         private static readonly Regex HeadingRx = new(@"^ {0,3}(#{1,6})(?:[ \t]+|$)", RegexOptions.CultureInvariant);
         private static readonly Regex ClosingHashesRx = new(@"(?:^|[ \t]+)#+[ \t]*$", RegexOptions.CultureInvariant);
         private static readonly Regex BulletRx = new(@"^([ \t]*)[-*+][ \t]+", RegexOptions.CultureInvariant);
-        private static readonly Regex NumberedRx = new(@"^([ \t]*)(\d{1,9})[.)][ \t]+", RegexOptions.CultureInvariant);
+        private static readonly Regex NumberedRx = new(@"^([ \t]*)([0-9]{1,9})[.)][ \t]+", RegexOptions.CultureInvariant);
         private static readonly Regex QuoteRx = new(@"^ {0,3}>[ \t]?", RegexOptions.CultureInvariant);
         private static readonly Regex FenceRx = new(@"^( {0,3})(?:`{3,}|~{3,})[ \t]*(\S*)", RegexOptions.CultureInvariant);
         private static readonly Regex UrlRx = new(@"\G" + SafeLinks.Pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -140,6 +146,18 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 }
 
                 MdBlock kind = MarkdownLineTokenizer.BlockOf(line, MdFence.None);
+
+                // MicaPad's tokenizer takes any Unicode digit (a Thai numeral, say) as a list number. Here
+                // only an ASCII number that parses starts a numbered item; anything else is text.
+                Match? numberMatch = null;
+                int number = 0;
+                if (kind == MdBlock.Numbered
+                    && !((numberMatch = NumberedRx.Match(line)).Success
+                         && int.TryParse(numberMatch.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out number)))
+                {
+                    kind = MdBlock.Paragraph;
+                }
+
                 switch (kind)
                 {
                     case MdBlock.Rule:
@@ -184,9 +202,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
                     case MdBlock.Numbered:
                     {
                         bool numbered = kind == MdBlock.Numbered;
-                        Match m = numbered ? NumberedRx.Match(line) : BulletRx.Match(line);
+                        Match m = numbered ? numberMatch! : BulletRx.Match(line);
                         int depth = DepthOf(levels, Width(m.Groups[1].Value));
-                        int number = numbered ? int.Parse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture) : 0;
                         itemContent = Width(line.Substring(0, m.Length));
                         open = new ChatBlock(numbered ? ChatBlockKind.Numbered : ChatBlockKind.Bullet, depth: depth, number: number);
                         open.Add(ParseInline(line.Substring(m.Length).Trim()));
@@ -235,12 +252,15 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
         // ---- blocks ----------------------------------------------------------------------------
 
-        /// <summary>The list depth of an item indented <paramref name="indent"/> columns, updating the open levels.</summary>
+        /// <summary>
+        /// The list depth of an item indented <paramref name="indent"/> columns, updating the open
+        /// levels; never deeper than <see cref="MaxListDepth"/>.
+        /// </summary>
         private static int DepthOf(List<int> levels, int indent)
         {
             while (levels.Count > 0 && levels[^1] > indent) levels.RemoveAt(levels.Count - 1);
             if (levels.Count == 0 || levels[^1] < indent) levels.Add(indent);
-            return levels.Count - 1;
+            return Math.Min(levels.Count - 1, MaxListDepth);
         }
 
         /// <summary>Columns of leading whitespace; a tab moves to the next multiple of four.</summary>

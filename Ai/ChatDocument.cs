@@ -60,16 +60,7 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>The document for <paramref name="blocks"/>, styled for the dark chat.</summary>
         public static FlowDocument Build(IReadOnlyList<ChatBlock> blocks)
         {
-            var document = new FlowDocument
-            {
-                PagePadding = new Thickness(0),
-                FontFamily = ChatPalette.TextFont,
-                FontSize = ChatPalette.TextSize,
-                Foreground = ChatPalette.Ink,
-                LineHeight = ChatPalette.LineHeight,
-                TextAlignment = TextAlignment.Left,
-            };
-
+            var document = NewDocument();
             var lists = new List<(List List, int Depth, ChatBlockKind Kind)>();
             foreach (ChatBlock block in blocks)
             {
@@ -94,6 +85,34 @@ namespace Kil0bitSystemMonitor.Ai
             if (document.Blocks.LastBlock is { } last) last.Margin = new Thickness(last.Margin.Left, last.Margin.Top, last.Margin.Right, 0);
             return document;
         }
+
+        /// <summary>
+        /// <paramref name="text"/> as it is, one paragraph with its line breaks and no Markdown:
+        /// what an answer shows when building its styled document failed.
+        /// </summary>
+        public static FlowDocument Plain(string text)
+        {
+            var paragraph = new Paragraph { Margin = new Thickness(0) };
+            string[] lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0) paragraph.Inlines.Add(new LineBreak());
+                if (lines[i].Length > 0) paragraph.Inlines.Add(new Run(lines[i]));
+            }
+            var document = NewDocument();
+            document.Blocks.Add(paragraph);
+            return document;
+        }
+
+        private static FlowDocument NewDocument() => new()
+        {
+            PagePadding = new Thickness(0),
+            FontFamily = ChatPalette.TextFont,
+            FontSize = ChatPalette.TextSize,
+            Foreground = ChatPalette.Ink,
+            LineHeight = ChatPalette.LineHeight,
+            TextAlignment = TextAlignment.Left,
+        };
 
         private static Paragraph Paragraph(IReadOnlyList<ChatRun> runs, Thickness margin)
         {
@@ -151,23 +170,22 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>
         /// Adds a list item, opening, nesting and closing lists by depth. A numbered list starts at
         /// its first item's own number, so a list split by a paragraph or code keeps counting.
+        /// Depth is clamped again here, whatever the blocks say: every level is one more nested
+        /// List, and WPF cannot lay out thousands of them. Bullets are small filled dots at every
+        /// level; the indent shows the nesting.
         /// </summary>
         private static void AddItem(FlowDocument document, List<(List List, int Depth, ChatBlockKind Kind)> lists, ChatBlock item)
         {
-            while (lists.Count > 0 && lists[^1].Depth > item.Depth) lists.RemoveAt(lists.Count - 1);
-            if (lists.Count > 0 && lists[^1].Depth == item.Depth && lists[^1].Kind != item.Kind) lists.RemoveAt(lists.Count - 1);
+            int depth = Math.Clamp(item.Depth, 0, ChatMarkdown.MaxListDepth);
+            while (lists.Count > 0 && lists[^1].Depth > depth) lists.RemoveAt(lists.Count - 1);
+            if (lists.Count > 0 && lists[^1].Depth == depth && lists[^1].Kind != item.Kind) lists.RemoveAt(lists.Count - 1);
 
-            if (lists.Count == 0 || lists[^1].Depth < item.Depth)
+            if (lists.Count == 0 || lists[^1].Depth < depth)
             {
                 bool numbered = item.Kind == ChatBlockKind.Numbered;
                 var list = new List
                 {
-                    MarkerStyle = numbered ? TextMarkerStyle.Decimal : (lists.Count % 3) switch
-                    {
-                        0 => TextMarkerStyle.Disc,
-                        1 => TextMarkerStyle.Circle,
-                        _ => TextMarkerStyle.Square,
-                    },
+                    MarkerStyle = numbered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc,
                     Padding = new Thickness(numbered ? 28 : 22, 0, 0, 0),
                     Margin = lists.Count == 0 ? ParagraphSpacing : new Thickness(0, 2, 0, 2),
                 };
@@ -175,7 +193,7 @@ namespace Kil0bitSystemMonitor.Ai
 
                 if (lists.Count == 0) document.Blocks.Add(list);
                 else lists[^1].List.ListItems.LastListItem.Blocks.Add(list);
-                lists.Add((list, item.Depth, item.Kind));
+                lists.Add((list, depth, item.Kind));
             }
 
             lists[^1].List.ListItems.Add(new ListItem(Paragraph(item.Runs, new Thickness(0, 0, 0, 3))));

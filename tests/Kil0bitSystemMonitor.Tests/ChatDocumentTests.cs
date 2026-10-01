@@ -82,12 +82,55 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(3, numbered.StartIndex);
             Assert.Equal(2, numbered.ListItems.Count);
             var nested = Assert.IsType<List>(numbered.ListItems.FirstListItem.Blocks.LastBlock);
-            Assert.Equal(TextMarkerStyle.Circle, nested.MarkerStyle);
+            Assert.Equal(TextMarkerStyle.Disc, nested.MarkerStyle);   // small filled dots at every level; the indent shows nesting
             Assert.Equal(2, nested.ListItems.Count);
 
             Assert.IsType<Paragraph>(blocks[1]);
             var bullets = Assert.IsType<List>(blocks[2]);
             Assert.Equal(TextMarkerStyle.Disc, bullets.MarkerStyle);
+        });
+
+        /// <summary>How many lists sit inside one another, starting at <paramref name="block"/>.</summary>
+        private static int ListNesting(Block? block) =>
+            block is List list
+                ? 1 + list.ListItems.SelectMany(item => item.Blocks).Select(ListNesting).DefaultIfEmpty(0).Max()
+                : 0;
+
+        [Fact]
+        public void Bullets_use_small_filled_dots_at_every_depth() => UiThread.Run(() =>
+        {
+            var lists = All<List>(Build("- a\n  - b\n    - c\n      - d"));
+            Assert.Equal(4, lists.Count);
+            Assert.All(lists, l => Assert.Equal(TextMarkerStyle.Disc, l.MarkerStyle));
+        });
+
+        [Fact]
+        public void Thousands_of_nested_bullets_build_at_most_seven_lists_deep() => UiThread.Run(() =>
+        {
+            string text = string.Join("\n", Enumerable.Range(0, 3000).Select(i => new string(' ', i) + "- a"));
+
+            var document = ChatDocument.Build(ChatMarkdown.Parse(text));
+
+            Assert.Equal(ChatMarkdown.MaxListDepth + 1, ListNesting(document.Blocks.FirstBlock));
+        });
+
+        [Fact]
+        public void The_builder_clamps_a_depth_deeper_than_the_parser_allows() => UiThread.Run(() =>
+        {
+            var blocks = Enumerable.Range(0, 50).Select(depth => new ChatBlock(ChatBlockKind.Bullet, depth: depth)).ToList();
+
+            var document = ChatDocument.Build(blocks);
+
+            Assert.Equal(ChatMarkdown.MaxListDepth + 1, ListNesting(document.Blocks.FirstBlock));
+            Assert.Equal(50, All<ListItem>(document).Count);
+        });
+
+        [Fact]
+        public void A_list_numbered_from_zero_builds() => UiThread.Run(() =>
+        {
+            var list = Assert.IsType<List>(Assert.Single(Build("0. zero\n1. one").Blocks));
+            Assert.Equal(1, list.StartIndex);   // WPF counts from 1 at the lowest
+            Assert.Equal(2, list.ListItems.Count);
         });
 
         [Fact]

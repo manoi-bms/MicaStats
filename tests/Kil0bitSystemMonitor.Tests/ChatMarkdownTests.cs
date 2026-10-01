@@ -135,6 +135,52 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { new ChatRun("CPU", Bold: true), Plain(": busy") }, blocks[0].Runs);
         }
 
+        [Theory]
+        [InlineData("\u0E51. \u0E02\u0E49\u0E2D\u0E41\u0E23\u0E01")]   // Thai numeral one: "1. first item"
+        [InlineData("\u0663) \u0623\u0648\u0644")]                    // Arabic-Indic three
+        [InlineData("1234567890. ten digits")]
+        public void A_number_that_is_not_ascii_or_too_long_starts_no_list(string line)
+        {
+            var block = Single(line);
+            Assert.Equal(ChatBlockKind.Paragraph, block.Kind);
+            Assert.Equal(new[] { Plain(line) }, block.Runs);
+        }
+
+        [Fact]
+        public void Item_zero_keeps_its_number()
+        {
+            var block = Single("0. zero");
+            Assert.Equal(ChatBlockKind.Numbered, block.Kind);
+            Assert.Equal(0, block.Number);
+            Assert.Equal(new[] { Plain("zero") }, block.Runs);
+        }
+
+        [Fact]
+        public void List_depth_stops_at_six_however_deep_the_indentation_goes()
+        {
+            string text = string.Join("\n", Enumerable.Range(0, 3000).Select(i => new string(' ', i) + "- a"));
+
+            var blocks = ChatMarkdown.Parse(text);
+
+            Assert.Equal(6, ChatMarkdown.MaxListDepth);
+            Assert.Equal(3000, blocks.Count);
+            Assert.All(blocks, b => Assert.Equal(ChatBlockKind.Bullet, b.Kind));
+            Assert.Equal(new[] { 0, 1, 2, 3, 4, 5, 6, 6, 6 }, blocks.Take(9).Select(b => b.Depth));
+            Assert.Equal(6, blocks.Max(b => b.Depth));
+        }
+
+        [Fact]
+        public void The_deepest_inline_nesting_a_line_can_hold_parses()
+        {
+            // 999 links inside one another fill a line to the styling limit; each level recurses once.
+            string line = new string('[', 999) + "core" + string.Concat(Enumerable.Repeat("]()", 999));
+            Assert.Equal(ChatMarkdown.MaxInlineLength, line.Length);
+
+            var runs = Runs(line);
+
+            Assert.Contains("core", string.Concat(runs.Select(r => r.Text)), StringComparison.Ordinal);
+        }
+
         [Fact]
         public void A_list_interrupts_a_paragraph()
         {

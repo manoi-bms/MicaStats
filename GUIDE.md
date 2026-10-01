@@ -250,13 +250,60 @@ Right-click a tab for **Rename**, **Close**, **Close other tabs** and **Move to 
 **Move to** another window (closed tabs go to Closed notes as usual — nothing is deleted). A tab
 that is a real file also has **Copy file path** and **Show in folder**.
 
-### Markdown
+### ### Markdown
 
-Notes and `.md`/`.txt` files are formatted as you type: `#` headings grow, `**bold**`, `*italic*`,
-`~~strike~~` and `` `code` `` look the part, `- ` items get bullets, `- [x]` tasks are crossed off,
-`>` quotes get a bar and fenced ```` ``` ```` blocks a shaded background. The markers stay visible
-(dimmed) — the file is plain text and never changes. Turn it off with **☰ → Markdown formatting**
-or in **Settings → MicaPad**.
+Notes and `.md`/`.txt` files are shown the way Wiki.js shows Markdown, as you type. Every
+character stays visible and editable — the markers are dimmed, not hidden — and the file never
+changes unless you run a command such as Format table. Turn it all off with
+**☰ → Markdown formatting** or in **Settings → MicaPad**.
+
+**Reading font**: prose is shown in Segoe UI; fenced code, inline code, tables, front matter and
+`<kbd>` keys stay in the editor font, so code and columns line up. Turn it off in
+**Settings → MicaPad → Reading font** to see everything in the editor font.
+
+- **Headings**: `# Title` to `###### Title`, or a line of `===` or `---` right under a line of
+  text (after a blank line, `---` is a rule).
+- **Emphasis**: `**bold**`, `*italic*`, `~~strike~~`, `H~2~O` (subscript) and `x^2^`
+  (superscript).
+- **Code**: `` `inline code` `` gets its own color. A fenced block (```` ``` ```` or `~~~`) is
+  shaded, and when its first word names a language — `cs`, `js`, `ts`, `json`, `xml`, `html`,
+  `css`, `powershell`, `python`, `sql`, `cpp`, `java`, `php`, `vb`, `diff`, `ini`, `yaml`, `bat`,
+  `log` and their usual aliases — its code is colored as a file in that language would be.
+- **Lists**: `- ` items get bullets and `- [x]` tasks are crossed off.
+- **Quotes and callouts**: `>` quotes get a bar, one per level (`>>` is two). A quote followed by
+  a line `{.is-info}`, `{.is-success}`, `{.is-warning}` or `{.is-danger}` is a Wiki.js callout: a
+  tinted box with a blue, green, amber or red bar.
+- **Tables**: a header line with `|`, then a line of dashes such as `|---|:-:|--:|`, then rows.
+  The header is bold and the pipes are dimmed. Right-click → **Format** → **Format table** (with
+  the caret in the table) lines the columns up: each as wide as its widest cell, padded as its
+  `:--`, `:-:` or `--:` says, with Thai and Chinese text measured by how wide it shows. A single
+  **Ctrl+Z** undoes it.
+- **Front matter**: a `---` block on the note's first line (closed within 200 lines) is dimmed.
+- **Footnotes and reference links**: `[^1]` shows as a raised mark and `[^1]: text` defines it;
+  `[text][id]` with `[id]: https://…` is a link.
+- **Abbreviations**: after `*[HTML]: Hyper Text Markup Language`, every `HTML` gets a dotted
+  underline.
+- **Emoji**: `:smile:` shows 😄 (in one color), as long as the code is not glued to a letter or
+  digit — `Done :rocket:` works, `user:id:42` stays text. The caret steps over it, Backspace
+  removes the whole code, and copying copies `:smile:`.
+- **Keys and HTML**: `<kbd>Ctrl</kbd>` looks like a key; other tags (`<br>`, `<sup>`,
+  `<!-- … -->`) are dimmed, and so are `{.class}` or `{#id}` at a line's end and the `\` of `\*`.
+- **Math**: `$x^2$` gets the math color, and a block between two `$$` lines is drawn as a formula
+  (see Diagrams below). `$5 and $10` stays plain text.
+
+**Images**: `![alt](picture.png)` anywhere on a line shows the picture under that line — several
+side by side when they fit. Wiki.js's size goes after the address: `=200x` (width), `=x120`
+(height) or `=200x120`, in pixels; without it a picture keeps its own size, made smaller to fit
+the width. The address can be a full path or a `file:` address; a path relative to the file's
+folder (a note has no folder, so it says "A relative path needs a saved file"); a
+`data:image/png;base64,…` address; or an `http`/`https` address, downloaded only while
+**Settings → MicaPad → Load images from the web** is on — it is off at first, because a web
+picture tells its server that you opened the note. An image on a network share
+(`\\server\share\…`) counts as a web image too and needs **Load images from the web** as well,
+unless the note's own file is on that share. Write spaces as `%20` or put the address in
+`<…>`. PNG, JPEG, GIF, BMP, TIFF, ICO, WebP and SVG are shown; files over 20 MB and downloads
+over 10 MB are not. Previews have no right-click menu. **Settings → MicaPad → Draw diagrams**
+turns them off together with diagrams.
 
 Right-click → **Format** wraps the selection in bold, italic, strikethrough, code or a link, or
 turns the selected lines into headings, lists, tasks, quotes or a code block — choose bold, italic,

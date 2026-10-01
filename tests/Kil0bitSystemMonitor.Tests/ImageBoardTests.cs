@@ -315,17 +315,16 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
-        public void The_renderer_draws_an_svg_image_on_the_page_without_a_card()
+        public async Task The_renderer_draws_an_svg_image_on_the_page_without_a_card()
         {
             var page = new FakePage { Answer = _ => DiagramFakes.Drawn() };
             using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
             var request = new DiagramRequest(DiagramKinds.SvgImage, DiagramFakes.Svg, PadThemes.Dark, "#EDEDF2", "#0E0E13", null);
 
-            var task = renderer.RenderAsync(request, new object());
-            Assert.True(task.Wait(TimeSpan.FromSeconds(10)), "the draw did not finish");
+            var result = await renderer.RenderAsync(request, new object()).WaitAsync(TimeSpan.FromSeconds(10));   // TimeoutException: the draw did not finish
 
-            Assert.True(task.Result.IsPicture);
-            Assert.False(task.Result.Paper);
+            Assert.True(result.IsPicture);
+            Assert.False(result.Paper);
             Assert.Equal("svg", Assert.Single(page.Requests).Kind);
             Assert.True(page.Requests[0].Image);   // sized by its width and height in px, as a browser does
             Assert.Equal("image/svg", DiagramKinds.SvgImage.EngineId);

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
@@ -32,6 +33,7 @@ namespace Kil0bitSystemMonitor.Pad
         private DiagramGenerator? _diagramGenerator;
         private readonly FoldingController? _folding;
         private TextDocument? _appliedTo;
+        private bool _emojiLogged;
 
         /// <summary>Documents whose formatting failed; weak, so a closed tab's document can go.</summary>
         private readonly ConditionalWeakTable<TextDocument, object> _failed = new();
@@ -67,6 +69,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The editor's monospace family while the reading font is on (the window sets it); null otherwise.</summary>
         internal FontFamily? MonoFont { get; set; }
 
+        /// <summary>The emoji codes of a line (a test seam); null uses <see cref="Emoji.Find"/>.</summary>
+        internal Func<string, IReadOnlyList<(int Start, int Length, string Glyph)>>? EmojiLookup { get; set; }
+
         /// <summary>
         /// Shows the editor's text in <paramref name="language"/>, or as Plain text if formatting
         /// already failed for this document. The same language on the same document it was applied
@@ -95,7 +100,7 @@ namespace Kil0bitSystemMonitor.Pad
                 // First, so the fence shading is drawn under AvalonEdit's current-line highlight.
                 view.BackgroundRenderers.Insert(0, _markdownBackground);
                 view.ElementGenerators.Add(_bullets);
-                _emoji = new EmojiGenerator(_markdownCache, ReportFailure);
+                _emoji = new EmojiGenerator(_markdownCache, EmojiFailed, EmojiLookup);
                 view.ElementGenerators.Add(_emoji);
                 InstallDiagrams();
             }
@@ -178,6 +183,25 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 if (ReferenceEquals(_editor.Document, document)) Apply(Current);
             }));
+        }
+
+        /// <summary>
+        /// Emoji failed (a missing or corrupt table): the generator already stopped showing any, so
+        /// the codes stay text and the note keeps its Markdown look. Logged once per editor, with the
+        /// exception type only.
+        /// </summary>
+        private void EmojiFailed(Exception ex)
+        {
+            if (_emojiLogged) return;
+            _emojiLogged = true;
+            try
+            {
+                Warn("Emoji failed (" + ex.GetType().Name + "); :codes: are shown as text");
+            }
+            catch (Exception)
+            {
+                // Logging is best effort.
+            }
         }
 
         /// <summary>The structure moved (a fence, a table, a heading underline): lines far from the edit changed look, so repaint them all once the edit is done.</summary>

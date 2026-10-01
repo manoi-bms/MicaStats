@@ -87,5 +87,37 @@ namespace Kil0bitSystemMonitor.Tests
             language.Apply(PadLanguages.ById("json")!);
             Assert.Empty(editor.TextArea.TextView.ElementGenerators.OfType<EmojiGenerator>());
         });
+
+        [Fact]
+        public void A_failing_emoji_lookup_is_logged_once_and_the_note_stays_markdown() => UiThread.Run(() =>
+        {
+            int lookups = 0;
+            var warnings = new System.Collections.Generic.List<string>();
+            var editor = new ICSharpCode.AvalonEdit.TextEditor { Document = new TextDocument(":smile: one\n:tada: two\n# Title") };
+            var language = new EditorLanguage(editor, () => PadPalette.Dark, folds: false)
+            {
+                Warn = warnings.Add,
+                EmojiLookup = line =>
+                {
+                    lookups++;
+                    throw new System.InvalidOperationException("boom");
+                },
+            };
+            language.Apply(PadLanguages.Markdown);
+
+            var view = editor.TextArea.TextView;
+            view.Measure(new Size(600, 400));
+            view.Arrange(new Rect(0, 0, 600, 400));
+            view.EnsureVisualLines();
+            PadLanguageWindowTests.Pump();
+
+            Assert.True(language.HasMarkdown);                     // the note keeps its Markdown look
+            Assert.Same(PadLanguages.Markdown, language.Current);
+            Assert.Single(warnings);
+            Assert.Contains("InvalidOperationException", warnings[0]);
+            Assert.DoesNotContain("boom", warnings[0]);
+            Assert.Equal(1, lookups);                              // the generator stopped asking
+            Assert.DoesNotContain(view.GetVisualLine(1)!.Elements, e => e is FormattedTextElement);
+        });
     }
 }

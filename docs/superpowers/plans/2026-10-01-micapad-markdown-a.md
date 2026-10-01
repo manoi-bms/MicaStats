@@ -2966,7 +2966,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 }
 ```
 
-In `Pad/EditorMenus.cs`, in `FormatMenu`, after `Add("Code block", MarkdownFormatter.CodeBlock, "");` add:
+In `Pad/EditorMenus.cs`, in `FormatMenu`, after `Add("Code block", MarkdownFormatter.CodeBlock, "\uE943");` add:
 
 ```csharp
             format.Items.Add(new Separator());

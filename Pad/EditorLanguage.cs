@@ -6,6 +6,8 @@ using ICSharpCode.AvalonEdit.Document;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 
+using FontFamily = System.Windows.Media.FontFamily;
+
 namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
@@ -61,6 +63,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The pictures of the shown Markdown document, or null.</summary>
         internal DiagramBoard? DiagramBoard => _diagramBoard;
 
+        /// <summary>The editor's monospace family while the reading font is on (the window sets it); null otherwise.</summary>
+        internal FontFamily? MonoFont { get; set; }
+
         /// <summary>
         /// Shows the editor's text in <paramref name="language"/>, or as Plain text if formatting
         /// already failed for this document. The same language on the same document it was applied
@@ -82,7 +87,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 _markdownCache = new MarkdownDocumentCache(ReportFailure);
                 _markdownCache.StructureChanged += OnStructureChanged;
-                _markdown = new MarkdownColorizer(_markdownCache, _palette, ReportFailure);
+                _markdown = new MarkdownColorizer(_markdownCache, _palette, ReportFailure, () => MonoFont);
                 _markdownBackground = new MarkdownBackgroundRenderer(_markdownCache, _palette, ReportFailure);
                 _bullets = new BulletGenerator(_markdownCache, ReportFailure);
                 view.LineTransformers.Add(_markdown);

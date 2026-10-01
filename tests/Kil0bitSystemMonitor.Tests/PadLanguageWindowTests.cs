@@ -56,6 +56,23 @@ namespace Kil0bitSystemMonitor.Tests
             window.Editor.TextArea.TextView.LineTransformers.OfType<ThemedHighlightingColorizer>().Count();
 
         [Fact]
+        public void The_reading_font_is_for_markdown_tabs_only_and_follows_the_setting() => WithWindow((window, env, config) =>
+        {
+            Assert.Equal(MicaPadWindow.ReadingFont.Source, window.Editor.FontFamily.Source);
+            Assert.StartsWith("Cascadia Mono", window.LanguageView.MonoFont!.Source);
+
+            config.PadReadingFont = false;
+            Assert.StartsWith("Cascadia Mono", window.Editor.FontFamily.Source);
+            Assert.Null(window.LanguageView.MonoFont);
+
+            config.PadReadingFont = true;
+            Assert.Equal(MicaPadWindow.ReadingFont.Source, window.Editor.FontFamily.Source);
+            OpenFile(window, env, "data.json", "{ \"a\": 1 }");
+            Assert.StartsWith("Cascadia Mono", window.Editor.FontFamily.Source);
+            Assert.Null(window.LanguageView.MonoFont);
+        });
+
+        [Fact]
         public void A_note_is_markdown_and_says_so() => WithWindow((window, env, config) =>
         {
             Assert.Equal("Markdown", window.LanguageButton.Content);

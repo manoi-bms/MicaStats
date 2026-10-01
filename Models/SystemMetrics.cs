@@ -544,6 +544,7 @@ namespace Kil0bitSystemMonitor.Models
         private bool _padAutoClose = true;
         private bool _padDiagrams = true;
         private bool _padKroki;
+        private bool _padReadingFont = true;
         private string _padKrokiServer = Kil0bitSystemMonitor.Services.Pad.KrokiClient.DefaultServer;
 
         /// <summary>Global shortcut that shows MicaPad, in <c>HotkeyParser</c> syntax. Empty turns it off.</summary>
@@ -613,6 +614,12 @@ namespace Kil0bitSystemMonitor.Models
                     : Kil0bitSystemMonitor.Services.Pad.KrokiClient.DefaultServer);
             }
         }
+
+        /// <summary>
+        /// Prose in Markdown tabs in a reading font (Segoe UI Variable Text); code, inline code and
+        /// tables stay in the editor font (Wiki.js spec 1.1).
+        /// </summary>
+        public bool PadReadingFont { get => _padReadingFont; set { Set(ref _padReadingFont, value); } }
 
         private bool _useGpuRendering;
 

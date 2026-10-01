@@ -2100,7 +2100,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName is nameof(AppConfig.PadFontFamily) or nameof(AppConfig.PadFontSize)
-                or nameof(AppConfig.PadWordWrap) or nameof(AppConfig.PadShowLineNumbers))
+                or nameof(AppConfig.PadWordWrap) or nameof(AppConfig.PadShowLineNumbers) or nameof(AppConfig.PadReadingFont))
             {
                 if (Dispatcher.CheckAccess()) ApplyEditorSettings();
                 else Dispatcher.BeginInvoke(new Action(ApplyEditorSettings));
@@ -2260,9 +2260,25 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnThemeButtonClick(object sender, RoutedEventArgs e) => ToggleTheme();
 
+        /// <summary>Prose in Markdown tabs while Settings -> MicaPad -> Reading font is on (Wiki.js spec 1.1).</summary>
+        internal static readonly FontFamily ReadingFont = new("Segoe UI Variable Text, Segoe UI");
+
+        /// <summary>
+        /// The editor's font for the shown tab: the reading font for a Markdown tab while it is on,
+        /// with code, inline code and tables kept in the editor font; the editor font otherwise.
+        /// </summary>
+        private void ApplyEditorFont()
+        {
+            var mono = new FontFamily(_config.PadFontFamily + ", Cascadia Mono, Consolas");
+            bool reading = _config.PadReadingFont && ReferenceEquals(_language.Current, PadLanguages.Markdown);
+            Editor.FontFamily = reading ? ReadingFont : mono;
+            _language.MonoFont = reading ? mono : null;
+            _language.Redraw();
+        }
+
         private void ApplyEditorSettings()
         {
-            Editor.FontFamily = new FontFamily(_config.PadFontFamily + ", Cascadia Mono, Consolas");
+            ApplyEditorFont();
             Editor.FontSize = _config.PadFontSize * (_state?.Zoom ?? 1.0);
             Editor.WordWrap = _config.PadWordWrap;
             Editor.ShowLineNumbers = _config.PadShowLineNumbers;
@@ -2298,6 +2314,7 @@ namespace Kil0bitSystemMonitor.Pad
             _resolved = PadLanguages.Resolve(_shown.Meta.Language, _shown.Meta.SourcePath, _config.PadMarkdown, Editor.Document.TextLength);
             LanguageButton.Content = _resolved.DisplayName;
             _language.Apply(_resolved.Effective);
+            ApplyEditorFont();
         }
 
         private void OnLanguageClick(object sender, RoutedEventArgs e)

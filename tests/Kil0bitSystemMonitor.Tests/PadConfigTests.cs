@@ -9,6 +9,15 @@ namespace Kil0bitSystemMonitor.Tests
     public class PadConfigTests
     {
         [Fact]
+        public void The_reading_font_is_on_by_default_and_survives_a_round_trip()
+        {
+            Assert.True(new AppConfig().PadReadingFont);
+            Assert.True(JsonSerializer.Deserialize<AppConfig>("{\"PadMarkdown\": true}")!.PadReadingFont);
+            var back = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { PadReadingFont = false }))!;
+            Assert.False(back.PadReadingFont);
+        }
+
+        [Fact]
         public void The_defaults_match_the_spec()
         {
             var config = new AppConfig();

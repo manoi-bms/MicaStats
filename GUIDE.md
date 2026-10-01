@@ -353,10 +353,18 @@ line):
 - "Did the CPU run hotter today than yesterday?" (needs the 7-day history, below)
 - "ทำไมเครื่องช้าเมื่อเช้านี้?" — a question in Thai is answered in Thai
 
-The answer streams in. Under it, **Details** lists what MicaStats looked up, with the arguments
-(for example `get_top_processes {"by":"cpu","count":5}`), so you can see what the answer rests
-on. **Stop** cancels; **New conversation** starts over. If something fails, the question stays in
-the box and **Retry** sends it again; a missing key or model offers **Open Settings > AI**.
+The window works like a chat app: your question appears on the right, the answer on the left,
+formatted (headings, lists, bold, code blocks, links). Above the answer, a chip for each lookup
+says what MicaStats checked (*Read live status*, *Checked top processes*…); hover a chip to see
+the exact call, such as `get_top_processes {"by":"cpu","count":5}`. Three dots show while the
+answer is on its way. Under a finished answer, **Copy** copies it as Markdown, next to the time it
+arrived. The line under the title names the model in use.
+
+The send button turns into **Stop** while an answer streams (**Esc** stops too); the **+** at
+the top right starts a new chat. An empty chat offers a few starter questions to click. Links in
+an answer open in your browser, and only `http`, `https` and `mailto` links work. If something
+fails, the question stays in the box and **Retry** sends it again; a missing key or model offers
+**Open Settings > AI**.
 
 **Explain buttons** ask for you, in your Windows display language:
 

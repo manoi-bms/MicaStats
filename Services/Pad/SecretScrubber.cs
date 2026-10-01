@@ -63,4 +63,42 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return result.Append(text, start, text.Length - start).ToString();
         }
     }
+
+    /// <summary>
+    /// A stored credential's value still to be removed from a note's older versions: kept until a
+    /// scrub (<see cref="NoteStore.ScrubSnapshots"/>) leaves none behind. It holds the value, so it
+    /// is a class, not a record: <see cref="ToString"/> names the note and the credential only.
+    /// </summary>
+    public sealed class PendingScrub
+    {
+        /// <param name="noteId">The note whose versions are scrubbed.</param>
+        /// <param name="id">The credential's id.</param>
+        /// <param name="value">The value to remove; never logged or shown.</param>
+        /// <param name="reference">What replaces each copy: the credential's reference.</param>
+        public PendingScrub(string noteId, string id, string value, string reference)
+        {
+            NoteId = noteId ?? throw new ArgumentNullException(nameof(noteId));
+            Id = id ?? throw new ArgumentNullException(nameof(id));
+            Value = value ?? throw new ArgumentNullException(nameof(value));
+            Reference = reference ?? throw new ArgumentNullException(nameof(reference));
+        }
+
+        /// <summary>The note whose versions are scrubbed.</summary>
+        public string NoteId { get; }
+
+        /// <summary>The credential's id.</summary>
+        public string Id { get; }
+
+        /// <summary>The value to remove. Never logged or shown.</summary>
+        public string Value { get; }
+
+        /// <summary>What replaces each copy: the credential's reference.</summary>
+        public string Reference { get; }
+
+        /// <summary>How many versions the last try left holding it; -1 before any. A window says so again only when it changes.</summary>
+        public int LastLeft { get; set; } = -1;
+
+        /// <summary>The ids only.</summary>
+        public override string ToString() => "PendingScrub { NoteId = " + NoteId + ", Id = " + Id + " }";
+    }
 }

@@ -389,5 +389,64 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { _env.Store.NoteDir(note.Id) }, _env.Bin.Recycled);
             Assert.Empty(Ws.ClosedNotes());
         }
+
+        // ---- scrubs left at exit (final review, items 3 and 4) -------------------------------
+
+        private const string Reference = "{{secret:K7Q2M9XD}}";
+
+        [Fact]
+        public void A_pending_scrub_names_its_ids_never_its_value()
+        {
+            var scrub = new PendingScrub("note1", "K7Q2M9XD", "hunter2", Reference);
+
+            Assert.Contains("note1", scrub.ToString(), StringComparison.Ordinal);
+            Assert.Contains("K7Q2M9XD", scrub.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", scrub.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", $"{scrub}", StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Scrubs_left_at_exit_run_and_go_once_clean()
+        {
+            var note = Ws.NewNote();
+            var version = _env.Store.WriteSnapshot(note.Id, "pw=hunter2", new DateTime(2026, 10, 1, 9, 0, 0));
+            Ws.AddPendingScrub(new PendingScrub(note.Id, "K7Q2M9XD", "hunter2", Reference));
+            Assert.Equal(1, Ws.PendingScrubCount);
+
+            Assert.Equal(0, Ws.RunPendingScrubs());
+
+            Assert.Equal(0, Ws.PendingScrubCount);
+            Assert.Equal("pw=" + Reference, _env.Store.ReadSnapshot(version));
+        }
+
+        [Fact]
+        public void A_scrub_left_at_exit_that_fails_is_kept_and_logged_by_id_only()
+        {
+            var warnings = new ConcurrentQueue<string>();
+            using var ws = new PadWorkspace(_env.Store, new PadWorkspaceOptions
+            {
+                Writer = _env.Writer,
+                UtcClock = () => _env.Clock.UtcNow,
+                RecycleBin = _env.Bin,
+                Warn = warnings.Enqueue,
+                Error = (message, _) => warnings.Enqueue(message),
+                AnsiCodePage = 874,
+            });
+            var note = ws.NewNote();
+            var version = _env.Store.WriteSnapshot(note.Id, "pw=hunter2", new DateTime(2026, 10, 1, 9, 0, 0));
+            ws.AddPendingScrub(new PendingScrub(note.Id, "K7Q2M9XD", "hunter2", Reference));
+
+            using (new DeniedListing(_env.Store.HistoryDir(note.Id)))
+            {
+                Assert.Equal(1, ws.RunPendingScrubs());
+            }
+
+            Assert.Equal(1, ws.PendingScrubCount);
+            Assert.Contains(warnings, w => w.Contains(note.Id, StringComparison.Ordinal) && w.Contains("K7Q2M9XD", StringComparison.Ordinal));
+            Assert.DoesNotContain(warnings, w => w.Contains("hunter2", StringComparison.Ordinal));
+
+            Assert.Equal(0, ws.RunPendingScrubs());   // a second flush (session end, then exit) tries again
+            Assert.Equal("pw=" + Reference, _env.Store.ReadSnapshot(version));
+        }
     }
 }

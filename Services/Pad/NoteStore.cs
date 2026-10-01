@@ -334,13 +334,27 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// replaced by <paramref name="reference"/>. Stamps and file names stay; versions without it
         /// are not touched.
         /// </summary>
-        /// <returns>How many versions may still hold it, because they could not be read or rewritten.</returns>
+        /// <returns>
+        /// How many versions may still hold it, because they could not be read or rewritten; at
+        /// least 1 when the versions could not even be listed. Never throws for an I/O failure.
+        /// </returns>
         public int ScrubSnapshots(string id, string value, string reference)
         {
             lock (LockFor(id))
             {
+                IReadOnlyList<SnapshotInfo> versions;
+                try
+                {
+                    versions = ListSnapshots(id);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _warn("Could not list the versions of note " + id + " to remove a stored credential: " + ex.Message);
+                    return 1;   // unknown: any of them may still hold it
+                }
+
                 int failed = 0;
-                foreach (var snapshot in ListSnapshots(id))
+                foreach (var snapshot in versions)
                 {
                     try
                     {

@@ -402,5 +402,24 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(1, store.ScrubSnapshots(meta.Id, "hunter2", "{{secret:K7Q2M9XD}}"));
             Assert.DoesNotContain(_warnings, w => w.Contains("hunter2", StringComparison.Ordinal));
         }
+
+        [Fact]
+        public void Versions_that_cannot_be_listed_may_still_hold_the_secret_and_are_reported()
+        {
+            var store = Open();
+            var meta = Save(store, "now");
+            var version = store.WriteSnapshot(meta.Id, "pw=hunter2", new DateTime(2026, 10, 1, 9, 0, 0));
+
+            using (new DeniedListing(store.HistoryDir(meta.Id)))
+            {
+                Assert.True(store.ScrubSnapshots(meta.Id, "hunter2", "{{secret:K7Q2M9XD}}") >= 1);
+            }
+
+            Assert.Contains(_warnings, w => w.Contains(meta.Id, StringComparison.Ordinal));
+            Assert.DoesNotContain(_warnings, w => w.Contains("hunter2", StringComparison.Ordinal));
+            Assert.Equal("pw=hunter2", store.ReadSnapshot(version));   // nothing was rewritten
+            Assert.Equal(0, store.ScrubSnapshots(meta.Id, "hunter2", "{{secret:K7Q2M9XD}}"));   // once it can be listed again
+            Assert.Equal("pw={{secret:K7Q2M9XD}}", store.ReadSnapshot(version));
+        }
     }
 }

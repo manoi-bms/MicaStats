@@ -364,15 +364,20 @@ namespace Kil0bitSystemMonitor.Pad
             document.UndoStack.ClearAll();
 
             // The note on disk and its versions. A version of the old text still queued (a pause, a
-            // replace, a close) can land after this scrub while the writer is behind: then the scrub
-            // runs again once the writer is idle (RetryPendingScrubs), keeping the value until then.
+            // replace, a close) can land after this scrub while the writer is behind, and a version
+            // may not be rewritable right now: the scrub is queued first, so nothing can lose it,
+            // and leaves the queue only once it ran clean with the writer idle (RetryPendingScrubs
+            // tries again, keeping the value until then).
+            var scrub = new PendingScrub(note.Id, id, value, reference);
+            QueueScrub(scrub);
             _workspace.FlushPending();
             bool written = _workspace.FlushWrites(TimeSpan.FromSeconds(2));
-            int left = _workspace.Store.ScrubSnapshots(note.Id, value, reference);
-            if (!written) _pendingScrubs.Add(new PendingScrub(note.Id, id, value, reference));
+            int left = Scrub(scrub);
+            if (written && left == 0) _pendingScrubs.Remove(scrub);
 
-            string status = written ? StoredText(id, left)
-                : "Stored as " + id + " \u2014 older versions are still being saved; they will be cleaned when that finishes";
+            string status = !written ? "Stored as " + id + " \u2014 older versions are still being saved; they will be cleaned when that finishes"
+                : left < 0 ? "Stored as " + id + MayStillHoldText
+                : StoredText(id, left);
             // MicaPad never writes the user's file by itself: it keeps the value until the user saves it.
             if (note.Meta.IsFileBacked) status += " \u2014 save the file (Ctrl+S) to remove it there";
             ShowStatus(status);
@@ -384,59 +389,111 @@ namespace Kil0bitSystemMonitor.Pad
             : left == 1 ? "Stored as " + id + " \u2014 1 older version still holds it"
             : "Stored as " + id + " \u2014 " + left.ToString(CultureInfo.InvariantCulture) + " older versions still hold it";
 
-        /// <summary>A note's versions to scrub again once the writer has caught up; it holds the value until then.</summary>
-        private sealed record PendingScrub(string NoteId, string Id, string Value, string Reference);
+        /// <summary>The status for a scrub that threw: nothing is known about the versions.</summary>
+        private const string MayStillHoldText = " \u2014 older versions may still hold it; MicaPad will try again";
 
+        /// <summary>The first wait between tries of a scrub that did not run clean; it doubles up to <see cref="MaxScrubRetryMs"/>.</summary>
+        private const long FirstScrubRetryMs = 2000;
+
+        /// <summary>The longest wait between tries, so a version that never becomes rewritable is not tried (and logged) every two seconds.</summary>
+        private const long MaxScrubRetryMs = 5 * 60 * 1000;
+
+        /// <summary>Scrubs not yet run clean, with the writer idle; each holds its value until then.</summary>
         private readonly List<PendingScrub> _pendingScrubs = new();
 
         /// <summary>When the tick may next ask whether the writer is idle (asking makes it retry failed work at once).</summary>
         private long _nextScrubTryMs;
 
-        /// <summary>Scrubs still waiting for the writer; for tests.</summary>
+        /// <summary>The wait before the next try while scrubs keep failing.</summary>
+        private long _scrubRetryMs = FirstScrubRetryMs;
+
+        /// <summary>Scrubs still waiting; for tests.</summary>
         internal int PendingScrubCount => _pendingScrubs.Count;
 
-        /// <summary>The window tick: at most every two seconds, the pending scrubs run once the writer is idle.</summary>
-        private void RetryPendingScrubsOnTick()
+        /// <summary>Queues a scrub; the tick tries it within two seconds.</summary>
+        private void QueueScrub(PendingScrub scrub)
         {
-            if (_pendingScrubs.Count == 0 || Environment.TickCount64 < _nextScrubTryMs) return;
-            _nextScrubTryMs = Environment.TickCount64 + 2000;
-            Guard("Removing a stored credential from older versions", () => RetryPendingScrubs());
+            _pendingScrubs.Add(scrub);
+            _scrubRetryMs = FirstScrubRetryMs;
+            _nextScrubTryMs = Math.Min(_nextScrubTryMs, Environment.TickCount64 + FirstScrubRetryMs);
         }
 
         /// <summary>
-        /// Once the writer is idle (every queued version is on disk), scrubs the versions again and
-        /// forgets the values; a version that still cannot be rewritten is reported. Returns how
-        /// many scrubs still wait.
+        /// One scrub of a note's versions: how many may still hold the value, or -1 when the scrub
+        /// threw (logged with the ids and the exception's type only).
+        /// </summary>
+        private int Scrub(PendingScrub scrub)
+        {
+            try
+            {
+                int left = _workspace.Store.ScrubSnapshots(scrub.NoteId, scrub.Value, scrub.Reference);
+                scrub.LastLeft = left;
+                return left;
+            }
+            catch (Exception ex)
+            {
+                Warn("Removing stored credential " + scrub.Id + " from the older versions of note " + scrub.NoteId + " failed (" + ex.GetType().Name + ")");
+                return -1;
+            }
+        }
+
+        /// <summary>
+        /// The window tick: the pending scrubs run once the writer is idle, asked at most every two
+        /// seconds; while scrubs keep failing, the wait doubles up to five minutes.
+        /// </summary>
+        private void RetryPendingScrubsOnTick()
+        {
+            if (_pendingScrubs.Count == 0 || Environment.TickCount64 < _nextScrubTryMs) return;
+            _nextScrubTryMs = Environment.TickCount64 + FirstScrubRetryMs;
+            Guard("Removing a stored credential from older versions", () => RetryPendingScrubs());
+            if (_pendingScrubs.Count > 0 && _scrubRetryMs > FirstScrubRetryMs) _nextScrubTryMs = Environment.TickCount64 + _scrubRetryMs;
+        }
+
+        /// <summary>
+        /// Once the writer is idle (every queued version is on disk), runs each pending scrub once.
+        /// One that leaves no version holding its value is dropped with the value; one that throws
+        /// or leaves versions behind stays queued, and the status says so when that count changes.
+        /// Returns how many scrubs still wait.
         /// </summary>
         internal int RetryPendingScrubs()
         {
             if (_pendingScrubs.Count == 0 || !_workspace.FlushWrites(TimeSpan.Zero)) return _pendingScrubs.Count;
 
-            var due = _pendingScrubs.ToList();
-            _pendingScrubs.Clear();
-            foreach (var scrub in due)
+            foreach (var scrub in _pendingScrubs.ToList())
             {
-                int left = _workspace.Store.ScrubSnapshots(scrub.NoteId, scrub.Value, scrub.Reference);
-                if (left > 0) ShowStatus(StoredText(scrub.Id, left));
+                int before = scrub.LastLeft;
+                int left = Scrub(scrub);
+                if (left == 0)
+                {
+                    _pendingScrubs.Remove(scrub);
+                    continue;
+                }
+                if (left != before) ShowStatus(left < 0 ? "Stored as " + scrub.Id + MayStillHoldText : StoredText(scrub.Id, left));
             }
-            return 0;
+
+            _scrubRetryMs = _pendingScrubs.Count == 0 ? FirstScrubRetryMs : Math.Min(_scrubRetryMs * 2, MaxScrubRetryMs);
+            return _pendingScrubs.Count;
         }
 
         /// <summary>
-        /// The close path: the scrubs still waiting get a short flush and run now. If the writer is
-        /// still behind, another open window of the workspace takes them over and keeps retrying.
+        /// The close path: the scrubs still waiting get a short flush and run now. Any that did not
+        /// run clean with the writer idle go to another open window of the workspace, which keeps
+        /// retrying; with none left (application exit), to the workspace, which runs them once more
+        /// after the last flush (<see cref="PadWorkspace.RunPendingScrubs"/>).
         /// </summary>
         private void FinishPendingScrubs()
         {
             if (_pendingScrubs.Count == 0) return;
             bool idle = _workspace.FlushWrites(TimeSpan.FromSeconds(1));
-            var heir = idle ? null : OtherWindows().FirstOrDefault();
             var due = _pendingScrubs.ToList();
             _pendingScrubs.Clear();
+
+            var heir = OtherWindows().FirstOrDefault();
             foreach (var scrub in due)
             {
-                Guard("Removing a stored credential from older versions", () => _workspace.Store.ScrubSnapshots(scrub.NoteId, scrub.Value, scrub.Reference));
-                heir?._pendingScrubs.Add(scrub);
+                if (Scrub(scrub) == 0 && idle) continue;
+                if (heir != null) heir.QueueScrub(scrub);
+                else _workspace.AddPendingScrub(scrub);
             }
         }
 

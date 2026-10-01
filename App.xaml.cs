@@ -689,13 +689,18 @@ namespace Kil0bitSystemMonitor
             SettingsWindow?.SelectSection(section);
         }
 
-        /// <summary>Everything MicaPad holds goes to disk. Never shows UI and never cancels anything.</summary>
+        /// <summary>
+        /// Everything MicaPad holds goes to disk, then the stored credentials a closed window could
+        /// not yet scrub from older versions are scrubbed (best effort; ids only in the log). Never
+        /// shows UI and never cancels anything.
+        /// </summary>
         private static void FlushPad()
         {
             try
             {
                 Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit();
                 s_pad?.FlushAll(TimeSpan.FromSeconds(2));
+                s_pad?.RunPendingScrubs();
             }
             catch (Exception ex)
             {

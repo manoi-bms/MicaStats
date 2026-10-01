@@ -600,6 +600,47 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 () => _store.WriteSessionJson(json)));
         }
 
+        /// <summary>Scrubs a closing window could not finish with no other window left to take them; see <see cref="RunPendingScrubs"/>.</summary>
+        private readonly List<PendingScrub> _pendingScrubs = new();
+
+        /// <summary>How many scrubs wait for <see cref="RunPendingScrubs"/>.</summary>
+        public int PendingScrubCount => _pendingScrubs.Count;
+
+        /// <summary>
+        /// Takes a scrub over from a window that closed before its versions were clean (the writer
+        /// was behind, or a version could not be rewritten) and had no other window to hand it to.
+        /// </summary>
+        public void AddPendingScrub(PendingScrub scrub) => _pendingScrubs.Add(scrub ?? throw new ArgumentNullException(nameof(scrub)));
+
+        /// <summary>
+        /// Runs every waiting scrub once, at exit after <see cref="FlushAll"/>. Best effort: never
+        /// throws, and logs ids only. A scrub that leaves no version holding its value is dropped
+        /// with the value; any other stays for the next call.
+        /// </summary>
+        /// <returns>How many scrubs still wait.</returns>
+        public int RunPendingScrubs()
+        {
+            foreach (var scrub in _pendingScrubs.ToList())
+            {
+                try
+                {
+                    int left = _store.ScrubSnapshots(scrub.NoteId, scrub.Value, scrub.Reference);
+                    if (left == 0)
+                    {
+                        _pendingScrubs.Remove(scrub);
+                        continue;
+                    }
+                    _warn("Stored credential " + scrub.Id + ": " + left.ToString(CultureInfo.InvariantCulture)
+                          + " older version(s) of note " + scrub.NoteId + " may still hold it");
+                }
+                catch (Exception ex)
+                {
+                    _warn("Removing stored credential " + scrub.Id + " from the older versions of note " + scrub.NoteId + " failed (" + ex.GetType().Name + ")");
+                }
+            }
+            return _pendingScrubs.Count;
+        }
+
         /// <summary>Releases the writer when this workspace created it; a shared one is left to its owner.</summary>
         public void Dispose()
         {

@@ -866,6 +866,74 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("The clipboard is busy. Try again in a moment.", window.InfoText.Text);
         });
 
+        // ---- final review -------------------------------------------------------------------
+
+        [Fact]
+        public void A_scrub_whose_versions_cannot_be_listed_stays_queued_until_the_tick_cleans_them() => WithWindow((window, env, config) =>
+        {
+            var warnings = new List<string>();
+            window.Warn = warnings.Add;
+            env.Vault.Load();
+            env.Vault.Create(Pin);
+            var note = env.Workspace.Open.Single();
+            window.Editor.Text = "pw=hunter2";
+            env.Workspace.SnapshotNow(note, SnapshotReason.Pause);
+            Assert.True(env.Workspace.FlushWrites(TimeSpan.FromSeconds(5)));
+            window.Editor.SelectAll();
+            window.StoreSelection();
+
+            using (new DeniedListing(env.Store.HistoryDir(note.Id)))
+            {
+                Click(window.VaultCard.PrimaryButton);
+
+                string id = Assert.Single(env.Vault.Credentials).Id;
+                Assert.Equal("Stored as " + id + " \u2014 1 older version still holds it", window.StatusMessage.Text);
+                Assert.Equal(1, window.PendingScrubCount);
+                Assert.Equal(1, window.RetryPendingScrubs());   // a tick while the cause remains: still queued
+                Assert.Equal(1, window.PendingScrubCount);
+            }
+
+            Assert.Equal(0, window.RetryPendingScrubs());       // a tick once it is gone
+            Assert.Equal(0, window.PendingScrubCount);
+            Assert.NotEmpty(env.Store.ListSnapshots(note.Id));
+            Assert.All(env.Store.ListSnapshots(note.Id), v => Assert.DoesNotContain("hunter2", env.Store.ReadSnapshot(v)));
+            Assert.All(warnings, w => Assert.DoesNotContain("hunter2", w, StringComparison.Ordinal));
+        });
+
+        [Fact]
+        public void Scrubs_a_closing_window_cannot_finish_go_to_the_workspace_when_no_window_is_left() => WithWindow((window, env, config) =>
+        {
+            env.Vault.Load();
+            env.Vault.Create(Pin);
+            var note = env.Workspace.Open.Single();
+            window.Editor.Text = "pw=hunter2";
+            var gate = new ManualResetEventSlim();   // not disposed: the writer thread may still be leaving Wait
+            try
+            {
+                env.Writer.Enqueue("busy", () => gate.Wait());
+                env.Workspace.SnapshotNow(note, SnapshotReason.Pause);
+                window.Editor.SelectAll();
+                window.StoreSelection();
+                Click(window.VaultCard.PrimaryButton);
+                Assert.Equal(1, window.PendingScrubCount);
+
+                window.CloseForExit();                                         // the writer is still stuck: exit with no heir
+
+                Assert.Equal(0, window.PendingScrubCount);
+                Assert.Equal(1, env.Workspace.PendingScrubCount);
+            }
+            finally
+            {
+                gate.Set();
+            }
+
+            Assert.True(env.Workspace.FlushWrites(TimeSpan.FromSeconds(5)));
+            Assert.Equal(0, env.Workspace.RunPendingScrubs());                // App.FlushPad, after FlushAll
+            Assert.Equal(0, env.Workspace.PendingScrubCount);
+            Assert.NotEmpty(env.Store.ListSnapshots(note.Id));
+            Assert.All(env.Store.ListSnapshots(note.Id), v => Assert.DoesNotContain("hunter2", env.Store.ReadSnapshot(v)));
+        });
+
         // ---- helpers ------------------------------------------------------------------------
 
         /// <summary>Flips a bit of the first credential's tag inside the sealed vault file, so its value no longer decrypts.</summary>

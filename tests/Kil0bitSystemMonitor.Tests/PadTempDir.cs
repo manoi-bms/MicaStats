@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
 namespace Kil0bitSystemMonitor.Tests
 {
@@ -23,6 +25,36 @@ namespace Kil0bitSystemMonitor.Tests
             try { Directory.Delete(Root, recursive: true); }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>
+    /// Denies this Windows account listing a folder until disposed, so enumerating its files fails
+    /// with <see cref="UnauthorizedAccessException"/> while the folder still exists and takes new
+    /// files. Dispose puts the folder's access back.
+    /// </summary>
+    internal sealed class DeniedListing : IDisposable
+    {
+        private readonly DirectoryInfo _folder;
+        private readonly FileSystemAccessRule _rule;
+        private bool _removed;
+
+        public DeniedListing(string folder)
+        {
+            _folder = new DirectoryInfo(folder);
+            _rule = new FileSystemAccessRule(WindowsIdentity.GetCurrent().User!, FileSystemRights.ListDirectory, AccessControlType.Deny);
+            var security = _folder.GetAccessControl();
+            security.AddAccessRule(_rule);
+            _folder.SetAccessControl(security);
+        }
+
+        public void Dispose()
+        {
+            if (_removed) return;
+            _removed = true;
+            var security = _folder.GetAccessControl();
+            security.RemoveAccessRule(_rule);
+            _folder.SetAccessControl(security);
         }
     }
 }

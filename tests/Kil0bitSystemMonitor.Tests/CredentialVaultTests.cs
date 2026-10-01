@@ -485,5 +485,55 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(UnlockOutcome.Unlocked, vault.Unlock(Pin).Outcome);
             Assert.Equal("slow but sure", vault.Reveal(id));
         }
+
+        [Fact]
+        public void EnsureLoaded_loads_once_and_reports_a_file_it_cannot_read_yet()
+        {
+            Created().Add("x1234", null, null);
+            var vault = New();
+            Assert.False(vault.IsLoaded);
+
+            using (new FileStream(VaultPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.False(vault.EnsureLoaded());
+                Assert.False(vault.IsLoaded);
+            }
+
+            Assert.True(vault.EnsureLoaded());
+            Assert.True(vault.IsLoaded);
+            Assert.Single(vault.Credentials);
+            File.Delete(VaultPath);
+            Assert.True(vault.EnsureLoaded());   // once loaded, it does not read again
+            Assert.Single(vault.Credentials);
+        }
+
+        [Fact]
+        public void Lock_announces_an_unlock_that_ran_out_unnoticed()
+        {
+            var vault = Created();
+            vault.Unlock(Pin);
+            int changed = 0;
+            vault.Changed += (s, e) => changed++;
+
+            _clock.Advance(300);
+            Assert.False(vault.IsUnlocked);   // dropped quietly by the getter
+            Assert.Equal(0, changed);
+
+            vault.Lock();
+            vault.Lock();
+            Assert.Equal(1, changed);
+        }
+
+        [Fact]
+        public void Create_refuses_when_only_the_ready_copy_is_left()
+        {
+            Created().Add("x1234", null, null);
+            File.Copy(VaultPath, VaultPath + AtomicFile.ReadySuffix);
+            File.Delete(VaultPath);
+
+            var vault = New();
+
+            Assert.Throws<InvalidOperationException>(() => vault.Create(Pin));
+        }
     }
 }

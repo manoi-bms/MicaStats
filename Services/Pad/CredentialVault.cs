@@ -117,6 +117,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private RSA? _privateKey;
         private DateTime _unlockedUntilUtc;
         private string? _movedAsideTo;
+        private bool _loaded;
+        private bool _expiredUnannounced;
 
         /// <param name="path">The vault file; its folder is created on the first save.</param>
         /// <param name="utcNow">The clock for waits, the unlock window and creation times.</param>
@@ -145,6 +147,31 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>After any change of the credentials or the lock, on the thread that made it.</summary>
         public event EventHandler? Changed;
+
+        /// <summary>Whether <see cref="Load"/> has run to the end once.</summary>
+        public bool IsLoaded
+        {
+            get { lock (_gate) return _loaded; }
+        }
+
+        /// <summary>
+        /// Loads the file the first time; later calls do nothing. False when it cannot be read right
+        /// now (another program holds it): the caller says so and tries again later.
+        /// </summary>
+        public bool EnsureLoaded()
+        {
+            if (IsLoaded) return true;
+            try
+            {
+                Load();
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _warn("The credential vault could not be read right now: " + ex.Message);
+                return false;
+            }
+        }
 
         /// <summary>Whether there is a vault (a PIN has been created).</summary>
         public bool Exists
@@ -209,7 +236,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 _movedAsideTo = null;
 
                 byte[]? sealedBytes = AtomicFile.ReadBytes(FilePath);
-                if (sealedBytes == null) return VaultLoadStatus.Missing;
+                if (sealedBytes == null)
+                {
+                    _loaded = true;
+                    return VaultLoadStatus.Missing;
+                }
 
                 try
                 {
@@ -218,6 +249,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     if (doc != null && doc.IsValid())
                     {
                         _doc = doc;
+                        _loaded = true;
                         return VaultLoadStatus.Ready;
                     }
                 }
@@ -227,6 +259,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 }
 
                 _movedAsideTo = MoveAside();
+                _loaded = true;
                 _warn("The credential vault could not be opened by this Windows account; it was moved to " + _movedAsideTo);
                 return VaultLoadStatus.MovedAside;
             }
@@ -238,7 +271,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (!IsValidPin(pin)) throw new ArgumentException("A PIN is 6 to 12 digits.", nameof(pin));
             lock (_gate)
             {
-                if (_doc != null || File.Exists(FilePath)) throw new InvalidOperationException("The vault already exists.");
+                if (_doc != null || File.Exists(FilePath) || File.Exists(FilePath + AtomicFile.ReadySuffix)) throw new InvalidOperationException("The vault already exists.");
 
                 using var rsa = RSA.Create(KeyBits);
                 Save(new VaultDocument
@@ -246,6 +279,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     PublicKey = rsa.ExportSubjectPublicKeyInfo(),
                     PrivateKey = rsa.ExportEncryptedPkcs8PrivateKey(pin.AsSpan(), Pbe()),
                 });
+                _loaded = true;
             }
             OnChanged();
         }
@@ -311,6 +345,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         /// <summary>Checks a PIN under the wrong-PIN rules; a right one unlocks for <see cref="UnlockDuration"/>.</summary>
+        /// <exception cref="IOException">The vault file cannot be written right now (every PIN check saves first); the PIN was not checked.</exception>
         public UnlockResult Unlock(string pin)
         {
             UnlockResult result;
@@ -369,6 +404,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         /// <summary>Re-seals the private key under a new PIN. The current PIN is checked under the wrong-PIN rules.</summary>
+        /// <exception cref="IOException">The vault file cannot be written right now (every PIN check saves first); the PIN was not checked.</exception>
         public UnlockResult ChangePin(string currentPin, string newPin)
         {
             if (!IsValidPin(newPin)) throw new ArgumentException("A PIN is 6 to 12 digits.", nameof(newPin));
@@ -410,7 +446,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             bool wasUnlocked;
             lock (_gate)
             {
-                wasUnlocked = _privateKey != null;
+                wasUnlocked = _privateKey != null || _expiredUnannounced;
                 DropKey();
             }
             if (wasUnlocked) OnChanged();
@@ -488,7 +524,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private RSA? UnlockedKey()
         {
-            if (_privateKey != null && _utcNow() >= _unlockedUntilUtc) DropKey();
+            if (_privateKey != null && _utcNow() >= _unlockedUntilUtc)
+            {
+                DropKey();
+                _expiredUnannounced = true;   // a getter raises no events; the next Lock() announces it
+            }
             return _privateKey;
         }
 
@@ -496,6 +536,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
             _privateKey?.Dispose();
             _privateKey = null;
+            _expiredUnannounced = false;
         }
 
         /// <summary>Writes <paramref name="next"/> and only then makes it current. A failed write removes its own <c>.ready</c> so it cannot resurrect the change.</summary>

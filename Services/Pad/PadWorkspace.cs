@@ -56,6 +56,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>Code page for files that are neither Unicode-marked nor valid UTF-8.</summary>
         public int AnsiCodePage { get; init; } = TextFileCodec.SystemAnsiCodePage;
+
+        /// <summary>The credential vault MicaPad's windows use; null leaves the credential commands disabled. The app passes its one vault; tests pass their own.</summary>
+        public CredentialVault? Vault { get; init; }
     }
 
     /// <summary>
@@ -123,11 +126,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
             _warn = options.Warn;
             _error = options.Error;
             _ansiCodePage = options.AnsiCodePage;
+            Vault = options.Vault;
             Open.CollectionChanged += (s, e) => SyncTabs();   // first subscriber: every window's tab list is in step before a window's own handler runs
         }
 
         /// <summary>The store this workspace reads and writes.</summary>
         public NoteStore Store => _store;
+
+        /// <summary>The credential vault, shared by every window and by Settings; null when the app gave none.</summary>
+        public CredentialVault? Vault { get; }
+
+        /// <summary>Whether a window already told the user the vault was moved aside: once per run.</summary>
+        public bool VaultNoticeShown { get; set; }
 
         /// <summary>Whether a window already told the user about <see cref="NoteStore.LockedFolder"/>: once per run.</summary>
         public bool LockedNoticeShown { get; set; }

@@ -27,6 +27,7 @@ namespace Kil0bitSystemMonitor.Tests
         {
             Store = new NoteStore(Path.Combine(_dir.Root, "pad"), warn: _ => { });
             Writer = new AutosaveWriter(_ => TimeSpan.FromMilliseconds(10));
+            Vault = new CredentialVault(Path.Combine(Store.Root, CredentialVault.FileName), () => Clock.UtcNow, rounds: 1000, warn: _ => { });
             Workspace = NewWorkspace(post);
         }
 
@@ -37,6 +38,8 @@ namespace Kil0bitSystemMonitor.Tests
         public NoteStore Store { get; }
 
         public AutosaveWriter Writer { get; }
+
+        public CredentialVault Vault { get; }
 
         public PadWorkspace Workspace { get; }
 
@@ -55,6 +58,7 @@ namespace Kil0bitSystemMonitor.Tests
                 Warn = _ => { },
                 Error = (_, _) => { },
                 AnsiCodePage = 874,
+                Vault = Vault,
             });
             _workspaces.Add(workspace);
             return workspace;

@@ -68,6 +68,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(10);
 
+        private const int MaxParenDepth = 32;
         private const int SvgSniffBytes = 4096;
         private static readonly Regex DataRx = new(@"^data:image/[a-z0-9.+-]+(;[a-z0-9._=-]+)*;base64,", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         private static readonly Regex SchemeRx = new(@"^[A-Za-z][A-Za-z0-9+.-]+:", RegexOptions.CultureInvariant);
@@ -139,7 +140,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
             string? path;
             if (text.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
             {
-                path = Uri.TryCreate(text, UriKind.Absolute, out var file) && file.IsFile ? file.LocalPath : null;
+                if (!Uri.TryCreate(text, UriKind.Absolute, out var file) || !file.IsFile) path = null;
+                else if (string.Equals(file.Host, "localhost", StringComparison.OrdinalIgnoreCase))
+                {
+                    // file://localhost/C:/x.png is the local C:\x.png
+                    path = Uri.UnescapeDataString(file.AbsolutePath).Replace('/', '\\');
+                    if (path.Length > 2 && path[0] == '\\' && path[2] == ':') path = path.Substring(1);
+                    if (!Path.IsPathFullyQualified(path)) path = null;
+                }
+                else path = file.LocalPath;
             }
             else
             {
@@ -150,8 +159,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 else path = Path.Combine(baseFolder, decoded);
             }
 
-            if (path == null || path.StartsWith(@"\\.\", StringComparison.Ordinal) || path.StartsWith(@"\\?\", StringComparison.Ordinal))
-                return Refused(text, ImageText.NotFound(text));
+            if (path == null || IsDevicePath(path)) return Refused(text, ImageText.NotFound(text));
             try
             {
                 path = Path.GetFullPath(path);
@@ -160,6 +168,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 return Refused(text, ImageText.NotFound(text));
             }
+            if (IsDevicePath(path)) return Refused(text, ImageText.NotFound(text));
+            // A UNC path makes this PC contact another host (SMB/WebDAV), so it counts as a web image (R12), unless it is on the tab's own share.
+            if (path.StartsWith(@"\\", StringComparison.Ordinal) && !webAllowed && !SameShare(path, baseFolder))
+                return Refused(text, ImageText.WebOff);
             return new ImageLocation(ImageOrigin.File, text, path, "file\0" + path, null);
         }
 
@@ -184,6 +196,38 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         public void Dispose() => _http.Dispose();
+
+        /// <summary>A device path (\\.\, \\?\ or \??\), in either slash spelling.</summary>
+        private static bool IsDevicePath(string path)
+        {
+            string p = path.Replace('/', '\\');
+            return p.StartsWith(@"\\.\", StringComparison.Ordinal) || p.StartsWith(@"\\?\", StringComparison.Ordinal) || p.StartsWith(@"\??\", StringComparison.Ordinal);
+        }
+
+        /// <summary>True when the path and the folder are UNC paths on the same \\host\share (case ignored).</summary>
+        private static bool SameShare(string path, string? folder)
+        {
+            if (folder == null) return false;
+            try
+            {
+                string[]? a = ShareOf(path);
+                string[]? b = ShareOf(Path.GetFullPath(folder));
+                return a != null && b != null
+                    && string.Equals(a[0], b[0], StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(a[1], b[1], StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or SecurityException)
+            {
+                return false;
+            }
+        }
+
+        private static string[]? ShareOf(string path)
+        {
+            if (!path.StartsWith(@"\\", StringComparison.Ordinal)) return null;
+            string[] parts = path.Substring(2).Split('\\', 3);
+            return parts.Length >= 2 && parts[0].Length > 0 && parts[1].Length > 0 ? new[] { parts[0], parts[1] } : null;
+        }
 
         private static ImageLocation Refused(string source, string error) => new(ImageOrigin.File, source, "", "", error);
 
@@ -213,8 +257,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
             try
             {
                 using var stream = new FileStream(location.Address, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                if (stream.Length > MaxFileBytes) return Failed(ImageText.CouldNotRead, lasting: true);
-                var bytes = new byte[stream.Length];
+                long length = stream.Length;   // read once: a growing file cannot push past the limit
+                if (length > MaxFileBytes) return Failed(ImageText.CouldNotRead, lasting: true);
+                var bytes = new byte[length];
                 stream.ReadExactly(bytes);
                 return Loaded(bytes);
             }
@@ -264,8 +309,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
             string source;
             if (i < s.Length && s[i] == '<')
             {
-                int close = s.IndexOf('>', i + 1);
-                if (close < 0) return null;
+                int close = i + 1;
+                while (close < s.Length && s[close] != '>' && s[close] != '<') close++;
+                if (close >= s.Length || s[close] != '>') return null;
                 source = s.Substring(i + 1, close - i - 1);
                 i = close + 1;
             }
@@ -276,7 +322,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 int depth = 0;
                 while (i < s.Length && !char.IsWhiteSpace(s[i]))
                 {
-                    if (s[i] == '(') depth++;
+                    if (s[i] == '(')
+                    {
+                        if (++depth > MaxParenDepth) return null;
+                    }
                     else if (s[i] == ')' && depth-- == 0) break;
                     i++;
                 }

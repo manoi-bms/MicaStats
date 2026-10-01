@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Services.Pad;
@@ -229,6 +230,117 @@ namespace Kil0bitSystemMonitor.Tests
             using var impatient = new ImageSources(slow, TimeSpan.FromMilliseconds(100));
             Assert.Equal("The image could not be downloaded (example.com).",
                          Load(impatient, ImageSources.Resolve("https://example.com/a.png", null, true)).Error);
+        }
+
+        public static IEnumerable<object[]> RemotePaths() => new[]
+        {
+            @"\\server\share\x.png",
+            "//server/share/x.png",
+            "//cdn.example.com/img/a.png",
+            "%5C%5Cserver%5Cshare%5Cx.png",
+            "%2F%2Fserver%2Fshare%2Fx.png",
+            "file://server/share/x.png",
+            "file:////server/share/x.png",
+            @"\\evil.example@SSL@443\dav\a.png",
+        }.Select(x => new object[] { x });
+
+        [Theory]
+        [MemberData(nameof(RemotePaths))]
+        public void A_remote_path_waits_for_the_web_setting_and_nothing_is_read(string source)
+        {
+            var off = ImageSources.Resolve(source, @"C:\notes", webAllowed: false);
+            Assert.Equal(ImageText.WebOff, off.Error);
+            using var sources = new ImageSources(new FakeImageHandler());
+            var load = Load(sources, off);
+            Assert.Equal(ImageText.WebOff, load.Error);
+            Assert.Null(load.Bytes);
+
+            var on = ImageSources.Resolve(source, @"C:\notes", webAllowed: true);
+            Assert.Null(on.Error);
+            Assert.Equal(ImageOrigin.File, on.Origin);
+            Assert.StartsWith(@"\\", on.Address);
+        }
+
+        [Fact]
+        public void A_path_on_the_share_of_the_tabs_own_folder_is_allowed_with_web_images_off()
+        {
+            var same = ImageSources.Resolve("img/a.png", @"\\Host\Share\notes", webAllowed: false);
+            Assert.Null(same.Error);
+            Assert.Equal(@"\\Host\Share\notes\img\a.png", same.Address);
+            Assert.Null(ImageSources.Resolve(@"\\HOST\share\other\a.png", @"\\host\SHARE\notes", false).Error);
+            Assert.Equal(ImageText.WebOff, ImageSources.Resolve(@"\\host\other\a.png", @"\\host\share\notes", false).Error);
+            Assert.Equal(ImageText.WebOff, ImageSources.Resolve(@"\\evil\share\a.png", @"\\host\share\notes", false).Error);
+        }
+
+        [Theory]
+        [InlineData("//./PhysicalDrive0")]
+        [InlineData(@"\\./PhysicalDrive0")]
+        [InlineData(@"/\.\PhysicalDrive0")]
+        [InlineData("//./pipe/x")]
+        [InlineData("//?/C:/a.png")]
+        [InlineData(@"\??\C:\a.png")]
+        [InlineData(@"\??\UNC\server\share\x.png")]
+        public void Device_paths_are_never_read(string source)
+        {
+            foreach (bool web in new[] { false, true })
+                Assert.Equal("Image not found: " + source, ImageSources.Resolve(source, @"C:\notes", web).Error);
+        }
+
+        [Fact]
+        public void A_file_address_for_localhost_is_a_local_path()
+        {
+            Assert.Equal(@"C:\x.png", ImageSources.Resolve("file://localhost/C:/x.png", null, false).Address);
+            Assert.Equal(@"C:\x.png", ImageSources.Resolve("file:///C:/x.png", null, false).Address);
+        }
+
+        [Fact]
+        public void Hostile_lines_are_searched_in_linear_time()
+        {
+            foreach (string unit in new[] { "![x](", "![x](<", "![x](a (", "![x](" + new string('(', 40) })
+            {
+                string line = string.Concat(Enumerable.Repeat(unit, ImageSources.MaxLineLength / unit.Length));
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                ImageSources.Find(line);
+                Assert.True(clock.ElapsedMilliseconds < 500, unit + " took " + clock.ElapsedMilliseconds + " ms");
+            }
+        }
+
+        [Fact]
+        public void Parentheses_pair_only_to_32_levels_and_angle_brackets_stop_at_the_next_one()
+        {
+            Assert.Empty(ImageSources.Find("![x](" + new string('(', 33) + "a" + new string(')', 33) + ")"));
+            Assert.Single(ImageSources.Find("![x](" + new string('(', 5) + "a" + new string(')', 5) + ")"));
+            Assert.Equal("b.png", Assert.Single(ImageSources.Find("![x](<a ![y](<b.png>)")).Source);
+        }
+
+        [Fact]
+        public void A_download_streamed_over_10_MB_is_refused_and_the_request_names_MicaPad()
+        {
+            string? agent = null;
+            var handler = new FakeImageHandler
+            {
+                Respond = (request, _) =>
+                {
+                    agent = request.Headers.UserAgent.ToString();
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new MemoryStream(new byte[11 * 1024 * 1024])) });
+                },
+            };
+            using var sources = new ImageSources(handler);
+
+            Assert.Equal("The image could not be downloaded (example.com).",
+                         Load(sources, ImageSources.Resolve("https://example.com/a.png", null, true)).Error);
+            Assert.Equal("MicaPad", agent);
+        }
+
+        [Fact]
+        public void The_web_handler_has_no_cookies_five_redirects_and_the_system_proxy()
+        {
+            using var handler = Assert.IsType<SocketsHttpHandler>(ImageSources.CreateHandler());
+
+            Assert.False(handler.UseCookies);
+            Assert.Equal(5, handler.MaxAutomaticRedirections);
+            Assert.True(handler.UseProxy);
+            Assert.Equal(DecompressionMethods.None, handler.AutomaticDecompression);
         }
 
         [Theory]

@@ -47,6 +47,31 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         /// <summary>
+        /// For each line, the 1-based number of the line that opened the fence it closes, or 0 when
+        /// it closes none. Delimiters alternate (open, close, open...), as <see cref="Classify"/> made
+        /// them; a last opening fence that never closes gets no entry.
+        /// </summary>
+        public static int[] Openings(IReadOnlyList<MdFence> kinds)
+        {
+            var openings = new int[kinds.Count];
+            int open = 0;
+            for (int i = 0; i < kinds.Count; i++)
+            {
+                if (kinds[i] != MdFence.Delimiter) continue;
+                if (open == 0)
+                {
+                    open = i + 1;
+                }
+                else
+                {
+                    openings[i] = open;
+                    open = 0;
+                }
+            }
+            return openings;
+        }
+
+        /// <summary>
         /// The cheap test before the full match: only a line whose first non-space character is a
         /// backtick or tilde can be a fence delimiter. The start of a line is enough to ask it.
         /// </summary>

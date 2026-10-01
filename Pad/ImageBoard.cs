@@ -32,6 +32,12 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>The previews, in the order of the images on the line.</summary>
         internal IReadOnlyList<DiagramPicture> Pictures => Children.OfType<DiagramPicture>().ToList();
+
+        /// <summary>The sources this row shows or waits for; a load that ends redraws only rows holding its source.</summary>
+        internal HashSet<string> Keys { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Built while typing, holding a source whose load waits for the pause.</summary>
+        internal bool Deferred { get; set; }
     }
 
     /// <summary>
@@ -47,6 +53,7 @@ namespace Kil0bitSystemMonitor.Pad
         internal const double Gap = 8;
 
         private const double MinRowWidth = 120;
+        private const long MaxPixels = 100_000_000;
         private const double RowMargin = 24;
         private static readonly TimeSpan ResizePause = TimeSpan.FromMilliseconds(200);
 
@@ -81,7 +88,7 @@ namespace Kil0bitSystemMonitor.Pad
             _resizeTimer.Tick += (s, e) =>
             {
                 _resizeTimer.Stop();
-                RedrawRows();
+                RedrawRows(_ => true);
             };
 
             _document.Changed += OnChanged;
@@ -93,6 +100,12 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>How many loads this board started; for tests.</summary>
         internal int Loads { get; private set; }
+
+        /// <summary>How many lines this board asked to be built again after a load, the pause or a resize; for tests.</summary>
+        internal int RowsRedrawn { get; private set; }
+
+        /// <summary>How many sources this board keeps an entry for; for tests.</summary>
+        internal int EntryCount => _entries.Count;
 
         /// <summary>Ends when every load started so far has ended; for tests.</summary>
         internal Task Loading => Task.WhenAll(_running.ToArray());
@@ -119,7 +132,7 @@ namespace Kil0bitSystemMonitor.Pad
         internal void DrawDue()
         {
             _editing = false;
-            RedrawRows();
+            RedrawRows(row => row.Deferred);
         }
 
         /// <summary>Logs once per board; a failure here never reaches the editor.</summary>
@@ -160,9 +173,10 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 var image = images[i];
                 var location = ImageSources.Resolve(image.Source, folder, web);
-                var result = location.Error != null ? DiagramResult.Failure(location.Error, lasting: true) : ResultOf(location);
-                // While a new source waits for the pause or its load, the line's previous preview stays.
-                shown[i] = result ?? (i < before.Length ? before[i] : null);
+                var result = location.Error != null ? DiagramResult.Failure(location.Error, lasting: true) : ResultOf(location, row);
+                // While a new source waits for the pause or its load, the line's previous preview stays,
+                // but only when the line still has as many images: otherwise positions no longer match.
+                shown[i] = result ?? (before.Length == images.Count ? before[i] : null);
                 var picture = new DiagramPicture(new DiagramView
                 {
                     Result = shown[i],
@@ -172,6 +186,7 @@ namespace Kil0bitSystemMonitor.Pad
                     Width = image.Width,
                     Height = image.Height,
                     Menu = false,
+                    OpenLink = _services.OpenLink,
                     WaitingText = ImageText.Loading,
                 });
                 picture.Margin = new Thickness(0, 4, Gap, 8);
@@ -192,7 +207,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 using var stream = new MemoryStream(bytes, writable: false);
                 var frame = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.None).Frames[0];
-                if (frame.PixelWidth > 0 && frame.PixelHeight > 0) return DiagramResult.Image(bytes, frame.PixelWidth, frame.PixelHeight);
+                if (frame.PixelWidth > 0 && frame.PixelHeight > 0 && (long)frame.PixelWidth * frame.PixelHeight <= MaxPixels) return DiagramResult.Image(bytes, frame.PixelWidth, frame.PixelHeight);
             }
             catch (Exception ex) when (ex is NotSupportedException or FormatException or IOException or ArgumentException
                                            or InvalidOperationException or COMException or OverflowException)
@@ -203,12 +218,22 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>What this board shows for <paramref name="location"/>; starts its load when one is due.</summary>
-        private DiagramResult? ResultOf(ImageLocation location)
+        private DiagramResult? ResultOf(ImageLocation location, ImageRow row)
         {
+            row.Keys.Add(location.Key);
             if (!_entries.TryGetValue(location.Key, out var entry))
             {
+                // An entry is made when a load starts or the cache has the image, not for every
+                // half-typed path.
+                bool cachedAlready = _services.Cache.TryGet(location.Key, out var hit);
+                if (!cachedAlready && _editing)
+                {
+                    row.Deferred = true;
+                    return null;
+                }
                 entry = new Entry();
                 _entries[location.Key] = entry;
+                if (cachedAlready) entry.Shown = hit;
             }
             if (entry.Shown == null && _services.Cache.TryGet(location.Key, out var cached))
             {
@@ -222,7 +247,11 @@ namespace Kil0bitSystemMonitor.Pad
             // A file is read again once per board and after a setting changes; a web or data image that loaded is not.
             bool settled = entry.Settled
                            && (entry.SettledGeneration == _generation || (location.Origin != ImageOrigin.File && entry.Shown is { Lasting: true }));
-            if (!_editing && !settled && !entry.Pending) Load(entry, location);
+            if (!settled && !entry.Pending)
+            {
+                if (_editing) row.Deferred = true;
+                else Load(entry, location);
+            }
             return entry.Shown;
         }
 
@@ -262,7 +291,7 @@ namespace Kil0bitSystemMonitor.Pad
             entry.Settled = true;
             entry.SettledGeneration = generation;
             if (result.Lasting) _services.Cache.Add(location.Key, result);
-            if (run.Returned && _attached && ReferenceEquals(_editor.Document, _document)) RedrawRows();
+            if (run.Returned && _attached && ReferenceEquals(_editor.Document, _document)) RedrawRows(row => row.Keys.Contains(location.Key));
         }
 
         /// <summary>An SVG image through the diagram page (R11): turned into a PNG as it is, in both themes.</summary>
@@ -296,13 +325,17 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>Builds again the lines in view that hold previews, so each fits the width and shows its latest result.</summary>
-        private void RedrawRows()
+        private void RedrawRows(Func<ImageRow, bool> due)
         {
             if (!_attached) return;
             var view = _editor.TextArea.TextView;
             if (!view.VisualLinesValid) return;
             foreach (var line in view.VisualLines.ToList())
-                if (line.Elements.OfType<DiagramElement>().Any(e => e.Picture is ImageRow)) view.Redraw(line, DispatcherPriority.Normal);
+                if (line.Elements.OfType<DiagramElement>().Any(e => e.Picture is ImageRow row && due(row)))
+                {
+                    RowsRedrawn++;
+                    view.Redraw(line, DispatcherPriority.Normal);
+                }
         }
 
         /// <summary>One source's preview in this board: the result shown, a load running, and whether its load ended (in which settings generation).</summary>

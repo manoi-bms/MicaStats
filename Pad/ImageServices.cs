@@ -27,6 +27,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Loaded images by source (64, memory only), shared by the window's tabs (R13).</summary>
         public DiagramCache Cache { get; init; } = new();
 
+        /// <summary>Opens a link a failure offers (the WebView2 download page).</summary>
+        public Action<Uri> OpenLink { get; init; } = _ => { };
+
         /// <summary>Logs a warning; it names an exception type, never an image's path or address.</summary>
         public Action<string> Warn { get; init; } = _ => { };
     }

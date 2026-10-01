@@ -36,6 +36,7 @@ namespace Kil0bitSystemMonitor.Pad
                     Enabled = () => _config.PadDiagrams,
                     WebImages = () => _config.PadWebImages,
                     BaseFolder = FolderOfShown,
+                    OpenLink = OnLinkRequested,
                     Warn = message => Warn(message),
                 };
             }

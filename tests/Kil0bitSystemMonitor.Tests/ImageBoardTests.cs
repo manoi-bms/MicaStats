@@ -92,10 +92,12 @@ namespace Kil0bitSystemMonitor.Tests
                 Render();
             }
 
+            public double Height { get; set; } = 400;
+
             public void Render()
             {
-                View.Measure(new Size(600, 400));
-                View.Arrange(new Rect(0, 0, 600, 400));
+                View.Measure(new Size(600, Height));
+                View.Arrange(new Rect(0, 0, 600, Height));
                 View.EnsureVisualLines();
             }
 
@@ -394,6 +396,172 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(1, f.Board.Loads);                      // and read once more
             f.Settle();
             Assert.Equal(60, f.PictureUnder(1).Image!.Width);
+        });
+
+        private static string DataPng(int width) => "data:image/png;base64," + Convert.ToBase64String(ImageFakes.Png(width, 4));
+
+        /// <summary>A PNG whose header claims <paramref name="width"/> x <paramref name="height"/> (the pixels are not there).</summary>
+        private static byte[] PngClaiming(int width, int height)
+        {
+            var bytes = ImageFakes.Png(1, 1);
+            void Put(int at, int value)
+            {
+                bytes[at] = (byte)(value >> 24);
+                bytes[at + 1] = (byte)(value >> 16);
+                bytes[at + 2] = (byte)(value >> 8);
+                bytes[at + 3] = (byte)value;
+            }
+            Put(16, width);
+            Put(20, height);
+            uint crc = 0xFFFFFFFF;   // the IHDR chunk's CRC covers its type and 13 data bytes
+            for (int i = 12; i < 29; i++)
+            {
+                crc ^= bytes[i];
+                for (int k = 0; k < 8; k++) crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+            }
+            Put(29, unchecked((int)~crc));
+            return bytes;
+        }
+
+        [Fact]
+        public void A_finished_load_redraws_only_the_lines_that_show_its_source() => UiThread.Run(() =>
+        {
+            using var f = new Fixture { Height = 6000 };
+            var text = new System.Text.StringBuilder();
+            for (int i = 1; i <= 30; i++)
+            {
+                File.WriteAllBytes(f.Dir.PathOf("p" + i + ".png"), ImageFakes.Png(10 + i, 4));
+                text.Append("![](p").Append(i).Append(".png)\n");
+            }
+            File.WriteAllBytes(f.Dir.PathOf("q.png"), ImageFakes.Png(50, 4));
+            text.Append("last");
+            f.Show(text.ToString());
+            f.Settle();
+            Assert.NotNull(f.RowUnder(30));
+            int before = f.Board.RowsRedrawn;
+
+            var document = f.Editor.Document;
+            document.Replace(document.GetLineByNumber(30).Offset + 4, 3, "q");   // line 30 now shows q.png
+            f.PumpAndRender();
+            f.Board.DrawDue();
+            f.PumpAndRender();
+            f.Settle();
+
+            Assert.Equal(50, f.PictureUnder(30).Image!.Width);
+            Assert.InRange(f.Board.RowsRedrawn - before, 1, 3);   // its own line, not all thirty
+            Assert.Equal(11, f.PictureUnder(1).Image!.Width);
+        });
+
+        [Fact]
+        public void A_data_image_shows_at_once_without_a_redraw() => UiThread.Run(() =>
+        {
+            using var f = new Fixture();
+
+            f.Show("![d](" + DataPng(30) + ")");
+
+            Assert.False(f.PictureUnder(1).IsDrawing);
+            Assert.Equal(30, f.PictureUnder(1).Image!.Width);
+            Assert.Equal(1, f.Board.Loads);
+            Assert.Equal(0, f.Board.RowsRedrawn);
+        });
+
+        [Fact]
+        public void A_load_ending_after_the_board_is_detached_or_the_document_changed_changes_nothing() => UiThread.Run(() =>
+        {
+            using var f = new Fixture();
+            File.WriteAllBytes(f.Dir.PathOf("a.png"), ImageFakes.Png(40, 20));
+            f.Show("![a](a.png)");
+            var board = f.Board;
+            f.Language.Apply(PadLanguages.ById("json")!);   // detaches the board with its load still running
+
+            UiPump.Wait(board.Loading);
+            f.PumpAndRender();
+            Assert.Equal(0, board.RowsRedrawn);
+
+            f.Language.Apply(PadLanguages.Markdown);
+            f.Render();
+            var second = f.Board;
+            f.Editor.Document = new TextDocument("other");   // the tab's document changed under the running load
+            f.Language.Apply(PadLanguages.Markdown);
+            UiPump.Wait(second.Loading);
+            f.PumpAndRender();
+            Assert.Equal(0, second.RowsRedrawn);
+        });
+
+        [Fact]
+        public void An_image_claiming_over_100_megapixels_is_refused_before_it_is_decoded()
+        {
+            var big = ImageBoard.Decode(PngClaiming(20000, 20000));
+            var ok = ImageBoard.Decode(PngClaiming(10000, 10000));
+
+            Assert.Equal("The image could not be read.", big.Error);
+            Assert.True(ok.IsPicture);
+            Assert.Equal(10000, ok.PixelWidth);
+        }
+
+        [Fact]
+        public void Typing_a_new_image_before_an_old_one_does_not_show_the_old_one_in_its_place() => UiThread.Run(() =>
+        {
+            using var f = new Fixture();
+            File.WriteAllBytes(f.Dir.PathOf("a.png"), ImageFakes.Png(40, 20));
+            File.WriteAllBytes(f.Dir.PathOf("b.png"), ImageFakes.Png(80, 20));
+            f.Show("![a](a.png)");
+            f.Settle();
+
+            f.Editor.Document.Insert(0, "![b](b.png) ");
+            f.PumpAndRender();
+
+            var typing = f.RowUnder(1)!.Pictures;
+            Assert.True(typing[0].IsDrawing);   // Loading, not a copy of the old picture
+            Assert.Equal(40, typing[1].Image!.Width);   // a.png, already loaded
+            f.Board.DrawDue();
+            f.PumpAndRender();
+            f.Settle();
+            var widths = f.RowUnder(1)!.Pictures.Select(p => p.Image!.Width).ToList();
+            Assert.Equal(new[] { 80.0, 40.0 }, widths);
+        });
+
+        [Fact]
+        public void Half_typed_paths_make_no_entries_until_the_pause() => UiThread.Run(() =>
+        {
+            using var f = new Fixture();
+            File.WriteAllBytes(f.Dir.PathOf("a.png"), ImageFakes.Png(40, 20));
+            f.Show("![a](a.png)");
+            f.Settle();
+            Assert.Equal(1, f.Board.EntryCount);
+
+            var document = f.Editor.Document;
+            foreach (string typed in new[] { "x", "xy", "xyz" })
+            {
+                document.Replace(document.Text.IndexOf("](", StringComparison.Ordinal) + 2, document.Text.IndexOf(')') - document.Text.IndexOf("](", StringComparison.Ordinal) - 2, typed);
+                f.PumpAndRender();
+            }
+
+            Assert.Equal(1, f.Board.EntryCount);
+            Assert.Equal(1, f.Board.Loads);
+        });
+
+        [Fact]
+        public void A_link_a_preview_offers_goes_to_the_windows_link_handler() => UiThread.Run(() =>
+        {
+            using var f = new Fixture();
+            var opened = new List<Uri>();
+            f.Language.Images = new ImageServices
+            {
+                Sources = f.Sources,
+                Enabled = () => true,
+                WebImages = () => false,
+                BaseFolder = () => f.Folder,
+                Pause = TimeSpan.FromHours(1),
+                OpenLink = opened.Add,
+            };
+            File.WriteAllBytes(f.Dir.PathOf("a.png"), ImageFakes.Png(4, 4));
+
+            f.Show("![a](a.png)");
+
+            var link = new Uri("https://example.com/webview2");
+            f.PictureUnder(1).View.OpenLink!(link);
+            Assert.Equal(new[] { link }, opened);
         });
     }
 }

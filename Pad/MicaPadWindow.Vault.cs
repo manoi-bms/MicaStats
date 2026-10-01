@@ -15,6 +15,7 @@ using Kil0bitSystemMonitor.Services.Pad;
 using static Kil0bitSystemMonitor.Pad.EditorMenus;
 
 // UseWindowsForms puts System.Windows.Forms and System.Drawing in scope; these names exist in both.
+using Cursors = System.Windows.Input.Cursors;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace Kil0bitSystemMonitor.Pad
@@ -216,7 +217,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             try
             {
-                return check();
+                return WithWaitCursor(check);
             }
             catch (Exception ex)
             {
@@ -228,12 +229,33 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
-        /// <summary>Runs <paramref name="then"/> now while the vault is unlocked; else asks for the PIN first, for <paramref name="purpose"/>.</summary>
+        /// <summary>
+        /// Checking, creating or changing a PIN takes a moment (PBKDF2; an RSA key for a new PIN):
+        /// the wait cursor shows meanwhile and the previous one comes back, whatever happens.
+        /// </summary>
+        private static T WithWaitCursor<T>(Func<T> work)
+        {
+            var previous = Mouse.OverrideCursor;
+            Mouse.OverrideCursor = Cursors.Wait;
+            try
+            {
+                return work();
+            }
+            finally
+            {
+                Mouse.OverrideCursor = previous;
+            }
+        }
+
+        /// <summary>
+        /// Runs <paramref name="then"/> now while the vault is unlocked; else asks for the PIN first, for
+        /// <paramref name="purpose"/>, the card showing a wait or the tries left from earlier wrong PINs.
+        /// </summary>
         private void WithUnlocked(CredentialVault vault, string purpose, string what, Action then, bool reveals = false)
         {
             Action step = () => VaultStep(what, then, reveals);
             if (vault.IsUnlocked) step();
-            else VaultCard.ShowEnterPin(purpose, pin => CheckPin("Checking a PIN", () => vault.Unlock(pin)), step);
+            else VaultCard.ShowEnterPin(purpose, pin => CheckPin("Checking a PIN", () => vault.Unlock(pin)), step, vault.PinState);
         }
 
         private static string Quoted(CredentialInfo info) => "\u201C" + SecretPillGenerator.LabelOf(info) + "\u201D";
@@ -300,7 +322,11 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 try
                 {
-                    vault.Create(pin);
+                    WithWaitCursor(() =>
+                    {
+                        vault.Create(pin);
+                        return true;
+                    });
                 }
                 catch (InvalidOperationException)
                 {
@@ -641,7 +667,7 @@ namespace Kil0bitSystemMonitor.Pad
                 var result = vault.ChangePin(current, next);
                 if (result.Outcome == UnlockOutcome.Unlocked) ShowStatus("PIN changed");
                 return result;
-            }));
+            }), vault.PinState);
         }
 
         /// <summary>

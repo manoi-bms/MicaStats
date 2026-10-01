@@ -35,6 +35,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// </summary>
     public sealed record UnlockResult(UnlockOutcome Outcome, int TriesBeforeWait = 0, DateTime? WaitUntilUtc = null);
 
+    /// <summary>
+    /// Where the wrong-PIN rules stand before a PIN is typed, for the PIN card as it opens.
+    /// <see cref="TriesBeforeWait"/>: wrong PINs left before a wait starts. <see cref="WaitUntilUtc"/>:
+    /// when the running wait ends, or null when none is running.
+    /// </summary>
+    public sealed record PinState(int TriesBeforeWait, DateTime? WaitUntilUtc);
+
     /// <summary>What <see cref="CredentialVault.Load"/> found.</summary>
     public enum VaultLoadStatus
     {
@@ -198,6 +205,27 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public DateTime? UnlockedUntilUtc
         {
             get { lock (_gate) return UnlockedKey() != null ? _unlockedUntilUtc : null; }
+        }
+
+        /// <summary>
+        /// The wrong-PIN state as a PIN check would find it now, without checking or saving anything:
+        /// tries left before a wait, and the end of a running wait, capped at <see cref="LongestWait"/>
+        /// from now as a check caps it. Every try when there is no vault.
+        /// </summary>
+        public PinState PinState
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    if (_doc == null) return new PinState(TriesBeforeFirstWait, null);
+
+                    DateTime now = _utcNow();
+                    DateTime? until = _doc.LockedUntilUtc;
+                    if (until > now + LongestWait) until = now + LongestWait;
+                    return new PinState(Math.Max(0, TriesBeforeFirstWait - _doc.FailedAttempts), until > now ? until : null);
+                }
+            }
         }
 
         /// <summary>Whether <paramref name="pin"/> is 6 to 12 ASCII digits.</summary>

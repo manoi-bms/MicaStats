@@ -101,5 +101,31 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(SecretClipboard.Copy("hunter2"));
             Assert.Empty(fake.Scheduled);
         });
+
+        [Fact]
+        public void A_failure_after_the_clipboard_changed_still_clears_the_value_it_may_hold() => UiThread.Run(() =>
+        {
+            using var fake = new Fake();
+            // The value landed, then the call reported busy (WPF's flush or retry failed after the set).
+            SecretClipboard.SetData = data => { fake.Set.Add(data); fake.Sequence++; return false; };
+
+            Assert.False(SecretClipboard.Copy("hunter2"));
+            Assert.Equal(TimeSpan.FromSeconds(30), Assert.Single(fake.Scheduled).Delay);
+
+            fake.Scheduled[0].Then();
+            Assert.Equal(1, fake.Cleared);
+        });
+
+        [Fact]
+        public void At_exit_a_value_a_failed_copy_may_have_left_is_cleared() => UiThread.Run(() =>
+        {
+            using var fake = new Fake();
+            SecretClipboard.SetData = data => { fake.Sequence++; return false; };
+            SecretClipboard.Copy("hunter2");
+
+            SecretClipboard.ClearIfStillOurs();
+
+            Assert.Equal(1, fake.Cleared);
+        });
     }
 }

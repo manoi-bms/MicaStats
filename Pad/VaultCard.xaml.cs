@@ -110,24 +110,31 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// Asks for the PIN, for <paramref name="purpose"/>. <paramref name="unlock"/> checks it; when it
         /// unlocks, the card closes and <paramref name="unlocked"/> runs. Otherwise the card says why.
+        /// <paramref name="state"/>, the vault's <see cref="CredentialVault.PinState"/>, shows a wait
+        /// left from earlier (input refused, counting down) or the tries left, as the card opens.
         /// </summary>
-        public void ShowEnterPin(string purpose, Func<string, UnlockResult> unlock, Action unlocked)
+        public void ShowEnterPin(string purpose, Func<string, UnlockResult> unlock, Action unlocked, PinState? state = null)
         {
             Begin("EnterPin", "Enter your PIN", purpose, "Unlock", "Cancel");
             ShowField(PinCaption, PinBox, "PIN");
             _unlock = unlock;
             _unlocked = unlocked;
+            ShowPinState(state);
             FocusFirst();
         }
 
-        /// <summary>Asks for the current PIN and a new one twice; closes when <paramref name="change"/> answers Unlocked.</summary>
-        public void ShowChangePin(Func<string, string, UnlockResult> change)
+        /// <summary>
+        /// Asks for the current PIN and a new one twice; closes when <paramref name="change"/> answers
+        /// Unlocked. <paramref name="state"/> as for <see cref="ShowEnterPin"/>: the current PIN is checked under the same rules.
+        /// </summary>
+        public void ShowChangePin(Func<string, string, UnlockResult> change, PinState? state = null)
         {
             Begin("ChangePin", "Change PIN", PinRule, "Change PIN", "Cancel");
             ShowField(PinCaption, PinBox, "Current PIN");
             ShowField(Pin2Caption, PinBox2, "New PIN");
             ShowField(Pin3Caption, PinBox3, "Type the new PIN again");
             _change = change;
+            ShowPinState(state);
             FocusFirst();
         }
 
@@ -195,6 +202,20 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>"Wrong PIN. n more tries before a wait."</summary>
         internal static string TriesText(int left) =>
             left == 1 ? "Wrong PIN. 1 more try before a wait." : string.Create(Inv, $"Wrong PIN. {left} more tries before a wait.");
+
+        /// <summary>The tries left as a card opens, after wrong PINs typed earlier: "n more tries before a wait."</summary>
+        internal static string TriesLeftText(int left) =>
+            left <= 0 ? "The next wrong PIN starts a wait."
+            : left == 1 ? "1 more try before a wait."
+            : string.Create(Inv, $"{left} more tries before a wait.");
+
+        /// <summary>A PIN question's opening state: a running wait counts down with input refused; earlier wrong PINs show the tries left.</summary>
+        private void ShowPinState(PinState? state)
+        {
+            if (state == null) return;
+            if (state.WaitUntilUtc is { } until && until > UtcNow()) StartWait(until);
+            else if (state.TriesBeforeWait < CredentialVault.TriesBeforeFirstWait) SetError(TriesLeftText(state.TriesBeforeWait));
+        }
 
         /// <summary>Enter or the primary button: answers the question.</summary>
         internal void OnPrimary()

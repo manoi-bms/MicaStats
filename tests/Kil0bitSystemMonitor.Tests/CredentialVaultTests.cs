@@ -471,6 +471,50 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(UnlockOutcome.Unlocked, vault.Unlock(Pin).Outcome);
         }
 
+        // ---- final review: the PIN card's state when it opens (item 6) ------------------------
+
+        [Fact]
+        public void The_pin_state_shows_tries_left_and_a_running_wait_and_saves_nothing()
+        {
+            var vault = Created();
+            Assert.Equal(new PinState(5, null), vault.PinState);
+
+            vault.Unlock("000000");
+            vault.Unlock("000000");
+            Assert.Equal(new PinState(3, null), vault.PinState);
+
+            for (int i = 0; i < 3; i++) vault.Unlock("000000");   // the 5th starts a 30 s wait
+            byte[] onDisk = File.ReadAllBytes(VaultPath);
+            Assert.Equal(new PinState(0, _clock.UtcNow.AddSeconds(30)), vault.PinState);
+            Assert.Equal(new PinState(0, _clock.UtcNow.AddSeconds(30)), Loaded().PinState);   // a wait from an earlier run
+
+            _clock.Advance(30);
+            Assert.Equal(new PinState(0, null), vault.PinState);   // over: the next wrong PIN starts a longer one
+            Assert.Equal(onDisk, File.ReadAllBytes(VaultPath));
+        }
+
+        [Fact]
+        public void The_pin_state_caps_a_wait_saved_far_ahead_as_a_check_does()
+        {
+            Created();
+            var doc = JsonNode.Parse(Unseal(File.ReadAllBytes(VaultPath)))!;
+            doc["lockedUntilUtc"] = _clock.UtcNow.AddHours(2).ToString("O", CultureInfo.InvariantCulture);
+            doc["failedAttempts"] = 5;
+            File.WriteAllBytes(VaultPath, Seal(Encoding.UTF8.GetBytes(doc.ToJsonString())));
+            byte[] onDisk = File.ReadAllBytes(VaultPath);
+            var vault = Loaded();
+
+            Assert.Equal(new PinState(0, _clock.UtcNow.AddMinutes(15)), vault.PinState);
+            Assert.Equal(onDisk, File.ReadAllBytes(VaultPath));   // read-only: the cap is saved by the next check
+            Assert.Equal(new UnlockResult(UnlockOutcome.Waiting, 0, _clock.UtcNow.AddMinutes(15)), vault.Unlock(Pin));
+        }
+
+        [Fact]
+        public void Without_a_vault_the_pin_state_has_every_try()
+        {
+            Assert.Equal(new PinState(CredentialVault.TriesBeforeFirstWait, null), Loaded().PinState);
+        }
+
         [Fact]
         public void The_production_rounds_are_600000_and_work()
         {

@@ -292,6 +292,67 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(ApplicationCommands.Copy.CanExecute(null, card.ValueBox));
         });
 
+        // Final review: the state the card opens with (item 6).
+
+        [Fact]
+        public void A_wait_left_from_earlier_shows_its_countdown_as_the_card_opens() => UiThread.Run(() =>
+        {
+            var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
+            var card = new VaultCard { UtcNow = () => now };
+            int checks = 0;
+            bool unlocked = false;
+            card.ShowEnterPin("To reveal it.", _ => { checks++; return new UnlockResult(UnlockOutcome.Unlocked); }, () => unlocked = true,
+                              new PinState(0, now.AddSeconds(75)));
+
+            Assert.Equal("Too many wrong PINs. Try again in 1:15.", card.ErrorText.Text);
+            Assert.False(card.PinBox.IsEnabled);
+            Assert.False(card.PrimaryButton.IsEnabled);
+            card.PinBox.Password = "246810";
+            card.OnPrimary();                          // Enter during the wait checks nothing
+            Assert.Equal(0, checks);
+
+            now = now.AddSeconds(76);
+            card.OnWaitTimer();
+            Assert.True(card.PinBox.IsEnabled);
+            Assert.True(card.PrimaryButton.IsEnabled);
+            card.PinBox.Password = "246810";
+            Click(card.PrimaryButton);
+            Assert.True(unlocked);
+
+            card.ShowChangePin((_, _) => new UnlockResult(UnlockOutcome.Unlocked), new PinState(0, now.AddSeconds(30)));
+            Assert.Equal("Too many wrong PINs. Try again in 0:30.", card.ErrorText.Text);
+            Assert.False(card.PinBox.IsEnabled);
+            Assert.False(card.PinBox2.IsEnabled);
+            Assert.False(card.PinBox3.IsEnabled);
+            Assert.False(card.PrimaryButton.IsEnabled);
+        });
+
+        [Fact]
+        public void Tries_left_from_earlier_show_as_the_card_opens() => UiThread.Run(() =>
+        {
+            var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
+            var card = new VaultCard { UtcNow = () => now };
+            Func<string, UnlockResult> check = _ => new UnlockResult(UnlockOutcome.WrongPin, 1);
+
+            card.ShowEnterPin("To reveal it.", check, () => { }, new PinState(2, null));
+            Assert.Equal("2 more tries before a wait.", card.ErrorText.Text);
+            Assert.True(card.PinBox.IsEnabled);
+
+            card.ShowEnterPin("To reveal it.", check, () => { }, new PinState(1, null));
+            Assert.Equal("1 more try before a wait.", card.ErrorText.Text);
+
+            card.ShowEnterPin("To reveal it.", check, () => { }, new PinState(0, now.AddSeconds(-1)));   // a wait already over
+            Assert.Equal("The next wrong PIN starts a wait.", card.ErrorText.Text);
+            Assert.True(card.PinBox.IsEnabled);
+
+            card.ShowEnterPin("To reveal it.", check, () => { }, new PinState(CredentialVault.TriesBeforeFirstWait, null));
+            Assert.Equal("", card.ErrorText.Text);
+            Assert.Equal(Visibility.Collapsed, card.ErrorText.Visibility);
+
+            card.ShowChangePin((_, _) => new UnlockResult(UnlockOutcome.Unlocked), new PinState(3, null));
+            Assert.Equal("3 more tries before a wait.", card.ErrorText.Text);
+        });
+
         private static TextCompositionEventArgs Type(UIElement target, string text)
         {
             var args = new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, target, text))

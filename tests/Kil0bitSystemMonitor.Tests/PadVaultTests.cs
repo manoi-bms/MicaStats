@@ -934,6 +934,63 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.All(env.Store.ListSnapshots(note.Id), v => Assert.DoesNotContain("hunter2", env.Store.ReadSnapshot(v)));
         });
 
+        [Fact]
+        public void The_pin_card_opens_with_a_wait_left_from_earlier() => WithWindow((window, env, config) =>
+        {
+            string id = Bank(env);
+            for (int i = 0; i < 5; i++) env.Vault.Unlock("000000");   // earlier, in another window or before a restart
+            window.VaultCard.UtcNow = () => env.Clock.UtcNow;
+
+            window.RevealCredential(id);
+
+            Assert.Equal("EnterPin", window.VaultCard.Mode);
+            Assert.Equal("Too many wrong PINs. Try again in 0:30.", window.VaultCard.ErrorText.Text);
+            Assert.False(window.VaultCard.PinBox.IsEnabled);
+            Assert.False(window.VaultCard.PrimaryButton.IsEnabled);
+
+            window.VaultCard.Hide();
+            env.Clock.Advance(30);
+            window.ShowChangePin();
+            Assert.Equal("ChangePin", window.VaultCard.Mode);
+            Assert.Equal("The next wrong PIN starts a wait.", window.VaultCard.ErrorText.Text);
+            Assert.True(window.VaultCard.PinBox.IsEnabled);
+        });
+
+        [Fact]
+        public void The_wait_cursor_shows_while_a_pin_is_created_checked_or_changed() => WithWindow((window, env, config) =>
+        {
+            var seen = new List<System.Windows.Input.Cursor?>();
+            env.Vault.Changed += (s, e) => seen.Add(Mouse.OverrideCursor);   // raised inside Create, Unlock and ChangePin
+            env.Vault.Load();
+            window.Editor.Text = "hunter2";
+            window.Editor.SelectAll();
+
+            window.StoreSelection();
+            window.VaultCard.PinBox.Password = Pin;
+            window.VaultCard.PinBox2.Password = Pin;
+            Click(window.VaultCard.PrimaryButton);                          // creates the PIN: RSA key generation
+            Assert.Same(System.Windows.Input.Cursors.Wait, Assert.Single(seen));
+            Assert.Null(Mouse.OverrideCursor);
+            Click(window.VaultCard.SecondaryButton);                        // no label: nothing stored
+
+            string id = env.Vault.Add("hunter2", "Bank", null);
+            seen.Clear();
+            window.RevealCredential(id);
+            window.VaultCard.PinBox.Password = Pin;
+            Click(window.VaultCard.PrimaryButton);                          // checks the PIN
+            Assert.Same(System.Windows.Input.Cursors.Wait, Assert.Single(seen));
+            Assert.Null(Mouse.OverrideCursor);
+
+            seen.Clear();
+            window.ShowChangePin();
+            window.VaultCard.PinBox.Password = Pin;
+            window.VaultCard.PinBox2.Password = "13579246";
+            window.VaultCard.PinBox3.Password = "13579246";
+            Click(window.VaultCard.PrimaryButton);                          // changes it
+            Assert.Same(System.Windows.Input.Cursors.Wait, Assert.Single(seen));
+            Assert.Null(Mouse.OverrideCursor);
+        });
+
         // ---- helpers ------------------------------------------------------------------------
 
         /// <summary>Flips a bit of the first credential's tag inside the sealed vault file, so its value no longer decrypts.</summary>

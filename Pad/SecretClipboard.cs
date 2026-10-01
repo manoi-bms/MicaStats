@@ -69,7 +69,11 @@ namespace Kil0bitSystemMonitor.Pad
             timer.Start();
         };
 
-        /// <summary>Copies <paramref name="value"/>; false when the clipboard stayed busy.</summary>
+        /// <summary>
+        /// Copies <paramref name="value"/>; false when the clipboard stayed busy. A copy reported as
+        /// failed while the clipboard changed meanwhile may still have left the value there (the
+        /// set went through and a later step failed), so it is cleared after the same 30 seconds.
+        /// </summary>
         public static bool Copy(string value)
         {
             var data = new DataObject();
@@ -77,12 +81,15 @@ namespace Kil0bitSystemMonitor.Pad
             data.SetData("ExcludeClipboardContentFromMonitorProcessing", new MemoryStream(new byte[1]));
             data.SetData("CanIncludeInClipboardHistory", new MemoryStream(BitConverter.GetBytes(0)));
             data.SetData("CanUploadToCloudClipboard", new MemoryStream(BitConverter.GetBytes(0)));
-            if (!SetData(data)) return false;
 
+            uint before = SequenceNumber();
+            bool set = SetData(data);
             uint ours = SequenceNumber();
+            if (!set && ours == before) return false;   // nothing reached the clipboard
+
             s_ours = ours;
             After(TimeSpan.FromSeconds(ClearSeconds), () => ClearIf(ours));
-            return true;
+            return set;
         }
 
         /// <summary>Clears the clipboard if it still holds the last value copied here (at exit).</summary>

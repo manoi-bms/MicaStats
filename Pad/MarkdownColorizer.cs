@@ -25,6 +25,8 @@ namespace Kil0bitSystemMonitor.Pad
     {
         private readonly MarkdownDocumentCache _cache;
         private readonly FenceHighlighter _fences;
+        private readonly Action<string>? _warn;
+        private bool _fenceLogged;
         private readonly Func<PadPalette> _palette;
         private readonly Action<Exception> _onFailure;
         private readonly Func<FontFamily?> _monoFont;
@@ -32,11 +34,15 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly Dictionary<PadColor, TextDecoration> _dotted = new();
 
         /// <param name="onFailure">Told when a line cannot be formatted; that line is left as it is.</param>
+        /// <param name="warn">Logs the one-time note that fence colors failed.</param>
+        /// <param name="fenceDefinition">Test seam: the highlighting of a fence language id.</param>
         /// <param name="monoFont">The editor's monospace family while the reading font is on, else null.</param>
-        public MarkdownColorizer(MarkdownDocumentCache cache, Func<PadPalette> palette, Action<Exception>? onFailure = null, Func<FontFamily?>? monoFont = null)
+        public MarkdownColorizer(MarkdownDocumentCache cache, Func<PadPalette> palette, Action<Exception>? onFailure = null, Func<FontFamily?>? monoFont = null,
+                                Action<string>? warn = null, Func<string?, IHighlightingDefinition?>? fenceDefinition = null)
         {
             _cache = cache;
-            _fences = new FenceHighlighter(cache);
+            _warn = warn;
+            _fences = new FenceHighlighter(cache, fenceDefinition, FenceFailed);
             _palette = palette;
             _onFailure = onFailure ?? (_ => { });
             _monoFont = monoFont ?? (() => null);
@@ -56,16 +62,7 @@ namespace Kil0bitSystemMonitor.Pad
                 if (mono != null && line.Length > 0 && (md.Block is MdBlock.Fence or MdBlock.Table or MdBlock.FrontMatter))
                     ChangeLinePart(line.Offset, line.EndOffset, element => SetFamily(element, mono));
 
-                if (facts.Fence == MdFence.Inside && _fences.HighlightLine(document, line.LineNumber) is { } highlighted)
-                {
-                    foreach (var section in highlighted.Sections)
-                    {
-                        if (section.Color == null || section.Length == 0) continue;
-                        var color = section.Color;
-                        ChangeLinePart(section.Offset, section.Offset + section.Length,
-                            element => SyntaxPaint.Apply(element, color, palette, CurrentContext, BrushFor));
-                    }
-                }
+                if (facts.Fence == MdFence.Inside) ColorizeFence(document, line, palette);
 
                 foreach (var span in md.Spans)
                 {
@@ -77,6 +74,40 @@ namespace Kil0bitSystemMonitor.Pad
             catch (Exception ex)
             {
                 _onFailure(ex);
+            }
+        }
+
+        /// <summary>The language colors of a line inside a fence. A failure here costs only this line its colors, never the note its Markdown look.</summary>
+        private void ColorizeFence(TextDocument document, DocumentLine line, PadPalette palette)
+        {
+            try
+            {
+                if (_fences.HighlightLine(document, line.LineNumber) is not { } highlighted) return;
+                foreach (var section in highlighted.Sections)
+                {
+                    if (section.Color == null || section.Length == 0) continue;
+                    var color = section.Color;
+                    ChangeLinePart(section.Offset, section.Offset + section.Length,
+                        element => SyntaxPaint.Apply(element, color, palette, CurrentContext, BrushFor));
+                }
+            }
+            catch (Exception ex)
+            {
+                FenceFailed(ex);
+            }
+        }
+
+        private void FenceFailed(Exception ex)
+        {
+            if (_fenceLogged) return;
+            _fenceLogged = true;
+            try
+            {
+                _warn?.Invoke("Colors inside fenced code failed (" + ex.GetType().Name + "); those blocks are shown uncolored");
+            }
+            catch (Exception)
+            {
+                // Logging is best effort.
             }
         }
 

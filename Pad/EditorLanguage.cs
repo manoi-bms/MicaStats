@@ -88,7 +88,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 _markdownCache = new MarkdownDocumentCache(ReportFailure);
                 _markdownCache.StructureChanged += OnStructureChanged;
-                _markdown = new MarkdownColorizer(_markdownCache, _palette, ReportFailure, () => MonoFont);
+                _markdown = new MarkdownColorizer(_markdownCache, _palette, ReportFailure, () => MonoFont, message => Warn(message));
                 _markdownBackground = new MarkdownBackgroundRenderer(_markdownCache, _palette, ReportFailure);
                 _bullets = new BulletGenerator(_markdownCache, ReportFailure);
                 view.LineTransformers.Add(_markdown);

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Highlighting;
@@ -11,8 +12,8 @@ namespace Kil0bitSystemMonitor.Pad
     /// 1.3). AvalonEdit's highlighting engine runs over the block from its first inside line with an
     /// empty state, so a comment or string that spans lines is colored as in a whole file. Each
     /// block is highlighted once per document version, line by line as far down as it is shown.
-    /// A block over <see cref="MaxBlockLines"/> lines, or one with a line over the inline limit,
-    /// gets no colors from there on.
+    /// A block with more than <see cref="MaxBlockLines"/> lines inside gets no colors at all; one with a
+    /// line over the inline limit gets none from that line on; one that throws gets none until the next edit.
     /// </summary>
     internal sealed class FenceHighlighter
     {
@@ -22,13 +23,32 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly Dictionary<int, Block> _blocks = new();
         private ITextSourceVersion? _version;
 
-        public FenceHighlighter(MarkdownDocumentCache cache) => _cache = cache;
+        private readonly Func<string?, IHighlightingDefinition?> _definitionFor;
+        private readonly Action<Exception>? _onFailure;
+
+        /// <param name="definitionFor">The highlighting of a fence's language id (a test seam); null uses MicaPad's languages.</param>
+        /// <param name="onFailure">Told when highlighting a block throws; that block gets no colors until the next document version.</param>
+        public FenceHighlighter(MarkdownDocumentCache cache, Func<string?, IHighlightingDefinition?>? definitionFor = null, Action<Exception>? onFailure = null)
+        {
+            _cache = cache;
+            _definitionFor = definitionFor ?? DefaultDefinition;
+            _onFailure = onFailure;
+        }
+
+        private static IHighlightingDefinition? DefaultDefinition(string? id)
+        {
+            var language = PadLanguages.ById(id);
+            return language == null ? null : PadHighlighting.For(language);
+        }
 
         /// <summary>The highlighting of inside line <paramref name="lineNumber"/>, or null when it gets no colors.</summary>
         public HighlightedLine? HighlightLine(TextDocument document, int lineNumber)
         {
             int open = _cache.BlockOpeningOf(document, lineNumber);
-            if (open == 0 || lineNumber - open > MaxBlockLines) return null;
+            if (open == 0) return null;
+            int closing = _cache.ClosingLineOf(document, open);
+            int last = closing > 0 ? closing - 1 : document.LineCount;
+            if (last - open > MaxBlockLines) return null;
 
             if (!ReferenceEquals(document.Version, _version))
             {
@@ -37,11 +57,47 @@ namespace Kil0bitSystemMonitor.Pad
             }
             if (!_blocks.TryGetValue(open, out var block))
             {
-                block = Start(document, open);
+                try
+                {
+                    block = Start(document, open);
+                }
+                catch (Exception ex)
+                {
+                    block = new Block(null);
+                    Failed(ex);
+                }
                 _blocks[open] = block;
             }
 
             int index = lineNumber - open - 1;
+            try
+            {
+                Fill(document, open, block, index);
+            }
+            catch (Exception ex)
+            {
+                block.Engine = null;
+                block.Lines.Clear();
+                Failed(ex);
+                return null;
+            }
+            return index < block.Lines.Count ? block.Lines[index] : null;
+        }
+
+        private void Failed(Exception ex)
+        {
+            try
+            {
+                _onFailure?.Invoke(ex);
+            }
+            catch (Exception)
+            {
+                // Reporting is best effort.
+            }
+        }
+
+        private static void Fill(TextDocument document, int open, Block block, int index)
+        {
             while (block.Engine != null && block.Lines.Count <= index)
             {
                 var line = document.GetLineByNumber(open + 1 + block.Lines.Count);
@@ -54,14 +110,12 @@ namespace Kil0bitSystemMonitor.Pad
                 block.Lines.Add(block.Engine.HighlightLine(document, line));
                 block.Stack = block.Engine.CurrentSpanStack;
             }
-            return index < block.Lines.Count ? block.Lines[index] : null;
         }
 
-        private static Block Start(TextDocument document, int open)
+        private Block Start(TextDocument document, int open)
         {
             string? id = FenceLanguages.IdOfFence(document.GetText(document.GetLineByNumber(open)));
-            var language = PadLanguages.ById(id);
-            var definition = language == null ? null : PadHighlighting.For(language);
+            var definition = _definitionFor(id);
             return new Block(definition == null ? null : new HighlightingEngine(definition.MainRuleSet));
         }
 

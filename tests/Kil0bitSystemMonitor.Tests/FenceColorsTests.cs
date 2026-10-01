@@ -84,15 +84,29 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
-        public void A_block_over_2000_lines_is_not_colored_and_edits_are_followed() => UiThread.Run(() =>
+        public void A_block_over_2000_inside_lines_is_not_colored_at_all() => UiThread.Run(() =>
         {
-            string body = string.Join("\n", Enumerable.Repeat("int x;", 2001));
-            var document = new TextDocument("```cs\n" + body + "\n```");
             var highlighter = new FenceHighlighter(new MarkdownDocumentCache());
+            var over = new TextDocument("```cs\n" + string.Join("\n", Enumerable.Repeat("int x;", 2001)) + "\n```");
+            var exact = new TextDocument("```cs\n" + string.Join("\n", Enumerable.Repeat("int x;", 2000)) + "\n```");
+            var unclosed = new TextDocument("```cs\n" + string.Join("\n", Enumerable.Repeat("int x;", 2001)));
 
-            Assert.NotNull(highlighter.HighlightLine(document, 2));
-            Assert.Null(highlighter.HighlightLine(document, 2002));
-            Assert.Null(highlighter.HighlightLine(document, 1));   // the fence line itself
+            Assert.Null(highlighter.HighlightLine(over, 2));
+            Assert.Null(highlighter.HighlightLine(over, 2002));
+            Assert.Null(highlighter.HighlightLine(unclosed, 2));
+            Assert.NotNull(highlighter.HighlightLine(exact, 2));
+            Assert.NotNull(highlighter.HighlightLine(exact, 2001));
+            Assert.Null(highlighter.HighlightLine(exact, 1));   // the fence line itself
+        });
+
+        [Fact]
+        public void A_line_over_4000_characters_ends_the_colors_and_edits_are_followed() => UiThread.Run(() =>
+        {
+            var highlighter = new FenceHighlighter(new MarkdownDocumentCache());
+            var wide = new TextDocument("```cs\nint x;\n" + new string('a', 4001) + "\nint y;\n```");
+            Assert.NotNull(highlighter.HighlightLine(wide, 2));
+            Assert.Null(highlighter.HighlightLine(wide, 3));
+            Assert.Null(highlighter.HighlightLine(wide, 4));
 
             var small = new TextDocument("```cs\nint x;\n```");
             var line = highlighter.HighlightLine(small, 2)!;
@@ -100,5 +114,27 @@ namespace Kil0bitSystemMonitor.Tests
             small.Insert(small.GetLineByNumber(2).EndOffset, " // note");
             Assert.True(highlighter.HighlightLine(small, 2)!.Sections.Count > sections);
         });
-    }
+
+        [Fact]
+        public void A_failure_inside_a_fence_costs_only_that_blocks_colors() => UiThread.Run(() =>
+        {
+            int lookups = 0;
+            var failures = new List<System.Exception>();
+            var warnings = new List<string>();
+            var cache = new MarkdownDocumentCache();
+            var view = new TextView { Document = new TextDocument("```cs\nint x;\nint y;\n```\nplain `code` here") };
+            view.LineTransformers.Add(new MarkdownColorizer(cache, () => PadPalette.Dark, failures.Add, null, warnings.Add,
+                id => { lookups++; throw new System.InvalidOperationException("boom"); }));
+            view.Measure(new Size(1200, 800));
+            view.Arrange(new Rect(0, 0, 1200, 800));
+            view.EnsureVisualLines();
+
+            Assert.Empty(failures);                       // the note stays Markdown
+            Assert.Single(warnings);
+            Assert.Contains("InvalidOperationException", warnings[0]);
+            Assert.DoesNotContain("boom", warnings[0]);
+            Assert.Equal(1, lookups);                     // the dead block is not retried on the next line
+            Assert.Equal(ForegroundAt(view, 2, 0), ForegroundAt(view, 3, 0));
+            Assert.NotEqual(ForegroundAt(view, 5, 0), ForegroundAt(view, 5, 7));   // `code` is still styled
+        });    }
 }

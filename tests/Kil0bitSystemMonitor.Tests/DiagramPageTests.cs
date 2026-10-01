@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Pad;
@@ -82,6 +83,52 @@ namespace Kil0bitSystemMonitor.Tests
             }
             Assert.Contains("@viz-js/viz", File.ReadAllText(Path.Combine(folder, "THIRD-PARTY.txt")));
         }
+
+        [Fact]
+        public void MathJax_is_vendored_and_loads_before_the_page_script()
+        {
+            string folder = DiagramPage.ScriptsFolder;
+            string html = File.ReadAllText(Path.Combine(folder, "render.html"));
+            int config = html.IndexOf("<script src=\"mathjax-config.js\"></script>", StringComparison.Ordinal);
+            int mathjax = html.IndexOf("<script src=\"tex-svg-full.js\"></script>", StringComparison.Ordinal);
+            int render = html.IndexOf("<script src=\"render.js\"></script>", StringComparison.Ordinal);
+
+            Assert.True(config > 0 && config < mathjax && mathjax < render, "mathjax-config.js, then tex-svg-full.js, then render.js");
+            Assert.Equal("a4354ff94fd868aea0cc6eaaa79a57fda0588646fc46ee3700a349ee0a11cbe6",
+                         Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(folder, "tex-svg-full.js")))).ToLowerInvariant());
+            Assert.Contains("enableMenu: false", File.ReadAllText(Path.Combine(folder, "mathjax-config.js")));
+            Assert.Contains("MathJax 3.2.2 (Apache-2.0)", File.ReadAllText(Path.Combine(folder, "THIRD-PARTY.txt")));
+        }
+
+        [Fact]
+        public void Math_and_chemistry_draw_offline_in_the_text_color() => WithPage(async page =>
+        {
+            var formula = await Draw(page, "math", @"x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}");
+
+            Assert.True(formula.Error == null, formula.Error);
+            Assert.Contains("<path", formula.Svg);
+            Assert.DoesNotContain("<text", formula.Svg);   // glyph outlines: no font to load
+            Assert.Contains("#1B1B1F", formula.Svg, StringComparison.OrdinalIgnoreCase);
+            var (width, height) = PngSize(formula.Png!);
+            Assert.InRange(width, (int)(formula.Width * 2) - 1, (int)(formula.Width * 2) + 1);
+            Assert.InRange(height, (int)(formula.Height * 2) - 1, (int)(formula.Height * 2) + 1);
+
+            var water = await Draw(page, "math", @"\ce{2H2 + O2 -> 2H2O}", dark: true);
+
+            Assert.True(water.Error == null, water.Error);
+            Assert.Contains("#EDEDF2", water.Svg, StringComparison.OrdinalIgnoreCase);
+            Assert.True(water.Width > water.Height * 4, "a reaction on one line is wide");
+            Assert.Equal(0, page.RefusedRequests);   // MathJax asked the network for nothing
+        });
+
+        [Fact]
+        public void A_math_mistake_comes_back_as_the_mathjax_message() => WithPage(async page =>
+        {
+            Assert.Equal("Missing close brace", (await Draw(page, "math", @"\frac{1}{")).Error);
+
+            // The page still draws after it.
+            Assert.Null((await Draw(page, "math", "a + b")).Error);
+        });
 
         [Fact]
         public void Every_built_in_kind_draws_a_png_and_an_svg() => WithPage(async page =>

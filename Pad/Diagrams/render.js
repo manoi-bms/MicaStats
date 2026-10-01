@@ -1,8 +1,9 @@
 "use strict";
 // MicaPad's diagram page. The app posts { id, kind, source, dark, fg, bg }; the page answers
 // { id, ok: true, svg, png, width, height } or { id, ok: false, error }. kind is "mermaid", "dot",
-// "markmap" or "svg" (a picture Kroki drew). Nothing here reaches the network: the page's
-// Content-Security-Policy and the app's request filter both refuse it.
+// "markmap", "math" (TeX and \ce chemistry, drawn by MathJax) or "svg" (a picture Kroki drew, or an
+// SVG image from a note). Nothing here reaches the network: the page's Content-Security-Policy and
+// the app's request filter both refuse it.
 (function () {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const SCALE = 2;
@@ -38,9 +39,9 @@
     }
   }
 
-  // Gives the picture a fixed size in px (the viewBox's, else its width and height) and returns its markup.
-  // The markup is parsed, never put into the page, so nothing in a picture runs or loads.
-  function finish(svgText) {
+  // Gives the picture a fixed size in px (size when given, else the viewBox's, else its width and height)
+  // and returns its markup. The markup is parsed, never put into the page, so nothing in a picture runs or loads.
+  function finish(svgText, size) {
     const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
     const el = doc.documentElement;
     if (!el || el.localName !== "svg" || doc.getElementsByTagName("parsererror").length) {
@@ -49,7 +50,8 @@
     disarm(el);
     let w = 0, h = 0;
     const box = (el.getAttribute("viewBox") || "").trim().split(/[\s,]+/).map(Number);
-    if (box.length === 4 && box[2] > 0 && box[3] > 0) { w = box[2]; h = box[3]; }
+    if (size) { w = size.width; h = size.height; }
+    else if (box.length === 4 && box[2] > 0 && box[3] > 0) { w = box[2]; h = box[3]; }
     else { w = length(el.getAttribute("width")); h = length(el.getAttribute("height")); }
     if (!(w > 0 && h > 0)) throw new Error("The picture has no size.");
     el.setAttribute("width", String(w));
@@ -128,6 +130,30 @@
     }
   }
 
+  // TeX (with \ce chemistry) as an SVG made of glyph outlines: no fonts to load.
+  async function drawMath(req) {
+    await MathJax.startup.promise;
+    const holder = document.createElement("div");
+    holder.style.fontSize = "18px";
+    holder.style.color = req.fg;
+    stage().appendChild(holder);
+    try {
+      const node = MathJax.tex2svg(req.source, { display: true });
+      holder.appendChild(node);
+      const el = node.querySelector("svg");
+      const err = el.querySelector("[data-mjx-error]");
+      if (err) throw new Error(err.getAttribute("data-mjx-error"));
+      const r = el.getBoundingClientRect();
+      el.setAttribute("width", String(r.width));
+      el.setAttribute("height", String(r.height));
+      el.setAttribute("color", req.fg);
+      el.style.color = req.fg;
+      return finish(new XMLSerializer().serializeToString(el), { width: r.width, height: r.height });
+    } finally {
+      holder.remove();
+    }
+  }
+
   // The picture as a PNG, SCALE times its size, its longest side at most MAX_SIDE pixels.
   async function toPng(svg, width, height) {
     const scale = Math.min(SCALE, MAX_SIDE / Math.max(width, height));
@@ -148,7 +174,8 @@
   }
 
   async function draw(req) {
-    const drawn = req.kind === "mermaid" ? await drawMermaid(req)
+    const drawn = req.kind === "math" ? await drawMath(req)
+      : req.kind === "mermaid" ? await drawMermaid(req)
       : req.kind === "dot" ? await drawDot(req)
       : req.kind === "markmap" ? await drawMarkmap(req)
       : req.kind === "svg" ? finish(req.source)

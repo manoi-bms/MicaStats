@@ -32,12 +32,43 @@ namespace Kil0bitSystemMonitor.Tests
         public static byte[] Jpeg(int width, int height, double dpi = 96) =>
             Encode(new JpegBitmapEncoder(), new WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgr24, null));
 
+        /// <summary>
+        /// A JPEG stored <paramref name="width"/> x <paramref name="height"/>, its top half red and its
+        /// bottom half blue, whose EXIF header says <paramref name="orientation"/> (as a phone writes it).
+        /// </summary>
+        public static byte[] JpegTurned(int width, int height, ushort orientation)
+        {
+            var pixels = new byte[width * height * 3];
+            for (int i = 0; i < width * height; i++)
+            {
+                bool top = i / width < height / 2;
+                pixels[i * 3] = top ? (byte)0 : (byte)255;       // blue
+                pixels[i * 3 + 2] = top ? (byte)255 : (byte)0;   // red
+            }
+            var metadata = new BitmapMetadata("jpg");
+            metadata.SetQuery("/app1/ifd/{ushort=274}", orientation);
+            var encoder = new JpegBitmapEncoder { QualityLevel = 95 };
+            encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr24, null, pixels, width * 3), null, metadata, null));
+            using var stream = new MemoryStream();
+            encoder.Save(stream);
+            return stream.ToArray();
+        }
+
         private static byte[] Encode(BitmapEncoder encoder, BitmapSource bitmap)
         {
             encoder.Frames.Add(BitmapFrame.Create(bitmap));
             using var stream = new MemoryStream();
             encoder.Save(stream);
             return stream.ToArray();
+        }
+
+        /// <summary>The bitmap's pixels as 32-bit BGRA, row after row.</summary>
+        public static byte[] Bgra(BitmapSource bitmap)
+        {
+            var converted = new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[converted.PixelWidth * converted.PixelHeight * 4];
+            converted.CopyPixels(pixels, converted.PixelWidth * 4, 0);
+            return pixels;
         }
     }
 
@@ -583,6 +614,67 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(ok.IsPicture);
             Assert.Equal(10000, ok.PixelWidth);
         }
+
+        /// <summary>The bitmap's rows, each pixel the letter its blue value numbers (1 is a).</summary>
+        private static string[] Letters(BitmapSource bitmap)
+        {
+            var pixels = ImageFakes.Bgra(bitmap);
+            int width = bitmap.PixelWidth;
+            return Enumerable.Range(0, bitmap.PixelHeight)
+                             .Select(y => new string(Enumerable.Range(0, width).Select(x => (char)('a' - 1 + pixels[(y * width + x) * 4])).ToArray()))
+                             .ToArray();
+        }
+
+        [Theory]
+        [InlineData(0, "abc/def")]   // no orientation, or one out of range: as stored
+        [InlineData(1, "abc/def")]
+        [InlineData(2, "cba/fed")]   // mirrored left to right
+        [InlineData(3, "fed/cba")]   // turned half way
+        [InlineData(4, "def/abc")]   // mirrored top to bottom
+        [InlineData(5, "ad/be/cf")]  // mirrored, then turned a quarter counterclockwise
+        [InlineData(6, "da/eb/fc")]  // turned a quarter clockwise (a phone held upright)
+        [InlineData(7, "fc/eb/da")]  // mirrored, then turned a quarter clockwise
+        [InlineData(8, "cf/be/ad")]  // turned a quarter counterclockwise
+        [InlineData(9, "abc/def")]
+        public void A_photo_is_turned_and_mirrored_as_its_exif_orientation_says(int orientation, string upright) => UiThread.Run(() =>
+        {
+            var stored = new byte[3 * 2 * 4];
+            for (int i = 0; i < 6; i++)
+            {
+                stored[i * 4] = (byte)(i + 1);   // a to f in its blue value
+                stored[i * 4 + 3] = 255;
+            }
+            var bitmap = BitmapSource.Create(3, 2, 96, 96, PixelFormats.Bgra32, null, stored, 3 * 4);
+
+            Assert.Equal(upright, string.Join("/", Letters(DiagramPicture.Upright(bitmap, orientation))));
+        });
+
+        [Fact]
+        public void A_phone_photo_is_shown_upright_as_its_exif_orientation_says() => UiThread.Run(() =>
+        {
+            using var f = new Fixture();
+            var photo = ImageFakes.JpegTurned(64, 32, orientation: 6);   // stored on its side: 64 wide, 32 high
+            File.WriteAllBytes(f.Dir.PathOf("photo.jpg"), photo);
+
+            var result = ImageBoard.Decode(photo);
+            Assert.Equal((32.0, 64.0), (result.Width, result.Height));
+            Assert.Equal(32, result.PixelWidth);
+
+            f.Show("![photo](photo.jpg)");
+            f.Settle();
+            var picture = f.PictureUnder(1);
+            Assert.Equal((32.0, 64.0), (picture.Image!.Width, picture.Image.Height));
+            var bitmap = Assert.IsAssignableFrom<BitmapSource>(picture.Image.Source);
+            Assert.Equal((32, 64), (bitmap.PixelWidth, bitmap.PixelHeight));
+            var pixels = ImageFakes.Bgra(bitmap);
+            byte[] Pixel(int x, int y) => pixels.Skip((y * 32 + x) * 4).Take(3).ToArray();
+            // Turned a quarter clockwise, the stored top (red) is on the right and its bottom (blue) on the left.
+            Assert.True(Pixel(24, 32)[2] > 200 && Pixel(24, 32)[0] < 60, "the right half is red");
+            Assert.True(Pixel(8, 32)[0] > 200 && Pixel(8, 32)[2] < 60, "the left half is blue");
+
+            var plain = ImageBoard.Decode(ImageFakes.Jpeg(64, 32));   // no orientation: as stored
+            Assert.Equal((64.0, 32.0), (plain.Width, plain.Height));
+        });
 
         [Fact]
         public void Typing_a_new_image_before_an_old_one_does_not_show_the_old_one_in_its_place() => UiThread.Run(() =>

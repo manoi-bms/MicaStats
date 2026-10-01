@@ -19,8 +19,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The picture: a PNG at twice a diagram's size, or an image preview's own bytes (any format Windows decodes).</summary>
         public byte[]? Png { get; private init; }
 
-        /// <summary>An image preview's width in pixels; 0 for a diagram, whose PNG header says it.</summary>
+        /// <summary>An image preview's width in pixels, shown upright; 0 for a diagram, whose PNG header says it.</summary>
         public int PixelWidth { get; private init; }
+
+        /// <summary>An image preview's EXIF orientation, 1 to 8: how its stored pixels are turned and mirrored to show it upright. 1 for the rest.</summary>
+        public int Orientation { get; private init; } = 1;
+
+        /// <summary>True when <see cref="Orientation"/> turns the stored pixels a quarter (5 to 8): its sides swap.</summary>
+        public bool TurnedQuarter => Orientation >= 5;
 
         public string? Svg { get; private init; }
 
@@ -48,9 +54,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public static DiagramResult Picture(byte[] png, string svg, double width, double height, bool paper) =>
             new() { Png = png, Svg = svg, Width = width, Height = height, Paper = paper, Lasting = true };
 
-        /// <summary>An image preview (Markdown spec 6.3): one device-independent pixel per image pixel (Markdown ruling R10).</summary>
-        public static DiagramResult Image(byte[] bytes, int pixelWidth, int pixelHeight) =>
-            new() { Png = bytes, Width = pixelWidth, Height = pixelHeight, PixelWidth = pixelWidth, Lasting = true };
+        /// <summary>
+        /// An image preview (Markdown spec 6.3): one device-independent pixel per image pixel (Markdown
+        /// ruling R10), shown upright as its EXIF <paramref name="orientation"/> says (1 to 8; any other is 1).
+        /// </summary>
+        public static DiagramResult Image(byte[] bytes, int pixelWidth, int pixelHeight, int orientation = 1)
+        {
+            int turn = orientation is >= 1 and <= 8 ? orientation : 1;
+            int width = turn >= 5 ? pixelHeight : pixelWidth;
+            int height = turn >= 5 ? pixelWidth : pixelHeight;
+            return new() { Png = bytes, Width = width, Height = height, PixelWidth = width, Orientation = turn, Lasting = true };
+        }
 
         public static DiagramResult Failure(string error, bool lasting, Uri? helpLink = null) =>
             new() { Error = error, Lasting = lasting, HelpLink = helpLink };

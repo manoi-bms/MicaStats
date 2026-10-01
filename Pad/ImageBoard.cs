@@ -215,7 +215,8 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 using var stream = new MemoryStream(bytes, writable: false);
                 var frame = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.None).Frames[0];
-                if (frame.PixelWidth > 0 && frame.PixelHeight > 0 && (long)frame.PixelWidth * frame.PixelHeight <= MaxPixels) return DiagramResult.Image(bytes, frame.PixelWidth, frame.PixelHeight);
+                if (frame.PixelWidth > 0 && frame.PixelHeight > 0 && (long)frame.PixelWidth * frame.PixelHeight <= MaxPixels)
+                    return DiagramResult.Image(bytes, frame.PixelWidth, frame.PixelHeight, OrientationOf(frame));
             }
             catch (Exception ex) when (ex is NotSupportedException or FormatException or IOException or ArgumentException
                                            or InvalidOperationException or COMException or OverflowException)
@@ -223,6 +224,19 @@ namespace Kil0bitSystemMonitor.Pad
                 // No codec, or not an image.
             }
             return DiagramResult.Failure(ImageText.CouldNotRead, lasting: true);
+        }
+
+        /// <summary>A JPEG's EXIF orientation (a phone photo held upright says 6), or 1 when it has none or it cannot be read.</summary>
+        private static int OrientationOf(BitmapFrame frame)
+        {
+            try
+            {
+                return frame.Metadata is BitmapMetadata { Format: "jpg" } metadata && metadata.GetQuery("/app1/ifd/{ushort=274}") is ushort value ? value : 1;
+            }
+            catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or ArgumentException or COMException or IOException or FormatException)
+            {
+                return 1;   // the picture is shown as stored
+            }
         }
 
         /// <summary>What this board shows for <paramref name="location"/>; starts its load when one is due.</summary>

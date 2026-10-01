@@ -145,13 +145,16 @@ namespace Kil0bitSystemMonitor.Pad
                 }
             }
 
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            if (decodeWidth > 0) bitmap.DecodePixelWidth = decodeWidth;
-            bitmap.StreamSource = new MemoryStream(result.Png!);
-            bitmap.EndInit();
-            bitmap.Freeze();
+            var decoded = new BitmapImage();
+            decoded.BeginInit();
+            decoded.CacheOption = BitmapCacheOption.OnLoad;
+            // A photo turned a quarter shows its stored height as its width.
+            if (decodeWidth > 0 && result.TurnedQuarter) decoded.DecodePixelHeight = decodeWidth;
+            else if (decodeWidth > 0) decoded.DecodePixelWidth = decodeWidth;
+            decoded.StreamSource = new MemoryStream(result.Png!);
+            decoded.EndInit();
+            decoded.Freeze();
+            var bitmap = Upright(decoded, result.Orientation);
 
             lock (s_decoded)
             {
@@ -165,6 +168,30 @@ namespace Kil0bitSystemMonitor.Pad
                 }
             }
             return bitmap;
+        }
+
+        /// <summary>
+        /// <paramref name="bitmap"/> turned and mirrored as an EXIF orientation says (2 to 8), as
+        /// browsers show phone photos; any other value leaves it as stored. WPF does not do it itself.
+        /// </summary>
+        internal static BitmapSource Upright(BitmapSource bitmap, int orientation)
+        {
+            static Transform Mirrored(double angle) => new TransformGroup { Children = { new ScaleTransform(-1, 1), new RotateTransform(angle) } };
+            Transform? turn = orientation switch
+            {
+                2 => new ScaleTransform(-1, 1),
+                3 => new RotateTransform(180),
+                4 => new ScaleTransform(1, -1),
+                5 => Mirrored(270),
+                6 => new RotateTransform(90),
+                7 => Mirrored(90),
+                8 => new RotateTransform(270),
+                _ => null,
+            };
+            if (turn == null) return bitmap;
+            var upright = new TransformedBitmap(bitmap, turn);
+            upright.Freeze();
+            return upright;
         }
 
         /// <summary>

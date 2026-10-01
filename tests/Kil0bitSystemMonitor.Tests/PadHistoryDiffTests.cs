@@ -41,6 +41,17 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void The_preview_keeps_the_editor_font_even_when_the_reading_font_is_on() => WithVersions((window, env) =>
+        {
+            Assert.Equal(MicaPadWindow.ReadingFont.Source, window.Editor.FontFamily.Source);
+
+            Select(window, 1);
+
+            Assert.StartsWith("Cascadia Mono", window.PreviewEditor.FontFamily.Source);
+            Assert.Null(window.PreviewLanguage.MonoFont);
+        });
+
+        [Fact]
         public void Compare_shows_the_diff_and_its_summary() => WithVersions((window, env) =>
         {
             Select(window, 1);

@@ -1614,7 +1614,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             _previewVersion = text;
-            PreviewEditor.FontFamily = Editor.FontFamily;
+            PreviewEditor.FontFamily = MonoFamily;   // the preview keeps today's look: no reading font
             PreviewEditor.FontSize = Editor.FontSize;
             PreviewEditor.WordWrap = Editor.WordWrap;
             PreviewText.Text = "Viewing " + HistoryRows.When(snapshot.Stamp, DateTime.Now);
@@ -2267,12 +2267,33 @@ namespace Kil0bitSystemMonitor.Pad
         /// The editor's font for the shown tab: the reading font for a Markdown tab while it is on,
         /// with code, inline code and tables kept in the editor font; the editor font otherwise.
         /// </summary>
+        private string? _monoSource;
+        private FontFamily? _monoFamily;
+
+        /// <summary>The editor font with its fallbacks; one instance per font name.</summary>
+        private FontFamily MonoFamily
+        {
+            get
+            {
+                string source = _config.PadFontFamily + ", Cascadia Mono, Consolas";
+                if (_monoFamily == null || _monoSource != source)
+                {
+                    _monoSource = source;
+                    _monoFamily = new FontFamily(source);
+                }
+                return _monoFamily;
+            }
+        }
+
         private void ApplyEditorFont()
         {
-            var mono = new FontFamily(_config.PadFontFamily + ", Cascadia Mono, Consolas");
+            var mono = MonoFamily;
             bool reading = _config.PadReadingFont && ReferenceEquals(_language.Current, PadLanguages.Markdown);
-            Editor.FontFamily = reading ? ReadingFont : mono;
-            _language.MonoFont = reading ? mono : null;
+            var family = reading ? ReadingFont : mono;
+            var monoFont = reading ? mono : null;
+            if (ReferenceEquals(Editor.FontFamily, family) && ReferenceEquals(_language.MonoFont, monoFont)) return;
+            Editor.FontFamily = family;
+            _language.MonoFont = monoFont;
             _language.Redraw();
         }
 
@@ -2305,6 +2326,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>What the shown tab's language installed in the editor.</summary>
         internal EditorLanguage LanguageView => _language;
+        internal EditorLanguage PreviewLanguage => _previewLanguage;
         internal AutoCloseHandler AutoClose => _autoClose;
 
         /// <summary>Shows the current tab in its language (spec 2.1) and names it in the status bar.</summary>

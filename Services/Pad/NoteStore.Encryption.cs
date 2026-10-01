@@ -45,10 +45,46 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 _warn("MicaPad's notes could not be decrypted by this Windows account; they were moved to " + LockedFolder);
                 Directory.CreateDirectory(NotesDir);
                 NotesKey.Load(Root, () => false, out key);
+                _cipher = new StoreCipher(key!);
+                CryptographicOperations.ZeroMemory(key);
+                WriteData(LockedMarkerPath, Utf8NoBom.GetBytes(LockedFolder));   // a later start, in a run with no window yet, still tells the user
+                return;
             }
 
             _cipher = new StoreCipher(key!);
             CryptographicOperations.ZeroMemory(key);
+            LockedFolder = ReadLockedMarker();
+        }
+
+        private string LockedMarkerPath => Path.Combine(Root, "notice-locked.txt");
+
+        /// <summary>The folder an earlier start moved the store to and nobody was told about yet; null when none or unreadable.</summary>
+        private string? ReadLockedMarker()
+        {
+            try
+            {
+                string? folder = ReadStoreText(LockedMarkerPath);
+                return string.IsNullOrWhiteSpace(folder) ? null : folder;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>The user has been told about <see cref="LockedFolder"/>: forgets it, here and on disk, so no later start repeats it.</summary>
+        public void ForgetLockedFolder()
+        {
+            LockedFolder = null;
+            try
+            {
+                File.Delete(LockedMarkerPath);
+                File.Delete(LockedMarkerPath + AtomicFile.ReadySuffix);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _warn("Could not remove the locked-folder marker: " + ex.Message);
+            }
         }
 
         private string MoveAside()
@@ -91,8 +127,25 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private string? ReadStoreTextInPlace(string path)
         {
             string ready = path + AtomicFile.ReadySuffix;
-            byte[]? bytes = File.Exists(ready) ? File.ReadAllBytes(ready) : File.Exists(path) ? File.ReadAllBytes(path) : null;
+            byte[]? bytes = ReadIfExists(ready) ?? ReadIfExists(path);
+
+            // The migration may have moved the finished copy to .ready and zeroed the target between
+            // the two reads; the .ready (or, once committed, the target) is then the truth.
+            if (bytes != null && !StoreCipher.IsEncrypted(bytes))
+                bytes = ReadIfExists(ready) ?? ReadIfExists(path) ?? bytes;
             return TextOf(path, bytes);
+        }
+
+        private static byte[]? ReadIfExists(string path)
+        {
+            try
+            {
+                return File.Exists(path) ? File.ReadAllBytes(path) : null;
+            }
+            catch (FileNotFoundException)
+            {
+                return null;
+            }
         }
 
         private string? TextOf(string path, byte[]? bytes)
@@ -221,17 +274,101 @@ namespace Kil0bitSystemMonitor.Services.Pad
             lock (_sessionLock)
             {
                 if (EncryptIfPlain(SessionPath)) encrypted++;
+                DiscardTemp(SessionPath + AtomicFile.TempSuffix);
             }
 
-            foreach (string id in NoteIds())
+            foreach (string id in ListNoteIds())
             {
-                lock (LockFor(id))
+                // One file at a time under the note's lock, so a note with hundreds of versions
+                // never keeps the UI from loading it for the whole pass.
+                foreach (string path in ListNoteFiles(id))
                 {
-                    foreach (string path in NoteFiles(id))
+                    lock (LockFor(id))
+                    {
                         if (EncryptIfPlain(path)) encrypted++;
+                    }
+                }
+
+                foreach (string temp in ListTempFiles(id))
+                {
+                    lock (LockFor(id))
+                    {
+                        DiscardTemp(temp);
+                    }
                 }
             }
             return encrypted;
+        }
+
+        // NoteIds and NoteFiles throw on I/O errors (AnyEncryptedFile relies on that, so a locked
+        // folder never reads as "no encrypted file"); the pass reports and skips instead.
+        private IReadOnlyList<string> ListNoteIds()
+        {
+            try
+            {
+                return NoteIds();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _warn("Could not list the notes in " + NotesDir + ": " + ex.Message);
+                return Array.Empty<string>();
+            }
+        }
+
+        private IReadOnlyList<string> ListNoteFiles(string id)
+        {
+            try
+            {
+                return NoteFiles(id);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _warn("Could not list the files of note " + id + ": " + ex.Message);
+                return Array.Empty<string>();
+            }
+        }
+
+        /// <summary>The unfinished writes <see cref="AtomicFile"/> left in a note's folder; nothing ever reads them.</summary>
+        private IReadOnlyList<string> ListTempFiles(string id)
+        {
+            var temps = new List<string>
+            {
+                CurrentPath(id) + AtomicFile.TempSuffix,
+                MetaPath(id) + AtomicFile.TempSuffix,
+            };
+            try
+            {
+                if (Directory.Exists(HistoryDir(id)))
+                    temps.AddRange(Directory.GetFiles(HistoryDir(id), "*.txt" + AtomicFile.TempSuffix));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _warn("Could not list the unfinished writes of note " + id + ": " + ex.Message);
+            }
+            return temps;
+        }
+
+        /// <summary>Best effort: zeros an unfinished write, which may hold plain text, and deletes it.</summary>
+        private void DiscardTemp(string temp)
+        {
+            try
+            {
+                if (!File.Exists(temp)) return;
+                ZeroFill(temp);
+                File.Delete(temp);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _warn("Could not remove the unfinished write " + temp + ": " + ex.Message);
+            }
+        }
+
+        /// <summary>Whether the file exists and its first byte is the encrypted format's marker.</summary>
+        private static bool StartsEncrypted(string path)
+        {
+            if (!File.Exists(path)) return false;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return stream.ReadByte() == 0xFF;
         }
 
         private bool EncryptIfPlain(string path)
@@ -240,6 +377,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
             byte[]? text = null;
             try
             {
+                if (File.Exists(path + AtomicFile.ReadySuffix))
+                {
+                    // A finished write is about to replace the target (ReadBytes commits it): a plain
+                    // target is zeroed first, as the .ready is complete and preferred.
+                    if (File.Exists(path) && !StartsEncrypted(path)) WipePlain(path);
+                }
+                else if (StartsEncrypted(path))
+                {
+                    return false;   // the common case at every later start: no need to read the file
+                }
+
                 bytes = AtomicFile.ReadBytes(path);   // finishes an interrupted write first
                 if (bytes == null || StoreCipher.IsEncrypted(bytes)) return false;
 

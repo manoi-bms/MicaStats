@@ -1084,20 +1084,23 @@ namespace Kil0bitSystemMonitor.Pad
             ShowInfo(message, null);
         }
 
+        /// <summary>How Explorer is started; tests swap it so none is launched.</summary>
+        internal static Action<ProcessStartInfo> StartExplorer { get; set; } = info => Process.Start(info);
+
         /// <summary>
-        /// Opens Explorer with the file selected. A file that is no longer there is reported rather
-        /// than opening some other folder.
+        /// Opens Explorer with the file or folder selected. One that is no longer there is reported
+        /// rather than opening some other folder.
         /// </summary>
         internal void ShowInFolder(string path)
         {
-            if (!File.Exists(path))
+            if (!File.Exists(path) && !Directory.Exists(path))
             {
                 ShowNotice("That file is no longer at " + path + ".");
                 return;
             }
             try
             {
-                Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
+                StartExplorer(new ProcessStartInfo("explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
@@ -1224,7 +1227,8 @@ namespace Kil0bitSystemMonitor.Pad
             string? folder = _workspace.Store.LockedFolder;
             if (folder == null || _workspace.LockedNoticeShown) return;
 
-            _workspace.LockedNoticeShown = true;
+            _workspace.LockedNoticeShown = true;   // in-run guard: the store forgets the folder, but a failed marker delete must not repeat the notice
+            _workspace.Store.ForgetLockedFolder();
             ShowInfo("MicaPad could not decrypt the notes saved before on this Windows account, so they were moved to "
                      + folder + ". Nothing was deleted.", null, "Show folder", () => ShowInFolder(folder));
         }

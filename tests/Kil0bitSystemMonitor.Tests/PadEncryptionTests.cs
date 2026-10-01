@@ -197,6 +197,37 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains(_warnings, w => w.Contains(store.LockedFolder!, StringComparison.Ordinal));
         }
 
+        private NoteStore OpenMovedAside()
+        {
+            Save(Open(), "text");
+            File.WriteAllBytes(Path.Combine(_dir.Root, NotesKey.FileName),
+                ProtectedData.Protect(new byte[32], Encoding.UTF8.GetBytes("another account"), DataProtectionScope.CurrentUser));
+            return Open();
+        }
+
+        [Fact]
+        public void A_later_start_still_reports_where_the_notes_were_moved()
+        {
+            string folder = OpenMovedAside().LockedFolder!;
+
+            Assert.Equal(folder, Open().LockedFolder);
+            Assert.Equal(folder, Open().LockedFolder);
+            byte[] marker = File.ReadAllBytes(Path.Combine(_dir.Root, "notice-locked.txt"));
+            Assert.Equal(0xFF, marker[0]);
+        }
+
+        [Fact]
+        public void A_folder_the_user_was_told_about_is_forgotten()
+        {
+            var store = OpenMovedAside();
+
+            store.ForgetLockedFolder();
+
+            Assert.Null(store.LockedFolder);
+            Assert.Null(Open().LockedFolder);
+            Assert.False(File.Exists(Path.Combine(_dir.Root, "notice-locked.txt")));
+        }
+
         [Fact]
         public void A_key_this_account_cannot_open_moves_the_notes_aside_too()
         {

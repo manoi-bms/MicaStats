@@ -38,18 +38,38 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void The_locked_folder_notice_shows_once() => WithWindow((window, env, config) =>
         {
-            env.Store.LockedFolder = @"C:\Users\x\AppData\Roaming\MicaStats\MicaPad-locked-20261001-090000";
+            string folder = Path.Combine(Path.GetTempPath(), "micapad-locked-notice-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder);
+            var started = new System.Collections.Generic.List<System.Diagnostics.ProcessStartInfo>();
+            var original = MicaPadWindow.StartExplorer;
+            MicaPadWindow.StartExplorer = started.Add;
+            try
+            {
+                env.Store.LockedFolder = folder;
 
-            window.ShowLockedFolderNotice();
+                window.ShowLockedFolderNotice();
 
-            Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
-            Assert.Equal("MicaPad could not decrypt the notes saved before on this Windows account, so they were moved to "
-                         + env.Store.LockedFolder + ". Nothing was deleted.", window.InfoText.Text);
-            Assert.Equal("Show folder", window.InfoPrimary.Content);
+                Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
+                Assert.Equal("MicaPad could not decrypt the notes saved before on this Windows account, so they were moved to "
+                             + folder + ". Nothing was deleted.", window.InfoText.Text);
+                Assert.Equal("Show folder", window.InfoPrimary.Content);
+                Assert.Equal(Visibility.Visible, window.InfoPrimary.Visibility);
 
-            window.HideInfo();
-            window.ShowLockedFolderNotice();
-            Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+                window.InfoPrimary.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+                Assert.Equal("/select,\"" + folder + "\"", Assert.Single(started).Arguments);
+                Assert.DoesNotContain("no longer at", window.InfoText.Text, StringComparison.Ordinal);
+                Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+
+                window.ShowLockedFolderNotice();
+                Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+                Assert.Null(env.Store.LockedFolder);
+            }
+            finally
+            {
+                MicaPadWindow.StartExplorer = original;
+                Directory.Delete(folder, recursive: true);
+            }
         });
 
         [Fact]

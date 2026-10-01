@@ -98,7 +98,44 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal("bom current", store.LoadText(id));
             Assert.Equal("bom version", store.ReadSnapshot(store.ListSnapshots(id).Last()));
-            Assert.All(store.ListSnapshots(id), s => Assert.NotEqual('﻿', store.ReadSnapshot(s)[0]));
+            Assert.All(store.ListSnapshots(id), s => Assert.NotEqual((char)0xFEFF, store.ReadSnapshot(s)[0]));
+        }
+
+        [Fact]
+        public void Unfinished_plain_writes_left_by_an_earlier_version_are_removed()
+        {
+            string id = PlainStore();
+            string[] temps =
+            {
+                NotePath(id, "history", "20260903-090000-000.txt.tmp"),
+                NotePath(id, "current.txt.tmp"),
+                NotePath(id, "meta.json.tmp"),
+                Path.Combine(_dir.Root, "session.json.tmp"),
+            };
+            foreach (string temp in temps) File.WriteAllText(temp, "half a plain write");
+
+            Open().EncryptPlainFiles();
+
+            Assert.All(temps, temp => Assert.False(File.Exists(temp), temp));
+        }
+
+        [Fact]
+        public void A_plain_original_that_cannot_be_zeroed_is_reported_and_the_copy_still_lands()
+        {
+            string id = PlainStore();
+            string current = NotePath(id, "current.txt");
+            File.Delete(current + AtomicFile.ReadySuffix);
+            var store = Open();
+
+            // Held open for sharing: ZeroFill's exclusive open fails, the replace may still go through.
+            using (new FileStream(current, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                store.EncryptPlainFiles();
+            }
+
+            Assert.Contains(_warnings, w => w.StartsWith("Could not overwrite the plain copy of " + current, StringComparison.Ordinal));
+            Assert.True(StoreCipher.IsEncrypted(File.ReadAllBytes(current)));
+            Assert.Equal("plain current", store.LoadText(id));
         }
 
         [Fact]

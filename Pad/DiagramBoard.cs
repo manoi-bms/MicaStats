@@ -221,9 +221,12 @@ namespace Kil0bitSystemMonitor.Pad
         {
             int generation = _generation;
             DiagramResult result;
+            bool completedAtOnce = true;   // a renderer that throws before returning a task is just as immediate
             try
             {
-                result = await _services.Renderer.RenderAsync(request, closing);
+                var task = _services.Renderer.RenderAsync(request, closing);
+                completedAtOnce = task.IsCompleted;
+                result = await task;
             }
             catch (Exception ex)
             {
@@ -236,7 +239,9 @@ namespace Kil0bitSystemMonitor.Pad
             state.Shown = result;
             state.SettledKey = key;
             state.SettledGeneration = generation;
-            if (_attached && !closing.IsDeleted && ReferenceEquals(_editor.Document, _document))
+            // Answered at once: PictureFor is still building the line and reads the state right after
+            // Request, so a redraw now would run inside the measure.
+            if (!completedAtOnce && _attached && !closing.IsDeleted && ReferenceEquals(_editor.Document, _document))
                 _editor.TextArea.TextView.Redraw(closing, DispatcherPriority.Normal);
         }
 
@@ -292,7 +297,12 @@ namespace Kil0bitSystemMonitor.Pad
             return (_document.GetLineByNumber(block.OpenLine).EndOffset, _document.GetLineByNumber(block.CloseLine - 1).EndOffset);
         }
 
-        /// <summary>The folds of the blocks whose code is hidden, for the folding's recompute.</summary>
+        /// <summary>
+        /// The folds of the blocks whose code is hidden, for the folding recompute. They are not
+        /// DefaultClosed (AvalonEdit applies that only to a manager first update): SetCodeHidden
+        /// folds the section itself. A hidden block whose fence is retyped comes back unfolded, and
+        /// its button then says Hide code, which is true.
+        /// </summary>
         private IEnumerable<NewFolding> HiddenFolds(TextDocument document)
         {
             var folds = new List<NewFolding>();
@@ -304,7 +314,7 @@ namespace Kil0bitSystemMonitor.Pad
                 int open = anchor.Line;
                 int close = _cache.ClosingLineOf(document, open);
                 if (close == 0 || Read(open, close) is not { } block || InnerRange(block) is not { } range) continue;
-                folds.Add(new NewFolding(range.Start, range.End) { DefaultClosed = true });
+                folds.Add(new NewFolding(range.Start, range.End));
             }
             return folds;
         }

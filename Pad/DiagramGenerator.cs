@@ -33,7 +33,14 @@ namespace Kil0bitSystemMonitor.Pad
                     if (line.EndOffset < startOffset) continue;
                     if (_cache.KindOf(document, line.LineNumber) != MdFence.Delimiter) continue;
                     int open = _cache.OpeningLineOf(document, line.LineNumber);
-                    if (open > 0 && DiagramKinds.FromFence(document.GetText(document.GetLineByNumber(open))) != null) return line.EndOffset;
+                    if (open == 0 || DiagramKinds.FromFence(document.GetText(document.GetLineByNumber(open))) == null) continue;
+
+                    // A fold that ends exactly at this fence (a heading section whose last line is the
+                    // diagram) must not show it: the picture belongs where the closing line starts a
+                    // visual line (the normal case, and Hide code, which folds before it), or where the
+                    // block's own opening line does (the block's fence fold).
+                    var first = CurrentContext.VisualLine.FirstDocumentLine;
+                    if (line == first || document.GetLineByNumber(open) == first) return line.EndOffset;
                 }
                 return -1;
             }

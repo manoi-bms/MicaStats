@@ -372,6 +372,79 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_folded_heading_section_ending_in_a_diagram_shows_no_picture() => UiThread.Run(() =>
+        {
+            var board = new Board("# S\n```mermaid\nflowchart LR\n  a --> b\n```\n\n# Next");
+            board.Renderer.Finish(0, DiagramFakes.Picture());
+            board.PumpAndRender();
+            var document = board.Editor.Document;
+            var manager = board.Language.Folding!.Manager!;
+            Assert.NotNull(board.PictureUnder(5));
+
+            var section = manager.AllFoldings.First(f => document.GetLineByOffset(f.StartOffset).LineNumber == 1);
+            section.IsFolded = true;
+            board.PumpAndRender();
+            Assert.Empty(board.View.GetVisualLine(1)!.Elements.OfType<DiagramElement>());
+
+            section.IsFolded = false;
+            board.PumpAndRender();
+            Assert.NotNull(board.PictureUnder(5));
+        });
+
+        [Fact]
+        public void A_renderer_that_answers_at_once_shows_the_picture_in_the_first_render() => UiThread.Run(() =>
+        {
+            var renderer = new ImmediateRenderer();
+            var editor = new TextEditor { Document = new TextDocument("```dot\ndigraph { a -> b }\n```") };
+            var warnings = new List<string>();
+            var language = new EditorLanguage(editor, () => PadPalette.Dark, folds: true)
+            {
+                Warn = warnings.Add,
+                Diagrams = new DiagramServices { Renderer = renderer, Enabled = () => true, KrokiServer = () => null, Pause = TimeSpan.FromHours(1), Warn = warnings.Add },
+            };
+            language.Apply(PadLanguages.Markdown);
+            editor.TextArea.TextView.Measure(new Size(600, 400));
+            editor.TextArea.TextView.Arrange(new Rect(0, 0, 600, 400));
+            editor.TextArea.TextView.EnsureVisualLines();
+
+            var picture = editor.TextArea.TextView.GetVisualLine(3)!.Elements.OfType<DiagramElement>().Single().Picture as DiagramPicture;
+            Assert.Equal(120, picture!.Image!.Width);
+            PadLanguageWindowTests.Pump();
+            Assert.Empty(warnings);
+        });
+
+        private sealed class ImmediateRenderer : IDiagramRenderer
+        {
+            public bool TryGetCached(string key, out DiagramResult result)
+            {
+                result = null!;
+                return false;
+            }
+
+            public System.Threading.Tasks.Task<DiagramResult> RenderAsync(DiagramRequest request, object slot) =>
+                System.Threading.Tasks.Task.FromResult(DiagramFakes.Picture(120, 60));
+        }
+
+        [Fact]
+        public void An_older_draw_finishing_after_a_newer_request_is_ignored() => UiThread.Run(() =>
+        {
+            var board = new Board("```mermaid\nflowchart LR\n  a --> b\n```");
+            var document = board.Editor.Document;
+            document.Insert(document.GetLineByNumber(3).Offset, "  a --> c\n");
+            board.Diagrams.DrawDue();
+            board.Render();
+            Assert.Equal(2, board.Renderer.Calls.Count);
+
+            board.Renderer.Finish(0, DiagramFakes.Picture(111, 60));   // the draw of the old text
+            board.PumpAndRender();
+            Assert.True(board.PictureUnder(5)!.IsDrawing);
+
+            board.Renderer.Finish(1, DiagramFakes.Picture(200, 60));
+            board.PumpAndRender();
+            Assert.Equal(200, board.PictureUnder(5)!.Image!.Width);
+        });
+
+        [Fact]
         public void Save_as_writes_the_picture_where_the_user_chose() => UiThread.Run(() =>
         {
             using var dir = new PadTempDir();

@@ -175,6 +175,58 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(MdTableRole.Row, cache.FactsOf(document, 5).Table);
         });
 
+        [Theory]
+        [InlineData("- item one\n- item two", 1, 10, "x")]       // a list item
+        [InlineData("1. step\n2. step", 1, 7, "s")]
+        [InlineData("some text\n- item", 1, 9, "x")]             // the line directly above a list
+        [InlineData("some text\n> quote", 1, 9, "x")]
+        [InlineData("> quoted\nend", 1, 8, "x")]                 // a quote line
+        [InlineData("some text here", 1, 4, "-")]                // a dash, bracket or star in prose
+        [InlineData("some text here", 1, 4, "[")]
+        [InlineData("some text here", 1, 4, "*")]
+        [InlineData("some text here", 1, 4, "=")]
+        [InlineData("some text here", 1, 4, ">")]
+        [InlineData("some text here", 1, 4, "{")]
+        public void Typing_in_lists_quotes_and_prose_does_not_rescan(string text, int line, int column, string typed) => UiThread.Run(() =>
+        {
+            var document = new TextDocument(text);
+            var cache = new MarkdownDocumentCache();
+            cache.FactsOf(document, 1);
+            int before = cache.Recomputes;
+
+            document.Insert(document.GetLineByNumber(line).Offset + column, typed);
+
+            Assert.Equal(before, cache.Recomputes);
+        });
+
+        [Theory]
+        [InlineData("\n---", 1, 0, "Title", 0)]                       // text above dashes: a setext heading
+        [InlineData("Title\n", 2, 0, "==", 0)]                        // equals under text
+        [InlineData("*[HTML]: x\nHTML", 1, 1, "", 1)]                 // a definition loses its bracket
+        [InlineData("```\n```x\nb", 2, 3, "", 1)]                     // an inside line becomes the closing fence
+        [InlineData("# T\n    $$\nx\n$$", 2, 0, "", 4)]               // an indented $$ becomes a math block
+        [InlineData("a | b | c\n|---|---|", 1, 6, "\\", 0)]           // an escaped pipe makes the header fit
+        [InlineData("---\ntitle: x\n..", 3, 2, ".", 0)]               // front matter closes
+        [InlineData("> q\n{.is-info", 2, 9, "}", 0)]                  // a callout class line
+        [InlineData("> a\nb\n{.is-info}", 2, 0, "> ", 0)]             // a quote above a class line
+        [InlineData("b\n> a\n{.is-info}", 1, 0, "> ", 0)]             // a quote above a callout
+        [InlineData("> a\n{.is-info}", 1, 0, "", 1)]                  // a callout line loses its quote
+        [InlineData("Title\n---", 1, 0, "- ", 0)]                     // heading text becomes a list item
+        public void An_edit_that_changes_the_structure_is_noticed(string text, int line, int column, string inserted, int removed) => UiThread.Run(() =>
+        {
+            var document = new TextDocument(text);
+            var cache = new MarkdownDocumentCache();
+            var old = MarkdownStructure.Scan(text.Split('\n'));
+            cache.FactsOf(document, 1);
+
+            document.Replace(document.GetLineByNumber(line).Offset + column, removed, inserted);
+
+            var expected = MarkdownStructure.Scan(document.Lines.Select(l => document.GetText(l)).ToList());
+            Assert.False(old.Facts.SequenceEqual(expected.Facts) && old.Abbreviations.SetEquals(expected.Abbreviations), "the edit must change the structure");
+            Assert.Equal(expected.Facts, Enumerable.Range(1, document.LineCount).Select(n => cache.FactsOf(document, n)));
+            Assert.Equal(expected.Abbreviations.OrderBy(t => t), cache.AbbreviationsOf(document).OrderBy(t => t));
+        });
+
         [Fact]
         public void Typing_a_pipe_rescans() => UiThread.Run(() =>
         {

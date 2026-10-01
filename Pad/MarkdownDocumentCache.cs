@@ -10,18 +10,19 @@ namespace Kil0bitSystemMonitor.Pad
     /// The structure of the shown Markdown document (<see cref="MarkdownStructure"/>: fences, $$
     /// blocks, tables, setext headings, front matter, callouts, abbreviations), shared by the
     /// colorizer, the background renderer, the generators and the diagram pictures. Rescans only
-    /// after an edit that can change it (R3): typing in an ordinary paragraph, a fenced block or a
-    /// table cell never walks the whole note (typing in a list or quote line does rescan).
+    /// after an edit that can change it (R3): typing in an ordinary paragraph, a list item, a quote,
+    /// a fenced block or a table cell never walks the whole note.
     /// </summary>
     internal sealed class MarkdownDocumentCache
     {
-        /// <summary>Characters whose typing or removal can change the structure.</summary>
-        private static readonly char[] Triggers = { '`', '~', '|', '$', '=', '-', '>', '{', '[', '*', '\\' };
+        /// <summary>Characters whose typing or removal anywhere can start or end a structure: fences, $$ blocks and table pipes.</summary>
+        private static readonly char[] Triggers = { '`', '~', '|', '$' };
 
-        /// <summary>Characters that start a structural line (a table pipe does not: typing in a row changes nothing).</summary>
-        private static readonly char[] LineStarts = { '`', '~', '$', '=', '-', '>', '{', '*', '.' };
+        private static readonly char[] LineBreaks = { '\r', '\n' };
 
         private static readonly char[] SetextStarts = { '=', '-' };
+
+        private static readonly char[] CalloutStarts = { '{' };
 
         private readonly Action<Exception> _onFailure;
         private TextDocument? _document;
@@ -142,30 +143,60 @@ namespace Kil0bitSystemMonitor.Pad
                 StructureChanged?.Invoke();
         }
 
-        /// <summary>Whether an edit can change the structure (R3).</summary>
+        /// <summary>
+        /// Whether an edit can change the structure (R3): it changed the line count; it typed or
+        /// removed a fence, $$ or pipe character; the edited line was structural, or its text before
+        /// or after the edit can be (<see cref="MarkdownStructure.CanBeStructural"/>); or the line
+        /// below makes it matter (an underline below text, a callout below a quote, a delimiter row
+        /// below a line with a pipe).
+        /// </summary>
         private bool TouchesStructure(TextDocument document, DocumentChangeEventArgs e)
         {
             if (document.LineCount != _structure.LineCount) return true;
-            if (e.InsertedText.Text.IndexOfAny(Triggers) >= 0 || e.RemovedText.Text.IndexOfAny(Triggers) >= 0) return true;
+            string inserted = e.InsertedText.Text;
+            string removed = e.RemovedText.Text;
+            if (inserted.IndexOfAny(Triggers) >= 0 || removed.IndexOfAny(Triggers) >= 0) return true;
+            // A replacement across lines that kept the line count is rare: rescan rather than reason about each line.
+            if (inserted.IndexOfAny(LineBreaks) >= 0 || removed.IndexOfAny(LineBreaks) >= 0) return true;
 
-            int first = document.GetLineByOffset(Math.Min(e.Offset, document.TextLength)).LineNumber;
-            int last = document.GetLineByOffset(Math.Min(e.Offset + e.InsertionLength, document.TextLength)).LineNumber;
-            for (int number = first; number <= last; number++)
+            var line = document.GetLineByOffset(Math.Min(e.Offset, document.TextLength));
+            int number = line.LineNumber;
+            var facts = _structure.Facts[number - 1];
+            if (WasStructural(facts)) return true;
+
+            string now = document.GetText(line);
+            int at = e.Offset - line.Offset;
+            string before = now.Substring(0, at) + removed + now.Substring(at + inserted.Length);
+            if (MarkdownStructure.CanBeStructural(now, number) || MarkdownStructure.CanBeStructural(before, number)) return true;
+
+            bool last = number == document.LineCount;
+            // Text typed above a line of dashes or equals signs may make it a setext underline.
+            if (!last && StartsWithAny(document, number + 1, SetextStarts) && MarkdownStructure.IsUnderline(TextOf(document, number + 1))) return true;
+            // A quote line joins (or leaves) the callout below it.
+            if (!last && (MarkdownStructure.IsQuoteLine(now) || MarkdownStructure.IsQuoteLine(before)))
             {
-                var facts = _structure.Facts[number - 1];
-                if (facts.Fence == MdFence.Delimiter || facts.Table == MdTableRole.Header || facts.SetextLevel != 0
-                    || facts.SetextUnderline || facts.FrontMatter || facts.CalloutClass || facts.Callout != MdCallout.None
-                    || facts.Table == MdTableRole.Delimiter) return true;
-                if (IsDelimiterAt(document, number) || (number < document.LineCount && IsDelimiterAt(document, number + 1))) return true;
-                if (StartsWithAny(document, number, LineStarts)) return true;
-                // Text typed on a line may make the dashes below it a setext underline.
-                if (number < document.LineCount && StartsWithAny(document, number + 1, SetextStarts)) return true;
+                var below = _structure.Facts[number];
+                if (below.Callout != MdCallout.None || below.CalloutClass) return true;
+                if (StartsWithAny(document, number + 1, CalloutStarts) && MarkdownStructure.IsCalloutClass(TextOf(document, number + 1))) return true;
+            }
+            // A line with a pipe (the edit changed none) may head a table over a delimiter row, or sit next to one.
+            if (facts.Table == MdTableRole.None && now.IndexOf('|') >= 0)
+            {
+                if (!last && IsDelimiterAt(document, number + 1)) return true;
+                if ((number > 1 && _structure.Facts[number - 2].Table != MdTableRole.None) || (!last && _structure.Facts[number].Table != MdTableRole.None)) return true;
             }
             return false;
         }
 
+        /// <summary>Facts an edit to the line can take away: typing inside a fenced block or a table row cannot change them without a trigger character.</summary>
+        private static bool WasStructural(MdLineFacts facts) =>
+            facts.Fence == MdFence.Delimiter || facts.Table is MdTableRole.Header or MdTableRole.Delimiter || facts.SetextLevel != 0
+            || facts.SetextUnderline || facts.FrontMatter || facts.CalloutClass || facts.Callout != MdCallout.None;
+
+        private static string TextOf(TextDocument document, int number) => document.GetText(document.GetLineByNumber(number));
+
         private static bool IsDelimiterAt(TextDocument document, int number) =>
-            MarkdownStructure.IsDelimiterRow(document.GetText(document.GetLineByNumber(number)), out _);
+            MarkdownStructure.IsDelimiterRow(TextOf(document, number), out _);
 
         /// <summary>The line's first character after at most three spaces is one of <paramref name="chars"/>.</summary>
         private static bool StartsWithAny(TextDocument document, int number, char[] chars)

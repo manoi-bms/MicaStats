@@ -54,6 +54,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private static readonly Regex CalloutRx = new(@"^ {0,3}\{\.is-(info|success|warning|danger)\}[ \t]*$", RegexOptions.CultureInvariant);
         private static readonly Regex QuoteRx = new(@"^ {0,3}>", RegexOptions.CultureInvariant);
         private static readonly Regex AbbreviationRx = new(@"^\*\[([^\]]+)\]:", RegexOptions.CultureInvariant);
+        private static readonly Regex DelimiterRx = new(@"^ {0,3}(?:`{3,}|~{3,}|\$\$)", RegexOptions.CultureInvariant);
 
         private MarkdownStructure(MdFence[] fences, int[] openings, int[] closings, int[] blockOpenings, MdLineFacts[] facts, IReadOnlySet<string> abbreviations)
         {
@@ -125,6 +126,30 @@ namespace Kil0bitSystemMonitor.Services.Pad
             columns = cells.Count;
             return true;
         }
+
+        /// <summary>
+        /// Whether line <paramref name="lineNumber"/> (1-based) can take part in the structure by its
+        /// own text (R3): a line of only <c>=</c> or <c>-</c>, a front-matter delimiter within the
+        /// first <see cref="FrontMatterSearch"/> lines, a fence or <c>$$</c> delimiter, a callout class
+        /// line, an abbreviation definition or a table delimiter row. Whether a line with a pipe heads
+        /// a table depends on the line below it; the caller asks that.
+        /// </summary>
+        public static bool CanBeStructural(string line, int lineNumber)
+        {
+            line ??= "";
+            if (SetextRx.IsMatch(line) || DelimiterRx.IsMatch(line) || CalloutRx.IsMatch(line) || AbbreviationRx.IsMatch(line)) return true;
+            if (lineNumber <= FrontMatterSearch && line.TrimEnd() is "---" or "...") return true;
+            return IsDelimiterRow(line, out _);
+        }
+
+        /// <summary>A line of only <c>=</c> or only <c>-</c> (after at most three spaces): a setext underline when paragraph text is above it.</summary>
+        public static bool IsUnderline(string line) => SetextRx.IsMatch(line ?? "");
+
+        /// <summary>A callout class line such as <c>{.is-info}</c>; it makes the quote above it a callout.</summary>
+        public static bool IsCalloutClass(string line) => CalloutRx.IsMatch(line ?? "");
+
+        /// <summary>A quote line (<c>&gt;</c> after at most three spaces).</summary>
+        public static bool IsQuoteLine(string line) => QuoteRx.IsMatch(line ?? "");
 
         private static string At(IReadOnlyList<string> lines, int i) => lines[i] ?? "";
 

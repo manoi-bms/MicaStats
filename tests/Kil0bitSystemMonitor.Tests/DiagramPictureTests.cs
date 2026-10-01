@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -7,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Pad;
@@ -98,8 +100,63 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.NotNull(wide.ContextMenu);
 
             var result = DiagramFakes.Picture();
-            Assert.Same(DiagramPicture.BitmapOf(result), DiagramPicture.BitmapOf(result));   // decoded once
-            Assert.Equal(1, DiagramPicture.BitmapOf(result).PixelWidth);
+            Assert.Same(DiagramPicture.BitmapOf(result, 1), DiagramPicture.BitmapOf(result, 1));   // decoded once
+            Assert.Equal(1, DiagramPicture.BitmapOf(result, 1).PixelWidth);
+        });
+
+        /// <summary>A transparent PNG of <paramref name="width"/> x <paramref name="height"/> pixels.</summary>
+        private static byte[] PngOf(int width, int height)
+        {
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(new WriteableBitmap(width, height, 96, 96, PixelFormats.Pbgra32, null)));
+            using var stream = new MemoryStream();
+            encoder.Save(stream);
+            return stream.ToArray();
+        }
+
+        [Fact]
+        public void A_picture_is_decoded_at_the_size_it_is_drawn_and_never_larger_than_its_png() => UiThread.Run(() =>
+        {
+            // A 100 x 50 picture comes as a 200 x 100 PNG (2x).
+            var result = DiagramResult.Picture(PngOf(200, 100), DiagramFakes.Svg, 100, 50, paper: false);
+
+            // Shown 60 wide on a 150% screen: 90 pixels are enough.
+            var narrow = new DiagramPicture(new DiagramView { Result = result, Palette = PadPalette.Dark, MaxWidth = 60, PixelsPerDip = 1.5 });
+            var decoded = Assert.IsAssignableFrom<BitmapSource>(narrow.Image!.Source);
+            Assert.Equal(60, narrow.Image.Width);
+            Assert.Equal(90, decoded.PixelWidth);
+            Assert.Equal(45, decoded.PixelHeight);
+
+            // Shown 100 wide on a 250% screen would want 250: the PNG has 200.
+            var full = new DiagramPicture(new DiagramView { Result = result, Palette = PadPalette.Dark, MaxWidth = 600, PixelsPerDip = 2.5 });
+            Assert.Equal(200, ((BitmapSource)full.Image!.Source).PixelWidth);
+        });
+
+        [Fact]
+        public void A_picture_is_decoded_once_per_width_and_at_most_24_stay_decoded() => UiThread.Run(() =>
+        {
+            var result = DiagramResult.Picture(PngOf(200, 100), DiagramFakes.Svg, 100, 50, paper: false);
+            var at90 = DiagramPicture.BitmapOf(result, 90);
+            Assert.Same(at90, DiagramPicture.BitmapOf(result, 90));
+            Assert.Equal(90, at90.PixelWidth);
+            Assert.NotSame(at90, DiagramPicture.BitmapOf(result, 120));
+            Assert.Equal(120, DiagramPicture.BitmapOf(result, 120).PixelWidth);
+
+            var first = DiagramFakes.Picture();
+            var oldest = DiagramPicture.BitmapOf(first, 1);
+            var last = first;
+            var newest = oldest;
+            for (int i = 0; i < 30; i++)
+            {
+                last = DiagramFakes.Picture();
+                newest = DiagramPicture.BitmapOf(last, 1);
+                Assert.True(DiagramPicture.DecodedCount <= 24);
+            }
+
+            Assert.Equal(24, DiagramPicture.DecodedCount);
+            Assert.Same(newest, DiagramPicture.BitmapOf(last, 1));       // the most recent stays
+            Assert.NotSame(oldest, DiagramPicture.BitmapOf(first, 1));   // the oldest was dropped and is decoded again
+            Assert.Equal(24, DiagramPicture.DecodedCount);
         });
 
         [Fact]

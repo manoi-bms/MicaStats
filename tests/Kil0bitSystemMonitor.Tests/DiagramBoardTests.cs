@@ -208,6 +208,17 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_picture_is_told_the_screen_scale_of_its_editor() => UiThread.Run(() =>
+        {
+            var board = new Board("```dot\ndigraph { a -> b }\n```");
+
+            board.Renderer.Finish(0, DiagramFakes.Picture(120, 60));
+            board.PumpAndRender();
+
+            Assert.Equal(System.Windows.Media.VisualTreeHelper.GetDpi(board.View).PixelsPerDip, board.PictureUnder(3)!.View.PixelsPerDip);
+        });
+
+        [Fact]
         public void An_error_result_shows_the_error_box() => UiThread.Run(() =>
         {
             var board = new Board("```dot\ndigraph { a -> }\n```");

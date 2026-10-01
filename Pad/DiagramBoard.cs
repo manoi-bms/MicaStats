@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Document;
@@ -255,6 +256,7 @@ namespace Kil0bitSystemMonitor.Pad
                 Result = result,
                 Palette = palette,
                 MaxWidth = Math.Max(MinPictureWidth, width - PictureMargin),
+                PixelsPerDip = VisualTreeHelper.GetDpi(view).PixelsPerDip,
                 CanHideCode = _folding != null && block.CloseLine - block.OpenLine > 1,
                 CodeHidden = IsCodeHidden(closing),
                 ToggleCode = () => SetCodeHidden(closing, !IsCodeHidden(closing)),

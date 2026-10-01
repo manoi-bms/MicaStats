@@ -1,6 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -30,6 +30,9 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>The text area's width: a picture is scaled down to it, never up.</summary>
         public double MaxWidth { get; init; } = 600;
+
+        /// <summary>The screen's pixels per device-independent pixel where the picture is shown: it is decoded with as many pixels as it is drawn with.</summary>
+        public double PixelsPerDip { get; init; } = 1;
 
         /// <summary>True when the block has lines Hide code can fold.</summary>
         public bool CanHideCode { get; init; }
@@ -71,8 +74,16 @@ namespace Kil0bitSystemMonitor.Pad
             return false;
         }
 
-        /// <summary>Each result's bitmap, decoded once however often its line is drawn.</summary>
-        private static readonly ConditionalWeakTable<DiagramResult, BitmapSource> s_bitmaps = new();
+        /// <summary>How many decoded pictures stay in memory, the least recently used dropped first.</summary>
+        internal const int DecodedCapacity = 24;
+
+        /// <summary>
+        /// Decoded pictures by result and width, so a line drawn again does not decode again. Small
+        /// and bounded: a picture is decoded at the size it is shown, and the renderer's cache keeps
+        /// the PNG to decode it again.
+        /// </summary>
+        private static readonly Dictionary<(DiagramResult Result, int Width), LinkedListNode<((DiagramResult Result, int Width) Key, BitmapSource Bitmap)>> s_decoded = new();
+        private static readonly LinkedList<((DiagramResult Result, int Width) Key, BitmapSource Bitmap)> s_decodedOrder = new();
 
         public DiagramPicture(DiagramView view)
         {
@@ -97,17 +108,72 @@ namespace Kil0bitSystemMonitor.Pad
 
         internal Hyperlink? HelpLink { get; private set; }
 
-        /// <summary>The result's PNG as a frozen bitmap.</summary>
-        internal static BitmapSource BitmapOf(DiagramResult result) => s_bitmaps.GetValue(result, r =>
+        /// <summary>How many decoded pictures are kept; for tests.</summary>
+        internal static int DecodedCount
         {
+            get { lock (s_decoded) return s_decoded.Count; }
+        }
+
+        /// <summary>
+        /// The result's PNG as a frozen bitmap <paramref name="decodeWidth"/> pixels wide (its
+        /// height follows; 0 decodes it at its own size), decoded once while it stays among the
+        /// <see cref="DecodedCapacity"/> most recently used.
+        /// </summary>
+        internal static BitmapSource BitmapOf(DiagramResult result, int decodeWidth)
+        {
+            var key = (result, decodeWidth);
+            lock (s_decoded)
+            {
+                if (s_decoded.TryGetValue(key, out var node))
+                {
+                    s_decodedOrder.Remove(node);
+                    s_decodedOrder.AddFirst(node);
+                    return node.Value.Bitmap;
+                }
+            }
+
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.StreamSource = new MemoryStream(r.Png!);
+            if (decodeWidth > 0) bitmap.DecodePixelWidth = decodeWidth;
+            bitmap.StreamSource = new MemoryStream(result.Png!);
             bitmap.EndInit();
             bitmap.Freeze();
+
+            lock (s_decoded)
+            {
+                if (s_decoded.TryGetValue(key, out var raced)) return raced.Value.Bitmap;
+                s_decoded[key] = s_decodedOrder.AddFirst((key, bitmap));
+                while (s_decoded.Count > DecodedCapacity)
+                {
+                    var oldest = s_decodedOrder.Last!;
+                    s_decodedOrder.RemoveLast();
+                    s_decoded.Remove(oldest.Value.Key);
+                }
+            }
             return bitmap;
-        });
+        }
+
+        /// <summary>
+        /// How many pixels wide to decode a picture shown <paramref name="shownWidth"/> wide: as many
+        /// as the screen draws it with, never more than the PNG has; 0 (its own size) when the PNG's
+        /// header cannot be read.
+        /// </summary>
+        private static int DecodeWidthOf(byte[] png, double shownWidth, double pixelsPerDip)
+        {
+            int pngWidth = PngWidth(png);
+            if (pngWidth == 0) return 0;
+            double wanted = Math.Ceiling(shownWidth * (pixelsPerDip > 0 ? pixelsPerDip : 1));
+            return (int)Math.Clamp(wanted, 1, pngWidth);
+        }
+
+        /// <summary>A PNG's width in pixels from its header (bytes 16-19, big-endian), or 0 when it is not a PNG.</summary>
+        private static int PngWidth(byte[] png)
+        {
+            if (png.Length < 24 || png[0] != 0x89 || png[1] != (byte)'P' || png[2] != (byte)'N' || png[3] != (byte)'G') return 0;
+            int width = png[16] << 24 | png[17] << 16 | png[18] << 8 | png[19];
+            return width > 0 ? width : 0;
+        }
 
         private static UIElement DrawingText(PadPalette palette) => new TextBlock
         {
@@ -123,7 +189,7 @@ namespace Kil0bitSystemMonitor.Pad
             double width = Math.Max(1, Math.Min(result.Width, room));
             Image = new Image
             {
-                Source = BitmapOf(result),
+                Source = BitmapOf(result, DecodeWidthOf(result.Png!, width, view.PixelsPerDip)),
                 Width = width,
                 Height = width * result.Height / result.Width,
                 Stretch = Stretch.Uniform,

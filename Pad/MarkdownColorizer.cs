@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Highlighting;
 using ICSharpCode.AvalonEdit.Rendering;
@@ -19,12 +20,15 @@ namespace Kil0bitSystemMonitor.Pad
     /// marker colors, monospace code, raised and lowered scripts, dotted abbreviations. While the
     /// reading font is on (a mono family is given), code, table and front-matter lines are drawn in
     /// the editor's monospace font (R2). Lines inside a fence whose info word names a MicaPad
-    /// language get that language's colors (<see cref="FenceHighlighter"/>). Only how text is drawn changes; the document is never touched.
+    /// language get that language's colors (<see cref="FenceHighlighter"/>); after an edit the rest
+    /// of that block repaints, since a comment opened or a language named on one line recolors the
+    /// lines below it. Only how text is drawn changes; the document is never touched.
     /// </summary>
     internal sealed class MarkdownColorizer : DocumentColorizingTransformer
     {
         private readonly MarkdownDocumentCache _cache;
         private readonly FenceHighlighter _fences;
+        private readonly List<TextView> _views = new();
         private readonly Action<string>? _warn;
         private bool _fenceLogged;
         private readonly Func<PadPalette> _palette;
@@ -46,6 +50,41 @@ namespace Kil0bitSystemMonitor.Pad
             _palette = palette;
             _onFailure = onFailure ?? (_ => { });
             _monoFont = monoFont ?? (() => null);
+        }
+
+        protected override void OnAddToTextView(TextView textView)
+        {
+            base.OnAddToTextView(textView);
+            _views.Add(textView);
+            if (_views.Count == 1) _cache.Edited += OnEdited;
+        }
+
+        protected override void OnRemoveFromTextView(TextView textView)
+        {
+            base.OnRemoveFromTextView(textView);
+            _views.Remove(textView);
+            if (_views.Count == 0) _cache.Edited -= OnEdited;
+        }
+
+        /// <summary>
+        /// An edit is done and the structure follows it: AvalonEdit repaints only the edited lines, so
+        /// the rest of a fenced block whose colors can follow from them repaints too (in the same
+        /// way, before the next layout).
+        /// </summary>
+        private void OnEdited(TextDocument document, int first, int last)
+        {
+            try
+            {
+                if (_fences.LinesToRepaint(document, first, last) is not { } lines) return;
+                int start = document.GetLineByNumber(lines.First).Offset;
+                int end = document.GetLineByNumber(lines.Last).EndOffset;
+                foreach (var view in _views)
+                    if (ReferenceEquals(view.Document, document)) view.Redraw(start, end - start, DispatcherPriority.Normal);
+            }
+            catch (Exception ex)
+            {
+                FenceFailed(ex);
+            }
         }
 
         protected override void ColorizeLine(DocumentLine line)

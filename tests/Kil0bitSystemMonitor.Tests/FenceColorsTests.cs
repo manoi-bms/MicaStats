@@ -23,11 +23,23 @@ namespace Kil0bitSystemMonitor.Tests
             var cache = new MarkdownDocumentCache();
             var view = new TextView { Document = new TextDocument(text) };
             view.LineTransformers.Add(new MarkdownColorizer(cache, () => PadPalette.Dark));
+            Layout(view);
+            return view;
+        }
+
+        /// <summary>What a shown view does after an edit: runs what was queued, then lays out again (no explicit Redraw).</summary>
+        private static void Layout(TextView view)
+        {
+            PadLanguageWindowTests.Pump();
             view.Measure(new Size(1200, 800));
             view.Arrange(new Rect(0, 0, 1200, 800));
             view.EnsureVisualLines();
-            return view;
         }
+
+        private static IHighlightingDefinition? Definition(string? id) => PadLanguages.ById(id) is { } language ? PadHighlighting.For(language) : null;
+
+        private static List<(int, int, string?)> Sections(HighlightedLine line) =>
+            line.Sections.Select(s => (s.Offset, s.Length, s.Color?.Name)).ToList();
 
         private static PadColor? ForegroundAt(TextView view, int lineNumber, int column)
         {
@@ -136,5 +148,83 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(1, lookups);                     // the dead block is not retried on the next line
             Assert.Equal(ForegroundAt(view, 2, 0), ForegroundAt(view, 3, 0));
             Assert.NotEqual(ForegroundAt(view, 5, 0), ForegroundAt(view, 5, 7));   // `code` is still styled
-        });    }
+        });
+
+        [Fact]
+        public void Opening_a_comment_recolors_the_lines_below_it() => UiThread.Run(() =>
+        {
+            var view = Render("```cs\nint a;\nint b;\nint c;\n```\nafter");
+            var document = view.Document;
+            var keyword = ForegroundAt(view, 4, 0);
+
+            document.Insert(document.GetLineByNumber(3).Offset, "/*");
+            Layout(view);
+
+            var comment = WholeFileColors("csharp", "int a;\n/*int b;\nint c;", 3)[0];
+            Assert.NotEqual(keyword, comment);
+            Assert.Equal(comment, ForegroundAt(view, 3, 0));   // the edited line
+            Assert.Equal(comment, ForegroundAt(view, 4, 0));   // and the one below it
+        });
+
+        [Fact]
+        public void Naming_the_language_of_a_bare_fence_colors_its_block() => UiThread.Run(() =>
+        {
+            const string code = "public class A { string s = \"x\"; } // done";
+            var view = Render("```\n" + code + "\n```");
+            var document = view.Document;
+            var plain = ForegroundAt(view, 2, 0);
+
+            document.Insert(3, "cs");
+            Layout(view);
+
+            var expected = WholeFileColors("csharp", code, 1);
+            Assert.NotEqual(plain, expected[0]);
+            foreach (var (column, color) in expected) Assert.Equal(color, ForegroundAt(view, 2, column));
+        });
+
+        [Fact]
+        public void An_edit_keeps_the_colors_above_it_and_recolors_from_it_on() => UiThread.Run(() =>
+        {
+            int lookups = 0;
+            var highlighter = new FenceHighlighter(new MarkdownDocumentCache(), id =>
+            {
+                lookups++;
+                return Definition(id);
+            });
+            var document = new TextDocument("```cs\nint a;\nint b;\nint c;\n```\n```cs\nint d;\n```");
+            var above = highlighter.HighlightLine(document, 2);
+            var below = highlighter.HighlightLine(document, 4);
+            Assert.NotNull(highlighter.HighlightLine(document, 7));
+            Assert.Equal(2, lookups);
+
+            document.Insert(document.GetLineByNumber(3).Offset, "/*");
+
+            Assert.Same(above, highlighter.HighlightLine(document, 2));     // above the edit: kept
+            var again = highlighter.HighlightLine(document, 4)!;
+            Assert.NotSame(below, again);                                   // from the edit on: highlighted again
+            var fresh = new FenceHighlighter(new MarkdownDocumentCache()).HighlightLine(document, 4)!;
+            Assert.Equal(Sections(fresh), Sections(again));
+            Assert.Equal(2, lookups);                                       // the edited block was not started over
+            Assert.NotNull(highlighter.HighlightLine(document, 7));
+            Assert.Equal(3, lookups);                                       // a block below the edit was
+        });
+
+        [Fact]
+        public void Shortening_a_wide_line_and_any_edit_after_a_failure_bring_the_colors_back() => UiThread.Run(() =>
+        {
+            var highlighter = new FenceHighlighter(new MarkdownDocumentCache());
+            var wide = new TextDocument("```cs\nint x;\n" + new string('a', 4001) + "\nint y;\n```");
+            Assert.NotNull(highlighter.HighlightLine(wide, 2));
+            Assert.Null(highlighter.HighlightLine(wide, 4));
+            wide.Remove(wide.GetLineByNumber(3).Offset, 3990);
+            Assert.NotNull(highlighter.HighlightLine(wide, 4));
+
+            int calls = 0;
+            var flaky = new FenceHighlighter(new MarkdownDocumentCache(), id => calls++ == 0 ? throw new System.InvalidOperationException() : Definition(id));
+            var document = new TextDocument("```cs\nint a;\n```\ntext");
+            Assert.Null(flaky.HighlightLine(document, 2));
+            document.Insert(document.TextLength, "x");                      // an edit below the block
+            Assert.NotNull(flaky.HighlightLine(document, 2));
+        });
+    }
 }

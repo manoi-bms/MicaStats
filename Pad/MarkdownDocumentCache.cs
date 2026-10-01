@@ -30,11 +30,22 @@ namespace Kil0bitSystemMonitor.Pad
         private bool _stale = true;
         private bool _pending;
 
+        /// <summary>The span the open update group's edits touched, in the current text's offsets; -1 when none.</summary>
+        private int _editFrom = -1;
+        private int _editTo;
+
         /// <param name="onFailure">Told when following an edit fails; the edit itself never sees the exception.</param>
         public MarkdownDocumentCache(Action<Exception>? onFailure = null) => _onFailure = onFailure ?? (_ => { });
 
         /// <summary>Raised after an edit changed the structure, so lines far from the edit repaint.</summary>
         public event Action? StructureChanged;
+
+        /// <summary>
+        /// Raised when an edit (or one update group of edits) is done and the structure follows it,
+        /// with the document and the first and last line the edit touched: lines below an edit whose
+        /// look follows from it without any fact changing (fenced code colors) repaint from there.
+        /// </summary>
+        public event Action<TextDocument, int, int>? Edited;
 
         /// <summary>How many times the whole document was scanned; for tests.</summary>
         internal int Recomputes { get; private set; }
@@ -72,6 +83,7 @@ namespace Kil0bitSystemMonitor.Pad
                 _document.UpdateFinished -= OnUpdateFinished;
             }
             _pending = false;
+            _editFrom = -1;
             _document = null;
             _structure = MarkdownStructure.Empty;
             _stale = true;
@@ -103,36 +115,68 @@ namespace Kil0bitSystemMonitor.Pad
             if (document == null || !ReferenceEquals(sender, document)) return;
             try
             {
-                if (!_stale && !TouchesStructure(document, e)) return;
-                if (document.IsInUpdate)
-                {
-                    // Replace All: thousands of edits in one update group rescan once, when it ends.
-                    _pending = true;
-                    return;
-                }
-                Rescan();
+                TrackEdit(e);
+                // Replace All: thousands of edits in one update group rescan once, when it ends.
+                if (!_pending && (_stale || TouchesStructure(document, e))) _pending = true;
             }
             catch (Exception ex)
             {
                 _stale = true;
                 _onFailure(ex);
             }
+            if (!document.IsInUpdate) Finish(document);
         }
 
         private void OnUpdateFinished(object? sender, EventArgs e)
         {
             var document = _document;
-            if (!_pending || document == null || !ReferenceEquals(sender, document)) return;
-            _pending = false;
+            if (document == null || !ReferenceEquals(sender, document)) return;
+            Finish(document);
+        }
+
+        /// <summary>The edit is done: rescans if it can have changed the structure, then says which lines it touched.</summary>
+        private void Finish(TextDocument document)
+        {
             try
             {
-                Rescan();
+                if (_pending)
+                {
+                    _pending = false;
+                    Rescan();
+                }
             }
             catch (Exception ex)
             {
                 _stale = true;
                 _onFailure(ex);
             }
+
+            if (_editFrom < 0) return;
+            int from = Math.Min(_editFrom, document.TextLength);
+            int to = Math.Min(_editTo, document.TextLength);
+            _editFrom = -1;
+            try
+            {
+                Edited?.Invoke(document, document.GetLineByOffset(from).LineNumber, document.GetLineByOffset(to).LineNumber);
+            }
+            catch (Exception ex)
+            {
+                _onFailure(ex);
+            }
+        }
+
+        /// <summary>Widens the span this update group touched by one change, keeping it in the current text's offsets.</summary>
+        private void TrackEdit(DocumentChangeEventArgs e)
+        {
+            int end = e.Offset + e.InsertionLength;
+            if (_editFrom < 0)
+            {
+                _editFrom = e.Offset;
+                _editTo = end;
+                return;
+            }
+            _editFrom = Math.Min(e.GetNewOffset(_editFrom, AnchorMovementType.BeforeInsertion), e.Offset);
+            _editTo = Math.Max(e.GetNewOffset(_editTo, AnchorMovementType.AfterInsertion), end);
         }
 
         private void Rescan()

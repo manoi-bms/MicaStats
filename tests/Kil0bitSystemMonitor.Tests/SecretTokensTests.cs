@@ -15,7 +15,7 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void References_are_found_with_their_offsets()
         {
-            string text = "user: admin\npass: {{secret:K7Q2M9XD}} ไทย {{secret:00000000}}";
+            string text = "user: admin\npass: {{secret:K7Q2M9XD}} \u0E44\u0E17\u0E22 {{secret:00000000}}";
 
             var found = SecretTokens.Find(text);
 

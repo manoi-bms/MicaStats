@@ -222,7 +222,7 @@ namespace Kil0bitSystemMonitor.Tests
             var format = ItemOf(window.EditorMenu, "Format");
             var headers = format.Items.Cast<object>().Select(i => i is MenuItem m ? (string)m.Header : "-").ToArray();
             Assert.Equal(new[] { "Bold", "Italic", "Strikethrough", "Code", "Link", "-", "Heading 1", "Heading 2", "Heading 3", "-",
-                                 "Bullet list", "Numbered list", "Task", "Quote", "Code block" }, headers);
+                                 "Bullet list", "Numbered list", "Task", "Quote", "Code block", "-", "Format table" }, headers);
 
             string path = env.FileOf("a.json");
             File.WriteAllText(path, "{}");

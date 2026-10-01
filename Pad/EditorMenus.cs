@@ -114,7 +114,7 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Select all", "Ctrl+A", () => editor.SelectAll(), hasText, icon: "\uE8B3"));
         }
 
-        /// <summary>Format ▸ for a Markdown tab (spec 2.4): each item is one undoable edit; no new shortcuts.</summary>
+        /// <summary>Format ▸ for a Markdown tab (spec 2.4): each item is one undoable edit; no new shortcuts. Format table lines up the table the caret is in (spec 3) and is off elsewhere.</summary>
         public static MenuItem FormatMenu(TextEditor editor)
         {
             var format = new MenuItem { Header = "Format", Icon = "\uE8D2" };
@@ -137,6 +137,12 @@ namespace Kil0bitSystemMonitor.Pad
             Add("Task", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Task));
             Add("Quote", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Quote));
             Add("Code block", MarkdownFormatter.CodeBlock, "\uE943");
+            format.Items.Add(new Separator());
+            bool inTable = TableFormatter.TableAt(editor.Document.Text, editor.CaretOffset) != null;
+            format.Items.Add(Item("Format table", null, () =>
+            {
+                if (TableFormatter.Format(editor.Document.Text, editor.CaretOffset) is { } edit) ApplyEdit(editor, edit);
+            }, inTable, icon: "\uE8A9"));
             return format;
         }
 

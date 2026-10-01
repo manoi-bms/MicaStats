@@ -22,6 +22,25 @@ namespace Kil0bitSystemMonitor.Tests
         public void Describe_follows_the_table(bool loaded, bool exists, int count, bool unlocked, string expected)
             => Assert.Equal(expected, VaultStatusText.Describe(loaded, exists, count, unlocked));
 
+        // Final review, item 9: Change PIN needs a vault, like Reset vault; Lock now an unlocked one.
+        [Theory]
+        [InlineData(false, false, false, false, false, false)]
+        [InlineData(false, true, true, false, false, false)]
+        [InlineData(true, false, false, false, false, false)]
+        [InlineData(true, true, false, true, false, true)]
+        [InlineData(true, true, true, true, true, true)]
+        public void The_card_buttons_follow_the_vault(bool loaded, bool exists, bool unlocked, bool changePin, bool lockNow, bool reset)
+            => Assert.Equal(new VaultButtons(changePin, lockNow, reset), VaultStatusText.Buttons(loaded, exists, unlocked));
+
+        [Fact]
+        public void Settings_enables_the_buttons_by_the_rule()
+        {
+            string code = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml.cs"));
+            Assert.Contains("PadVaultChangePin.IsEnabled = buttons.ChangePin;", code);
+            Assert.Contains("PadVaultLock.IsEnabled = buttons.LockNow;", code);
+            Assert.Contains("PadVaultReset.IsEnabled = buttons.Reset;", code);
+        }
+
         [Fact]
         public void Settings_has_the_credentials_card_with_its_three_buttons()
         {
@@ -45,9 +64,25 @@ namespace Kil0bitSystemMonitor.Tests
             int at = guide.IndexOf("### Credentials and encryption", StringComparison.Ordinal);
             Assert.True(at > guide.IndexOf("### Real files", StringComparison.Ordinal));
             int next = guide.IndexOf("\n## ", at, StringComparison.Ordinal);
-            string section = guide.Substring(at, next - at);
+            string section = guide.Substring(at, (next < 0 ? guide.Length : next) - at);
             foreach (string phrase in new[] { "Store as credential", "Copy secret", "Unmask", "Reset vault", "a longer PIN is stronger", "Recycle Bin", "Save As" })
                 Assert.Contains(phrase, section);
+        }
+
+        // Final review, item 2: the pill menu opens with a right-click, and the spec's "does not protect" list in plain words.
+        [Fact]
+        public void Guide_says_how_the_pill_menu_opens_and_what_is_not_protected()
+        {
+            string guide = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "GUIDE.md"));
+            int at = guide.IndexOf("### Credentials and encryption", StringComparison.Ordinal);
+            int next = guide.IndexOf("\n### ", at + 1, StringComparison.Ordinal);
+            string section = guide.Substring(at, (next < 0 ? guide.Length : next) - at);
+
+            Assert.DoesNotContain("Click a pill for its menu", section);
+            Assert.Contains("Right-click a pill (or press the menu key) for its menu", section);
+            foreach (string phrase in new[] { "guess", "offline", "6-digit PIN", "12-digit", "administrators", "SYSTEM", "SSD", "in memory", "reset Windows password" })
+                Assert.Contains(phrase, section);
+            Assert.DoesNotContain("Within 6 to 12 digits", section);
         }
     }
 }

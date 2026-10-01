@@ -613,8 +613,10 @@ namespace Kil0bitSystemMonitor
                 bool exists = loaded && vault.Exists;
                 bool unlocked = exists && vault.IsUnlocked;
                 PadVaultStatus.Text = Kil0bitSystemMonitor.Services.Pad.VaultStatusText.Describe(loaded, exists, exists ? vault.Credentials.Count : 0, unlocked);
-                PadVaultLock.IsEnabled = unlocked;
-                PadVaultReset.IsEnabled = exists;
+                var buttons = Kil0bitSystemMonitor.Services.Pad.VaultStatusText.Buttons(loaded, exists, unlocked);
+                PadVaultChangePin.IsEnabled = buttons.ChangePin;   // no vault: nothing to change; the status says how to make one
+                PadVaultLock.IsEnabled = buttons.LockNow;
+                PadVaultReset.IsEnabled = buttons.Reset;
             }
             catch (Exception ex)
             {

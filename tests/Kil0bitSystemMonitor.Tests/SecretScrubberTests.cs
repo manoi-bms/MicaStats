@@ -43,5 +43,19 @@ namespace Kil0bitSystemMonitor.Tests
 
         [Fact]
         public void An_empty_value_is_refused() => Assert.Throws<ArgumentException>(() => SecretScrubber.Count("x", ""));
+
+        [Fact]
+        public void A_copy_inside_an_existing_reference_is_left_alone()
+        {
+            // Replacing "secret" or "K7Q2" inside a reference would nest one reference in another.
+            const string text = "old={{secret:K7Q2M9XD}} new=secret K7Q2";
+
+            Assert.Equal(new[] { 28 }, SecretScrubber.Find(text, "secret"));
+            Assert.Equal("old={{secret:K7Q2M9XD}} new=" + Reference + " K7Q2", SecretScrubber.Replace(text, "secret", Reference, out int count));
+            Assert.Equal(1, count);
+            Assert.Equal(1, SecretScrubber.Count(text, "K7Q2"));
+            Assert.Equal(0, SecretScrubber.Count(text, "M9XD}} "));   // runs out of a reference
+            Assert.Equal(new[] { 0 }, SecretScrubber.Find("aaaaa", "aaa"));
+        }
     }
 }

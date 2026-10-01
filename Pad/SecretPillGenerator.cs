@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services.Pad;
 using FontFamily = System.Windows.Media.FontFamily;
@@ -17,7 +18,7 @@ namespace Kil0bitSystemMonitor.Pad
     /// </summary>
     internal sealed class SecretPillGenerator : VisualLineElementGenerator
     {
-        private const int MaxLineLength = 4000;
+        internal const int MaxLineLength = 4000;
         private readonly Func<string, CredentialInfo?> _find;
         private readonly Func<PadPalette> _palette;
         private readonly Func<double> _fontSize;
@@ -37,25 +38,19 @@ namespace Kil0bitSystemMonitor.Pad
         internal static string ToolTipOf(string id, CredentialInfo? info) =>
             info == null ? "No stored credential " + id : "Stored credential " + id + " \u2014 right-click for options";
 
-        public override int GetFirstInterestedOffset(int startOffset)
-        {
-            var document = CurrentContext.Document;
-            var line = document.GetLineByOffset(startOffset);
-            if (line.Length > MaxLineLength) return -1;
-
-            string text = document.GetText(line.Offset, line.Length);
-            foreach (var reference in SecretTokens.Find(text))
-            {
-                int offset = line.Offset + reference.Offset;
-                if (offset >= startOffset) return offset;
-            }
-            return -1;
-        }
+        /// <summary>
+        /// A visual line can hold several document lines (a folded section): the scan runs from
+        /// <paramref name="startOffset"/> to the end of the visual line's last document line.
+        /// </summary>
+        public override int GetFirstInterestedOffset(int startOffset) =>
+            FirstReference(CurrentContext.Document, startOffset, CurrentContext.VisualLine.LastDocumentLine.EndOffset);
 
         public override VisualLineElement? ConstructElement(int offset)
         {
             var document = CurrentContext.Document;
             var line = document.GetLineByOffset(offset);
+            if (line.Length > MaxLineLength) return null;
+
             string text = document.GetText(line.Offset, line.Length);
             foreach (var reference in SecretTokens.Find(text))
             {
@@ -63,6 +58,28 @@ namespace Kil0bitSystemMonitor.Pad
                 return new InlineObjectElement(reference.Length, Pill(reference.Id));
             }
             return null;
+        }
+
+        /// <summary>
+        /// The offset of the first reference starting at or after <paramref name="startOffset"/> and
+        /// before <paramref name="endOffset"/>, scanned line by line (a reference never spans lines);
+        /// lines over 4,000 characters are skipped. -1 when there is none.
+        /// </summary>
+        internal static int FirstReference(TextDocument document, int startOffset, int endOffset)
+        {
+            for (var line = document.GetLineByOffset(startOffset); line != null && line.Offset < endOffset; line = line.NextLine)
+            {
+                if (line.Length > MaxLineLength) continue;
+
+                string text = document.GetText(line.Offset, line.Length);
+                foreach (var reference in SecretTokens.Find(text))
+                {
+                    int offset = line.Offset + reference.Offset;
+                    if (offset >= endOffset) break;
+                    if (offset >= startOffset) return offset;
+                }
+            }
+            return -1;
         }
 
         private UIElement Pill(string id)

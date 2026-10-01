@@ -56,6 +56,38 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(PadThemeApplier.ToBrush(PadPalette.Light.PillBack).ToString(), ((Border)redrawn.Element).Background.ToString());
         });
 
+        [Fact]
+        public void The_scan_runs_line_by_line_to_the_end_offset_and_skips_long_lines()
+        {
+            string text = "a\n" + new string('x', 4001) + " {{secret:00000000}}\nb {{secret:K7Q2M9XD}}";
+            var document = new ICSharpCode.AvalonEdit.Document.TextDocument(text);
+            int last = text.LastIndexOf("{{", StringComparison.Ordinal);
+
+            Assert.Equal(last, SecretPillGenerator.FirstReference(document, 0, document.TextLength));   // the long line is skipped
+            Assert.Equal(-1, SecretPillGenerator.FirstReference(document, 0, last - 1));               // not past the end offset
+            Assert.Equal(-1, SecretPillGenerator.FirstReference(document, last + 1, document.TextLength));
+        }
+
+        [Fact]
+        public void A_folded_visual_line_draws_the_pill_after_the_fold_and_not_the_one_inside() => UiThread.Run(() =>
+        {
+            string text = "start\nhidden {{secret:00000000}}\nend {{secret:K7Q2M9XD}}";
+            var editor = new TextEditor { Text = text };
+            var foldings = ICSharpCode.AvalonEdit.Folding.FoldingManager.Install(editor.TextArea);
+            foldings.CreateFolding(3, text.IndexOf("end", StringComparison.Ordinal) + 3).IsFolded = true;
+            editor.TextArea.TextView.ElementGenerators.Add(new SecretPillGenerator(id => id == Bank.Id ? Bank : null, () => PadPalette.Dark, () => 14));
+            var view = editor.TextArea.TextView;
+            view.Measure(new Size(800, 200));
+            view.Arrange(new Rect(0, 0, 800, 200));
+            view.EnsureVisualLines();
+
+            var line = Assert.Single(view.VisualLines);   // three document lines, one visual line
+            Assert.Equal(3, line.LastDocumentLine.LineNumber);
+            var pill = Assert.Single(line.Elements.OfType<InlineObjectElement>());
+            Assert.Contains("Bank", Text(pill.Element));
+            ICSharpCode.AvalonEdit.Folding.FoldingManager.Uninstall(foldings);
+        });
+
         private static string Text(UIElement element) =>
             string.Concat(((Panel)((Border)element).Child).Children.OfType<TextBlock>().Select(t => t.Text));
     }

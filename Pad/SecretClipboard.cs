@@ -24,22 +24,21 @@ namespace Kil0bitSystemMonitor.Pad
 
         private static uint? s_ours;
 
-        /// <summary>Puts data on the clipboard; false when it stays busy. Tests replace it.</summary>
+        /// <summary>
+        /// Puts data on the clipboard; false when it stays busy. One call: WPF already tries again
+        /// while another program holds the clipboard. Tests replace it.
+        /// </summary>
         internal static Func<IDataObject, bool> SetData { get; set; } = data =>
         {
-            for (int attempt = 0; attempt < 4; attempt++)
+            try
             {
-                try
-                {
-                    Clipboard.SetDataObject(data, copy: true);
-                    return true;
-                }
-                catch (COMException)
-                {
-                    System.Threading.Thread.Sleep(100);
-                }
+                Clipboard.SetDataObject(data, copy: true);
+                return true;
             }
-            return false;
+            catch (COMException)
+            {
+                return false;
+            }
         };
 
         /// <summary>The clipboard's change counter. Tests replace it.</summary>

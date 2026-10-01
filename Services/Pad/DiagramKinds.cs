@@ -71,19 +71,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// The kind an opening fence line names by the first word of its info string
         /// (<c>```mermaid title</c> is Mermaid), or null. At most three spaces before the fence.
         /// </summary>
-        public static DiagramKind? FromFence(string openingLine)
-        {
-            string line = openingLine ?? "";
-            int i = 0;
-            while (i < line.Length && i < 3 && line[i] == ' ') i++;
-            if (i >= line.Length || line[i] is not ('`' or '~')) return null;
-            char fence = line[i];
-            while (i < line.Length && line[i] == fence) i++;
-            while (i < line.Length && char.IsWhiteSpace(line[i])) i++;
-            int start = i;
-            while (i < line.Length && !char.IsWhiteSpace(line[i])) i++;
-            return FromWord(line.Substring(start, i - start));
-        }
+        public static DiagramKind? FromFence(string openingLine) => FromWord(FenceTracker.InfoWord(openingLine));
 
         private static Dictionary<string, DiagramKind> Build()
         {

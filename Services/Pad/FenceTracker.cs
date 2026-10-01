@@ -82,6 +82,25 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return i < line.Length && line[i] is '`' or '~';
         }
 
+        /// <summary>
+        /// The first word of an opening fence line's info string (<c>```cs title</c> gives "cs"), or
+        /// null when the line is no backtick or tilde fence (at most three spaces before it) or has
+        /// no info string.
+        /// </summary>
+        public static string? InfoWord(string openingLine)
+        {
+            string line = openingLine ?? "";
+            int i = 0;
+            while (i < line.Length && i < 3 && line[i] == ' ') i++;
+            if (i >= line.Length || line[i] is not ('`' or '~')) return null;
+            char fence = line[i];
+            while (i < line.Length && line[i] == fence) i++;
+            while (i < line.Length && char.IsWhiteSpace(line[i])) i++;
+            int start = i;
+            while (i < line.Length && !char.IsWhiteSpace(line[i])) i++;
+            return i > start ? line.Substring(start, i - start) : null;
+        }
+
         private static bool IsClose(string line, char c, int length)
         {
             int i = 0;

@@ -75,6 +75,9 @@ namespace Kil0bitSystemMonitor.Tests
                 ("MdQuoteText", "Background", 4.5), ("MdListMarker", "Background", 4.5),
                 ("MdTaskDone", "Background", 4.5), ("MdMarker", "Background", 3),
                 ("Text", "MdCodeBackground", 7),
+                ("MdCode", "MdCodeBackground", 4.5), ("MdMath", "Background", 4.5), ("Text", "MdKbdBackground", 7),
+                ("MdCalloutInfo", "Background", 3), ("MdCalloutSuccess", "Background", 3),
+                ("MdCalloutWarning", "Background", 3), ("MdCalloutDanger", "Background", 3),
                 ("PillText", "PillBack", 4.5), ("PillMissingText", "PillBack", 4.5), ("PillText", "Background", 4.5),
             };
             foreach (string theme in new[] { PadThemes.Dark, PadThemes.Light })
@@ -101,7 +104,7 @@ namespace Kil0bitSystemMonitor.Tests
                 .Where(p => p.PropertyType == typeof(PadColor)).ToList();
             var resources = palette.Resources();
 
-            Assert.Equal(54, properties.Count);
+            Assert.Equal(61, properties.Count);
             Assert.Equal(properties.Count, resources.Count);
             Assert.Equal(resources.Count, resources.Select(r => r.Key).Distinct().Count());
             foreach (var property in properties)

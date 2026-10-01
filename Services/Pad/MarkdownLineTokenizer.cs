@@ -23,6 +23,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
         TaskDone,
         QuoteText,
         CodeBlock,
+        TableHeader,
+        FootnoteRef,
+        Subscript,
+        Superscript,
+        KbdText,
+        Abbreviation,
+        MathText,
     }
 
     /// <summary>What kind of line it is; the background renderer draws quote bars, code shading and rules from it.</summary>

@@ -114,6 +114,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public PadColor MdListMarker { get; private init; }
         public PadColor MdTaskDone { get; private init; }
         public PadColor MdRule { get; private init; }
+        /// <summary>Inline code's text (spec 1.4).</summary>
+        public PadColor MdCode { get; private init; }
+        /// <summary>Inline math <c>$…$</c>.</summary>
+        public PadColor MdMath { get; private init; }
+        /// <summary>Behind the key text of <c>&lt;kbd&gt;</c>.</summary>
+        public PadColor MdKbdBackground { get; private init; }
+        /// <summary>Wiki.js callouts' bars; the background tint is the same color at 15%.</summary>
+        public PadColor MdCalloutInfo { get; private init; }
+        public PadColor MdCalloutSuccess { get; private init; }
+        public PadColor MdCalloutWarning { get; private init; }
+        public PadColor MdCalloutDanger { get; private init; }
 
         /// <summary>Today's MicaPad colors.</summary>
         public static PadPalette Dark { get; } = new()
@@ -174,6 +185,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
             MdListMarker = PadColor.Parse("#3FD2E4"),
             MdTaskDone = PadColor.Parse("#88EDEDF2"),
             MdRule = PadColor.Parse("#33FFFFFF"),
+            MdCode = PadColor.Parse("#F2A97B"),
+            MdMath = PadColor.Parse("#C3A6FF"),
+            MdKbdBackground = PadColor.Parse("#2A2A36"),
+            MdCalloutInfo = PadColor.Parse("#4C9AFF"),
+            MdCalloutSuccess = PadColor.Parse("#3FBF7F"),
+            MdCalloutWarning = PadColor.Parse("#E8A53C"),
+            MdCalloutDanger = PadColor.Parse("#FF6B6B"),
         };
 
         /// <summary>
@@ -238,6 +256,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
             MdListMarker = PadColor.Parse("#06707C"),
             MdTaskDone = PadColor.Parse("#666670"),
             MdRule = PadColor.Parse("#26000000"),
+            MdCode = PadColor.Parse("#A33D1F"),
+            MdMath = PadColor.Parse("#6B3FB5"),
+            MdKbdBackground = PadColor.Parse("#E2E2EA"),
+            MdCalloutInfo = PadColor.Parse("#1F6FEB"),
+            MdCalloutSuccess = PadColor.Parse("#1A7F37"),
+            MdCalloutWarning = PadColor.Parse("#9A6700"),
+            MdCalloutDanger = PadColor.Parse("#C62828"),
         };
 
         /// <summary>The palette for a stored theme name; see <see cref="PadThemes.Normalize"/>.</summary>
@@ -300,6 +325,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
             Pair(nameof(MdListMarker), MdListMarker),
             Pair(nameof(MdTaskDone), MdTaskDone),
             Pair(nameof(MdRule), MdRule),
+            Pair(nameof(MdCode), MdCode),
+            Pair(nameof(MdMath), MdMath),
+            Pair(nameof(MdKbdBackground), MdKbdBackground),
+            Pair(nameof(MdCalloutInfo), MdCalloutInfo),
+            Pair(nameof(MdCalloutSuccess), MdCalloutSuccess),
+            Pair(nameof(MdCalloutWarning), MdCalloutWarning),
+            Pair(nameof(MdCalloutDanger), MdCalloutDanger),
         };
 
         private static KeyValuePair<string, PadColor> Pair(string name, PadColor color) => new("Pad." + name, color);

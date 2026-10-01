@@ -150,9 +150,33 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("$ x$")]
         [InlineData("x$5")]
         [InlineData("{not attributes} here")]
+        [InlineData("[Note]: this is important")]
+        [InlineData("[TODO]: call Bob")]
         public void Text_that_only_looks_like_syntax_stays_text(string line)
         {
             Assert.DoesNotContain(Runs(line), r => r.Style is MdStyle.MathText or MdStyle.Superscript or MdStyle.Subscript or MdStyle.Marker);
+        }
+
+        [Theory]
+        [InlineData("[id]: https://x \"Title\"", "https://x")]
+        [InlineData("[id]: https://x 'Title'", "https://x")]
+        [InlineData("[id]: https://x (Title)", "https://x")]
+        [InlineData("[id]: https://x", "https://x")]
+        [InlineData("   [id]:   <a b.png>  ", "<a b.png>")]
+        public void A_reference_definition_is_a_label_an_address_and_an_optional_title(string line, string address)
+        {
+            Assert.Equal(MdBlock.Definition, MarkdownLineTokenizer.Tokenize(line, Plain).Block);
+            Assert.Contains(("[id]:", MdStyle.Marker), Runs(line));
+            Assert.Contains((address, MdStyle.LinkText), Runs(line));
+        }
+
+        [Fact]
+        public void An_empty_abbreviation_term_is_skipped()
+        {
+            var run = System.Threading.Tasks.Task.Run(() => Runs("HTML text", default, new HashSet<string> { "", "HTML" }));
+
+            Assert.True(run.Wait(System.TimeSpan.FromSeconds(10)), "an empty term must not loop forever");
+            Assert.Single(run.Result, r => r.Style == MdStyle.Abbreviation);
         }
 
         [Fact]

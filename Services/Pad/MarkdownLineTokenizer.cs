@@ -94,7 +94,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private static readonly Regex QuoteRx = new(@"^ {0,3}(>)[ \t]?", RegexOptions.CultureInvariant);
         private static readonly Regex FootnoteDefRx = new(@"^ {0,3}(\[\^[^\]\s]+\]:)", RegexOptions.CultureInvariant);
         private static readonly Regex AbbreviationDefRx = new(@"^(\*\[[^\]]+\]:)", RegexOptions.CultureInvariant);
-        private static readonly Regex ReferenceDefRx = new(@"^ {0,3}(\[[^\]^][^\]]*\]:)[ \t]*(\S+)", RegexOptions.CultureInvariant);
+        /// <summary>CommonMark's shape: a label, a colon, an address, an optional quoted or parenthesized title, then the line end.</summary>
+        private static readonly Regex ReferenceDefRx = new(
+            @"^ {0,3}(\[[^\]^][^\]]*\]:)[ \t]*(<[^>]*>|\S+)(?:[ \t]+(""[^""]*""|'[^']*'|\([^)]*\)))?[ \t]*$", RegexOptions.CultureInvariant);
         private static readonly Regex FootnoteRefRx = new(@"\G\[\^([^\]\s]+)\]", RegexOptions.CultureInvariant);
         private static readonly Regex KbdRx = new(@"\G<kbd>(.*?)</kbd>", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
         private static readonly Regex HtmlTagRx = new(@"\G(?:<!--.*?-->|</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>)", RegexOptions.CultureInvariant);
@@ -521,6 +523,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             int styled = spans.Count;
             foreach (string term in terms)
             {
+                if (term.Length == 0) continue;   // an empty term would never move on
                 int at = 0;
                 while (at < line.Length && (at = line.IndexOf(term, at, StringComparison.Ordinal)) >= 0)
                 {

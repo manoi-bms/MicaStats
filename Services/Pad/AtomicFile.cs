@@ -64,6 +64,28 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         /// <summary>
+        /// The bytes of a store file written by <see cref="Write"/>, finishing an interrupted write
+        /// first. Null when neither the file nor a completed write exists.
+        /// </summary>
+        public static byte[]? ReadBytes(string path)
+        {
+            string ready = path + ReadySuffix;
+            if (File.Exists(ready))
+            {
+                try
+                {
+                    Commit(ready, path);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    return File.ReadAllBytes(ready);
+                }
+            }
+
+            return File.Exists(path) ? File.ReadAllBytes(path) : null;
+        }
+
+        /// <summary>
         /// Writes a user's file: a temp file in the same folder, flushed, then swapped in with
         /// <see cref="File.Replace(string, string, string?)"/>. Win32 <c>ReplaceFile</c> keeps the
         /// target's ACLs, attributes and creation time, where delete-then-move would reset them.

@@ -34,6 +34,7 @@ namespace Kil0bitSystemMonitor
 
         /// <summary>Draws MicaPad's diagrams for every window (one hidden WebView2); created with the first MicaPad window, disposed at exit.</summary>
         private static Kil0bitSystemMonitor.Services.Pad.DiagramRenderer? s_diagrams;
+        private static Kil0bitSystemMonitor.Services.Pad.ImageSources? s_images;
 
         // ---- diagnostics ----------------------------------------------------------------
 
@@ -674,6 +675,12 @@ namespace Kil0bitSystemMonitor
                     Kil0bitSystemMonitor.Pad.MicaPadWindow.DiagramRenderer = s_diagrams;
                 }
 
+                if (s_images == null)
+                {
+                    s_images = new Kil0bitSystemMonitor.Services.Pad.ImageSources();
+                    Kil0bitSystemMonitor.Pad.MicaPadWindow.ImageLoader = s_images;   // image previews (MicaPadWindow.ConfigureDiagrams)
+                }
+
                 Kil0bitSystemMonitor.Pad.MicaPadWindow.Open(s_pad, config, () => ShowSettingsSection("MicaPad"), path);
             }
             catch (Exception ex)
@@ -802,6 +809,7 @@ namespace Kil0bitSystemMonitor
                 // SessionEnding having called PrepareForExit first. This flush is the writer-thread drain.
                 FlushPad();
                 s_diagrams?.Dispose();
+                s_images?.Dispose();
                 s_vaultSession?.Dispose();
                 s_padVault?.Lock();
                 Kil0bitSystemMonitor.Pad.SecretClipboard.ClearIfStillOurs();

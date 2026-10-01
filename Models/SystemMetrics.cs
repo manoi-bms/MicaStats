@@ -545,6 +545,7 @@ namespace Kil0bitSystemMonitor.Models
         private bool _padDiagrams = true;
         private bool _padKroki;
         private bool _padReadingFont = true;
+        private bool _padWebImages;
         private string _padKrokiServer = Kil0bitSystemMonitor.Services.Pad.KrokiClient.DefaultServer;
 
         /// <summary>Global shortcut that shows MicaPad, in <c>HotkeyParser</c> syntax. Empty turns it off.</summary>
@@ -620,6 +621,13 @@ namespace Kil0bitSystemMonitor.Models
         /// tables stay in the editor font (Wiki.js spec 1.1).
         /// </summary>
         public bool PadReadingFont { get => _padReadingFont; set { Set(ref _padReadingFont, value); } }
+
+        /// <summary>
+        /// Download images with an http or https address in Markdown notes (Wiki.js spec 6.3). Off by
+        /// default: like Kroki, nothing leaves the PC until it is on, and a web image tells its server
+        /// that the note was opened.
+        /// </summary>
+        public bool PadWebImages { get => _padWebImages; set { Set(ref _padWebImages, value); } }
 
         private bool _useGpuRendering;
 

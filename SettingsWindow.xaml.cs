@@ -559,9 +559,11 @@ namespace Kil0bitSystemMonitor
                 PadWrapToggle.IsOn = cfg.PadWordWrap;
                 PadLineNumbersToggle.IsOn = cfg.PadShowLineNumbers;
                 PadMarkdownToggle.IsOn = cfg.PadMarkdown;
+                PadReadingFontToggle.IsOn = cfg.PadReadingFont;
                 PadAutoCloseToggle.IsOn = cfg.PadAutoClose;
                 PadDiagramsToggle.IsOn = cfg.PadDiagrams;
                 PadKrokiToggle.IsOn = cfg.PadKroki;
+                PadWebImagesToggle.IsOn = cfg.PadWebImages;
                 PadKrokiServerBox.Text = cfg.PadKrokiServer;
                 PadKrokiHint.Text = PadKrokiHelp;
                 PadThemeBox.SelectedIndex = cfg.PadTheme == Kil0bitSystemMonitor.Services.Pad.PadThemes.Light ? 1 : 0;
@@ -664,10 +666,12 @@ namespace Kil0bitSystemMonitor
             cfg.PadWordWrap = PadWrapToggle.IsOn;
             cfg.PadShowLineNumbers = PadLineNumbersToggle.IsOn;
             cfg.PadMarkdown = PadMarkdownToggle.IsOn;
+            cfg.PadReadingFont = PadReadingFontToggle.IsOn;
             cfg.PadAutoClose = PadAutoCloseToggle.IsOn;
             cfg.PadDiagrams = PadDiagramsToggle.IsOn;
             CommitPadKrokiServer();   // a server typed just before the click is the one Kroki starts with
             cfg.PadKroki = PadKrokiToggle.IsOn;
+            cfg.PadWebImages = PadWebImagesToggle.IsOn;
             _config.SaveConfig();
         }
 

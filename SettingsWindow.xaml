@@ -1092,10 +1092,25 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE736;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Reading font" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Prose in Markdown notes uses Segoe UI; code and tables stay in the editor font." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="PadReadingFontToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE8B9;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
                                     <TextBlock Text="Draw diagrams" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="A picture under each mermaid, dot (Graphviz) and markmap block in Markdown notes, drawn on this PC. Right-click a picture to copy or save it." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="A picture under each mermaid, dot (Graphviz), markmap and math block in Markdown notes, drawn on this PC, and a preview under each image. Right-click a picture to copy or save it." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadDiagramsToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1115,6 +1130,21 @@
                                     <TextBlock x:Name="PadKrokiHint" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadKrokiToggle" Toggled="OnPadToggled" VerticalAlignment="Top"/>
+                            </Grid>
+                        </Border>
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE91B;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Load images from the web" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Images with an http or https address are downloaded when the note is shown. Off: only images on this PC are shown." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="PadWebImagesToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
                         </Border>
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">

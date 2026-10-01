@@ -2116,7 +2116,8 @@ namespace Kil0bitSystemMonitor.Pad
                 if (Dispatcher.CheckAccess()) ApplyLanguage();
                 else Dispatcher.BeginInvoke(new Action(ApplyLanguage));
             }
-            else if (e.PropertyName is nameof(AppConfig.PadDiagrams) or nameof(AppConfig.PadKroki) or nameof(AppConfig.PadKrokiServer))
+            else if (e.PropertyName is nameof(AppConfig.PadDiagrams) or nameof(AppConfig.PadKroki) or nameof(AppConfig.PadKrokiServer)
+                     or nameof(AppConfig.PadWebImages))
             {
                 if (Dispatcher.CheckAccess()) ApplyDiagramSettings();
                 else Dispatcher.BeginInvoke(new Action(ApplyDiagramSettings));

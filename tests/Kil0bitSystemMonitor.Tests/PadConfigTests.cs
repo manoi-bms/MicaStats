@@ -18,6 +18,14 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Web_images_are_off_by_default_and_survive_a_round_trip()
+        {
+            Assert.False(new AppConfig().PadWebImages);
+            Assert.False(JsonSerializer.Deserialize<AppConfig>("{\"PadMarkdown\": true}")!.PadWebImages);
+            Assert.True(JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { PadWebImages = true }))!.PadWebImages);
+        }
+
+        [Fact]
         public void The_defaults_match_the_spec()
         {
             var config = new AppConfig();

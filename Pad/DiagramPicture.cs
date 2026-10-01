@@ -59,6 +59,18 @@ namespace Kil0bitSystemMonitor.Pad
     {
         internal const double PaperPadding = 8;
 
+        /// <summary>True when <paramref name="element"/> is a picture or sits inside one (a right-click there must leave the caret and selection alone).</summary>
+        internal static bool IsInside(DependencyObject? element)
+        {
+            while (element != null)
+            {
+                if (element is DiagramPicture) return true;
+                element = (element is Visual || element is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(element) : null)
+                    ?? LogicalTreeHelper.GetParent(element);
+            }
+            return false;
+        }
+
         /// <summary>Each result's bitmap, decoded once however often its line is drawn.</summary>
         private static readonly ConditionalWeakTable<DiagramResult, BitmapSource> s_bitmaps = new();
 

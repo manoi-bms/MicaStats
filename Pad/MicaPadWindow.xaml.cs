@@ -115,6 +115,7 @@ namespace Kil0bitSystemMonitor.Pad
             FindBar.Attach(Editor);
             _language = new EditorLanguage(Editor, () => _palette, folds: true);
             _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette, folds: false);
+            ConfigureDiagrams();
             _diff = new DiffPreview(PreviewEditor, () => _palette);
             _autoClose = new AutoCloseHandler(Editor, () => _config.PadAutoClose);
             _bookmarkMargin = new BookmarkMargin(() => _bookmarks.Lines(Editor.Document), () => _palette);
@@ -2022,6 +2023,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnEditorRightButtonDown(object sender, MouseButtonEventArgs e)
         {
+            if (DiagramPicture.IsInside(e.OriginalSource as DependencyObject)) return;
             var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
             if (position is { } at) PlaceCaretForMenu(Editor.Document.GetOffset(at.Location));
         }
@@ -2112,6 +2114,11 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 if (Dispatcher.CheckAccess()) ApplyLanguage();
                 else Dispatcher.BeginInvoke(new Action(ApplyLanguage));
+            }
+            else if (e.PropertyName is nameof(AppConfig.PadDiagrams) or nameof(AppConfig.PadKroki) or nameof(AppConfig.PadKrokiServer))
+            {
+                if (Dispatcher.CheckAccess()) ApplyDiagramSettings();
+                else Dispatcher.BeginInvoke(new Action(ApplyDiagramSettings));
             }
         }
 

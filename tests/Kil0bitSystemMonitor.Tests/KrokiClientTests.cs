@@ -126,6 +126,36 @@ namespace Kil0bitSystemMonitor.Tests
             }
         }
 
+        [Fact]
+        public void A_redirect_is_not_followed_and_says_the_server_could_not_be_reached()
+        {
+            var handler = new FakeKrokiHandler
+            {
+                Respond = (_, _) =>
+                {
+                    var moved = FakeKrokiHandler.Answer(HttpStatusCode.TemporaryRedirect, "");
+                    moved.Headers.Location = new Uri("https://elsewhere.example.com/plantuml/svg");
+                    return Task.FromResult(moved);
+                },
+            };
+            using var client = new KrokiClient(handler);
+
+            var result = Draw(client, "https://kroki.io", "plantuml", "a -> b");
+
+            Assert.Null(result.Svg);
+            Assert.Equal("The Kroki server could not be reached (kroki.io).", result.Error);
+            Assert.False(result.Lasting);
+            Assert.Single(handler.Requests);
+        }
+
+        [Fact]
+        public void The_network_handler_never_follows_a_redirect()
+        {
+            using var handler = KrokiClient.CreateHandler();
+
+            Assert.False(Assert.IsType<SocketsHttpHandler>(handler).AllowAutoRedirect);
+        }
+
         [Theory]
         [InlineData("https://kroki.io", "https://kroki.io")]
         [InlineData("https://kroki.io/", "https://kroki.io")]
@@ -152,6 +182,40 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("https://kroki.io", "kroki.io")]
         [InlineData("http://localhost:8000/kroki", "localhost:8000")]
         public void The_host_names_the_server_in_messages(string server, string host) => Assert.Equal(host, KrokiClient.HostOf(server));
+
+        [Fact]
+        public void A_typed_server_shows_normalized_and_is_saved()
+        {
+            var entry = KrokiClient.ResolveEntry("  http://localhost:8000/ ", "https://kroki.io");
+
+            Assert.Equal("http://localhost:8000", entry.BoxText);
+            Assert.False(entry.Refused);
+            Assert.Equal("http://localhost:8000", entry.Save);
+        }
+
+        [Fact]
+        public void The_server_already_used_is_not_saved_again()
+        {
+            var entry = KrokiClient.ResolveEntry("https://kroki.io/", "https://kroki.io");
+
+            Assert.Equal("https://kroki.io", entry.BoxText);
+            Assert.False(entry.Refused);
+            Assert.Null(entry.Save);
+        }
+
+        [Theory]
+        [InlineData("localhost:8000")]   // Uri reads "localhost" as its scheme
+        [InlineData("ftp://x")]
+        [InlineData("")]
+        [InlineData(null)]
+        public void A_refused_entry_puts_the_server_in_use_back_in_the_box(string? typed)
+        {
+            var entry = KrokiClient.ResolveEntry(typed, "https://diagrams.example.com");
+
+            Assert.Equal("https://diagrams.example.com", entry.BoxText);
+            Assert.True(entry.Refused);
+            Assert.Null(entry.Save);
+        }
 
         [Fact]
         public void The_renderer_fetches_a_kroki_picture_then_draws_it_on_paper()
@@ -206,6 +270,60 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal("Error: unexpected token", Wait(renderer.RenderAsync(request, new object())).Error);
             Assert.True(renderer.TryGetCached(request.Key, out _));
+        }
+
+        [Fact]
+        public void A_draw_still_waiting_when_Kroki_is_turned_off_is_not_posted()
+        {
+            var page = new FakePage { Answer = _ => DiagramFakes.Drawn() };
+            var handler = new FakeKrokiHandler();
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page),
+                kroki: new KrokiClient(handler), krokiServerNow: () => null);
+            var request = DiagramFakes.Request("plantuml", "a -> b", server: "https://kroki.io");
+
+            var result = Wait(renderer.RenderAsync(request, new object()));
+
+            Assert.Equal("PlantUML needs Kroki \u2014 turn it on in Settings \u2192 MicaPad.", result.Error);
+            Assert.False(result.Lasting);
+            Assert.False(renderer.TryGetCached(request.Key, out _));
+            Assert.Empty(handler.Requests);
+            Assert.Empty(page.Requests);
+        }
+
+        [Fact]
+        public void A_draw_for_a_server_no_longer_in_use_is_replaced_not_posted()
+        {
+            var page = new FakePage { Answer = _ => DiagramFakes.Drawn() };
+            var handler = new FakeKrokiHandler();
+            string? now = "http://localhost:8000";
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page),
+                kroki: new KrokiClient(handler), krokiServerNow: () => now);
+            var old = DiagramFakes.Request("d2", "a -> b", server: "https://kroki.io");
+
+            var result = Wait(renderer.RenderAsync(old, new object()));
+
+            Assert.True(result.IsReplaced);
+            Assert.False(renderer.TryGetCached(old.Key, out _));
+            Assert.Empty(handler.Requests);
+
+            // The server in use is asked as before.
+            var current = DiagramFakes.Request("d2", "a -> b", server: "http://localhost:8000");
+            Assert.True(Wait(renderer.RenderAsync(current, new object())).IsPicture);
+            Assert.Equal("http://localhost:8000/d2/svg", Assert.Single(handler.Requests).Uri.AbsoluteUri);
+        }
+
+        [Fact]
+        public void Without_the_WebView2_Runtime_nothing_is_sent_to_Kroki()
+        {
+            var handler = new FakeKrokiHandler();
+            using var renderer = new DiagramRenderer(() => throw new DiagramRuntimeMissingException(), kroki: new KrokiClient(handler));
+
+            var result = Wait(renderer.RenderAsync(DiagramFakes.Request("d2", "a -> b", server: "https://kroki.io"), new object()));
+
+            Assert.Equal(DiagramText.RuntimeMissing, result.Error);
+            Assert.Equal(DiagramText.RuntimeDownload, result.HelpLink);
+            Assert.False(result.Lasting);
+            Assert.Empty(handler.Requests);
         }
 
         [Fact]

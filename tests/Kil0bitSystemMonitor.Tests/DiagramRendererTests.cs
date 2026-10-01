@@ -259,6 +259,47 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_waiting_draw_already_drawn_for_another_block_is_taken_from_the_cache()
+        {
+            var page = new FakePage { Answer = r => r.Source == "same" ? DiagramFakes.Drawn() : null };
+            using var renderer = Over(page);
+            var running = renderer.RenderAsync(DiagramFakes.Request(source: "running"), new object());
+            DiagramFakes.WaitUntil(() => page.Requests.Count == 1, "the running draw");
+            var same = DiagramFakes.Request(source: "same");
+            var first = renderer.RenderAsync(same, new object());
+            var second = renderer.RenderAsync(same, new object());
+
+            page.Finish(DiagramFakes.Drawn());
+            Wait(running);
+            var drawn = Wait(first);
+            var taken = Wait(second);
+
+            Assert.True(drawn.IsPicture);
+            Assert.Same(drawn, taken);
+            Assert.Single(page.Requests, r => r.Source == "same");
+        }
+
+        [Fact]
+        public void A_page_that_does_not_start_within_the_limit_is_given_up_and_closed_when_it_arrives()
+        {
+            var creating = new TaskCompletionSource<IDiagramPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var warnings = new List<string>();
+            using var renderer = new DiagramRenderer(() => creating.Task, warn: m => { lock (warnings) warnings.Add(m); }, drawLimit: TimeSpan.FromMilliseconds(100));
+            var request = DiagramFakes.Request();
+
+            var result = Wait(renderer.RenderAsync(request, new object()));
+
+            Assert.Equal(DiagramText.TookTooLong, result.Error);
+            Assert.False(result.Lasting);
+            Assert.False(renderer.TryGetCached(request.Key, out _));
+            lock (warnings) Assert.Equal("The diagram page took longer than 0.1 s to start", Assert.Single(warnings));
+
+            var late = new FakePage();
+            creating.SetResult(late);
+            DiagramFakes.WaitUntil(() => late.Disposed, "the late page to close");
+        }
+
+        [Fact]
         public void A_warning_that_throws_does_not_stop_the_queue()
         {
             var page = new FakePage { Answer = _ => throw new InvalidOperationException("x") };

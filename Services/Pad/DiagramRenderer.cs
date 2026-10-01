@@ -11,8 +11,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// Draws diagrams for every MicaPad window (spec 2.3, 2.4): one draw at a time, a newer request
     /// for the same block replacing a waiting older one, results kept in memory (64, least
     /// recently used out; nothing on disk). Built-in kinds go to the drawing page; Kroki kinds first go
-    /// to the Kroki server (when one is set), then to the page as an SVG. The page is
-    /// created on the first draw and replaced after it breaks or a draw runs over the limit.
+    /// to the Kroki server (when one is set and still in use, and only once the page exists), then to
+    /// the page as an SVG. The page is created on the first draw (within the draw limit) and replaced
+    /// after it breaks or a draw runs over the limit.
     /// Never throws: every failure is a result, and a warning names only the engine and the
     /// exception type. The queue and cache are locked; the page is created, used and dropped only by
     /// the pump (one draw at a time), and <see cref="Dispose"/> may come from any thread.
@@ -25,6 +26,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private readonly Action<string> _warn;
         private readonly TimeSpan _drawLimit;
         private readonly KrokiClient? _kroki;
+        private readonly Func<string?>? _krokiServerNow;
         private readonly DiagramCache _cache = new();
         private readonly List<Job> _waiting = new();
         private readonly object _gate = new();
@@ -33,12 +35,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private bool _pumping;
         private bool _disposed;
 
-        public DiagramRenderer(Func<Task<IDiagramPage>> createPage, Action<string>? warn = null, TimeSpan? drawLimit = null, KrokiClient? kroki = null)
+        /// <param name="krokiServerNow">
+        /// The server Kroki may use right now (null: Kroki is off), read just before a post: a draw
+        /// that waited while Kroki was turned off or its server changed is not sent.
+        /// </param>
+        public DiagramRenderer(Func<Task<IDiagramPage>> createPage, Action<string>? warn = null, TimeSpan? drawLimit = null, KrokiClient? kroki = null,
+                               Func<string?>? krokiServerNow = null)
         {
             _createPage = createPage;
             _warn = warn ?? (_ => { });
             _drawLimit = drawLimit ?? DefaultDrawLimit;
             _kroki = kroki;
+            _krokiServerNow = krokiServerNow;
         }
 
         /// <summary>How many results the cache holds; for tests.</summary>
@@ -108,6 +116,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             while (true)
             {
                 Job job;
+                DiagramResult? drawnMeanwhile;
                 lock (_gate)
                 {
                     if (_waiting.Count == 0 || _disposed)
@@ -117,6 +126,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     }
                     job = _waiting[0];
                     _waiting.RemoveAt(0);
+                    // Another block with the same text may have been drawn while this one waited.
+                    _cache.TryGet(job.Request.Key, out drawnMeanwhile);
+                }
+                if (drawnMeanwhile != null)
+                {
+                    job.Done.TrySetResult(drawnMeanwhile);
+                    continue;
                 }
 
                 DiagramResult result;
@@ -151,6 +167,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (request.KrokiServer == null || _kroki == null)
                 return DiagramResult.Failure(DiagramText.NeedsKroki(request.Kind), lasting: false);
 
+            // The page first: without it (no WebView2 Runtime) the block's text is sent nowhere.
+            var (_, noPage) = await PageAsync();
+            if (noPage != null) return noPage;
+
+            if (_krokiServerNow != null)
+            {
+                string? now = _krokiServerNow();
+                if (now == null) return DiagramResult.Failure(DiagramText.NeedsKroki(request.Kind), lasting: false);
+                if (now != request.KrokiServer) return DiagramResult.Replaced;   // the board asks again for the new server
+            }
+
             var kroki = await _kroki.DrawAsync(request.KrokiServer, request.Kind.KrokiType!, request.Source, _shutdown.Token);
             if (kroki.Svg == null) return DiagramResult.Failure(kroki.Error ?? DiagramText.Failed, kroki.Lasting);
 
@@ -161,39 +188,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private async Task<DiagramResult> DrawOnPageAsync(DiagramKind kind, PageRequest request, bool paper)
         {
-            if (_page is { IsBroken: true }) DropPage();
-
-            IDiagramPage page;
-            try
-            {
-                if (_page == null)
-                {
-                    var created = await _createPage();
-                    bool disposed;
-                    lock (_gate)
-                    {
-                        disposed = _disposed;
-                        if (!disposed) _page = created;
-                    }
-                    if (disposed)
-                    {
-                        try
-                        {
-                            created.Dispose();
-                        }
-                        catch (Exception ex)
-                        {
-                            Warn("Closing the diagram page failed (" + ex.GetType().Name + ")");
-                        }
-                        return DiagramResult.Failure(DiagramText.Failed, lasting: false);
-                    }
-                }
-                page = _page!;
-            }
-            catch (DiagramRuntimeMissingException)
-            {
-                return DiagramResult.Failure(DiagramText.RuntimeMissing, lasting: false, DiagramText.RuntimeDownload);
-            }
+            var (page, noPage) = await PageAsync();
+            if (page == null) return noPage!;
 
             PageDrawing drawing;
             using (var limit = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token))
@@ -222,6 +218,75 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (drawing.Png == null || drawing.Svg == null || !(drawing.Width > 0) || !(drawing.Height > 0))
                 return DiagramResult.Failure(DiagramText.Failed, lasting: false);
             return DiagramResult.Picture(drawing.Png, drawing.Svg, drawing.Width, drawing.Height, paper);
+        }
+
+        /// <summary>
+        /// The drawing page, created when there is none (or the last one broke), or why there is
+        /// none: the runtime is missing, the page did not start within the draw limit (it is closed
+        /// whenever it does arrive), or the renderer was disposed meanwhile.
+        /// </summary>
+        private async Task<(IDiagramPage? Page, DiagramResult? Failure)> PageAsync()
+        {
+            if (_page is { IsBroken: true }) DropPage();
+            if (_page is { } existing) return (existing, null);
+            lock (_gate)
+            {
+                if (_disposed) return (null, DiagramResult.Failure(DiagramText.Failed, lasting: false));
+            }
+
+            IDiagramPage created;
+            try
+            {
+                var creating = _createPage();
+                using (var limit = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token))
+                {
+                    if (await Task.WhenAny(creating, Task.Delay(_drawLimit, limit.Token)) != creating)
+                    {
+                        _ = DisposeWhenCreatedAsync(creating);
+                        if (_shutdown.IsCancellationRequested) return (null, DiagramResult.Failure(DiagramText.Failed, lasting: false));
+                        Warn("The diagram page took longer than "
+                              + _drawLimit.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s to start");
+                        return (null, DiagramResult.Failure(DiagramText.TookTooLong, lasting: false));
+                    }
+                    limit.Cancel();   // stops the timer
+                }
+                created = await creating;
+            }
+            catch (DiagramRuntimeMissingException)
+            {
+                return (null, DiagramResult.Failure(DiagramText.RuntimeMissing, lasting: false, DiagramText.RuntimeDownload));
+            }
+
+            bool disposed;
+            lock (_gate)
+            {
+                disposed = _disposed;
+                if (!disposed) _page = created;
+            }
+            if (!disposed) return (created, null);
+
+            try
+            {
+                created.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Warn("Closing the diagram page failed (" + ex.GetType().Name + ")");
+            }
+            return (null, DiagramResult.Failure(DiagramText.Failed, lasting: false));
+        }
+
+        /// <summary>Closes a page whose draw stopped waiting for it, as soon as it exists.</summary>
+        private static async Task DisposeWhenCreatedAsync(Task<IDiagramPage> creating)
+        {
+            try
+            {
+                (await creating).Dispose();
+            }
+            catch (Exception)
+            {
+                // It never started, or it could not be closed: nothing more can be done for it.
+            }
         }
 
         private void Warn(string message)

@@ -669,7 +669,8 @@ namespace Kil0bitSystemMonitor
                             Kil0bitSystemMonitor.Pad.DiagramPage.DefaultUserDataFolder,
                             Kil0bitSystemMonitor.Pad.DiagramPage.ScriptsFolder),
                         warn: message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("pad", message),
-                        kroki: new Kil0bitSystemMonitor.Services.Pad.KrokiClient());
+                        kroki: new Kil0bitSystemMonitor.Services.Pad.KrokiClient(),
+                        krokiServerNow: () => config.PadKroki ? config.PadKrokiServer : null);   // what the windows send (MicaPadWindow.ConfigureDiagrams)
                     Kil0bitSystemMonitor.Pad.MicaPadWindow.DiagramRenderer = s_diagrams;
                 }
 

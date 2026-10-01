@@ -15,8 +15,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// <summary>
     /// Asks a Kroki server to draw one diagram (spec section 3): <c>POST {server}/{type}/svg</c>
     /// with the block's text — only that — as <c>text/plain; charset=utf-8</c>, 10 s at most.
-    /// A 400 answer's first line is the error; anything else that fails says the server could not
-    /// be reached. Answers over 16 MB are refused (R7).
+    /// A 400 answer's first line is the error; anything else that fails (a redirect included) says
+    /// the server could not be reached. Answers over 16 MB are refused (R7).
     /// </summary>
     public sealed class KrokiClient : IDisposable
     {
@@ -27,13 +27,20 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private readonly HttpClient _http;
 
-        /// <param name="handler">Tests pass a fake server; null uses the system's network settings.</param>
+        /// <param name="handler">Tests pass a fake server; null uses <see cref="CreateHandler"/>.</param>
         public KrokiClient(HttpMessageHandler? handler = null, TimeSpan? timeout = null)
         {
-            _http = handler == null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
+            _http = handler == null ? new HttpClient(CreateHandler()) : new HttpClient(handler, disposeHandler: false);
             _http.Timeout = timeout ?? DefaultTimeout;
             _http.MaxResponseContentBufferSize = MaxAnswerBytes;
         }
+
+        /// <summary>
+        /// The system's network settings (its proxy included), never following a redirect: the
+        /// block's text goes only to the server Settings names, and a 3xx answer says the server
+        /// could not be reached.
+        /// </summary>
+        internal static HttpMessageHandler CreateHandler() => new SocketsHttpHandler { AllowAutoRedirect = false };
 
         /// <summary>
         /// An http or https address with a host, no user name, query or fragment, without its
@@ -47,6 +54,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (uri.Host.Length == 0 || uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0) return false;
             server = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
             return true;
+        }
+
+        /// <summary>
+        /// What the Settings server box shows after an entry, so it always names the server MicaPad
+        /// uses: a server address shows normalized and is saved when it differs from
+        /// <paramref name="current"/>; anything else is refused and the box shows
+        /// <paramref name="current"/> again.
+        /// </summary>
+        public static (string BoxText, bool Refused, string? Save) ResolveEntry(string? typed, string current)
+        {
+            if (!TryParseServer(typed, out var server)) return (current, true, null);
+            return (server, false, server == current ? null : server);
         }
 
         /// <summary>The server's host (and port) as messages name it: "kroki.io", "localhost:8000".</summary>

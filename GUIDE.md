@@ -250,7 +250,7 @@ Right-click a tab for **Rename**, **Close**, **Close other tabs** and **Move to 
 **Move to** another window (closed tabs go to Closed notes as usual — nothing is deleted). A tab
 that is a real file also has **Copy file path** and **Show in folder**.
 
-### ### Markdown
+### Markdown
 
 Notes and `.md`/`.txt` files are shown the way Wiki.js shows Markdown, as you type. Every
 character stays visible and editable — the markers are dimmed, not hidden — and the file never

@@ -9,8 +9,9 @@ namespace Kil0bitSystemMonitor.Tests
     {
         private static string Section(string heading)
         {
-            string guide = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "GUIDE.md"));
-            int at = guide.IndexOf(heading + "\n", StringComparison.Ordinal);
+            string guide = "\n" + File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "GUIDE.md"));
+            Assert.DoesNotContain("### ### ", guide, StringComparison.Ordinal);
+            int at = guide.IndexOf("\n" + heading + "\n", StringComparison.Ordinal);
             Assert.True(at >= 0, heading + " is missing");
             int next = guide.IndexOf("\n### ", at + 1, StringComparison.Ordinal);
             return guide.Substring(at, (next < 0 ? guide.Length : next) - at);

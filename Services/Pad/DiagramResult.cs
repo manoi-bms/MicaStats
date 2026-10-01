@@ -16,7 +16,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
         }
 
+        /// <summary>The picture: a PNG at twice a diagram's size, or an image preview's own bytes (any format Windows decodes).</summary>
         public byte[]? Png { get; private init; }
+
+        /// <summary>An image preview's width in pixels; 0 for a diagram, whose PNG header says it.</summary>
+        public int PixelWidth { get; private init; }
 
         public string? Svg { get; private init; }
 
@@ -44,6 +48,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public static DiagramResult Picture(byte[] png, string svg, double width, double height, bool paper) =>
             new() { Png = png, Svg = svg, Width = width, Height = height, Paper = paper, Lasting = true };
 
+        /// <summary>An image preview (Markdown spec 6.3): one device-independent pixel per image pixel (Markdown ruling R10).</summary>
+        public static DiagramResult Image(byte[] bytes, int pixelWidth, int pixelHeight) =>
+            new() { Png = bytes, Width = pixelWidth, Height = pixelHeight, PixelWidth = pixelWidth, Lasting = true };
+
         public static DiagramResult Failure(string error, bool lasting, Uri? helpLink = null) =>
             new() { Error = error, Lasting = lasting, HelpLink = helpLink };
 
@@ -61,9 +69,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// The cache key (spec 2.4): engine, Kroki server, theme and source. A Kroki picture is the
-        /// same in both themes (it sits on a light card), so its theme part is "paper" (R3).
+        /// same in both themes (it sits on a light card), and so is an SVG image (drawn as it is), so
+        /// their theme part is "paper" (R3).
         /// </summary>
-        public string Key => DiagramCacheKey.Of(Kind.EngineId, Kind.NeedsKroki ? KrokiServer : null, Kind.NeedsKroki ? "paper" : Theme, Source);
+        public string Key => DiagramCacheKey.Of(Kind.EngineId, Kind.NeedsKroki ? KrokiServer : null,
+                                                Kind.NeedsKroki || Kind.Engine == DiagramEngine.Svg ? "paper" : Theme, Source);
 
         /// <summary>A palette color as CSS <c>#RRGGBB</c>; the alpha is dropped.</summary>
         public static string Css(PadColor color) =>

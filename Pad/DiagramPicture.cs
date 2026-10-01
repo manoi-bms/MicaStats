@@ -50,6 +50,18 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>Opens the error's help link (through the window's safe-link path).</summary>
         public Action<Uri>? OpenLink { get; init; }
+
+        /// <summary>The width an image asks for (<c>=200x</c>, device-independent pixels), or null; diagrams leave it null.</summary>
+        public double? Width { get; init; }
+
+        /// <summary>The height an image asks for (<c>=x120</c>), or null.</summary>
+        public double? Height { get; init; }
+
+        /// <summary>False for image previews: no right-click menu, and the editor's own does not open over them (spec 6.3).</summary>
+        public bool Menu { get; init; } = true;
+
+        /// <summary>What shows until the first result: "Drawing..." for a diagram, "Loading..." for an image.</summary>
+        public string WaitingText { get; init; } = DiagramText.Drawing;
     }
 
     /// <summary>
@@ -91,7 +103,8 @@ namespace Kil0bitSystemMonitor.Pad
             Margin = new Thickness(0, 4, 0, 8);
             HorizontalAlignment = HorizontalAlignment.Left;
             Cursor = Cursors.Arrow;
-            if (view.Result == null) Child = DrawingText(view.Palette);
+            if (!view.Menu) ContextMenuOpening += (s, e) => e.Handled = true;
+            if (view.Result == null) Child = DrawingText(view.WaitingText, view.Palette);
             else if (view.Result.IsPicture) Child = PictureOf(view, view.Result);
             else Child = ErrorOf(view, view.Result);
         }
@@ -159,12 +172,13 @@ namespace Kil0bitSystemMonitor.Pad
         /// as the screen draws it with, never more than the PNG has; 0 (its own size) when the PNG's
         /// header cannot be read.
         /// </summary>
-        private static int DecodeWidthOf(byte[] png, double shownWidth, double pixelsPerDip)
+        private static int DecodeWidthOf(DiagramResult result, double shownWidth, double pixelsPerDip)
         {
-            int pngWidth = PngWidth(png);
-            if (pngWidth == 0) return 0;
+            // An image preview knows its pixel width (any format); a diagram's PNG header says its own.
+            int fullWidth = result.PixelWidth > 0 ? result.PixelWidth : PngWidth(result.Png!);
+            if (fullWidth == 0) return 0;
             double wanted = Math.Ceiling(shownWidth * (pixelsPerDip > 0 ? pixelsPerDip : 1));
-            return (int)Math.Clamp(wanted, 1, pngWidth);
+            return (int)Math.Clamp(wanted, 1, fullWidth);
         }
 
         /// <summary>A PNG's width in pixels from its header (bytes 16-19, big-endian), or 0 when it is not a PNG.</summary>
@@ -175,9 +189,31 @@ namespace Kil0bitSystemMonitor.Pad
             return width > 0 ? width : 0;
         }
 
-        private static UIElement DrawingText(PadPalette palette) => new TextBlock
+        /// <summary>
+        /// The size a picture is shown at: its natural size, or for an image the <c>=WxH</c> it asks
+        /// for (one side alone keeps the proportions; Markdown ruling R10); then scaled down to
+        /// <paramref name="room"/> when wider, never up.
+        /// </summary>
+        internal static (double Width, double Height) SizeOf(DiagramView view, DiagramResult result, double room)
         {
-            Text = DiagramText.Drawing,
+            if (view.Width == null && view.Height == null)
+            {
+                double fitted = Math.Max(1, Math.Min(result.Width, room));
+                return (fitted, fitted * result.Height / result.Width);
+            }
+            double width = view.Width ?? result.Width * view.Height!.Value / result.Height;
+            double height = view.Height ?? result.Height * view.Width!.Value / result.Width;
+            if (width > room)
+            {
+                height = height * room / width;
+                width = room;
+            }
+            return (Math.Max(1, width), Math.Max(1, height));
+        }
+
+        private static UIElement DrawingText(string text, PadPalette palette) => new TextBlock
+        {
+            Text = text,
             FontSize = 12,
             FontStyle = FontStyles.Italic,
             Foreground = PadThemeApplier.ToBrush(palette.Muted),
@@ -186,13 +222,14 @@ namespace Kil0bitSystemMonitor.Pad
         private UIElement PictureOf(DiagramView view, DiagramResult result)
         {
             double room = view.MaxWidth - (result.Paper ? 2 * PaperPadding : 0);
-            double width = Math.Max(1, Math.Min(result.Width, room));
+            var (width, height) = SizeOf(view, result, room);
             Image = new Image
             {
-                Source = BitmapOf(result, DecodeWidthOf(result.Png!, width, view.PixelsPerDip)),
+                Source = BitmapOf(result, DecodeWidthOf(result, width, view.PixelsPerDip)),
                 Width = width,
-                Height = width * result.Height / result.Width,
-                Stretch = Stretch.Uniform,
+                Height = height,
+                // An image's =WxH with both sides is drawn at that size, as a browser does.
+                Stretch = view.Width != null && view.Height != null ? Stretch.Fill : Stretch.Uniform,
             };
             RenderOptions.SetBitmapScalingMode(Image, BitmapScalingMode.HighQuality);
 
@@ -228,6 +265,8 @@ namespace Kil0bitSystemMonitor.Pad
                 grid.MouseLeave += (s, e) => button.Visibility = Visibility.Hidden;
                 CodeButton = button;
             }
+
+            if (!view.Menu) return grid;   // image previews have no menu (spec 6.3)
 
             var menu = new ContextMenu();
             EditorMenus.Style(menu, view.Palette);

@@ -13,7 +13,7 @@ namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
     /// Everything a language adds to one editor, installed and removed together: syntax colors, or
-    /// Markdown formatting (colorizer, background, bullets, emoji, diagram pictures), and folding.
+    /// Markdown formatting (colorizer, background, bullets, emoji, diagram pictures, image previews), and folding.
     /// <see cref="Apply"/> removes the previous language first, so switching tabs never piles
     /// anything up; asked again for what is already shown, it does nothing.
     /// </summary>
@@ -31,6 +31,8 @@ namespace Kil0bitSystemMonitor.Pad
         private EmojiGenerator? _emoji;
         private DiagramBoard? _diagramBoard;
         private DiagramGenerator? _diagramGenerator;
+        private ImageBoard? _imageBoard;
+        private ImageGenerator? _imageGenerator;
         private readonly FoldingController? _folding;
         private TextDocument? _appliedTo;
         private bool _emojiLogged;
@@ -65,6 +67,12 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>The pictures of the shown Markdown document, or null.</summary>
         internal DiagramBoard? DiagramBoard => _diagramBoard;
+
+        /// <summary>What image previews need (spec 6.3); set by the window. Null: no previews (the history preview).</summary>
+        internal ImageServices? Images { get; set; }
+
+        /// <summary>The image previews of the shown Markdown document, or null.</summary>
+        internal ImageBoard? ImageBoard => _imageBoard;
 
         /// <summary>The editor's monospace family while the reading font is on (the window sets it); null otherwise.</summary>
         internal FontFamily? MonoFont { get; set; }
@@ -103,6 +111,7 @@ namespace Kil0bitSystemMonitor.Pad
                 _emoji = new EmojiGenerator(_markdownCache, EmojiFailed, EmojiLookup);
                 view.ElementGenerators.Add(_emoji);
                 InstallDiagrams();
+                InstallImages();
             }
             else if (PadHighlighting.For(language) is { } definition)
             {
@@ -117,28 +126,34 @@ namespace Kil0bitSystemMonitor.Pad
         public void Redraw() => _editor.TextArea.TextView.Redraw();
 
         /// <summary>
-        /// Draw diagrams, Kroki or the Kroki server changed in Settings: puts the pictures in or
-        /// takes them out, or asks every picture again, without touching the rest of the formatting.
+        /// Draw diagrams, Kroki, the Kroki server or Load images from the web changed in Settings:
+        /// puts the pictures and image previews in or takes them out, or asks every one again,
+        /// without touching the rest of the formatting.
         /// </summary>
         internal void RefreshDiagrams()
         {
             if (_markdown == null) return;
-            bool wanted = Diagrams != null && Diagrams.Enabled();
-            if (!wanted)
+            bool foldsChanged = false;
+            if (!(Diagrams != null && Diagrams.Enabled()))
             {
-                if (_diagramBoard == null) return;
+                foldsChanged = _diagramBoard != null;
                 RemoveDiagrams();
-                _folding?.Update();
             }
             else if (_diagramBoard == null)
             {
                 InstallDiagrams();
-                _folding?.Update();
+                foldsChanged = true;
             }
             else
             {
                 _diagramBoard.Refresh();
             }
+
+            if (!(Images != null && Images.Enabled())) RemoveImages();
+            else if (_imageBoard == null) InstallImages();
+            else _imageBoard.Refresh();
+
+            if (foldsChanged) _folding?.Update();
             Redraw();
         }
 
@@ -157,6 +172,23 @@ namespace Kil0bitSystemMonitor.Pad
             _diagramBoard.Detach();
             _diagramBoard = null;
             _diagramGenerator = null;
+        }
+
+        private void InstallImages()
+        {
+            if (Images is not { } services || !services.Enabled() || _markdownCache == null) return;
+            _imageBoard = new ImageBoard(_editor, services, _palette);
+            _imageGenerator = new ImageGenerator(_markdownCache, _imageBoard);
+            _editor.TextArea.TextView.ElementGenerators.Add(_imageGenerator);
+        }
+
+        private void RemoveImages()
+        {
+            if (_imageBoard == null) return;
+            _editor.TextArea.TextView.ElementGenerators.Remove(_imageGenerator!);
+            _imageBoard.Detach();
+            _imageBoard = null;
+            _imageGenerator = null;
         }
 
         /// <summary>
@@ -225,6 +257,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (_markdown != null)
             {
                 RemoveDiagrams();
+                RemoveImages();
                 view.LineTransformers.Remove(_markdown);
                 view.BackgroundRenderers.Remove(_markdownBackground!);
                 view.ElementGenerators.Remove(_bullets!);

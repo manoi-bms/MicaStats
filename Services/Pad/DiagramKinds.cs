@@ -14,6 +14,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>TeX formulas and <c>\ce{}</c> chemistry, drawn by MathJax on the page (Markdown spec 6.1).</summary>
         Math,
+
+        /// <summary>An SVG image from a note (spec 6.3): the page only turns it into a PNG, as it does Kroki's pictures.</summary>
+        Svg,
     }
 
     /// <summary>One kind of diagram block: its name for messages, its engine and, for Kroki, the type sent.</summary>
@@ -44,6 +47,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             DiagramEngine.Graphviz => "graphviz",
             DiagramEngine.Markmap => "markmap",
             DiagramEngine.Math => "math",
+            DiagramEngine.Svg => "image/svg",
             _ => "kroki/" + KrokiType,
         };
 
@@ -75,6 +79,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// is: <see cref="DiagramBlocks.Read"/> replaces it by the kind <see cref="FromKrokiType"/> gives.
         /// </summary>
         public static DiagramKind KrokiForm { get; } = new("Kroki", DiagramEngine.Kroki, null);
+
+        /// <summary>An SVG image (Markdown spec 6.3 and ruling R11). Not a fence word: image previews ask for it.</summary>
+        public static DiagramKind SvgImage { get; } = new("SVG image", DiagramEngine.Svg, null);
 
         // After Math and KrokiForm: static initializers run in order, and Build adds both.
         private static readonly Dictionary<string, DiagramKind> ByWord = Build();

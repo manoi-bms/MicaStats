@@ -13,7 +13,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// recently used out; nothing on disk). Built-in kinds go to the drawing page. The page is
     /// created on the first draw and replaced after it breaks or a draw runs over the limit.
     /// Never throws: every failure is a result, and a warning names only the engine and the
-    /// exception type. Call <see cref="RenderAsync"/> from one thread (the UI thread in the app).
+    /// exception type. The queue and cache are locked; the page is created, used and dropped only by
+    /// the pump (one draw at a time), and <see cref="Dispose"/> may come from any thread.
     /// </summary>
     public sealed class DiagramRenderer : IDiagramRenderer, IDisposable
     {
@@ -54,10 +55,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
             lock (_gate)
             {
                 if (_disposed) return Task.FromResult(DiagramResult.Failure(DiagramText.Failed, lasting: false));
-                if (_cache.TryGet(request.Key, out var cached)) return Task.FromResult(cached);
+                int waiting = _waiting.FindIndex(j => ReferenceEquals(j.Slot, slot));
+                if (_cache.TryGet(request.Key, out var cached))
+                {
+                    if (waiting >= 0)
+                    {
+                        _waiting[waiting].Done.TrySetResult(DiagramResult.Replaced);
+                        _waiting.RemoveAt(waiting);
+                    }
+                    return Task.FromResult(cached);
+                }
 
                 job = new Job(request, slot);
-                int waiting = _waiting.FindIndex(j => ReferenceEquals(j.Slot, slot));
                 if (waiting >= 0)
                 {
                     _waiting[waiting].Done.TrySetResult(DiagramResult.Replaced);
@@ -113,7 +122,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 }
                 catch (Exception ex)
                 {
-                    _warn(job.Request.Kind.Name + " drawing failed (" + ex.GetType().Name + ")");
+                    Warn(job.Request.Kind.Name + " drawing failed (" + ex.GetType().Name + ")");
                     DropPage();
                     result = DiagramResult.Failure(DiagramText.Failed, lasting: false);
                 }
@@ -141,7 +150,29 @@ namespace Kil0bitSystemMonitor.Services.Pad
             IDiagramPage page;
             try
             {
-                page = _page ??= await _createPage();
+                if (_page == null)
+                {
+                    var created = await _createPage();
+                    bool disposed;
+                    lock (_gate)
+                    {
+                        disposed = _disposed;
+                        if (!disposed) _page = created;
+                    }
+                    if (disposed)
+                    {
+                        try
+                        {
+                            created.Dispose();
+                        }
+                        catch (Exception ex)
+                        {
+                            Warn("Closing the diagram page failed (" + ex.GetType().Name + ")");
+                        }
+                        return DiagramResult.Failure(DiagramText.Failed, lasting: false);
+                    }
+                }
+                page = _page!;
             }
             catch (DiagramRuntimeMissingException)
             {
@@ -159,7 +190,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 catch (OperationCanceledException)
                 {
                     if (_shutdown.IsCancellationRequested) return DiagramResult.Failure(DiagramText.Failed, lasting: false);
-                    _warn(kind.Name + " drawing took longer than "
+                    Warn(kind.Name + " drawing took longer than "
                           + _drawLimit.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s; the page was closed");
                     DropPage();
                     return DiagramResult.Failure(DiagramText.TookTooLong, lasting: false);
@@ -177,6 +208,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return DiagramResult.Picture(drawing.Png, drawing.Svg, drawing.Width, drawing.Height, paper);
         }
 
+        private void Warn(string message)
+        {
+            try
+            {
+                _warn(message);
+            }
+            catch
+            {
+                // a warning that cannot be written must not stop the queue
+            }
+        }
+
         private void DropPage()
         {
             IDiagramPage? page;
@@ -191,7 +234,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
             catch (Exception ex)
             {
-                _warn("Closing the diagram page failed (" + ex.GetType().Name + ")");
+                Warn("Closing the diagram page failed (" + ex.GetType().Name + ")");
             }
         }
 

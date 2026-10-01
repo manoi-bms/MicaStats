@@ -220,6 +220,56 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_cache_hit_replaces_the_blocks_waiting_request()
+        {
+            var page = new FakePage { Answer = r => r.Source == "cached" ? DiagramFakes.Drawn() : null };
+            using var renderer = Over(page);
+            var cachedRequest = DiagramFakes.Request(source: "cached");
+            Wait(renderer.RenderAsync(cachedRequest, new object()));
+            var running = renderer.RenderAsync(DiagramFakes.Request(source: "a"), new object());
+            DiagramFakes.WaitUntil(() => page.Requests.Count == 2, "the running draw");
+            var blockB = new object();
+            var waiting = renderer.RenderAsync(DiagramFakes.Request(source: "b"), blockB);
+
+            var hit = renderer.RenderAsync(cachedRequest, blockB);
+
+            Assert.True(hit.IsCompleted);
+            Assert.True(hit.Result.IsPicture);
+            Assert.True(Wait(waiting).IsReplaced);
+            page.Finish(DiagramFakes.Drawn());
+            Wait(running);
+            Thread.Sleep(50);
+            Assert.DoesNotContain(page.Requests, r => r.Source == "b");
+        }
+
+        [Fact]
+        public void Dispose_while_the_page_is_being_created_closes_that_page()
+        {
+            var creating = new TaskCompletionSource<IDiagramPage>();
+            using var renderer = new DiagramRenderer(() => creating.Task);
+            var draw = renderer.RenderAsync(DiagramFakes.Request(), new object());
+            Thread.Sleep(50);
+
+            renderer.Dispose();
+            var page = new FakePage();
+            creating.SetResult(page);
+
+            Assert.Equal(DiagramText.Failed, Wait(draw).Error);
+            DiagramFakes.WaitUntil(() => page.Disposed, "the late page to close");
+        }
+
+        [Fact]
+        public void A_warning_that_throws_does_not_stop_the_queue()
+        {
+            var page = new FakePage { Answer = _ => throw new InvalidOperationException("x") };
+            using var renderer = Over(page, _ => throw new InvalidOperationException("warn"));
+
+            Assert.Equal(DiagramText.Failed, Wait(renderer.RenderAsync(DiagramFakes.Request(source: "a"), new object())).Error);
+            Assert.Equal(DiagramText.Failed, Wait(renderer.RenderAsync(DiagramFakes.Request(source: "b"), new object())).Error);
+            Assert.Equal(2, page.Requests.Count);
+        }
+
+        [Fact]
         public void The_cache_keeps_64_and_drops_the_least_recently_used()
         {
             var cache = new DiagramCache();

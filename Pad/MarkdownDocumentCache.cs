@@ -6,7 +6,7 @@ namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
     /// Which lines of the shown document are fenced code, shared by the Markdown colorizer, the
-    /// background renderer and the bullet generator. Rescans only after an edit that can move a
+    /// background renderer, the bullet generator and the diagram pictures (which fence closes which). Rescans only after an edit that can move a
     /// fence (a backtick or tilde, a new or removed line, or an edit on a line that was or may now
     /// be a delimiter), so ordinary typing never walks the whole note.
     /// </summary>
@@ -17,6 +17,8 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly Action<Exception> _onFailure;
         private TextDocument? _document;
         private MdFence[] _kinds = Array.Empty<MdFence>();
+        private int[] _openings = Array.Empty<int>();
+        private int[] _closings = Array.Empty<int>();
         private bool _stale = true;
 
         /// <param name="onFailure">Told when following an edit fails; the edit itself never sees the exception.</param>
@@ -37,12 +39,32 @@ namespace Kil0bitSystemMonitor.Pad
             return index >= 0 && index < _kinds.Length ? _kinds[index] : MdFence.None;
         }
 
+        /// <summary>The 1-based line that opened the fence line <paramref name="lineNumber"/> closes, or 0 when it closes none.</summary>
+        public int OpeningLineOf(TextDocument document, int lineNumber)
+        {
+            Track(document);
+            if (_stale) Recompute();
+            int index = lineNumber - 1;
+            return index >= 0 && index < _openings.Length ? _openings[index] : 0;
+        }
+
+        /// <summary>The 1-based line that closes the fence line <paramref name="lineNumber"/> opens, or 0 (it opens none, or never closes).</summary>
+        public int ClosingLineOf(TextDocument document, int lineNumber)
+        {
+            Track(document);
+            if (_stale) Recompute();
+            int index = lineNumber - 1;
+            return index >= 0 && index < _closings.Length ? _closings[index] : 0;
+        }
+
         /// <summary>Stops following the document.</summary>
         public void Detach()
         {
             if (_document != null) _document.Changed -= OnChanged;
             _document = null;
             _kinds = Array.Empty<MdFence>();
+            _openings = Array.Empty<int>();
+            _closings = Array.Empty<int>();
             _stale = true;
         }
 
@@ -99,6 +121,10 @@ namespace Kil0bitSystemMonitor.Pad
             var lines = new string[document.LineCount];
             foreach (var line in document.Lines) lines[line.LineNumber - 1] = document.GetText(line);
             _kinds = FenceTracker.Classify(lines);
+            _openings = FenceTracker.Openings(_kinds);
+            _closings = new int[_kinds.Length];
+            for (int i = 0; i < _openings.Length; i++)
+                if (_openings[i] > 0) _closings[_openings[i] - 1] = i + 1;
             _stale = false;
             Recomputes++;
         }

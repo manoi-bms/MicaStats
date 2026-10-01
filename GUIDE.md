@@ -263,6 +263,40 @@ turns the selected lines into headings, lists, tasks, quotes or a code block —
 strikethrough, code, a list, a task or a quote again to take it off; a heading item switches the level,
 and choosing the level a line already has removes the heading. Each is a single **Ctrl+Z**.
 
+### Diagrams
+
+A fenced block whose first word names a diagram type gets a picture right under it in Markdown
+notes. The code stays above the picture and stays editable; the picture follows a moment after
+you stop typing.
+
+```mermaid
+mindmap
+  root((MicaPad))
+    Notes
+    Diagrams
+```
+
+| Drawn on this PC | Fence words |
+|---|---|
+| Mermaid — flowchart, sequence, class, state, ER, Gantt, pie, mindmap, timeline and more | `mermaid`, `mmd` |
+| Graphviz | `dot`, `graphviz`, `gv` |
+| Markmap — a mindmap from a Markdown outline | `markmap` |
+
+Every other type is drawn by a **Kroki** server, which stays off until you turn on
+**Settings → MicaPad → Draw other types with Kroki**: `plantuml`, `puml`, `c4plantuml`, `d2`,
+`bpmn`, `excalidraw`, `vega`, `vegalite`, `vega-lite`, `wavedrom`, `ditaa`, `structurizr`,
+`nomnoml`, `pikchr`, `svgbob`, `dbml`, `erd`, `bytefield`, `blockdiag`, `seqdiag`, `actdiag`,
+`nwdiag`, `packetdiag`, `rackdiag`, `tikz`, `umlet`, `symbolator`, `wireviz`. Only that block's
+text is sent, to `https://kroki.io` unless you enter your own server. For private notes run Kroki
+yourself (`docker run -d -p 8000:8000 yuzutech/kroki`) and enter `http://localhost:8000`. Kroki
+pictures sit on a white card in both themes.
+
+Hover a picture for **Hide code** (folds the block's lines away; **Show code** brings them back).
+Right-click it for **Copy picture**, **Save as PNG…** and **Save as SVG…** — these always give the
+light version, which reads well on white paper. A mistake in a diagram shows the engine's message
+in a red box instead of the picture. **Settings → MicaPad → Draw diagrams** turns pictures off.
+Pictures need the Microsoft Edge WebView2 Runtime, which Windows 11 includes.
+
 ### Colors for code, logs and settings files
 
 JSON, XML, HTML, C#, JavaScript, CSS, PowerShell, Python, SQL, C/C++, Java, PHP, VB, diff, INI,

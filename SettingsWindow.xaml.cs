@@ -540,6 +540,7 @@ namespace Kil0bitSystemMonitor
         // ---- MicaPad ----------------------------------------------------------------------
 
         private const string PadHotkeyHelp = "Shows MicaPad from anywhere. Leave empty to turn it off.";
+        private const string PadKrokiHelp = "The Kroki server, like https://kroki.io or http://localhost:8000.";
         private static readonly int[] PadHistoryChoices = { 30, 90, 180, 365 };
         private static readonly int[] PadFontSizes = { 10, 11, 12, 13, 14, 15, 16, 18, 20, 24 };
 
@@ -559,6 +560,10 @@ namespace Kil0bitSystemMonitor
                 PadLineNumbersToggle.IsOn = cfg.PadShowLineNumbers;
                 PadMarkdownToggle.IsOn = cfg.PadMarkdown;
                 PadAutoCloseToggle.IsOn = cfg.PadAutoClose;
+                PadDiagramsToggle.IsOn = cfg.PadDiagrams;
+                PadKrokiToggle.IsOn = cfg.PadKroki;
+                PadKrokiServerBox.Text = cfg.PadKrokiServer;
+                PadKrokiHint.Text = PadKrokiHelp;
                 PadThemeBox.SelectedIndex = cfg.PadTheme == Kil0bitSystemMonitor.Services.Pad.PadThemes.Light ? 1 : 0;
                 PadFontBox.Text = cfg.PadFontFamily;
                 PadFontSizeBox.ItemsSource = PadFontSizes;
@@ -660,6 +665,9 @@ namespace Kil0bitSystemMonitor
             cfg.PadShowLineNumbers = PadLineNumbersToggle.IsOn;
             cfg.PadMarkdown = PadMarkdownToggle.IsOn;
             cfg.PadAutoClose = PadAutoCloseToggle.IsOn;
+            cfg.PadDiagrams = PadDiagramsToggle.IsOn;
+            CommitPadKrokiServer();   // a server typed just before the click is the one Kroki starts with
+            cfg.PadKroki = PadKrokiToggle.IsOn;
             _config.SaveConfig();
         }
 
@@ -688,6 +696,32 @@ namespace Kil0bitSystemMonitor
             {
                 PadHotkeyHint.Text = "Not a valid shortcut. Use one or more of Ctrl, Alt, Shift, Win and one key, like Ctrl+Alt+N.";
             }
+        }
+
+        /// <summary>The Kroki server box lost focus.</summary>
+        private void OnPadKrokiServerChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loadingPad) return;
+            if (CommitPadKrokiServer()) _config.SaveConfig();
+        }
+
+        /// <summary>
+        /// Takes the Kroki server box into the config (not saved): an http or https address is kept
+        /// (without its trailing slash); anything else is refused and the box shows the server in use
+        /// again, so it always names the server MicaPad sends to. True when the server changed.
+        /// </summary>
+        private bool CommitPadKrokiServer()
+        {
+            string current = _config.Config.PadKrokiServer;
+            if (PadKrokiServerBox.Text == current) return false;   // nothing new typed: a refusal hint stays up
+            var entry = Kil0bitSystemMonitor.Services.Pad.KrokiClient.ResolveEntry(PadKrokiServerBox.Text, current);
+            PadKrokiServerBox.Text = entry.BoxText;
+            PadKrokiHint.Text = entry.Refused
+                ? "Not a server address, so MicaPad still uses " + current + ". Use http:// or https:// and a host name, like https://kroki.io."
+                : PadKrokiHelp;
+            if (entry.Save == null) return false;
+            _config.Config.PadKrokiServer = entry.Save;
+            return true;
         }
 
         private void OnPadFontChanged(object sender, RoutedEventArgs e)

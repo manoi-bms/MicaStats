@@ -43,6 +43,12 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The manager while folding is installed; for tests.</summary>
         internal FoldingManager? Manager => _manager;
 
+        /// <summary>
+        /// Folds added to the language's own at every recompute: the diagram blocks whose code is
+        /// hidden (Hide code). Null when nothing adds any.
+        /// </summary>
+        internal Func<TextDocument, IEnumerable<NewFolding>>? ExtraFolds { get; set; }
+
         /// <summary>Installs folding for <paramref name="language"/> on the editor's current document, or nothing if it does not fold.</summary>
         public void Attach(PadLanguage language)
         {
@@ -77,6 +83,8 @@ namespace Kil0bitSystemMonitor.Pad
             try
             {
                 var foldings = Compute(_document, _language, out int firstError);
+                // UpdateFoldings needs them in order of their start.
+                if (ExtraFolds is { } extra) foldings = foldings.Concat(extra(_document)).OrderBy(f => f.StartOffset).ToList();
                 _manager.UpdateFoldings(foldings, firstError);
             }
             catch (Exception ex)

@@ -10,7 +10,7 @@ namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
     /// Everything a language adds to one editor, installed and removed together: syntax colors, or
-    /// Markdown formatting (colorizer, background, bullets), and folding.
+    /// Markdown formatting (colorizer, background, bullets, diagram pictures), and folding.
     /// <see cref="Apply"/> removes the previous language first, so switching tabs never piles
     /// anything up; asked again for what is already shown, it does nothing.
     /// </summary>
@@ -25,6 +25,8 @@ namespace Kil0bitSystemMonitor.Pad
         private MarkdownColorizer? _markdown;
         private MarkdownBackgroundRenderer? _markdownBackground;
         private BulletGenerator? _bullets;
+        private DiagramBoard? _diagramBoard;
+        private DiagramGenerator? _diagramGenerator;
         private readonly FoldingController? _folding;
         private TextDocument? _appliedTo;
 
@@ -52,6 +54,12 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>True while Markdown formatting is installed.</summary>
         internal bool HasMarkdown => _markdown != null;
+
+        /// <summary>What diagram pictures need (spec Part 3); set by the window. Null: no pictures (the history preview).</summary>
+        internal DiagramServices? Diagrams { get; set; }
+
+        /// <summary>The pictures of the shown Markdown document, or null.</summary>
+        internal DiagramBoard? DiagramBoard => _diagramBoard;
 
         /// <summary>
         /// Shows the editor's text in <paramref name="language"/>, or as Plain text if formatting
@@ -81,6 +89,7 @@ namespace Kil0bitSystemMonitor.Pad
                 // First, so the fence shading is drawn under AvalonEdit's current-line highlight.
                 view.BackgroundRenderers.Insert(0, _markdownBackground);
                 view.ElementGenerators.Add(_bullets);
+                InstallDiagrams();
             }
             else if (PadHighlighting.For(language) is { } definition)
             {
@@ -93,6 +102,49 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>Repaints; the colorizers read the palette as they draw, so a theme switch needs only this.</summary>
         public void Redraw() => _editor.TextArea.TextView.Redraw();
+
+        /// <summary>
+        /// Draw diagrams, Kroki or the Kroki server changed in Settings: puts the pictures in or
+        /// takes them out, or asks every picture again, without touching the rest of the formatting.
+        /// </summary>
+        internal void RefreshDiagrams()
+        {
+            if (_markdown == null) return;
+            bool wanted = Diagrams != null && Diagrams.Enabled();
+            if (!wanted)
+            {
+                if (_diagramBoard == null) return;
+                RemoveDiagrams();
+                _folding?.Update();
+            }
+            else if (_diagramBoard == null)
+            {
+                InstallDiagrams();
+                _folding?.Update();
+            }
+            else
+            {
+                _diagramBoard.Refresh();
+            }
+            Redraw();
+        }
+
+        private void InstallDiagrams()
+        {
+            if (Diagrams is not { } services || !services.Enabled() || _markdownCache == null) return;
+            _diagramBoard = new DiagramBoard(_editor, _markdownCache, _folding, services, _palette);
+            _diagramGenerator = new DiagramGenerator(_markdownCache, _diagramBoard);
+            _editor.TextArea.TextView.ElementGenerators.Add(_diagramGenerator);
+        }
+
+        private void RemoveDiagrams()
+        {
+            if (_diagramBoard == null) return;
+            _editor.TextArea.TextView.ElementGenerators.Remove(_diagramGenerator!);
+            _diagramBoard.Detach();
+            _diagramBoard = null;
+            _diagramGenerator = null;
+        }
 
         /// <summary>
         /// A colorizer, renderer, the bullets or the fence cache failed (spec "Error handling"). The
@@ -135,6 +187,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
             if (_markdown != null)
             {
+                RemoveDiagrams();
                 view.LineTransformers.Remove(_markdown);
                 view.BackgroundRenderers.Remove(_markdownBackground!);
                 view.ElementGenerators.Remove(_bullets!);

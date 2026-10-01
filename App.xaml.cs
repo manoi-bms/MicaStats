@@ -32,6 +32,9 @@ namespace Kil0bitSystemMonitor
         private static Kil0bitSystemMonitor.Services.Pad.CredentialVault? s_padVault;
         private static Kil0bitSystemMonitor.Pad.VaultSession? s_vaultSession;
 
+        /// <summary>Draws MicaPad's diagrams for every window (one hidden WebView2); created with the first MicaPad window, disposed at exit.</summary>
+        private static Kil0bitSystemMonitor.Services.Pad.DiagramRenderer? s_diagrams;
+
         // ---- diagnostics ----------------------------------------------------------------
 
         /// <summary>
@@ -659,6 +662,18 @@ namespace Kil0bitSystemMonitor
                         });
                 }
 
+                if (s_diagrams == null)
+                {
+                    s_diagrams = new Kil0bitSystemMonitor.Services.Pad.DiagramRenderer(
+                        () => Kil0bitSystemMonitor.Pad.DiagramPage.CreateAsync(
+                            Kil0bitSystemMonitor.Pad.DiagramPage.DefaultUserDataFolder,
+                            Kil0bitSystemMonitor.Pad.DiagramPage.ScriptsFolder),
+                        warn: message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("pad", message),
+                        kroki: new Kil0bitSystemMonitor.Services.Pad.KrokiClient(),
+                        krokiServerNow: () => config.PadKroki ? config.PadKrokiServer : null);   // what the windows send (MicaPadWindow.ConfigureDiagrams)
+                    Kil0bitSystemMonitor.Pad.MicaPadWindow.DiagramRenderer = s_diagrams;
+                }
+
                 Kil0bitSystemMonitor.Pad.MicaPadWindow.Open(s_pad, config, () => ShowSettingsSection("MicaPad"), path);
             }
             catch (Exception ex)
@@ -786,6 +801,7 @@ namespace Kil0bitSystemMonitor
                 // WPF has already closed MicaPad by now, so the window-state recording relies on Quit or
                 // SessionEnding having called PrepareForExit first. This flush is the writer-thread drain.
                 FlushPad();
+                s_diagrams?.Dispose();
                 s_vaultSession?.Dispose();
                 s_padVault?.Lock();
                 Kil0bitSystemMonitor.Pad.SecretClipboard.ClearIfStillOurs();

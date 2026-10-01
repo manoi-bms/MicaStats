@@ -293,6 +293,19 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(@"C:\x.png", ImageSources.Resolve("file:///C:/x.png", null, false).Address);
         }
 
+        [Theory]
+        [InlineData("file:///uploads/a.png")]
+        [InlineData("file://localhost/uploads/a.png")]
+        public void A_file_address_without_a_drive_is_not_found(string source)
+        {
+            foreach (bool web in new[] { false, true })
+            {
+                var location = ImageSources.Resolve(source, @"C:\notes", web);
+                Assert.Equal("Image not found: " + source, location.Error);
+                Assert.Equal("", location.Address);
+            }
+        }
+
         [Fact]
         public void Hostile_lines_are_searched_in_linear_time()
         {
@@ -313,24 +326,64 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("b.png", Assert.Single(ImageSources.Find("![x](<a ![y](<b.png>)")).Source);
         }
 
+        /// <summary>A body that cannot seek, so its answer has no Content-Length and is read as a stream.</summary>
+        private sealed class StreamedBody : MemoryStream
+        {
+            public StreamedBody(int length) : base(new byte[length], writable: false)
+            {
+            }
+
+            public override bool CanSeek => false;
+        }
+
         [Fact]
         public void A_download_streamed_over_10_MB_is_refused_and_the_request_names_MicaPad()
         {
             string? agent = null;
+            int length = 11 * 1024 * 1024;
             var handler = new FakeImageHandler
             {
                 Respond = (request, _) =>
                 {
                     agent = request.Headers.UserAgent.ToString();
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new MemoryStream(new byte[11 * 1024 * 1024])) });
+                    var body = new StreamContent(new StreamedBody(length));
+                    Assert.Null(body.Headers.ContentLength);   // streamed: no length to refuse it by
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = body });
+                },
+            };
+            using var sources = new ImageSources(handler);
+            var location = ImageSources.Resolve("https://example.com/a.png", null, true);
+
+            Assert.Equal("The image could not be downloaded (example.com).", Load(sources, location).Error);
+            Assert.Equal("MicaPad", agent);
+
+            length = ImageSources.MaxWebBytes;   // exactly 10 MB is allowed
+            var load = Load(sources, location);
+            Assert.Null(load.Error);
+            Assert.Equal(ImageSources.MaxWebBytes, load.Bytes!.Length);
+        }
+
+        [Fact]
+        public void A_download_starts_off_the_ui_thread() => UiThread.Run(() =>
+        {
+            int? sentOn = null;
+            var handler = new FakeImageHandler
+            {
+                Respond = (_, _) =>
+                {
+                    sentOn = Environment.CurrentManagedThreadId;   // proxy detection runs here, before the first await
+                    return Task.FromResult(FakeImageHandler.Bytes(DiagramFakes.Png));
                 },
             };
             using var sources = new ImageSources(handler);
 
-            Assert.Equal("The image could not be downloaded (example.com).",
-                         Load(sources, ImageSources.Resolve("https://example.com/a.png", null, true)).Error);
-            Assert.Equal("MicaPad", agent);
-        }
+            var task = sources.LoadAsync(ImageSources.Resolve("https://example.com/a.png", null, true));
+            UiPump.Wait(task);
+
+            Assert.NotNull(task.Result.Bytes);
+            Assert.NotNull(sentOn);
+            Assert.NotEqual(Environment.CurrentManagedThreadId, sentOn);
+        });
 
         [Fact]
         public void The_web_handler_has_no_cookies_five_redirects_and_the_system_proxy()

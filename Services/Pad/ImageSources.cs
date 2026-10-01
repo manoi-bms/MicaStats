@@ -148,7 +148,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     if (path.Length > 2 && path[0] == '\\' && path[2] == ':') path = path.Substring(1);
                     if (!Path.IsPathFullyQualified(path)) path = null;
                 }
-                else path = file.LocalPath;
+                else
+                {
+                    // file:///uploads/a.png has no drive: like /uploads/a.png it lives on a wiki's server.
+                    path = file.LocalPath;
+                    if (!Path.IsPathFullyQualified(path)) path = null;
+                }
             }
             else
             {
@@ -175,14 +180,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return new ImageLocation(ImageOrigin.File, text, path, "file\0" + path, null);
         }
 
-        /// <summary>Loads the image's bytes: a file on the thread pool, a data address at once, a download through the HTTP client.</summary>
+        /// <summary>
+        /// Loads the image's bytes: a file on the thread pool, a data address at once, a download
+        /// through the HTTP client, started on the thread pool too (finding the system proxy can block
+        /// before the request's first wait, and the caller is the UI thread laying out a line).
+        /// </summary>
         public Task<ImageLoad> LoadAsync(ImageLocation location, CancellationToken cancel = default)
         {
             if (location.Error != null) return Task.FromResult(Failed(location.Error, lasting: true));
             return location.Origin switch
             {
                 ImageOrigin.Data => Task.FromResult(ReadData(location.Address)),
-                ImageOrigin.Web => DownloadAsync(location.Address, cancel),
+                ImageOrigin.Web => Task.Run(() => DownloadAsync(location.Address, cancel)),
                 _ => Task.Run(() => ReadFile(location), cancel),
             };
         }

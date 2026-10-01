@@ -49,6 +49,14 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- MicaPad diagrams: the drawing page and its scripts, copied to Diagrams\ beside MicaStats.exe (Pad/DiagramPage.cs). -->
+        <None Update="Pad\Diagrams\*">
+            <Link>Diagrams\%(Filename)%(Extension)</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
         <InternalsVisibleTo Include="Kil0bitSystemMonitor.Tests" />
     </ItemGroup>
 
@@ -71,6 +79,7 @@
     <ItemGroup>
         <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
         <PackageReference Include="DiffPlex" Version="1.9.0" />
+        <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
         <PackageReference Include="ModernWpfUI" Version="0.9.6" />
         <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.0" />
         <PackageReference Include="System.Drawing.Common" Version="8.0.0" />

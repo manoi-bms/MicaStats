@@ -130,6 +130,27 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_picture_keeps_no_script_event_handler_or_javascript_link() => WithPage(async page =>
+        {
+            var drawing = await Draw(page, "svg",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"120\" height=\"40\" onload=\"alert(1)\">"
+                + "<script>alert(2)</script>"
+                + "<a href=\"javascript:alert(3)\"><rect width=\"120\" height=\"40\" fill=\"#eee\" onclick=\"alert(4)\"/></a>"
+                + "<a xlink:href=\" JavaScript:alert(5)\"><text y=\"20\" OnMouseOver=\"alert(6)\">x</text></a>"
+                + "<a href=\"https://kroki.io/\"><circle r=\"4\"/></a>"
+                + "</svg>");
+
+            Assert.True(drawing.Error == null, drawing.Error);
+            Assert.DoesNotContain("script", drawing.Svg, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(" on", drawing.Svg, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("alert", drawing.Svg);
+            Assert.Contains("<rect", drawing.Svg);
+            Assert.Contains("<text", drawing.Svg);
+            Assert.Contains("href=\"https://kroki.io/\"", drawing.Svg);
+            Assert.Equal((240, 80), PngSize(drawing.Png!));
+        });
+
+        [Fact]
         public void A_huge_picture_is_scaled_to_4096_pixels() => WithPage(async page =>
         {
             string chain = string.Join(" -> ", Enumerable.Range(1, 120).Select(i => "n" + i));

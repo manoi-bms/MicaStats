@@ -64,7 +64,9 @@ namespace Kil0bitSystemMonitor.Pad
             CoreWebView2Environment environment;
             try
             {
-                environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder, new CoreWebView2EnvironmentOptions());
+                // Crash dumps stay on this PC: a dump of the drawing process can hold note text.
+                environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder,
+                    new CoreWebView2EnvironmentOptions { IsCustomCrashReportingEnabled = true });
             }
             catch (WebView2RuntimeNotFoundException ex)
             {
@@ -117,6 +119,14 @@ namespace Kil0bitSystemMonitor.Pad
             settings.IsZoomControlEnabled = false;
             settings.IsPasswordAutosaveEnabled = false;
             settings.IsGeneralAutofillEnabled = false;
+            try
+            {
+                settings.IsReputationCheckingRequired = false;   // no SmartScreen lookups: the page loads only its own files
+            }
+            catch (NotImplementedException)
+            {
+                // A runtime older than the setting: its SmartScreen checks nothing the 403 filter lets through.
+            }
 
             _core.SetVirtualHostNameToFolderMapping(HostName, scriptsFolder, CoreWebView2HostResourceAccessKind.Deny);
             _core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);

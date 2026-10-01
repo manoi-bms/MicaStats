@@ -20,6 +20,24 @@
     return m[2] === "pt" ? n * 4 / 3 : n;
   }
 
+  // Drops what could run where the markup is opened later (Save as SVG writes it): script elements,
+  // every on* attribute, and href / xlink:href links to javascript: (spaces and controls ignored).
+  function disarm(el) {
+    for (const node of [el, ...el.querySelectorAll("*")]) {
+      if (node.localName.toLowerCase() === "script") {
+        node.remove();
+        continue;
+      }
+      for (const a of Array.from(node.attributes)) {
+        const name = a.localName.toLowerCase();
+        if (name.startsWith("on")
+            || (name === "href" && a.value.replace(/[\u0000-\u0020]/g, "").toLowerCase().startsWith("javascript:"))) {
+          node.removeAttributeNode(a);
+        }
+      }
+    }
+  }
+
   // Gives the picture a fixed size in px (the viewBox's, else its width and height) and returns its markup.
   // The markup is parsed, never put into the page, so nothing in a picture runs or loads.
   function finish(svgText) {
@@ -28,6 +46,7 @@
     if (!el || el.localName !== "svg" || doc.getElementsByTagName("parsererror").length) {
       throw new Error("The picture could not be read.");
     }
+    disarm(el);
     let w = 0, h = 0;
     const box = (el.getAttribute("viewBox") || "").trim().split(/[\s,]+/).map(Number);
     if (box.length === 4 && box[2] > 0 && box[3] > 0) { w = box[2]; h = box[3]; }

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Threading;
@@ -135,5 +136,32 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(DiagramPicture.IsInside(window.Editor.TextArea.TextView));
             Assert.False(DiagramPicture.IsInside(null));
         });
+
+        [Fact]
+        public void Settings_has_the_diagram_and_kroki_cards()
+        {
+            string xaml = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml"));
+
+            foreach (string name in new[] { "PadDiagramsToggle", "PadKrokiToggle", "PadKrokiServerBox", "PadKrokiHint" })
+                Assert.Contains("x:Name=\"" + name + "\"", xaml);
+            Assert.Contains("Text=\"Draw diagrams\"", xaml);
+            Assert.Contains("Text=\"Draw other types with Kroki\"", xaml);
+            Assert.Contains("Sends the diagram's text (only that block) to this server. Use your own Kroki server for private notes.", xaml);
+        }
+
+        [Fact]
+        public void The_guide_lists_every_fence_word_and_what_a_picture_offers()
+        {
+            string guide = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "GUIDE.md"));
+            int at = guide.IndexOf("### Diagrams", StringComparison.Ordinal);
+            Assert.True(at > guide.IndexOf("### Markdown", StringComparison.Ordinal));
+            int next = guide.IndexOf("\n### ", at + 1, StringComparison.Ordinal);
+            string section = guide.Substring(at, (next < 0 ? guide.Length : next) - at);
+
+            foreach (string word in DiagramKinds.Words) Assert.Contains("`" + word + "`", section);
+            foreach (string phrase in new[] { "Hide code", "Show code", "Copy picture", "Save as PNG", "Save as SVG",
+                                              "Draw diagrams", "Draw other types with Kroki", "http://localhost:8000", "WebView2", "light" })
+                Assert.Contains(phrase, section);
+        }
     }
 }

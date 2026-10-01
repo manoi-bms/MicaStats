@@ -540,6 +540,8 @@ namespace Kil0bitSystemMonitor
         // ---- MicaPad ----------------------------------------------------------------------
 
         private const string PadHotkeyHelp = "Shows MicaPad from anywhere. Leave empty to turn it off.";
+        private const string PadKrokiHelp = "The Kroki server, like https://kroki.io or http://localhost:8000.";
+        private const string PadKrokiInvalid = "Not a server address. Use http:// or https:// and a host name, like https://kroki.io.";
         private static readonly int[] PadHistoryChoices = { 30, 90, 180, 365 };
         private static readonly int[] PadFontSizes = { 10, 11, 12, 13, 14, 15, 16, 18, 20, 24 };
 
@@ -559,6 +561,10 @@ namespace Kil0bitSystemMonitor
                 PadLineNumbersToggle.IsOn = cfg.PadShowLineNumbers;
                 PadMarkdownToggle.IsOn = cfg.PadMarkdown;
                 PadAutoCloseToggle.IsOn = cfg.PadAutoClose;
+                PadDiagramsToggle.IsOn = cfg.PadDiagrams;
+                PadKrokiToggle.IsOn = cfg.PadKroki;
+                PadKrokiServerBox.Text = cfg.PadKrokiServer;
+                PadKrokiHint.Text = PadKrokiHelp;
                 PadThemeBox.SelectedIndex = cfg.PadTheme == Kil0bitSystemMonitor.Services.Pad.PadThemes.Light ? 1 : 0;
                 PadFontBox.Text = cfg.PadFontFamily;
                 PadFontSizeBox.ItemsSource = PadFontSizes;
@@ -660,6 +666,8 @@ namespace Kil0bitSystemMonitor
             cfg.PadShowLineNumbers = PadLineNumbersToggle.IsOn;
             cfg.PadMarkdown = PadMarkdownToggle.IsOn;
             cfg.PadAutoClose = PadAutoCloseToggle.IsOn;
+            cfg.PadDiagrams = PadDiagramsToggle.IsOn;
+            cfg.PadKroki = PadKrokiToggle.IsOn;
             _config.SaveConfig();
         }
 
@@ -688,6 +696,22 @@ namespace Kil0bitSystemMonitor
             {
                 PadHotkeyHint.Text = "Not a valid shortcut. Use one or more of Ctrl, Alt, Shift, Win and one key, like Ctrl+Alt+N.";
             }
+        }
+
+        /// <summary>The Kroki server box lost focus: an http or https address is kept (without its trailing slash); anything else is refused.</summary>
+        private void OnPadKrokiServerChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loadingPad) return;
+            if (!Kil0bitSystemMonitor.Services.Pad.KrokiClient.TryParseServer(PadKrokiServerBox.Text, out var server))
+            {
+                PadKrokiHint.Text = PadKrokiInvalid;
+                return;
+            }
+            PadKrokiServerBox.Text = server;
+            PadKrokiHint.Text = PadKrokiHelp;
+            if (_config.Config.PadKrokiServer == server) return;
+            _config.Config.PadKrokiServer = server;
+            _config.SaveConfig();
         }
 
         private void OnPadFontChanged(object sender, RoutedEventArgs e)

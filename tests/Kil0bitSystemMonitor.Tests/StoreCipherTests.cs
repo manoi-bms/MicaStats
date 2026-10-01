@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -76,13 +76,17 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
-        public void Only_data_starting_with_0xFF_counts_as_encrypted()
+        public void Only_data_starting_with_the_four_byte_magic_counts_as_encrypted()
         {
             Assert.True(StoreCipher.IsEncrypted(Cipher.Encrypt(Array.Empty<byte>())));
             Assert.False(StoreCipher.IsEncrypted(Encoding.UTF8.GetBytes("{ \"Id\": 1 }")));
             // Thai and the replacement character are valid UTF-8, which never holds 0xFF.
             Assert.False(StoreCipher.IsEncrypted(Encoding.UTF8.GetBytes("\u0E01\uFFFD")));
             Assert.False(StoreCipher.IsEncrypted(ReadOnlySpan<byte>.Empty));
+            // A plain file written as UTF-16 LE starts with its BOM, FF FE: plain, not encrypted.
+            Assert.False(StoreCipher.IsEncrypted(new byte[] { 0xFF, 0xFE, 0x41, 0x00 }));
+            Assert.False(StoreCipher.IsEncrypted(new byte[] { 0xFF, 0x4D, 0x50 }));   // cut short of the magic
+            Assert.True(StoreCipher.IsEncrypted(new byte[] { 0xFF, 0x4D, 0x50, 0x45 }));
         }
 
         [Fact]

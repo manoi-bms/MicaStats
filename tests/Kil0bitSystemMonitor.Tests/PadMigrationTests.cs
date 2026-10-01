@@ -47,7 +47,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(5, store.EncryptPlainFiles());   // session, current (its .ready first), meta, two versions
 
             foreach (string file in Directory.EnumerateFiles(_dir.Root, "*", SearchOption.AllDirectories)
-                                             .Where(f => Path.GetFileName(f) != NotesKey.FileName))
+                                             .Where(f => !NotesKey.IsKeyFile(f)))
                 Assert.True(StoreCipher.IsEncrypted(File.ReadAllBytes(file)), file);
             Assert.False(File.Exists(NotePath(id, "current.txt") + AtomicFile.ReadySuffix));
 
@@ -98,7 +98,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal("bom current", store.LoadText(id));
             Assert.Equal("bom version", store.ReadSnapshot(store.ListSnapshots(id).Last()));
-            Assert.All(store.ListSnapshots(id), s => Assert.NotEqual((char)0xFEFF, store.ReadSnapshot(s)[0]));
+            Assert.All(store.ListSnapshots(id), s => Assert.NotEqual((char)0xFEFF, store.ReadSnapshot(s)![0]));
         }
 
         [Fact]
@@ -210,7 +210,7 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
-        public void Saves_during_the_pass_win()
+        public async Task Saves_during_the_pass_win()
         {
             string id = PlainStore();
             var store = Open();
@@ -226,7 +226,7 @@ namespace Kil0bitSystemMonitor.Tests
                 }
             });
             store.EncryptPlainFiles();
-            saver.Wait();
+            await saver;
 
             Assert.Equal(last, store.LoadText(id));
             Assert.True(StoreCipher.IsEncrypted(File.ReadAllBytes(store.CurrentPath(id))));

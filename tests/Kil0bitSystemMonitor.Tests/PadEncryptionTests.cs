@@ -55,7 +55,7 @@ namespace Kil0bitSystemMonitor.Tests
             store.SaveSession(new SessionState { OpenNoteIds = new List<string> { meta.Id }, ActiveNoteId = meta.Id });
 
             var files = Directory.EnumerateFiles(_dir.Root, "*", SearchOption.AllDirectories)
-                                 .Where(f => Path.GetFileName(f) != NotesKey.FileName).ToList();
+                                 .Where(f => !NotesKey.IsKeyFile(f)).ToList();
             Assert.Equal(4, files.Count);   // current.txt, meta.json, one version, session.json
             var needles = new[] { "correct horse", "Bank login", "\u0E2A\u0E27\u0E31\u0E2A" }.Select(Encoding.UTF8.GetBytes).ToList();
             foreach (string file in files)
@@ -175,6 +175,7 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var meta = Save(Open(), "written under the old key");
             File.Delete(Path.Combine(_dir.Root, NotesKey.FileName));
+            File.Delete(Path.Combine(_dir.Root, NotesKey.BackupFileName));   // both copies lost (item 11: one alone is restored)
 
             NoteStore store;
             var saved = CultureInfo.CurrentCulture;
@@ -197,11 +198,18 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains(_warnings, w => w.Contains(store.LockedFolder!, StringComparison.Ordinal));
         }
 
+        /// <summary>Both copies of the key sealed for another account, as on another PC.</summary>
+        private void SealBothKeysForAnotherAccount()
+        {
+            byte[] foreign = ProtectedData.Protect(new byte[32], Encoding.UTF8.GetBytes("another account"), DataProtectionScope.CurrentUser);
+            File.WriteAllBytes(Path.Combine(_dir.Root, NotesKey.FileName), foreign);
+            File.WriteAllBytes(Path.Combine(_dir.Root, NotesKey.BackupFileName), foreign);
+        }
+
         private NoteStore OpenMovedAside()
         {
             Save(Open(), "text");
-            File.WriteAllBytes(Path.Combine(_dir.Root, NotesKey.FileName),
-                ProtectedData.Protect(new byte[32], Encoding.UTF8.GetBytes("another account"), DataProtectionScope.CurrentUser));
+            SealBothKeysForAnotherAccount();
             return Open();
         }
 
@@ -232,10 +240,76 @@ namespace Kil0bitSystemMonitor.Tests
         public void A_key_this_account_cannot_open_moves_the_notes_aside_too()
         {
             Save(Open(), "text");
-            File.WriteAllBytes(Path.Combine(_dir.Root, NotesKey.FileName),
-                ProtectedData.Protect(new byte[32], Encoding.UTF8.GetBytes("another account"), DataProtectionScope.CurrentUser));
+            SealBothKeysForAnotherAccount();
 
             Assert.NotNull(Open().LockedFolder);
+        }
+
+        // ---- final review: key.bak (item 11) and the 4-byte magic (item 5) --------------------
+
+        [Fact]
+        public void A_store_created_now_has_both_copies_of_its_key()
+        {
+            Save(Open(), "text");
+
+            byte[] key = File.ReadAllBytes(Path.Combine(_dir.Root, NotesKey.FileName));
+            Assert.Equal(key, File.ReadAllBytes(Path.Combine(_dir.Root, NotesKey.BackupFileName)));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void A_lost_or_damaged_key_is_restored_from_its_backup_and_nothing_moves(bool damaged)
+        {
+            var meta = Save(Open(), "written under the key");
+            string keyPath = Path.Combine(_dir.Root, NotesKey.FileName);
+            byte[] sealedKey = File.ReadAllBytes(keyPath);
+            if (damaged) File.WriteAllBytes(keyPath, new byte[] { 1, 2, 3 });
+            else File.Delete(keyPath);
+
+            var store = Open();
+
+            Assert.Null(store.LockedFolder);
+            Assert.Equal("written under the key", store.LoadText(meta.Id));
+            Assert.Equal(sealedKey, File.ReadAllBytes(keyPath));
+            Assert.Empty(Directory.GetDirectories(Path.GetDirectoryName(_dir.Root)!, Path.GetFileName(_dir.Root) + "-locked-*"));
+        }
+
+        [Fact]
+        public void An_existing_store_without_a_backup_gains_one_on_its_next_load()
+        {
+            var meta = Save(Open(), "text");
+            string keyPath = Path.Combine(_dir.Root, NotesKey.FileName);
+            string backup = Path.Combine(_dir.Root, NotesKey.BackupFileName);
+            File.Delete(backup);
+            byte[] sealedKey = File.ReadAllBytes(keyPath);
+
+            var store = Open();
+
+            Assert.Equal("text", store.LoadText(meta.Id));
+            Assert.Equal(sealedKey, File.ReadAllBytes(keyPath));
+            Assert.Equal(sealedKey, File.ReadAllBytes(backup));
+        }
+
+        [Fact]
+        public void A_plain_utf16_file_with_a_bom_reads_as_its_text_and_moves_nothing()
+        {
+            string id = Guid.NewGuid().ToString("N");
+            string folder = Path.Combine(_dir.Root, "notes", id);
+            Directory.CreateDirectory(folder);
+            string current = Path.Combine(folder, "current.txt");
+            File.WriteAllText(current, "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35 UTF-16", Encoding.Unicode);   // FF FE first
+            Assert.Equal(new byte[] { 0xFF, 0xFE }, File.ReadAllBytes(current).Take(2).ToArray());
+
+            var store = Open();   // no key yet: a keyless store of plain files
+
+            Assert.Null(store.LockedFolder);
+            Assert.Empty(Directory.GetDirectories(Path.GetDirectoryName(_dir.Root)!, Path.GetFileName(_dir.Root) + "-locked-*"));
+            Assert.Equal("\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35 UTF-16", store.LoadText(id));
+
+            Assert.Equal(1, store.EncryptPlainFiles());
+            Assert.True(StoreCipher.IsEncrypted(File.ReadAllBytes(current)));
+            Assert.Equal("\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35 UTF-16", Open().LoadText(id));
         }
 
         [Fact]

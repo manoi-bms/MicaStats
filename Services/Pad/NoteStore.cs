@@ -46,7 +46,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Initializes a note store rooted at the given folder.</summary>
         /// <param name="root">The MicaPad folder. Created if missing.</param>
         /// <param name="warn">Where recoverable problems are reported; the diagnostics log by default.</param>
-        /// <exception cref="IOException"><c>key.bin</c> or a store file cannot be read right now, or an unusable store cannot be moved aside; try again later.</exception>
+        /// <exception cref="IOException"><c>key.bin</c>, <c>key.bak</c> or a store file cannot be read right now, or an unusable store cannot be moved aside; try again later.</exception>
         public NoteStore(string root, Action<string>? warn = null)
         {
             Root = root;

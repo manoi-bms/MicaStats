@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Security.Cryptography;
 
 namespace Kil0bitSystemMonitor.Services.Pad
@@ -12,14 +13,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
     ///
     /// <para>
     /// The five header bytes are the associated data, so the header cannot be changed either.
-    /// NoteStore only ever wrote valid UTF-8, which never holds the byte 0xFF, so data starting with
-    /// it is encrypted and anything else is plain text from an earlier version.
+    /// Data starting with the four-byte magic <c>FF 4D 50 45</c> is encrypted; anything else is plain
+    /// text from an earlier version. Valid UTF-8 never holds the byte 0xFF, and a plain file with a
+    /// UTF-16 byte order mark starts <c>FF FE</c>, so neither is taken for an encrypted file.
     /// </para>
     /// </summary>
     public sealed class StoreCipher
     {
         /// <summary>The notes key's length: AES-256.</summary>
         public const int KeyLength = 32;
+
+        /// <summary>How many leading bytes tell an encrypted file from a plain one: the magic, <c>FF 4D 50 45</c>.</summary>
+        public const int MagicLength = 4;
 
         private const int NonceLength = 12;
         private const int TagLength = 16;
@@ -39,7 +44,19 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         /// <summary>Whether <paramref name="data"/> is in this format rather than an earlier version's plain text.</summary>
-        public static bool IsEncrypted(ReadOnlySpan<byte> data) => data.Length > 0 && data[0] == 0xFF;
+        public static bool IsEncrypted(ReadOnlySpan<byte> data) =>
+            data.Length >= MagicLength && data.Slice(0, MagicLength).SequenceEqual(Header.AsSpan(0, MagicLength));
+
+        /// <summary>
+        /// Whether the stream, read from where it stands, starts with the magic. Reads at most
+        /// <see cref="MagicLength"/> bytes; a shorter stream is plain.
+        /// </summary>
+        public static bool StartsEncrypted(Stream stream)
+        {
+            Span<byte> first = stackalloc byte[MagicLength];
+            int read = stream.ReadAtLeast(first, MagicLength, throwOnEndOfStream: false);
+            return IsEncrypted(first.Slice(0, read));
+        }
 
         /// <summary>The bytes to write for <paramref name="plain"/>, under a fresh random nonce.</summary>
         public byte[] Encrypt(ReadOnlySpan<byte> plain)

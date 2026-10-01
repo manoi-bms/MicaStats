@@ -294,7 +294,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("new", File.ReadAllText(file));
             Assert.Equal("created", File.ReadAllText(_dir.PathOf("fresh.txt")));
             // The store's own key sits in the same folder; only user files are counted.
-            Assert.Equal(2, Directory.GetFiles(_dir.Root).Count(f => Path.GetFileName(f) != NotesKey.FileName));
+            Assert.Equal(2, Directory.GetFiles(_dir.Root).Count(f => !NotesKey.IsKeyFile(f)));
         }
     }
 }

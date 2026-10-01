@@ -27,7 +27,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// Where the store was moved because its key could not be used (another PC or Windows
-        /// account, a lost <c>key.bin</c>), or null. Set by the constructor; the first MicaPad
+        /// account, both copies of the key lost), or null. Set by the constructor; the first MicaPad
         /// window tells the user once.
         /// </summary>
         public string? LockedFolder { get; internal set; }
@@ -199,7 +199,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             try
             {
                 using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                return stream.ReadByte() == 0xFF ? file.Length - StoreCipher.Overhead : file.Length;
+                return StoreCipher.StartsEncrypted(stream) ? file.Length - StoreCipher.Overhead : file.Length;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -220,7 +220,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 {
                     if (!File.Exists(file)) continue;
                     using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                    if (stream.ReadByte() == 0xFF) return true;
+                    if (StoreCipher.StartsEncrypted(stream)) return true;
                 }
             }
             return false;
@@ -384,12 +384,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
         }
 
-        /// <summary>Whether the file exists and its first byte is the encrypted format's marker.</summary>
+        /// <summary>Whether the file exists and starts with the encrypted format's magic.</summary>
         private static bool StartsEncrypted(string path)
         {
             if (!File.Exists(path)) return false;
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            return stream.ReadByte() == 0xFF;
+            return StoreCipher.StartsEncrypted(stream);
         }
 
         private bool EncryptIfPlain(string path)

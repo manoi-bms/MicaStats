@@ -100,6 +100,108 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(File.Exists(KeyPath));
         }
 
+        // ---- key.bak: a second sealed copy (final review, item 11) ------------------------------
+
+        private string BackupPath => Path.Combine(_dir.Root, NotesKey.BackupFileName);
+
+        private static Func<bool> NotAsked => () => throw new InvalidOperationException("not asked while a copy of the key can be used");
+
+        [Fact]
+        public void A_new_key_is_written_twice()
+        {
+            NotesKey.Load(_dir.Root, () => false, out byte[]? key);
+
+            Assert.Equal(File.ReadAllBytes(KeyPath), File.ReadAllBytes(BackupPath));
+            Assert.Equal(key, ProtectedData.Unprotect(File.ReadAllBytes(BackupPath), Entropy, DataProtectionScope.CurrentUser));
+        }
+
+        [Fact]
+        public void A_damaged_key_with_a_good_backup_loads_ready_and_is_repaired()
+        {
+            NotesKey.Load(_dir.Root, () => false, out byte[]? key);
+            byte[] sealedKey = File.ReadAllBytes(KeyPath);
+            File.WriteAllBytes(KeyPath, new byte[] { 1, 2, 3 });
+
+            Assert.Equal(NotesKeyStatus.Ready, NotesKey.Load(_dir.Root, NotAsked, out byte[]? back));
+
+            Assert.Equal(key, back);
+            Assert.Equal(sealedKey, File.ReadAllBytes(KeyPath));
+            Assert.Equal(sealedKey, File.ReadAllBytes(BackupPath));
+        }
+
+        [Fact]
+        public void A_missing_key_with_a_good_backup_loads_ready_and_is_repaired()
+        {
+            NotesKey.Load(_dir.Root, () => false, out byte[]? key);
+            byte[] sealedKey = File.ReadAllBytes(KeyPath);
+            File.Delete(KeyPath);
+
+            Assert.Equal(NotesKeyStatus.Ready, NotesKey.Load(_dir.Root, NotAsked, out byte[]? back));
+
+            Assert.Equal(key, back);
+            Assert.Equal(sealedKey, File.ReadAllBytes(KeyPath));
+        }
+
+        [Fact]
+        public void An_existing_key_without_a_backup_gains_one_and_is_left_as_it_is()
+        {
+            NotesKey.Load(_dir.Root, () => false, out byte[]? key);
+            File.Delete(BackupPath);   // a store from before key.bak
+            byte[] sealedKey = File.ReadAllBytes(KeyPath);
+            DateTime written = File.GetLastWriteTimeUtc(KeyPath);
+
+            Assert.Equal(NotesKeyStatus.Ready, NotesKey.Load(_dir.Root, NotAsked, out byte[]? back));
+
+            Assert.Equal(key, back);
+            Assert.Equal(sealedKey, File.ReadAllBytes(BackupPath));
+            Assert.Equal(sealedKey, File.ReadAllBytes(KeyPath));
+            Assert.Equal(written, File.GetLastWriteTimeUtc(KeyPath));
+        }
+
+        [Fact]
+        public void A_backup_that_differs_from_a_good_key_is_rewritten()
+        {
+            NotesKey.Load(_dir.Root, () => false, out _);
+            File.WriteAllBytes(BackupPath, new byte[] { 9, 9, 9 });
+
+            Assert.Equal(NotesKeyStatus.Ready, NotesKey.Load(_dir.Root, NotAsked, out _));
+
+            Assert.Equal(File.ReadAllBytes(KeyPath), File.ReadAllBytes(BackupPath));
+        }
+
+        [Fact]
+        public void Both_copies_damaged_is_unreadable()
+        {
+            NotesKey.Load(_dir.Root, () => false, out _);
+            File.WriteAllBytes(KeyPath, new byte[] { 1, 2, 3 });
+            File.WriteAllBytes(BackupPath, ProtectedData.Protect(new byte[32], Encoding.UTF8.GetBytes("someone else"), DataProtectionScope.CurrentUser));
+
+            Assert.Equal(NotesKeyStatus.Unreadable, NotesKey.Load(_dir.Root, () => false, out byte[]? key));
+            Assert.Null(key);
+        }
+
+        [Fact]
+        public void A_backup_held_open_while_it_is_needed_throws_and_is_not_unreadable()
+        {
+            NotesKey.Load(_dir.Root, () => false, out byte[]? key);
+            File.Delete(KeyPath);
+            using (new FileStream(BackupPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.ThrowsAny<IOException>(() => NotesKey.Load(_dir.Root, () => true, out _));
+            }
+
+            Assert.Equal(NotesKeyStatus.Ready, NotesKey.Load(_dir.Root, NotAsked, out byte[]? back));
+            Assert.Equal(key, back);
+        }
+
+        [Fact]
+        public void Both_key_files_count_as_key_files()
+        {
+            Assert.True(NotesKey.IsKeyFile(KeyPath));
+            Assert.True(NotesKey.IsKeyFile(BackupPath));
+            Assert.False(NotesKey.IsKeyFile(_dir.PathOf("session.json")));
+        }
+
         [Fact]
         public void ReadBytes_returns_null_for_a_missing_file_and_the_bytes_otherwise()
         {

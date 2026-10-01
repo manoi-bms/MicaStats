@@ -769,6 +769,7 @@ namespace Kil0bitSystemMonitor
                 FlushPad();
                 s_vaultSession?.Dispose();
                 s_padVault?.Lock();
+                Kil0bitSystemMonitor.Pad.SecretClipboard.ClearIfStillOurs();
                 m_padMaintenanceTimer?.Stop();
                 s_pad?.Dispose();
                 m_captureHotkeys?.Dispose();

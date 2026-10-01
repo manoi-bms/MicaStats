@@ -11,7 +11,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
 {
     /// <summary>
     /// MicaPad's notes on disk: one folder per note, each file encrypted with the notes key
-    /// (<see cref="StoreCipher"/>, <see cref="NotesKey"/>); files an earlier version wrote plain are read as before.
+    /// (<see cref="StoreCipher"/>, <see cref="NotesKey"/>); files an earlier version wrote plain are read as before
+    /// until <see cref="EncryptPlainFiles"/> encrypts them.
     ///
     /// <code>
     /// Root\session.json

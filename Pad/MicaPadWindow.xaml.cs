@@ -252,6 +252,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             var window = ShowOrActivate(workspace, config, openSettings, path);
             if (!string.IsNullOrWhiteSpace(path)) window.OpenPath(path);
+            window.ShowLockedFolderNotice();
             return window;
         }
 
@@ -1212,6 +1213,20 @@ namespace Kil0bitSystemMonitor.Pad
             InfoSecondary.Content = secondaryLabel;
             InfoSecondary.Visibility = secondary == null ? Visibility.Collapsed : Visibility.Visible;
             InfoBar.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>
+        /// Once per run: the notes this Windows account could not decrypt were moved to
+        /// <see cref="NoteStore.LockedFolder"/>. Nothing was deleted.
+        /// </summary>
+        internal void ShowLockedFolderNotice()
+        {
+            string? folder = _workspace.Store.LockedFolder;
+            if (folder == null || _workspace.LockedNoticeShown) return;
+
+            _workspace.LockedNoticeShown = true;
+            ShowInfo("MicaPad could not decrypt the notes saved before on this Windows account, so they were moved to "
+                     + folder + ". Nothing was deleted.", null, "Show folder", () => ShowInFolder(folder));
         }
 
         /// <summary>Hides the info bar and forgets its actions.</summary>

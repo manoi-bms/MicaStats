@@ -25,8 +25,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-        /// <summary>Writes a store file in two phases.</summary>
-        public static void Write(string path, byte[] bytes)
+        /// <summary>
+        /// Writes a store file in two phases. <paramref name="beforeReplace"/> runs once the
+        /// complete write is on disk as <c>.ready</c> and before it replaces the target.
+        /// </summary>
+        public static void Write(string path, byte[] bytes, Action? beforeReplace = null)
         {
             string temp = path + TempSuffix;
             string ready = path + ReadySuffix;
@@ -38,6 +41,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
 
             File.Move(temp, ready, overwrite: true);
+            beforeReplace?.Invoke();
             Commit(ready, path);
         }
 

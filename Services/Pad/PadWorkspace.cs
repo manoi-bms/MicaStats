@@ -129,6 +129,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The store this workspace reads and writes.</summary>
         public NoteStore Store => _store;
 
+        /// <summary>Whether a window already told the user about <see cref="NoteStore.LockedFolder"/>: once per run.</summary>
+        public bool LockedNoticeShown { get; set; }
+
         /// <summary>Open notes in tab order. Changed on the UI thread only.</summary>
         public ObservableCollection<OpenNote> Open { get; } = new();
 

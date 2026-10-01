@@ -205,5 +205,84 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         private static bool Exists(string path) => File.Exists(path) || File.Exists(path + AtomicFile.ReadySuffix);
+
+        /// <summary>
+        /// Encrypts every file an earlier version wrote plain: notes, versions, metadata and the
+        /// session. Each plain original is overwritten with zeros once its encrypted copy is
+        /// complete on disk and before that copy replaces it, so a crash at any point leaves either
+        /// the plain file or a complete encrypted one. Encrypted files are skipped, so it can run at
+        /// every start and resumes where a crash stopped it. Never throws: a file it cannot encrypt
+        /// is reported and tried again next time.
+        /// </summary>
+        /// <returns>How many files were encrypted.</returns>
+        public int EncryptPlainFiles()
+        {
+            int encrypted = 0;
+            lock (_sessionLock)
+            {
+                if (EncryptIfPlain(SessionPath)) encrypted++;
+            }
+
+            foreach (string id in NoteIds())
+            {
+                lock (LockFor(id))
+                {
+                    foreach (string path in NoteFiles(id))
+                        if (EncryptIfPlain(path)) encrypted++;
+                }
+            }
+            return encrypted;
+        }
+
+        private bool EncryptIfPlain(string path)
+        {
+            byte[]? bytes = null;
+            byte[]? text = null;
+            try
+            {
+                bytes = AtomicFile.ReadBytes(path);   // finishes an interrupted write first
+                if (bytes == null || StoreCipher.IsEncrypted(bytes)) return false;
+
+                // The decoded text, so a BOM an earlier version wrote does not come back as U+FEFF.
+                text = Utf8NoBom.GetBytes(ReadPlain(bytes));
+                AtomicFile.Write(path, _cipher.Encrypt(text), beforeReplace: () => WipePlain(path));
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _warn("Could not encrypt " + path + ": " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                if (bytes != null) CryptographicOperations.ZeroMemory(bytes);
+                if (text != null) CryptographicOperations.ZeroMemory(text);
+            }
+        }
+
+        /// <summary>Best effort: zeros over a plain file before its encrypted copy replaces it. An SSD may still keep the old blocks.</summary>
+        private void WipePlain(string path)
+        {
+            try
+            {
+                // Only while the encrypted copy still waits as .ready: if anything committed it early,
+                // the target is the encrypted file and must not be zeroed.
+                if (File.Exists(path + AtomicFile.ReadySuffix)) ZeroFill(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _warn("Could not overwrite the plain copy of " + path + ": " + ex.Message);
+            }
+        }
+
+        /// <summary>Overwrites a file with zeros in place, keeping its length, and flushes it to disk.</summary>
+        internal static void ZeroFill(string path)
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None);
+            var zeros = new byte[64 * 1024];
+            for (long left = stream.Length; left > 0; left -= zeros.Length)
+                stream.Write(zeros, 0, (int)Math.Min(zeros.Length, left));
+            stream.Flush(flushToDisk: true);
+        }
     }
 }

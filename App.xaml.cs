@@ -690,7 +690,7 @@ namespace Kil0bitSystemMonitor
             m_padMaintenanceTimer.Start();
         }
 
-        /// <summary>Prunes history and purges long-closed notes, off the UI thread.</summary>
+        /// <summary>Encrypts files an earlier version left plain, prunes history and purges long-closed notes, off the UI thread.</summary>
         private static void RunPadMaintenance()
         {
             // The whole body is guarded: the NoteStore constructor creates a folder, and an exception
@@ -705,6 +705,9 @@ namespace Kil0bitSystemMonitor
                 {
                     try
                     {
+                        int encrypted = store.EncryptPlainFiles();
+                        if (encrypted > 0)
+                            Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("pad", "Encrypted " + encrypted + " MicaPad files written by an earlier version");
                         store.PruneAll(DateTime.UtcNow, days, Kil0bitSystemMonitor.Services.Pad.RecycleBin.Instance);
                     }
                     catch (Exception ex)

@@ -36,6 +36,31 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void The_locked_folder_notice_shows_once() => WithWindow((window, env, config) =>
+        {
+            env.Store.LockedFolder = @"C:\Users\x\AppData\Roaming\MicaStats\MicaPad-locked-20261001-090000";
+
+            window.ShowLockedFolderNotice();
+
+            Assert.Equal(Visibility.Visible, window.InfoBar.Visibility);
+            Assert.Equal("MicaPad could not decrypt the notes saved before on this Windows account, so they were moved to "
+                         + env.Store.LockedFolder + ". Nothing was deleted.", window.InfoText.Text);
+            Assert.Equal("Show folder", window.InfoPrimary.Content);
+
+            window.HideInfo();
+            window.ShowLockedFolderNotice();
+            Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+        });
+
+        [Fact]
+        public void No_notice_when_the_store_opened_normally() => WithWindow((window, env, config) =>
+        {
+            window.ShowLockedFolderNotice();
+
+            Assert.Equal(Visibility.Collapsed, window.InfoBar.Visibility);
+        });
+
+        [Fact]
         public void The_window_starts_with_one_empty_note() => WithWindow((window, env, config) =>
         {
             Assert.Single(env.Workspace.Open);

@@ -109,6 +109,7 @@ namespace Kil0bitSystemMonitor.Pad
             ConfigureEditor();
             ConfigureLinks(Editor);
             ConfigureLinks(PreviewEditor);
+            ConfigureVault();
             Editor.TextArea.TextView.MouseHover += OnEditorMouseHover;
             Editor.TextArea.TextView.MouseHoverStopped += (s, e) => _linkTip.IsOpen = false;
             FindBar.Attach(Editor);
@@ -136,10 +137,10 @@ namespace Kil0bitSystemMonitor.Pad
             };
             ApplyTheme();
             Editor.ContextMenu = EditorMenu;
-            Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu();
+            Editor.ContextMenuOpening += (s, e) => RefreshEditorMenu(OpenedByMouse(e));
             Editor.TextArea.PreviewMouseRightButtonDown += OnEditorRightButtonDown;
             PreviewEditor.ContextMenu = PreviewMenu;
-            PreviewEditor.ContextMenuOpening += (s, e) => RefreshPreviewMenu();
+            PreviewEditor.ContextMenuOpening += (s, e) => RefreshPreviewMenu(OpenedByMouse(e));
             HistoryPanel.VersionSelected += OnVersionSelected;
             HistoryPanel.CloseRequested += CloseHistory;
             FindBar.ReplacingAll += () =>
@@ -253,6 +254,7 @@ namespace Kil0bitSystemMonitor.Pad
             var window = ShowOrActivate(workspace, config, openSettings, path);
             if (!string.IsNullOrWhiteSpace(path)) window.OpenPath(path);
             window.ShowLockedFolderNotice();
+            window.ShowVaultMovedNotice();
             return window;
         }
 
@@ -615,6 +617,7 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace.Open.CollectionChanged -= OnOpenChanged;
             foreach (var (document, changed) in _docHandlers) document.Changed -= changed;
             _docHandlers.Clear();
+            DetachVault();
             s_windows.Remove(this);
         }
 
@@ -1799,6 +1802,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
+            if (KeyBelongsToVaultCard(e)) return;
             Key key = e.Key == Key.System ? e.SystemKey : e.Key;
             var modifiers = Keyboard.Modifiers;
             bool handled = false;
@@ -1869,11 +1873,22 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The history preview's right-click menu: copying only, because the preview is read-only.</summary>
         internal ContextMenu PreviewMenu { get; } = new();
 
-        /// <summary>Rebuilds the editor menu for the current selection, undo state and theme.</summary>
-        internal void RefreshEditorMenu() => FillEditorMenu(EditorMenu, Editor, readOnly: false);
+        /// <summary>
+        /// Rebuilds the editor menu for the current selection, undo state and theme; on a pill (under
+        /// the mouse, or at the caret from the keyboard), the pill menu instead.
+        /// </summary>
+        internal void RefreshEditorMenu(bool byMouse = false)
+        {
+            if (MenuReference(Editor, byMouse) is { } reference) FillPillMenu(EditorMenu, reference);
+            else FillEditorMenu(EditorMenu, Editor, readOnly: false);
+        }
 
-        /// <summary>Rebuilds the history preview's menu.</summary>
-        internal void RefreshPreviewMenu() => FillEditorMenu(PreviewMenu, PreviewEditor, readOnly: true);
+        /// <summary>Rebuilds the history preview's menu; on a pill, its read-only pill menu.</summary>
+        internal void RefreshPreviewMenu(bool byMouse = false)
+        {
+            if (MenuReference(PreviewEditor, byMouse) is { } reference) FillPillMenu(PreviewMenu, reference, readOnly: true);
+            else FillEditorMenu(PreviewMenu, PreviewEditor, readOnly: true);
+        }
 
         /// <summary>
         /// The items of a text menu, each disabled when it cannot apply. Later parts add their groups
@@ -1892,6 +1907,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 int copyAt = menu.Items.Cast<object>().ToList().FindIndex(i => i is MenuItem { Header: "Copy" });
                 if (copyAt >= 0) menu.Items.Insert(copyAt + 1, Item("Copy as RTF", null, CopyAsRtf));
+                AddStoreItem(menu);
             }
 
             menu.Items.Add(new Separator());

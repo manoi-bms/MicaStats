@@ -256,5 +256,8 @@
                 </StackPanel>
             </Border>
         </Popup>
+
+        <!-- The credential vault's questions and revealed values, over the editor and history (row 3); last, so it is on top. -->
+        <local:VaultCard x:Name="VaultCard" Grid.Row="3" />
     </Grid>
 </Window>

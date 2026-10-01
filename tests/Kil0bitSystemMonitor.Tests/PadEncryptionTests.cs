@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -175,9 +176,20 @@ namespace Kil0bitSystemMonitor.Tests
             var meta = Save(Open(), "written under the old key");
             File.Delete(Path.Combine(_dir.Root, NotesKey.FileName));
 
-            var store = Open();
+            NoteStore store;
+            var saved = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = new CultureInfo("th-TH");
+                store = Open();
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = saved;
+            }
 
             Assert.NotNull(store.LockedFolder);
+            Assert.Matches(@"-locked-20[0-9]{6}-[0-9]{6}$", store.LockedFolder);
             Assert.StartsWith(_dir.Root + "-locked-", store.LockedFolder, StringComparison.OrdinalIgnoreCase);
             Assert.True(Directory.Exists(Path.Combine(store.LockedFolder!, "notes", meta.Id)));   // nothing deleted
             Assert.Empty(store.LoadAllMetas());
@@ -201,6 +213,57 @@ namespace Kil0bitSystemMonitor.Tests
             Save(Open(), "text");
 
             Assert.Null(Open().LockedFolder);
+        }
+
+        [Fact]
+        public void A_keyless_plain_store_with_a_file_held_open_is_not_moved_aside()
+        {
+            string id = Guid.NewGuid().ToString("N");
+            string folder = Path.Combine(_dir.Root, "notes", id);
+            Directory.CreateDirectory(Path.Combine(folder, "history"));
+            File.WriteAllText(Path.Combine(folder, "current.txt"), "plain text");
+            string version = Path.Combine(folder, "history", "20261001-090000-000.txt");
+            File.WriteAllText(version, "plain version");
+
+            using (new FileStream(version, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.ThrowsAny<IOException>(() => Open());
+                Assert.Empty(Directory.GetDirectories(Path.GetDirectoryName(_dir.Root)!, Path.GetFileName(_dir.Root) + "-locked-*"));
+                Assert.False(File.Exists(Path.Combine(_dir.Root, NotesKey.FileName)));
+            }
+
+            Assert.Null(Open().LockedFolder);
+        }
+
+        [Fact]
+        public void A_key_file_held_open_fails_the_open_and_nothing_is_moved()
+        {
+            var meta = Save(Open(), "kept");
+            string keyPath = Path.Combine(_dir.Root, NotesKey.FileName);
+
+            using (new FileStream(keyPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.ThrowsAny<IOException>(() => Open());
+                Assert.Empty(Directory.GetDirectories(Path.GetDirectoryName(_dir.Root)!, Path.GetFileName(_dir.Root) + "-locked-*"));
+            }
+
+            var again = Open();
+            Assert.Null(again.LockedFolder);
+            Assert.Equal("kept", again.LoadText(meta.Id));
+        }
+
+        [Fact]
+        public void Reading_a_version_does_not_commit_its_ready_file()
+        {
+            var store = Open();
+            var meta = Save(store, "x");
+            var first = store.WriteSnapshot(meta.Id, "first", new DateTime(2026, 10, 1, 9, 0, 0));
+            var second = store.WriteSnapshot(meta.Id, "second", new DateTime(2026, 10, 1, 9, 0, 1));
+            string ready = first.FilePath + AtomicFile.ReadySuffix;
+            File.Copy(second.FilePath, ready);
+
+            Assert.Equal("second", store.ReadSnapshot(first));
+            Assert.True(File.Exists(ready));
         }
     }
 }

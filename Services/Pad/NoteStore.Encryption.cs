@@ -82,9 +82,21 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <see cref="StoreFileUnreadableException"/>, an <see cref="IOException"/>, so every caller
         /// treats it like any other file it cannot read.
         /// </summary>
-        internal string? ReadStoreText(string path)
+        internal string? ReadStoreText(string path) => TextOf(path, AtomicFile.ReadBytes(path));
+
+        /// <summary>
+        /// Like <see cref="ReadStoreText"/> but never commits a finished write: a <c>.ready</c> is read
+        /// where it lies. For readers that run without the note's lock.
+        /// </summary>
+        private string? ReadStoreTextInPlace(string path)
         {
-            byte[]? bytes = AtomicFile.ReadBytes(path);
+            string ready = path + AtomicFile.ReadySuffix;
+            byte[]? bytes = File.Exists(ready) ? File.ReadAllBytes(ready) : File.Exists(path) ? File.ReadAllBytes(path) : null;
+            return TextOf(path, bytes);
+        }
+
+        private string? TextOf(string path, byte[]? bytes)
+        {
             if (bytes == null) return null;
             if (!StoreCipher.IsEncrypted(bytes)) return ReadPlain(bytes);
 
@@ -112,7 +124,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (file.Length < StoreCipher.Overhead) return file.Length;
             try
             {
-                using var stream = file.OpenRead();
+                using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 return stream.ReadByte() == 0xFF ? file.Length - StoreCipher.Overhead : file.Length;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -123,7 +135,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// Whether any file holding notes, versions or the session is encrypted. A file that cannot
-        /// be read counts as encrypted, so a passing lock never gets a second key made.
+        /// be read right now throws, so the store is opened again later rather than moved aside or
+        /// given a second key.
         /// </summary>
         private bool AnyEncryptedFile()
         {
@@ -132,15 +145,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 foreach (string file in new[] { path, path + AtomicFile.ReadySuffix })
                 {
                     if (!File.Exists(file)) continue;
-                    try
-                    {
-                        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                        if (stream.ReadByte() == 0xFF) return true;
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    {
-                        return true;
-                    }
+                    using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    if (stream.ReadByte() == 0xFF) return true;
                 }
             }
             return false;

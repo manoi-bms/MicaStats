@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using Kil0bitSystemMonitor.Services.Pad;
 using Xunit;
@@ -280,7 +282,18 @@ namespace Kil0bitSystemMonitor.Tests
             File.WriteAllBytes(VaultPath, new byte[] { 1, 2, 3, 4 });
             var vault = New();
 
-            Assert.Equal(VaultLoadStatus.MovedAside, vault.Load());
+            var culture = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = new CultureInfo("th-TH");   // Buddhist calendar by default
+                Assert.Equal(VaultLoadStatus.MovedAside, vault.Load());
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = culture;
+            }
+
+            Assert.Matches(new Regex(@"^vault-locked-20[0-9]{6}-[0-9]{6}(-[0-9]+)?\.bin$"), Path.GetFileName(vault.MovedAsideTo));
 
             Assert.False(vault.Exists);
             Assert.False(File.Exists(VaultPath));
@@ -376,6 +389,86 @@ namespace Kil0bitSystemMonitor.Tests
             vault.Delete(id);
 
             Assert.Equal(4, changed);
+        }
+
+        [Fact]
+        public void Sealed_garbage_text_is_moved_aside_and_kept()
+        {
+            byte[] sealedBytes = Seal(Encoding.UTF8.GetBytes("this is not json"));
+            File.WriteAllBytes(VaultPath, sealedBytes);
+            var vault = New();
+
+            Assert.Equal(VaultLoadStatus.MovedAside, vault.Load());
+
+            Assert.False(vault.Exists);
+            Assert.False(File.Exists(VaultPath));
+            Assert.Equal(sealedBytes, File.ReadAllBytes(vault.MovedAsideTo!));
+        }
+
+        [Fact]
+        public void A_vault_of_an_unknown_version_is_moved_aside_and_kept()
+        {
+            Created();
+            var doc = JsonNode.Parse(Unseal(File.ReadAllBytes(VaultPath)))!;
+            doc["version"] = 2;
+            byte[] sealedBytes = Seal(Encoding.UTF8.GetBytes(doc.ToJsonString()));
+            File.WriteAllBytes(VaultPath, sealedBytes);
+            var vault = New();
+
+            Assert.Equal(VaultLoadStatus.MovedAside, vault.Load());
+
+            Assert.False(vault.Exists);
+            Assert.False(File.Exists(VaultPath));
+            Assert.Equal(sealedBytes, File.ReadAllBytes(vault.MovedAsideTo!));
+        }
+
+        [Fact]
+        public void A_failed_save_keeps_an_older_ready_copy_it_did_not_write()
+        {
+            Created();
+            string ready = VaultPath + AtomicFile.ReadySuffix;
+            File.Copy(VaultPath, ready);
+            File.Delete(VaultPath);
+            var vault = New();
+            vault.Load();   // commits the .ready into vault.bin
+            File.Move(VaultPath, ready);
+            Assert.False(File.Exists(VaultPath));
+
+            using (new FileStream(VaultPath + AtomicFile.TempSuffix, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                Assert.ThrowsAny<IOException>(() => vault.Add("not stored", null, null));
+            }
+
+            Assert.True(File.Exists(ready));
+        }
+
+        [Fact]
+        public void A_pin_is_not_checked_when_the_count_cannot_be_saved()
+        {
+            var vault = Created();
+            using (new FileStream(VaultPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.ThrowsAny<IOException>(() => vault.Unlock(Pin));
+            }
+
+            Assert.False(vault.IsUnlocked);
+            Assert.Equal(UnlockOutcome.Unlocked, vault.Unlock(Pin).Outcome);
+        }
+
+        [Fact]
+        public void A_wait_saved_far_ahead_by_a_wrong_clock_is_capped_at_fifteen_minutes()
+        {
+            Created();
+            var doc = JsonNode.Parse(Unseal(File.ReadAllBytes(VaultPath)))!;
+            doc["lockedUntilUtc"] = _clock.UtcNow.AddHours(2).ToString("O", CultureInfo.InvariantCulture);
+            doc["failedAttempts"] = 5;
+            File.WriteAllBytes(VaultPath, Seal(Encoding.UTF8.GetBytes(doc.ToJsonString())));
+            var vault = Loaded();
+
+            Assert.Equal(new UnlockResult(UnlockOutcome.Waiting, 0, _clock.UtcNow.AddMinutes(15)), vault.Unlock(Pin));
+
+            _clock.Advance(900);
+            Assert.Equal(UnlockOutcome.Unlocked, vault.Unlock(Pin).Outcome);
         }
 
         [Fact]

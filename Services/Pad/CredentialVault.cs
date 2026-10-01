@@ -116,6 +116,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private VaultDocument? _doc;
         private RSA? _privateKey;
         private DateTime _unlockedUntilUtc;
+        private string? _movedAsideTo;
 
         /// <param name="path">The vault file; its folder is created on the first save.</param>
         /// <param name="utcNow">The clock for waits, the unlock window and creation times.</param>
@@ -137,7 +138,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public int Rounds { get; }
 
         /// <summary>Where the last <see cref="Load"/> moved a vault this account could not open, or null.</summary>
-        public string? MovedAsideTo { get; private set; }
+        public string? MovedAsideTo
+        {
+            get { lock (_gate) return _movedAsideTo; }
+        }
 
         /// <summary>After any change of the credentials or the lock, on the thread that made it.</summary>
         public event EventHandler? Changed;
@@ -202,7 +206,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 DropKey();
                 _doc = null;
-                MovedAsideTo = null;
+                _movedAsideTo = null;
 
                 byte[]? sealedBytes = AtomicFile.ReadBytes(FilePath);
                 if (sealedBytes == null) return VaultLoadStatus.Missing;
@@ -222,8 +226,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     // Falls through to moving it aside.
                 }
 
-                MovedAsideTo = MoveAside();
-                _warn("The credential vault could not be opened by this Windows account; it was moved to " + MovedAsideTo);
+                _movedAsideTo = MoveAside();
+                _warn("The credential vault could not be opened by this Windows account; it was moved to " + _movedAsideTo);
                 return VaultLoadStatus.MovedAside;
             }
         }
@@ -393,7 +397,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             lock (_gate)
             {
                 DropKey();
-                foreach (string path in new[] { FilePath, FilePath + AtomicFile.ReadySuffix, FilePath + AtomicFile.TempSuffix })
+                foreach (string path in new[] { FilePath + AtomicFile.TempSuffix, FilePath + AtomicFile.ReadySuffix, FilePath })
                     if (File.Exists(path)) File.Delete(path);
                 _doc = null;
             }
@@ -421,34 +425,44 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (_doc == null) return new UnlockResult(UnlockOutcome.NoVault);
 
             DateTime now = _utcNow();
-            if (_doc.LockedUntilUtc is DateTime until && until > now) return new UnlockResult(UnlockOutcome.Waiting, 0, until);
+            if (_doc.LockedUntilUtc is DateTime saved)
+            {
+                // A wait saved further ahead than the longest wait came from a clock that was wrong: cap it, and keep the cap.
+                if (saved > now + LongestWait)
+                {
+                    var capped = _doc.Clone();
+                    capped.LockedUntilUtc = saved = now + LongestWait;
+                    Save(capped);
+                }
+                if (saved > now) return new UnlockResult(UnlockOutcome.Waiting, 0, saved);
+            }
+
+            // Count first and check second: when the count cannot be saved, the PIN is not checked at all.
+            var counted = _doc.Clone();
+            counted.FailedAttempts = _doc.FailedAttempts + 1;
+            counted.LockedUntilUtc = WaitAfter(counted.FailedAttempts) is TimeSpan wait ? now + wait : null;
+            Save(counted);
 
             RSA? opened = IsValidPin(pin) ? OpenPrivateKey(_doc, pin) : null;
-            var next = _doc.Clone();
             if (opened != null)
             {
-                if (_doc.FailedAttempts != 0 || _doc.LockedUntilUtc != null)
+                var reset = _doc.Clone();
+                reset.FailedAttempts = 0;
+                reset.LockedUntilUtc = null;
+                try
                 {
-                    next.FailedAttempts = 0;
-                    next.LockedUntilUtc = null;
-                    try
-                    {
-                        Save(next);
-                    }
-                    catch
-                    {
-                        opened.Dispose();
-                        throw;
-                    }
+                    Save(reset);
+                }
+                catch
+                {
+                    opened.Dispose();
+                    throw;
                 }
                 key = opened;
                 return new UnlockResult(UnlockOutcome.Unlocked);
             }
 
-            next.FailedAttempts = _doc.FailedAttempts + 1;
-            next.LockedUntilUtc = WaitAfter(next.FailedAttempts) is TimeSpan wait ? now + wait : null;
-            Save(next);
-            return new UnlockResult(UnlockOutcome.WrongPin, Math.Max(0, TriesBeforeFirstWait - next.FailedAttempts), next.LockedUntilUtc);
+            return new UnlockResult(UnlockOutcome.WrongPin, Math.Max(0, TriesBeforeFirstWait - counted.FailedAttempts), counted.LockedUntilUtc);
         }
 
         /// <summary>The private key under <paramref name="pin"/>, or null when the PIN is wrong or the key is not this vault's.</summary>
@@ -484,21 +498,24 @@ namespace Kil0bitSystemMonitor.Services.Pad
             _privateKey = null;
         }
 
-        /// <summary>Writes <paramref name="next"/> and only then makes it current. A failed write leaves no <c>.ready</c> behind to resurrect it.</summary>
+        /// <summary>Writes <paramref name="next"/> and only then makes it current. A failed write removes its own <c>.ready</c> so it cannot resurrect the change.</summary>
         private void Save(VaultDocument next)
         {
             byte[] json = JsonSerializer.SerializeToUtf8Bytes(next, Json);
             string? folder = Path.GetDirectoryName(Path.GetFullPath(FilePath));
             if (folder != null) Directory.CreateDirectory(folder);
+            bool readyIsOurs = false;
             try
             {
-                AtomicFile.Write(FilePath, ProtectedData.Protect(json, Entropy, DataProtectionScope.CurrentUser));
+                AtomicFile.Write(FilePath, ProtectedData.Protect(json, Entropy, DataProtectionScope.CurrentUser), () => readyIsOurs = true);
             }
             catch
             {
+                // Only the .ready this save wrote, and only while vault.bin still exists: after a half-done replace
+                // the .ready can be the only copy, and an older .ready is not ours to remove.
                 try
                 {
-                    File.Delete(FilePath + AtomicFile.ReadySuffix);
+                    if (readyIsOurs && File.Exists(FilePath)) File.Delete(FilePath + AtomicFile.ReadySuffix);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {

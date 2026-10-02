@@ -21,7 +21,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         public async Task<EmbeddingResult> EmbedAsync(SearchServer server, IReadOnlyList<string> texts, TimeSpan timeout, CancellationToken cancel)
         {
-            var body = new Dictionary<string, object> { ["input"] = texts };
+            var body = new Dictionary<string, object> { ["input"] = SearchHttp.Clean(texts) };
             if (server.Model.Length > 0) body["model"] = server.Model;
 
             var (json, failure, status) = await SearchHttp.PostAsync(_http, server, "/embeddings", body, timeout, cancel).ConfigureAwait(false);

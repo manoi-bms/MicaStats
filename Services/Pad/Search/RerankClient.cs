@@ -22,7 +22,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         public async Task<RerankResult> RerankAsync(SearchServer server, string query, IReadOnlyList<string> documents, int topN, TimeSpan timeout, CancellationToken cancel)
         {
-            var body = new Dictionary<string, object> { ["query"] = query, ["documents"] = documents, ["top_n"] = topN };
+            var body = new Dictionary<string, object> { ["query"] = SearchHttp.Clean(query), ["documents"] = SearchHttp.Clean(documents), ["top_n"] = topN };
             if (server.Model.Length > 0) body["model"] = server.Model;
 
             var (json, failure, status) = await SearchHttp.PostAsync(_http, server, "/rerank", body, timeout, cancel).ConfigureAwait(false);

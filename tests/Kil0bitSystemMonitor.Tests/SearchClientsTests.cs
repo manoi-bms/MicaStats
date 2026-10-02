@@ -174,6 +174,49 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(SearchFailure.BadAnswer, (await client.RerankAsync(Server, "q", new[] { "a", "b" }, 2, Wait, default)).Failure);
         }
 
+        [Theory]
+        [InlineData("")]
+        [InlineData("not a url")]
+        public async Task A_malformed_address_is_unreachable_not_an_exception(string baseUrl)
+        {
+            var bad = new SearchServer(baseUrl, "m", null);
+            using var embedder = new EmbeddingClient(new FakeServer(HttpStatusCode.OK, "{}"));
+            using var reranker = new RerankClient(new FakeServer(HttpStatusCode.OK, "{}"));
+            Assert.Equal(SearchFailure.Unreachable, (await embedder.EmbedAsync(bad, new[] { "a" }, Wait, default)).Failure);
+            Assert.Equal(SearchFailure.Unreachable, (await reranker.RerankAsync(bad, "q", new[] { "a" }, 1, Wait, default)).Failure);
+        }
+
+        [Fact]
+        public async Task A_key_with_a_newline_is_a_failure_not_an_exception()
+        {
+            var bad = new SearchServer("http://gpu:8000/v1", "m", "sk\nbad");
+            using var embedder = new EmbeddingClient(new FakeServer(HttpStatusCode.OK, "{}"));
+            using var reranker = new RerankClient(new FakeServer(HttpStatusCode.OK, "{}"));
+            Assert.NotEqual(SearchFailure.None, (await embedder.EmbedAsync(bad, new[] { "a" }, Wait, default)).Failure);
+            Assert.NotEqual(SearchFailure.None, (await reranker.RerankAsync(bad, "q", new[] { "a" }, 1, Wait, default)).Failure);
+        }
+
+        [Fact]
+        public async Task A_lone_surrogate_is_replaced_and_a_valid_pair_is_kept()
+        {
+            string lone = "a" + (char)0xD83D + "b";
+            string emoji = "x" + char.ConvertFromUtf32(0x1F600) + "y";
+            var fake = new FakeServer(HttpStatusCode.OK, "{\"data\":[{\"index\":0,\"embedding\":[1]},{\"index\":1,\"embedding\":[1]}]}");
+            using var client = new EmbeddingClient(fake);
+
+            var result = await client.EmbedAsync(Server, new[] { lone, emoji }, Wait, default);
+
+            Assert.Equal(SearchFailure.None, result.Failure);
+            using var json = JsonDocument.Parse(Assert.Single(fake.Seen).Body);
+            var sent = json.RootElement.GetProperty("input").EnumerateArray().Select(e => e.GetString()!).ToArray();
+            Assert.Equal("a" + (char)0xFFFD + "b", sent[0]);
+            Assert.Equal(emoji, sent[1]);
+
+            var rerankFake = new FakeServer(HttpStatusCode.OK, "{\"results\":[{\"index\":0,\"relevance_score\":1}]}");
+            using var reranker = new RerankClient(rerankFake);
+            Assert.Equal(SearchFailure.None, (await reranker.RerankAsync(Server, lone, new[] { lone }, 1, Wait, default)).Failure);
+        }
+
         [Fact]
         public void Failures_read_as_plain_words()
         {

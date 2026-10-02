@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -76,10 +77,50 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             {
                 return (null, SearchFailure.TimedOut, null);
             }
-            catch (Exception ex) when (ex is HttpRequestException or IOException)
+            catch (Exception ex) when (ex is HttpRequestException or IOException
+                                          or InvalidOperationException or NotSupportedException
+                                          or UriFormatException or FormatException)
             {
+                // a malformed address or key from Settings is "cannot reach", never an exception
                 return (null, SearchFailure.Unreachable, null);
             }
+        }
+
+        /// <summary>The text with every lone UTF-16 surrogate replaced by U+FFFD (valid pairs kept), so serializing cannot throw.</summary>
+        public static string Clean(string text)
+        {
+            StringBuilder? fixedText = null;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                bool lone;
+                if (char.IsHighSurrogate(c))
+                {
+                    if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                    {
+                        fixedText?.Append(c).Append(text[i + 1]);
+                        i++;
+                        continue;
+                    }
+                    lone = true;
+                }
+                else lone = char.IsLowSurrogate(c);
+
+                if (lone)
+                {
+                    fixedText ??= new StringBuilder(text, 0, i, text.Length);
+                    fixedText.Append((char)0xFFFD);
+                }
+                else fixedText?.Append(c);
+            }
+            return fixedText?.ToString() ?? text;
+        }
+
+        public static string[] Clean(IReadOnlyList<string> texts)
+        {
+            var result = new string[texts.Count];
+            for (int i = 0; i < result.Length; i++) result[i] = Clean(texts[i]);
+            return result;
         }
     }
 }

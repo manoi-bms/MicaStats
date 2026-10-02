@@ -82,6 +82,8 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("message = \"Hello ; world\"", "\"Hello ; world\"", null)]
         [InlineData("x = 'a # b'", "'a # b'", null)]
         [InlineData("path: \"C:\\a ; b\" ; note", "\"C:\\a ; b\"", "; note")]
+        [InlineData("name = \"A \\\"quoted\\\" name\"", "\"A \\\"quoted\\\" name\"", null)]   // .gitconfig escapes quotes
+        [InlineData("key = \"a ; b\" ; note", "\"a ; b\"", "; note")]
         public void Ini_quoted_values_hide_their_comment_marks(string line, string value, string? comment) => UiThread.Run(() =>
         {
             var sections = new DocumentHighlighter(new TextDocument(line), PadHighlighting.For(PadLanguages.ById("ini")!)!).HighlightLine(1).Sections;
@@ -105,10 +107,25 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("message: well, no, thanks")]
         [InlineData("tags: [no way, yes sir]")]
         [InlineData("title: see [true] here")]
+        [InlineData("tags: [urn:true, feature:on]")]   // a colon inside a plain scalar separates nothing
+        [InlineData("tags: {a:true}")]
         public void Yaml_bool_words_inside_text_are_not_bool(string line) => UiThread.Run(() =>
         {
             var highlighter = new DocumentHighlighter(new TextDocument(line), PadHighlighting.For(PadLanguages.ById("yaml")!)!);
             Assert.DoesNotContain(highlighter.HighlightLine(1).Sections, s => s.Color.Name == "Bool");
+        });
+
+        /// <summary>A block scalar's body is text: AvalonEdit cannot see where it ends, so a lone true or yes there gets no Bool.</summary>
+        [Theory]
+        [InlineData("script: |\n  true")]
+        [InlineData("text: >\n  yes")]
+        [InlineData("run: |-\n  null\n  echo done")]
+        public void Yaml_a_lone_bool_word_in_a_block_scalar_is_text(string text) => UiThread.Run(() =>
+        {
+            var document = new TextDocument(text);
+            var highlighter = new DocumentHighlighter(document, PadHighlighting.For(PadLanguages.ById("yaml")!)!);
+            for (int n = 1; n <= document.LineCount; n++)
+                Assert.DoesNotContain(highlighter.HighlightLine(n).Sections, s => s.Color.Name == "Bool");
         });
 
         [Fact]
@@ -174,7 +191,9 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("yaml", "flags: {active: true, disabled: false}", "false", "Bool")]
         [InlineData("yaml", "- [yes, no]", "no", "Bool")]
         [InlineData("yaml", "a: {b: [on, {c: off}]}", "off", "Bool")]
-        [InlineData("yaml", "true", "true", "Bool")]
+        [InlineData("yaml", "flags: {a: true}", "true", "Bool")]
+        [InlineData("yaml", "flags: {\"a\":true}", "true", "Bool")]                   // a colon that closes a quoted key
+        [InlineData("yaml", "flags: {'a': false}", "false", "Bool")]
         [InlineData("yaml", "ports: [80, 443]", "443", "Number")]
         [InlineData("yaml", "count: 42", "42", "Number")]
         [InlineData("batch", "@echo off", "echo", "Keywords")]

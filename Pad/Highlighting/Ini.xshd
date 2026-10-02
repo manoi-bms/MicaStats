@@ -8,7 +8,11 @@
   <RuleSet ignoreCase="true">
     <Span color="Comment" begin="^\s*[;\#]" />
     <!-- A quoted value is one string to its closing quote, so a ; or # inside it is no comment. Only a value opens one: an apostrophe in a key or section is text. -->
-    <Span color="String" begin="(?&lt;=[=:][ \t]*)&quot;" end="&quot;" />
+    <Span color="String" begin="(?&lt;=[=:][ \t]*)&quot;" end="&quot;">
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
     <Span color="String" begin="(?&lt;=[=:][ \t]*)'" end="'" />
     <!-- An inline comment: " ;" or " #" after a value or a section, not a value that starts with # ("color = #FF0000"). -->
     <Span color="Comment" begin="(?&lt;=[^\s=:]\s+)[;\#]" />

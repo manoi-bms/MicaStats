@@ -19,11 +19,16 @@
     <Span ruleSet="Flow" begin="(?&lt;=^[ \t]*|:[ \t]+|^[ \t]*-[ \t]+)[\[{]" end="[\]}]" />
     <Rule color="Directive">^(---|\.\.\.)\s*$</Rule>
     <Rule color="KeyName">(?&lt;=^\s*(-\s+)?)[^\s\#'"-][^:\#\r\n]*?(?=:(\s|$))</Rule>
-    <!-- A whole value only: after "key: ", after "- " or alone on its line, up to a comment or the line end (not "no data", nor a word in a script block). -->
-    <Rule color="Bool">(?&lt;=:[ \t]+|^\s*-[ \t]+|^[ \t]*)(true|false|yes|no|on|off|null|~)(?=[ \t]*(\#|$))</Rule>
+    <!-- A whole value only: after "key: " or "- ", up to a comment or the line end (not "no data"). Never alone on a line: that may be the body of a | or > block scalar, whose end AvalonEdit cannot see. -->
+    <Rule color="Bool">(?&lt;=:[ \t]+|^\s*-[ \t]+)(true|false|yes|no|on|off|null|~)(?=[ \t]*(\#|$))</Rule>
     <Rule color="Number">(?&lt;![\w.])-?\d+(\.\d+)?(?![\w.])</Rule>
   </RuleSet>
-  <!-- Inside [ ] or { }: an item is Bool when it is the whole item, first or after "," or "key:", up to ",", "]" or "}". -->
+  <!--
+    Inside [ ] or { }: an item is Bool when it is the whole item, up to ",", "]" or "}": first, after ",",
+    or after a mapping colon, which is one followed by a space ("a: true") or one right after a quoted key
+    ("a":true). Rules see the line only from where the last match or span ended, so a colon at the start
+    of what they see follows that key; a colon inside a plain scalar (urn:true) separates nothing.
+  -->
   <RuleSet name="Flow">
     <Span color="Comment" begin="(?&lt;=\s)\#" />
     <Span color="String" begin="&quot;" end="&quot;">
@@ -33,7 +38,7 @@
     </Span>
     <Span color="String" begin="(?&lt;!\w)'" end="'" />
     <Span ruleSet="Flow" begin="[\[{]" end="[\]}]" />
-    <Rule color="Bool">(?&lt;=^[ \t]*|[,:][ \t]*)(true|false|yes|no|on|off|null|~)(?=[ \t]*([,\]}]|$))</Rule>
+    <Rule color="Bool">(?&lt;=^[ \t]*|,[ \t]*|:[ \t]+|^[ \t]*:)(true|false|yes|no|on|off|null|~)(?=[ \t]*([,\]}]|$))</Rule>
     <Rule color="Number">(?&lt;![\w.])-?\d+(\.\d+)?(?![\w.])</Rule>
   </RuleSet>
 </SyntaxDefinition>

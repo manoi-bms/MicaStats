@@ -85,6 +85,22 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.StartsWith("{\n        Self", folds[1]);
         }
 
+        /// <summary>A complete char literal hides its brace; a lifetime or a label is code, so the braces after it still count.</summary>
+        [Theory]
+        [InlineData("fn f() {\n    let brace = '}';\n}")]
+        [InlineData("fn f() {\n    let brace = '{';\n}")]
+        [InlineData("fn f() {\n    let b = b'{';\n}")]
+        [InlineData("fn f() {\n    let q = '\\''; let c = '}';\n}")]
+        [InlineData("fn f() {\n    let s = '\\\\'; let c = '{';\n}")]
+        [InlineData("fn f() {\n    let e = '\\u{1F600}'; let c = '}';\n}")]
+        [InlineData("fn f() {\n    let d = '\"'; let c = '{';\n}")]
+        [InlineData("fn f<'a>(x: &'a str) -> &'a str {\n    'outer: loop { break 'outer; }\n    x\n}")]
+        public void Rust_char_literals_hide_their_braces_and_lifetimes_stay_code(string rs)
+        {
+            var folds = Folded(rs, BraceFolding.Compute(rs, BraceSyntax.For("rust")));
+            Assert.Equal(new[] { rs.Substring(rs.IndexOf('{')) }, folds);
+        }
+
         [Fact]
         public void Go_raw_strings_may_span_lines_and_hide_braces()
         {

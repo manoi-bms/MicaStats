@@ -24,14 +24,20 @@ namespace Kil0bitSystemMonitor.Services.Pad
     {
         private static readonly (string, string)[] None = Array.Empty<(string, string)>();
 
+        /// <summary>
+        /// <c>'</c> quotes only a complete char literal (<c>'x'</c>, <c>'\n'</c>, <c>'\u{1F600}'</c>);
+        /// one that closes nothing on its line is a lifetime or a label, and ordinary text.
+        /// </summary>
+        public bool ClosedChars { get; init; }
+
         public static BraceSyntax CLike { get; } = new(new[] { "//" }, new[] { ("/*", "*/") }, new[] { '"', '\'' });
         public static BraceSyntax CSharp { get; } = CLike with { LiteralStrings = new[] { ("@\"", true), ("$@\"", true), ("@$\"", true) } };
         public static BraceSyntax JavaScript { get; } = new(new[] { "//" }, new[] { ("/*", "*/") }, new[] { '"', '\'', '`' });
         /// <summary>Go: raw strings in backticks span lines and nothing escapes in them.</summary>
         public static BraceSyntax Go { get; } = CLike with { LiteralStrings = new[] { ("`", true) } };
 
-        /// <summary>Rust: <c>'</c> is also a lifetime, so only <c>"</c> opens a string.</summary>
-        public static BraceSyntax Rust { get; } = new(new[] { "//" }, new[] { ("/*", "*/") }, new[] { '"' });
+        /// <summary>Rust: <c>'</c> is also a lifetime (<c>&amp;'a str</c>) or a label (<c>'outer:</c>), so only a closed char literal hides what it holds.</summary>
+        public static BraceSyntax Rust { get; } = new(new[] { "//" }, new[] { ("/*", "*/") }, new[] { '"' }) { ClosedChars = true };
 
         /// <summary>Kotlin: <c>"""</c> strings span lines.</summary>
         public static BraceSyntax Kotlin { get; } = CLike with { MultiLineStrings = new[] { ("\"\"\"", "\"\"\"") } };
@@ -99,6 +105,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 {
                     line += CountLines(text, i, literalEnd);
                     i = literalEnd;
+                    continue;
+                }
+                if (syntax.ClosedChars && c == '\'' && TryChar(text, i, out int charEnd))
+                {
+                    i = charEnd;
                     continue;
                 }
                 if (Contains(syntax.Quotes, c))
@@ -203,6 +214,32 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
             end = i;
             return false;
+        }
+
+        /// <summary>
+        /// When a complete char literal opens at <paramref name="i"/>, the offset just past it: one
+        /// character (a surrogate pair counts as one), or a backslash escape (<c>'\''</c>, <c>'\\'</c>,
+        /// <c>'\u{1F600}'</c>) running to the next <c>'</c> on the line. Anything else is no literal.
+        /// </summary>
+        private static bool TryChar(string text, int i, out int end)
+        {
+            end = i;
+            int j = i + 1;
+            if (j >= text.Length || text[j] is '\'' or '\n' or '\r') return false;
+            if (text[j] == '\\')
+            {
+                j++;
+                if (j >= text.Length || text[j] is '\n' or '\r') return false;
+                j++;
+                while (j < text.Length && text[j] is not ('\'' or '\n' or '\r')) j++;
+            }
+            else
+            {
+                j += char.IsHighSurrogate(text[j]) && j + 1 < text.Length && char.IsLowSurrogate(text[j + 1]) ? 2 : 1;
+            }
+            if (j >= text.Length || text[j] != '\'') return false;
+            end = j + 1;
+            return true;
         }
 
         private static int CountLines(string text, int from, int to)

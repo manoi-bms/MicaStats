@@ -100,8 +100,9 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 (left, right) = FixedSides(_last, next, top, _height - bottom);
                 if (left > 0 || right > 0)
                 {
+                    // Without a right panel the scrollbar strip stays in the image but out of the comparison.
                     from = left;
-                    to = _width - right;
+                    to = right > 0 ? _width - right : _width - _scrollbar;
                     prev = Hashes(_last, from, to);
                     cur = Hashes(next, from, to);
                 }
@@ -243,9 +244,12 @@ namespace Kil0bitSystemMonitor.Services.Capture
             int right = 0;
             bool rightDrawn = false;
             while (edge - 1 - right >= left && SameColumn(a, b, edge - 1 - right, fromRow, toRow, ref rightDrawn)) right++;
-            int rightCut = rightDrawn && right > 0 ? right + _scrollbar : 0;
+            if (!rightDrawn) right = 0;
 
-            return _width - left - rightCut < MinMovingColumns ? (0, 0) : (left, rightCut);
+            // What moved must be wide enough, and left of the strip: a strip that changed alone
+            // (a scrollbar thumb) is not content to join.
+            if (edge - left - right < MinMovingColumns) return (0, 0);
+            return (left, right > 0 ? right + _scrollbar : 0);
         }
 
         /// <summary>Whether column <paramref name="x"/> is the same in both frames; sets <paramref name="drawn"/> when it is and is not one plain color.</summary>

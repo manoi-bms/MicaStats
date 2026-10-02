@@ -343,6 +343,38 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_left_panel_alone_still_leaves_the_scrollbar_strip_out_of_the_comparison()
+        {
+            // A 30 px pane at the left; at the right, a 24 px strip that is different in every frame.
+            const int width = 320, left = 30, strip = 24;
+            var content = Noise(width - left - strip, 1200, seed: 31);
+            var leftPane = Noise(left, 300, seed: 32);
+            PixelFrame Framed(int top) => Beside(leftPane, View(content, top, 300), Noise(strip, 300, seed: 1000 + top));
+
+            var s = new ScrollStitcher(Framed(0));
+            for (int top = 90; top <= 900; top += 90)
+                Assert.Equal(StitchStep.Appended, s.Add(Framed(top), out _));
+
+            var result = s.Result();
+            Assert.Equal(width - left, result.Width);   // the pane goes; the scrollbar strip stays, as without panels
+            for (int y = 0; y < result.Height; y++)
+                Assert.True(result.Row(y).Slice(0, content.Width).SequenceEqual(content.Row(y)), "row " + y);
+        }
+
+        [Fact]
+        public void A_view_where_only_the_scrollbar_strip_moved_is_unchanged()
+        {
+            // Everything left of the strip is the same; inside the strip something scrolled 5 rows.
+            const int width = 200, strip = 24;
+            var still = Noise(width - strip, 300, seed: 41);
+            var bar = Noise(strip, 400, seed: 42);
+            var before = Beside(still, View(bar, 0, 300));
+            var after = Beside(still, View(bar, 5, 300));
+
+            Assert.Equal(StitchStep.Unchanged, new ScrollStitcher(before).Add(after, out _));
+        }
+
+        [Fact]
         public void A_blank_margin_is_not_taken_for_a_side_panel()
         {
             // The page's own white margin stays put too, but it is plain: the image keeps its width.

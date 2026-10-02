@@ -53,6 +53,9 @@ namespace Kil0bitSystemMonitor.Pad
         private int _opening;
         private double _top;
 
+        /// <summary>The width the text view last laid the layer out at (during that layout its own ActualWidth is still the old one).</summary>
+        private double _width;
+
         /// <param name="copy">Takes the code of the block whose button was clicked.</param>
         /// <param name="onFailure">Told when placing the button or copying failed; the button hides and the note is untouched.</param>
         public CodeCopyLayer(TextView view, MarkdownDocumentCache cache, Func<PadPalette> palette, Action<string> copy, Action<Exception> onFailure)
@@ -109,7 +112,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 if (!ButtonShown) return Rect.Empty;
                 var size = _button.DesiredSize;
-                return new Rect(Math.Max(0, _view.ActualWidth - RightGap - size.Width), _top + TopGap, size.Width, size.Height);
+                return new Rect(Math.Max(0, _width - RightGap - size.Width), _top + TopGap, size.Width, size.Height);
             }
         }
 
@@ -130,6 +133,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>What the mouse over <paramref name="point"/> (text-view coordinates) does: the button for the block of the line there, or none.</summary>
         internal void MouseAt(Point point)
         {
+            // Over the button itself: it can cover the top of a line outside its block (a small zoom,
+            // or only the closing fence in view), and must not hide as the mouse moves onto it.
+            if (ButtonShown && ButtonBounds.Contains(point)) return;
             VisualLine? visual = null;
             try
             {
@@ -217,6 +223,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         protected override Size ArrangeOverride(Size finalSize)
         {
+            _width = finalSize.Width;
             var bounds = ButtonBounds;
             _button.Arrange(bounds.IsEmpty ? default : bounds);
             return finalSize;
@@ -225,7 +232,8 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// The fenced or <c>$$</c> block line <paramref name="lineNumber"/> is part of: its opening
         /// line, its last inside line and its last line (the closing fence, or the note's last line
-        /// when it never closes). Null when the line is in no block or the block has no inside lines.
+        /// when it never closes). Null when the line is in no block or the block has no code: no
+        /// inside lines, or only blank ones.
         /// </summary>
         private (int Opening, int LastInside, int Last)? BlockAt(TextDocument document, int lineNumber)
         {
@@ -233,13 +241,28 @@ namespace Kil0bitSystemMonitor.Pad
             int opening = _cache.KindOf(document, lineNumber) switch
             {
                 MdFence.Inside => _cache.BlockOpeningOf(document, lineNumber),
-                MdFence.Delimiter => _cache.OpeningLineOf(document, lineNumber) is > 0 and int closes ? closes : lineNumber,
+                MdFence.Delimiter => _cache.OpeningLineOf(document, lineNumber) is > 0 and int opened ? opened : lineNumber,
                 _ => 0,
             };
             if (opening == 0) return null;
             int closing = _cache.ClosingLineOf(document, opening);
+            int last = closing > 0 ? closing : document.LineCount;
             int lastInside = closing > 0 ? closing - 1 : document.LineCount;
-            return lastInside > opening ? (opening, lastInside, closing > 0 ? closing : document.LineCount) : null;
+            // An unclosed block runs to the note's end; the empty line after a final line break is none of its code.
+            if (closing == 0 && lastInside > opening && document.GetLineByNumber(lastInside).Length == 0) lastInside--;
+            return lastInside > opening && HasCode(document, opening + 1, lastInside) ? (opening, lastInside, last) : null;
+        }
+
+        /// <summary>True when a line from <paramref name="from"/> to <paramref name="to"/> holds more than white space; stops at the first that does.</summary>
+        private static bool HasCode(TextDocument document, int from, int to)
+        {
+            for (int number = from; number <= to; number++)
+            {
+                var line = document.GetLineByNumber(number);
+                for (int offset = line.Offset; offset < line.EndOffset; offset++)
+                    if (!char.IsWhiteSpace(document.GetCharAt(offset))) return true;
+            }
+            return false;
         }
 
         /// <summary>The top of the block's first visible line on screen (never above the view's top); false when no line of it is shown.</summary>
@@ -258,7 +281,10 @@ namespace Kil0bitSystemMonitor.Pad
             return false;
         }
 
-        /// <summary>Hands the shown block's inside lines to the copy action: their own line breaks kept, none after the last.</summary>
+        /// <summary>
+        /// Hands the shown block's inside lines to the copy action: their own line breaks kept, none
+        /// after the last (an unclosed block leaves out the empty line after the note's final break).
+        /// </summary>
         private void Copy()
         {
             try

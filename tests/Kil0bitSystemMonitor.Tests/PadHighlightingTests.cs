@@ -217,7 +217,7 @@ namespace Kil0bitSystemMonitor.Tests
             var highlighter = new DocumentHighlighter(new TextDocument(text), PadHighlighting.For(PadLanguages.ById("pascal")!)!);
             var first = highlighter.HighlightLine(1).Sections;
             Assert.DoesNotContain(first, s => s.Color.Name == "Comment");
-            Assert.Single(first.Where(s => s.Color.Name == "String"));
+            Assert.Single(first, s => s.Color.Name == "String");
             Assert.Empty(highlighter.HighlightLine(2).Sections);
         });
 

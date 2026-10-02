@@ -298,36 +298,39 @@ namespace Kil0bitSystemMonitor.Tests
 
             Run(page, new Env());
 
-            Assert.Equal(new ScrollCaptureOptions().TopNotchesPerStep, page.UpNotches);
+            // One step, then one notch more that moves nothing lining up: the block animates.
+            Assert.Equal(new ScrollCaptureOptions().TopNotchesPerStep + 1, page.UpNotches);
         }
 
         [Fact]
         public void A_pane_replaced_by_one_step_up_under_a_large_fixed_header_is_not_the_top()
         {
-            // A 225-row header and 30 px panels stay put; between the panels a 75-row pane shows
-            // the page. One step up (900 rows) replaces the pane completely while three quarters
-            // of the rows stay the same: the run must keep going up.
+            // A 160-row header and 30 px panels stay put, three quarters of the area; between the
+            // panels a 140-row pane shows the page. One step up (900 rows) replaces the pane
+            // completely; one notch more moves it in a way that lines up, so the run keeps going up.
             var content = ScrollStitcherTests.Page(2000);
             int w = content.Width;
-            var header = ScrollStitcherTests.Noise(w, 225, seed: 61);
-            var leftPanel = ScrollStitcherTests.Noise(30, 75, seed: 62);
-            var rightPanel = ScrollStitcherTests.Noise(30, 75, seed: 63);
+            const int headerRows = 160, paneRows = View - headerRows;
+            var header = ScrollStitcherTests.Noise(w, headerRows, seed: 61);
+            var leftPanel = ScrollStitcherTests.Noise(30, paneRows, seed: 62);
+            var rightPanel = ScrollStitcherTests.Noise(30, paneRows, seed: 63);
             PixelFrame Layout(PixelFrame frame, int top)
             {
                 var px = new int[w * View];
                 Array.Copy(header.Pixels, px, header.Pixels.Length);
-                var pane = new int[(w - 60) * 75];
-                for (int y = 0; y < 75; y++) frame.Row(y).Slice(0, w - 60).CopyTo(pane.AsSpan(y * (w - 60)));
-                var lower = ScrollStitcherTests.Beside(leftPanel, new PixelFrame(w - 60, 75, pane), rightPanel);
-                Array.Copy(lower.Pixels, 0, px, 225 * w, lower.Pixels.Length);
+                var pane = new int[(w - 60) * paneRows];
+                for (int y = 0; y < paneRows; y++) frame.Row(y).Slice(0, w - 60).CopyTo(pane.AsSpan(y * (w - 60)));
+                var lower = ScrollStitcherTests.Beside(leftPanel, new PixelFrame(w - 60, paneRows, pane), rightPanel);
+                Array.Copy(lower.Pixels, 0, px, headerRows * w, lower.Pixels.Length);
                 return new PixelFrame(w, View, px);
             }
             var page = new FakePage(content, 1700) { Decorate = Layout };
+            var env = new Env { Cancelled = () => page.DownScrolls > 0 };   // the top is all this checks
 
-            var r = Run(page, new Env());
+            var r = Run(page, env);
 
-            // 1700 to 800 to 0, then a step that leaves it unmoved.
-            Assert.Equal(3 * new ScrollCaptureOptions().TopNotchesPerStep, page.UpNotches);
+            // 1700 to 800 and a probe notch to 710 that lines up; 710 to 0 and a probe that moves nothing.
+            Assert.Equal(2 * (new ScrollCaptureOptions().TopNotchesPerStep + 1), page.UpNotches);
             Assert.True(Same(r.Image, Layout(ScrollStitcherTests.View(content, 0, View), 0)));
         }
 
@@ -340,7 +343,7 @@ namespace Kil0bitSystemMonitor.Tests
             public const int W = 200, H = 600, BoxTop = 220;
             private readonly PixelFrame _static, _content;
             private readonly int _boxH;
-            public int Offset, Downs, JumpAtDown = -1, JumpRows;
+            public int Offset, Downs, Ups, JumpAtDown = -1, JumpRows;
             public InnerBox(int boxH, int offset)
             {
                 _boxH = boxH;
@@ -379,9 +382,25 @@ namespace Kil0bitSystemMonitor.Tests
                     Offset = Math.Min(MaxOffset, Offset + JumpRows);
                     return true;
                 }
+                if (notches < 0) Ups -= notches;
                 Offset = Math.Clamp(Offset + notches * Notch, 0, MaxOffset);
                 return true;
             }
+        }
+
+        [Fact]
+        public void A_box_shorter_than_one_notch_plus_8_rows_is_taken_for_the_top_and_stops_with_no_match()
+        {
+            // An 80-row box scrolled 90 rows a notch: one notch replaces it entirely, so the probe
+            // after the first step up sees nothing line up and calls it the top. The joiner needs
+            // 8 rows of overlap, so the first step down stops with the note.
+            var box = new InnerBox(80, 2000);
+
+            var r = new ScrollCaptureRun(box, _ => { }, () => false).Run();
+
+            Assert.Equal(new ScrollCaptureOptions().TopNotchesPerStep + 1, box.Ups);
+            Assert.Equal(ScrollStop.NoMatch, r.Stop);
+            Assert.Equal("Stopped: the view changed in a way MicaStats could not follow", CaptureService.ScrollNote(r.Stop));
         }
 
         [Theory]
@@ -410,6 +429,221 @@ namespace Kil0bitSystemMonitor.Tests
             var r = new ScrollCaptureRun(box, _ => { }, () => false).Run();
 
             Assert.Equal(ScrollStop.NoMatch, r.Stop);
+        }
+
+        // ----- Round 3: what moves by itself, on a virtual clock --------------------------------------
+
+        /// <summary>Something on the page that changes every <see cref="PeriodMs"/>: random pixels, or a caret that blinks.</summary>
+        private sealed record Anim(int X, int Y, int W, int H, int PeriodMs, int Seed = 1, bool InContent = false, bool Blink = false);
+
+        /// <summary>
+        /// A page on a virtual clock (the reviewers' probe page): grabs take 10 ms, waits add to the
+        /// clock, a scroll eases out over <see cref="ScrollMs"/> to where the notches lead, and
+        /// animations change every period. A header, when given, stays put above the page.
+        /// </summary>
+        private sealed class ClockPage : IScrollTarget
+        {
+            public long Now;
+            public readonly List<Anim> Anims = new();
+            public int UpNotches, Downs, StartOffset = -1;
+            private readonly PixelFrame _content;
+            private readonly PixelFrame? _header;
+            private readonly int _h, _bodyTop, _bodyH, _notch, _scrollMs;
+            private double _from, _to;
+            private long _t0;
+
+            public ClockPage(PixelFrame content, int h, int notch, int offset, int scrollMs = 0, PixelFrame? header = null)
+            {
+                _content = content;
+                _h = h;
+                _notch = notch;
+                _scrollMs = scrollMs;
+                _header = header;
+                _bodyTop = header?.Height ?? 0;
+                _bodyH = h - _bodyTop;
+                _from = _to = offset;
+            }
+
+            public int Offset
+            {
+                get
+                {
+                    if (_scrollMs <= 0 || Now - _t0 >= _scrollMs) return (int)_to;
+                    double p = (Now - _t0) / (double)_scrollMs;
+                    p = 1 - (1 - p) * (1 - p) * (1 - p);
+                    return (int)Math.Round(_from + (_to - _from) * p);
+                }
+            }
+
+            public bool Scroll(int notches)
+            {
+                int at = Offset;
+                _from = at;
+                _to = Math.Clamp(_to + notches * _notch, 0, _content.Height - _bodyH);
+                _t0 = Now;
+                if (notches < 0) UpNotches -= notches;
+                else { if (Downs == 0) StartOffset = at; Downs++; }
+                return true;
+            }
+
+            public PixelFrame Grab()
+            {
+                Now += 10;
+                int w = _content.Width, off = Offset;
+                var px = new int[w * _h];
+                if (_header != null) Array.Copy(_header.Pixels, px, _header.Pixels.Length);
+                Array.Copy(_content.Pixels, off * w, px, _bodyTop * w, _bodyH * w);
+                foreach (var a in Anims)
+                {
+                    long k = Now / a.PeriodMs;
+                    var rnd = new Random(a.Seed * 7919 + (int)(a.Blink ? k % 2 : k));
+                    int y0 = a.InContent ? a.Y - off + _bodyTop : a.Y;
+                    for (int y = Math.Max(y0, a.InContent ? _bodyTop : 0); y < Math.Min(_h, y0 + a.H); y++)
+                        for (int x = a.X; x < a.X + a.W; x++)
+                            px[y * w + x] = a.Blink
+                                ? (k % 2 == 0 ? unchecked((int)0xFF000000) : px[y * w + x])
+                                : (rnd.Next(2) == 0 ? unchecked((int)0xFF000000) | rnd.Next(0xFFFFFF) : unchecked((int)0xFFFFFFFF));
+                }
+                return new PixelFrame(w, _h, px);
+            }
+        }
+
+        /// <summary>Runs until the first step down (all a top test needs), or to the end.</summary>
+        private static ScrollCaptureResult RunOn(ClockPage p, bool toTheEnd = false)
+            => new ScrollCaptureRun(p, ms => p.Now += ms, () => !toTheEnd && p.Downs > 0).Run();
+
+        [Theory]
+        [InlineData(false, 1500)]
+        [InlineData(false, 3000)]
+        [InlineData(false, 4200)]
+        [InlineData(true, 1500)]
+        [InlineData(true, 3000)]
+        [InlineData(true, 4200)]
+        public void Animations_in_opposite_corners_do_not_make_a_real_scroll_look_like_the_top(bool bubble, int start)
+        {
+            // Claude: a 900-row view, a 60-row header with a 40 x 40 logo at 60 fps, and a 22-row
+            // ticker along the bottom or a 48 x 50 chat bubble flush with the bottom right.
+            var p = new ClockPage(ScrollStitcherTests.Article(300, 6000, 33), 900, 100, start, 0, ScrollStitcherTests.NoiseBlock(300, 60, 11));
+            p.Anims.Add(new Anim(6, 8, 40, 40, 16, Seed: 5));
+            p.Anims.Add(bubble ? new Anim(226, 850, 48, 50, 16, Seed: 6) : new Anim(0, 878, 276, 22, 16, Seed: 7));
+
+            RunOn(p);
+
+            Assert.Equal(0, p.StartOffset);
+        }
+
+        [Theory]
+        [InlineData(16, 1700)]
+        [InlineData(16, 2500)]
+        [InlineData(100, 3000)]
+        public void A_logo_animating_in_a_small_header_does_not_hide_the_probe_notch(int periodMs, int start)
+        {
+            // A 300-row view: a 40-row header with a 24 x 24 logo that animates, the page below.
+            // The probe notch moves the page 100 rows while the logo changes; the page's rows still
+            // line up in a long run, so the run keeps going up.
+            var header = ScrollStitcherTests.NoiseBlock(200, 40, 1);
+            var p = new ClockPage(ScrollStitcherTests.Article(200, 4000, 21), 300, 100, start, 0, header);
+            p.Anims.Add(new Anim(6, 8, 24, 24, periodMs, Seed: 5));
+
+            RunOn(p);
+
+            Assert.Equal(0, p.StartOffset);
+        }
+
+        [Fact]
+        public void Two_corner_widgets_do_not_turn_a_step_from_1700_to_800_into_the_top()
+        {
+            // Codex: two widgets changing all the time in opposite corners (top-left, and bottom-right
+            // against the scrollbar strip); one step up goes 1700 to 800.
+            var p = new ClockPage(ScrollStitcherTests.Article(300, 3000, 17), 600, 90, 1700);
+            p.Anims.Add(new Anim(0, 0, 30, 30, 16, Seed: 2));
+            p.Anims.Add(new Anim(300 - 24 - 32, 600 - 36, 32, 36, 16, Seed: 3));
+
+            RunOn(p);
+
+            Assert.Equal(0, p.StartOffset);
+        }
+
+        [Theory]
+        [InlineData(17, 0)]
+        [InlineData(17, 130)]
+        [InlineData(17, 270)]
+        [InlineData(17, 400)]
+        [InlineData(28, 0)]
+        [InlineData(28, 130)]
+        [InlineData(28, 270)]
+        [InlineData(28, 400)]
+        public void A_blinking_caret_at_the_top_takes_at_most_two_steps(int caretH, int phase)
+        {
+            // An editor at its top, the caret blinking every 530 ms, at any point of its blink.
+            var p = new ClockPage(ScrollStitcherTests.Article(200, 4000, 21), 300, 100, 0) { Now = phase };
+            p.Anims.Add(new Anim(60, 4, 2, caretH, 530, InContent: true, Blink: true));
+
+            RunOn(p);
+
+            Assert.True(p.UpNotches <= 2 * new ScrollCaptureOptions().TopNotchesPerStep + 1, p.UpNotches + " up-notches");   // two steps and a probe
+            Assert.Equal(0, p.StartOffset);
+        }
+
+        [Theory]
+        [InlineData(100)]   // 10 fps
+        [InlineData(500)]   // 2 fps
+        public void A_slow_gif_at_the_top_takes_at_most_two_steps(int periodMs)
+        {
+            var p = new ClockPage(ScrollStitcherTests.Article(300, 6000, 33), 900, 100, 0);
+            p.Anims.Add(new Anim(30, 100, 120, 90, periodMs, Seed: 3, InContent: true));
+
+            RunOn(p);
+
+            Assert.True(p.UpNotches <= 2 * new ScrollCaptureOptions().TopNotchesPerStep + 1, p.UpNotches + " up-notches");   // two steps and a probe
+        }
+
+        [Fact]
+        public void A_text_box_that_does_not_scroll_with_a_tall_caret_says_nothing_scrolled()
+        {
+            var p = new ClockPage(ScrollStitcherTests.Article(200, 300, 4), 300, 100, 0);
+            p.Anims.Add(new Anim(90, 100, 2, 20, 530, Blink: true));
+
+            var r = RunOn(p, toTheEnd: true);
+
+            Assert.Equal(ScrollStop.Unscrollable, r.Stop);
+            Assert.True(p.UpNotches <= 2 * new ScrollCaptureOptions().TopNotchesPerStep + 1, p.UpNotches + " up-notches");   // two steps and a probe
+            Assert.True(p.Downs <= 2, p.Downs + " steps down");
+        }
+
+        [Fact]
+        public void A_slow_smooth_scroll_with_an_animation_still_reaches_the_top()
+        {
+            // Claude: every scroll eases out over 2.5 s while a 30 x 30 animation runs at 60 fps.
+            var p = new ClockPage(ScrollStitcherTests.Article(200, 4000, 21), 300, 100, 2500, scrollMs: 2500);
+            p.Anims.Add(new Anim(140, 10, 30, 30, 16, Seed: 9));
+
+            RunOn(p);
+
+            Assert.Equal(0, p.StartOffset);
+        }
+
+        [Fact]
+        public void A_caret_at_the_end_of_a_repeating_page_ends_without_adding_rows()
+        {
+            // Codex: at the end the view stops moving, its content repeats every 90 rows, and only a
+            // 12-row caret near row 260 changed; that must end the capture, not join at shift 90.
+            var distinct = ScrollStitcherTests.Page(690);
+            int w = distinct.Width;
+            var px = new int[w * 900];
+            Array.Copy(distinct.Pixels, px, 600 * w);
+            for (int y = 600; y < 900; y++) distinct.Row(600 + (y - 600) % 90).CopyTo(px.AsSpan(y * w, w));
+            var content = new PixelFrame(w, 900, px);
+            var page = new FakePage(content, 0);
+            // The caret shows after an even number of steps: it appears in the look after the last one.
+            page.Decorate = (frame, top) => page.DownScrolls % 2 == 0
+                ? ScrollStitcherTests.WithBlock(frame, 30, 258, 2, 12, unchecked((int)0xFF000000))
+                : frame;
+
+            var r = Run(page, new Env());
+
+            Assert.Equal(ScrollStop.End, r.Stop);
+            Assert.Equal(900, r.Image!.Height);
         }
 
         [Fact]

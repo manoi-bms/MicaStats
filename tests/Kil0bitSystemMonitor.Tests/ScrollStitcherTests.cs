@@ -59,7 +59,7 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         /// <summary><paramref name="frame"/> with the rectangle painted in <paramref name="color"/>.</summary>
-        private static PixelFrame WithBlock(PixelFrame frame, int x0, int y0, int width, int height, int color)
+        internal static PixelFrame WithBlock(PixelFrame frame, int x0, int y0, int width, int height, int color)
         {
             var px = (int[])frame.Pixels.Clone();
             for (int y = y0; y < y0 + height; y++)
@@ -417,21 +417,16 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
-        public void A_part_changed_in_place_is_the_top_only_where_the_view_also_changes_by_itself()
+        public void A_part_changed_in_place_that_nothing_lines_up_is_replaced_not_unmoved()
         {
             // A 40 x 50 block changed and nothing lines up. From two looks that could be a GIF or a
-            // pane replaced by a long scroll, so it counts as unmoved only inside a region seen
-            // changing while nothing scrolled.
+            // pane replaced by a long scroll: Replaced, which the top seek settles with one more notch.
             var page = Page(800);
             var before = WithBlock(View(page, 0, 300), 10, 100, 50, 40, unchecked((int)0xFF102030));
             var after = WithBlock(View(page, 0, 300), 10, 100, 50, 40, unchecked((int)0xFF405060));
 
             Assert.False(ScrollStitcher.Unmoved(before, after));
-            Assert.False(ScrollStitcher.TopReached(before, after, selfMotion: null));
-            Assert.True(ScrollStitcher.TopReached(before, after, new PixelRect(10, 100, 50, 40)));
-            Assert.True(ScrollStitcher.TopReached(before, after, new PixelRect(0, 90, 80, 70)));
-            Assert.False(ScrollStitcher.TopReached(before, after, new PixelRect(10, 200, 50, 40)));
-            Assert.Equal(new PixelRect(10, 100, 50, 40), before.DiffBox(after));
+            Assert.Equal(ViewChange.Replaced, ScrollStitcher.Compare(before, after));
         }
 
         [Fact]
@@ -443,7 +438,7 @@ namespace Kil0bitSystemMonitor.Tests
             var after = WithBlock(View(page, 0, 300), 10, 100, 30, 12, unchecked((int)0xFF405060));
 
             Assert.True(ScrollStitcher.Unmoved(before, after));
-            Assert.True(ScrollStitcher.TopReached(before, after, selfMotion: null));
+            Assert.Equal(ViewChange.Same, ScrollStitcher.Compare(before, after));
         }
 
         [Fact]
@@ -466,7 +461,7 @@ namespace Kil0bitSystemMonitor.Tests
             }
 
             Assert.False(ScrollStitcher.Unmoved(Layout(1700), Layout(800)));
-            Assert.False(ScrollStitcher.TopReached(Layout(1700), Layout(800), selfMotion: null));
+            Assert.Equal(ViewChange.Replaced, ScrollStitcher.Compare(Layout(1700), Layout(800)));
             Assert.True(ScrollStitcher.Unmoved(Layout(0), Layout(0)));
         }
 
@@ -689,6 +684,78 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(ScrollStitcher.Unmoved(View(page, 400, 300), View(page, 450, 300)));   // down 50 rows
             Assert.False(ScrollStitcher.Unmoved(View(page, 400, 300), View(page, 0, 300)));     // up by more than the view
             Assert.True(ScrollStitcher.Unmoved(View(page, 400, 300), View(page, 400, 300)));
+        }
+
+        // ----- Round 3 -------------------------------------------------------------------------
+
+        /// <summary>Text lines every 24 rows (12 ink rows), a blank line every 6th line, ink in [left, w - right).</summary>
+        internal static PixelFrame Article(int w, int h, int seed, int left = 20, int right = 30)
+        {
+            var rnd = new Random(seed);
+            var px = Enumerable.Repeat(White, w * h).ToArray();
+            for (int line = 0; line * 24 + 18 <= h; line++)
+            {
+                if (line % 6 == 5) continue;
+                int len = (w - left - right) / 2 + rnd.Next((w - left - right) / 2);
+                for (int r = 6; r < 18; r++)
+                    for (int x = left; x < left + len; x++)
+                        if (rnd.Next(3) == 0) px[(line * 24 + r) * w + x] = Ink(rnd);
+            }
+            return new PixelFrame(w, h, px);
+        }
+
+        /// <summary>A third of the pixels inked at random, the rest white.</summary>
+        internal static PixelFrame NoiseBlock(int w, int h, int seed)
+        {
+            var rnd = new Random(seed);
+            var px = new int[w * h];
+            for (int i = 0; i < px.Length; i++) px[i] = rnd.Next(3) == 0 ? Ink(rnd) : White;
+            return new PixelFrame(w, h, px);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void A_caret_on_a_still_repeating_view_is_not_a_shift(bool caretAppears)
+        {
+            // Codex: the content repeats every 90 rows and nothing scrolled; only a 12-row caret
+            // near row 260 changed. Shift 0 lines up 288 of 300 rows, shift 90 all 210 of its overlap.
+            var period = Page(90, seed: 13);
+            var px = new int[W * 300];
+            for (int y = 0; y < 300; y++) period.Row(y % 90).CopyTo(px.AsSpan(y * W, W));
+            var plain = new PixelFrame(W, 300, px);
+            var caret = WithBlock(plain, 30, 258, 2, 12, unchecked((int)0xFF000000));
+            var (before, after) = caretAppears ? (plain, caret) : (caret, plain);
+
+            Assert.True(ScrollStitcher.Unmoved(before, after));
+            Assert.Equal(StitchStep.Unchanged, new ScrollStitcher(before).Add(after, out int added));
+            Assert.Equal(0, added);
+        }
+
+        [Fact]
+        public void A_floating_widget_in_the_soft_margin_does_not_sink_a_longer_step()
+        {
+            // Codex: a 60-row widget floats at the bottom of a 300-row view. The first step (90) joins
+            // at 150 of 210; the next step (150) lines up 90 of 150 if the margin's mismatches count.
+            var page = Page(1200);
+            int blue = unchecked((int)0xFF2060E0);
+            PixelFrame Floating(int top) => WithBlock(View(page, top, 300), 20, 240, 80, 60, blue);
+
+            var s = new ScrollStitcher(Floating(0));
+            Assert.Equal(StitchStep.Appended, s.Add(Floating(90), out int first));
+            Assert.Equal(90, first);
+            int last = 90;
+            foreach (int top in new[] { 240, 390, 540, 690, 840, 900 })
+            {
+                Assert.Equal(StitchStep.Appended, s.Add(Floating(top), out int added));
+                Assert.Equal(top - last, added);
+                last = top;
+            }
+
+            var result = s.Result();
+            Assert.Equal(1200, result.Height);
+            for (int y = 0; y < 1140; y++) Assert.True(result.Row(y).SequenceEqual(page.Row(y).ToArray()), "body row " + y);
+            Assert.Equal(60, Enumerable.Range(0, 1200).Count(y => result.Row(y)[20] == blue));
         }
     }
 }

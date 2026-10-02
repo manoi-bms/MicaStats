@@ -103,12 +103,16 @@ namespace Kil0bitSystemMonitor.Services.Capture
             addedRows = 0;
             if (next.Width != _width || next.Height != _height) return StitchStep.WidthChanged;
             if (next.SameAs(_last)) return StitchStep.Unchanged;
+            // What changed is too small to be a scroll (a caret, a clock): no shift is ranked, so
+            // repeating content cannot offer one.
+            if (ChangeInPlace(_last, next, _scrollbar)) return StitchStep.Unchanged;
 
             // The geometry is fixed from the first pair, but only once that pair really
             // scrolled: an Unchanged or NoMatch step commits nothing.
             bool first = _top < 0;
             int edge = _width - _scrollbar;
             int top, bottom, from = _from, to = _to;
+            int softFrom = int.MaxValue;
             ulong[] prev, cur;
             if (first)
             {
@@ -132,12 +136,13 @@ namespace Kil0bitSystemMonitor.Services.Capture
             {
                 top = _top;
                 bottom = _fixedFooter;   // the search spans the band; the soft margin only shapes the output
+                if (_bottom > _fixedFooter) softFrom = _height - _bottom - top;
                 prev = Hashes(_last, from, to);
                 cur = Hashes(next, from, to);
             }
 
             int band = _height - top - bottom;
-            int dy = FindShift(prev.AsSpan(top, band), cur.AsSpan(top, band), Informative(next, top, band, from, to));
+            int dy = FindShift(prev.AsSpan(top, band), cur.AsSpan(top, band), Informative(next, top, band, from, to), softFrom);
             if (dy == 0) return StitchStep.Unchanged;
             if (dy < 0) return StitchStep.NoMatch;
 
@@ -220,18 +225,20 @@ namespace Kil0bitSystemMonitor.Services.Capture
         /// How <paramref name="after"/> differs from <paramref name="before"/>, judged on the part
         /// that changed: the rows and columns that stayed put at the edges are left out.
         /// </summary>
-        public static ViewChange Compare(PixelFrame before, PixelFrame after, double scale = 1.0)
+        public static ViewChange Compare(PixelFrame before, PixelFrame after, double scale = 1.0) =>
+            Compare(before, after, ScrollbarColumns(before.Width, scale));
+
+        private static ViewChange Compare(PixelFrame before, PixelFrame after, int scrollbar)
         {
             if (before.Width != after.Width || before.Height != after.Height) return ViewChange.Replaced;
             if (before.SameAs(after)) return ViewChange.Same;
 
-            int h = before.Height, edge = before.Width - ScrollbarColumns(before.Width, scale);
+            int h = before.Height, edge = before.Width - scrollbar;
             ulong[] a = Hashes(before, 0, edge), b = Hashes(after, 0, edge);
+            if (ChangeInPlace(a, b, before, after, edge)) return ViewChange.Same;
             var (top, bottom) = StillRows(a, b);
             int rows = h - top - bottom;
-            if (rows == 0) return ViewChange.Same;   // only the scrollbar strip changed
-            if (rows < MinBandRows)
-                return SmallShift(a, b, before, after, top, h - bottom, edge) ? ViewChange.Shifted : ViewChange.Same;
+            if (rows < MinBandRows) return ViewChange.Shifted;   // a few rows that line up under a shift
 
             var (left, right) = StillColumns(before, after, top, h - bottom, edge);
             int from = left, to = edge - right;
@@ -240,34 +247,44 @@ namespace Kil0bitSystemMonitor.Services.Capture
             int down = FindShift(a.AsSpan(top, rows), b.AsSpan(top, rows), Informative(after, top, rows, from, to));
             if (down == 0) return ViewChange.Same;
             if (down > 0) return ViewChange.Shifted;
-            return FindShift(b.AsSpan(top, rows), a.AsSpan(top, rows), Informative(before, top, rows, from, to)) > 0
+            if (FindShift(b.AsSpan(top, rows), a.AsSpan(top, rows), Informative(before, top, rows, from, to)) > 0)
+                return ViewChange.Shifted;
+            // No shift lines up 70% of the changed rows, but a long run of them may still line up:
+            // the view scrolled while something else in it changed too (an animated logo in a header).
+            return LongShiftedRun(a, b, Informative(before, 0, h, from, to), Informative(after, 0, h, from, to))
                 ? ViewChange.Shifted
                 : ViewChange.Replaced;
+        }
+
+        /// <summary>
+        /// Whether some non-zero shift, either way, lines up a run of at least
+        /// <see cref="MinBandRows"/> informative rows in a row; uniform rows neither break nor
+        /// extend a run.
+        /// </summary>
+        private static bool LongShiftedRun(ulong[] a, ulong[] b, bool[] aInk, bool[] bInk)
+        {
+            int h = a.Length;
+            for (int s = 1; s < h; s++)
+                if (Run(b, a, bInk, s) >= MinBandRows || Run(a, b, aInk, s) >= MinBandRows) return true;
+            return false;
+
+            // The longest run of rows i with rows[i] == other[i + s].
+            static int Run(ulong[] rows, ulong[] other, bool[] ink, int s)
+            {
+                int best = 0, run = 0;
+                for (int i = 0; i + s < rows.Length; i++)
+                {
+                    if (!ink[i]) continue;
+                    if (rows[i] == other[i + s]) best = Math.Max(best, ++run);
+                    else run = 0;
+                }
+                return best;
+            }
         }
 
         /// <summary>Whether the view did not move between the two looks: <see cref="Compare"/> says <see cref="ViewChange.Same"/>.</summary>
         public static bool Unmoved(PixelFrame before, PixelFrame after, double scale = 1.0) =>
             Compare(before, after, scale) == ViewChange.Same;
-
-        /// <summary>
-        /// Whether <paramref name="after"/>, a look after scrolling up, shows the top: the view
-        /// did not move, or the part that changed lines up under no shift and lies inside
-        /// <paramref name="selfMotion"/>, where the view was seen changing while nothing scrolled
-        /// (a GIF, a video, a spinner). Otherwise a changed part counts as moved: one step up
-        /// can replace a whole scrolling pane.
-        /// </summary>
-        public static bool TopReached(PixelFrame before, PixelFrame after, PixelRect? selfMotion, double scale = 1.0)
-        {
-            switch (Compare(before, after, scale))
-            {
-                case ViewChange.Same: return true;
-                case ViewChange.Shifted: return false;
-            }
-            if (selfMotion is not PixelRect motion) return false;
-            var changed = before.DiffBox(after, before.Width - ScrollbarColumns(before.Width, scale));
-            return changed is not PixelRect c
-                || (c.Left >= motion.Left && c.Top >= motion.Top && c.Right <= motion.Right && c.Bottom <= motion.Bottom);
-        }
 
         /// <summary>
         /// The shift (rows the content moved up) that best lines <paramref name="next"/> up with
@@ -277,25 +294,47 @@ namespace Kil0bitSystemMonitor.Services.Capture
         /// best ratio wins, then more matching rows, then the smaller shift. 0 when not moving
         /// fits best, -1 when none fits.
         /// </summary>
-        internal static int FindShift(ReadOnlySpan<ulong> prev, ReadOnlySpan<ulong> next, bool[] nextInformative)
+        /// <param name="softFrom">
+        /// Band rows from here down are the soft bottom margin, where something may float over the
+        /// content. A pair whose old row is there and whose new row is above it (old content
+        /// under a floating element, compared with that content uncovered) counts when it matches
+        /// and is left out when it does not. Pairs inside the margin count as usual: a floating
+        /// element meets itself there, and ignoring them would favour no shift at the end of a
+        /// page. The ratio that ranks a candidate leaves the soft pairs out when it has
+        /// <see cref="MinOverlapRows"/> other counted rows, so the mismatches it may ignore do not
+        /// favour a longer shift.
+        /// </param>
+        internal static int FindShift(ReadOnlySpan<ulong> prev, ReadOnlySpan<ulong> next, bool[] nextInformative, int softFrom = int.MaxValue)
         {
             int band = prev.Length;
             int shifts = Math.Max(0, band - MinOverlapRows + 1);
             var matchesAt = new int[shifts];
             var countedAt = new int[shifts];
+            var rankAt = new double[shifts];
             int mostMatches = 0;
             for (int dy = 0; dy < shifts; dy++)
             {
-                int counted = 0, matches = 0;
+                int counted = 0, matches = 0, firm = 0, firmMatches = 0;
                 for (int i = 0; i < band - dy; i++)
                 {
                     if (!nextInformative[i]) continue;
+                    bool match = next[i] == prev[i + dy];
+                    if (i < softFrom && i + dy >= softFrom)
+                    {
+                        if (!match) continue;
+                    }
+                    else
+                    {
+                        firm++;
+                        if (match) firmMatches++;
+                    }
                     counted++;
-                    if (next[i] == prev[i + dy]) matches++;
+                    if (match) matches++;
                 }
                 if (counted < MinOverlapRows || (double)matches / counted < MatchThreshold) continue;
                 matchesAt[dy] = matches;
                 countedAt[dy] = counted;
+                rankAt[dy] = firm >= MinOverlapRows ? (double)firmMatches / firm : (double)matches / counted;
                 mostMatches = Math.Max(mostMatches, matches);
             }
 
@@ -307,7 +346,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
             for (int dy = 0; dy < shifts; dy++)
             {
                 if (countedAt[dy] == 0 || 2 * matchesAt[dy] < mostMatches) continue;
-                double ratio = (double)matchesAt[dy] / countedAt[dy];
+                double ratio = rankAt[dy];
                 if (best < 0 || ratio > bestRatio + 1e-9
                     || (Math.Abs(ratio - bestRatio) <= 1e-9 && matchesAt[dy] > matchesAt[best]))
                 {
@@ -335,11 +374,17 @@ namespace Kil0bitSystemMonitor.Services.Capture
         /// </summary>
         private static (int Left, int Right) StillColumns(PixelFrame a, PixelFrame b, int fromRow, int toRow, int edge)
         {
+            var (left, right) = StillEdges(a, b, fromRow, toRow, edge);
+            return edge - left - right < MinMovingColumns ? (0, 0) : (left, right);
+        }
+
+        private static (int Left, int Right) StillEdges(PixelFrame a, PixelFrame b, int fromRow, int toRow, int edge)
+        {
             int left = 0;
             while (left < edge && SameColumn(a, b, left, fromRow, toRow)) left++;
             int right = 0;
             while (edge - 1 - right >= left && SameColumn(a, b, edge - 1 - right, fromRow, toRow)) right++;
-            return edge - left - right < MinMovingColumns ? (0, 0) : (left, right);
+            return (left, right);
         }
 
         private static bool SameColumn(PixelFrame a, PixelFrame b, int x, int fromRow, int toRow)
@@ -362,9 +407,32 @@ namespace Kil0bitSystemMonitor.Services.Capture
         }
 
         /// <summary>
-        /// For a change of fewer than <see cref="MinBandRows"/> rows: whether some non-zero shift
-        /// lines every informative changed row of one frame up with a row of the other, as when a
-        /// short line of text on a blank view moved a few rows.
+        /// Whether what changed is too small to be a view that scrolls, so it changed in place:
+        /// only the scrollbar strip; fewer than <see cref="MinBandRows"/> rows that no shift lines
+        /// up (a caret, a clock, a counter); or fewer than <see cref="MinMovingColumns"/> columns
+        /// (a tall caret). The joiner could not follow anything that small anyway.
+        /// </summary>
+        private static bool ChangeInPlace(PixelFrame before, PixelFrame after, int scrollbar)
+        {
+            int edge = before.Width - scrollbar;
+            return ChangeInPlace(Hashes(before, 0, edge), Hashes(after, 0, edge), before, after, edge);
+        }
+
+        private static bool ChangeInPlace(ulong[] a, ulong[] b, PixelFrame before, PixelFrame after, int edge)
+        {
+            var (top, bottom) = StillRows(a, b);
+            int rows = a.Length - top - bottom;
+            if (rows == 0) return true;
+            if (rows < MinBandRows) return !SmallShift(a, b, before, after, top, a.Length - bottom, edge);
+            var (left, right) = StillEdges(before, after, top, a.Length - bottom, edge);
+            return edge - left - right < MinMovingColumns;
+        }
+
+        /// <summary>
+        /// For a change of fewer than <see cref="MinBandRows"/> rows: whether one non-zero shift
+        /// lines up the informative changed rows of both frames, the new ones with the old frame's
+        /// rows and the old ones with the new frame's, as when a short line of text on a blank view
+        /// moved a few rows. A caret that appears or disappears lines up on one side only.
         /// </summary>
         private static bool SmallShift(ulong[] a, ulong[] b, PixelFrame before, PixelFrame after, int fromRow, int toRow, int edge)
         {
@@ -374,7 +442,8 @@ namespace Kil0bitSystemMonitor.Services.Capture
             for (int s = -(h - 1); s < h; s++)
             {
                 if (s == 0) continue;
-                if (LinesUp(b, a, afterInk, fromRow, s) || LinesUp(a, b, beforeInk, fromRow, s)) return true;
+                // after[y] == before[y + s], and so before[y] == after[y - s].
+                if (LinesUp(b, a, afterInk, fromRow, s) && LinesUp(a, b, beforeInk, fromRow, -s)) return true;
             }
             return false;
 

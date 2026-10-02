@@ -56,10 +56,13 @@ namespace Kil0bitSystemMonitor.Services.Capture
 
         public ScrollCaptureResult Run()
         {
-            // Scroll to the top. It is reached when a step leaves the view unmoved, judged on the
-            // part that changed. A part that changed without lining up under any shift counts as
-            // unmoved only where the view also changes while nothing scrolls (a GIF, a spinner):
-            // otherwise one step up may have replaced a whole scrolling pane.
+            // Scroll to the top, judging each step on the part that changed (ScrollStitcher.Compare):
+            // unmoved is the top, a shift is not. A change that lines up under no shift is either
+            // one step replacing the whole view or something animating, and two looks cannot tell
+            // which: a third look after one more notch can. An area the joiner can follow moves by
+            // one notch in a way that lines up; an animation does not. Looks that settle while the
+            // view still glides (smooth scrolling) count as a shift too.
+            _watchShifts = true;
             PixelFrame top = Settle();
             int sent = 0;
             while (sent < _o.MaxTopNotches)
@@ -69,21 +72,39 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 sent += _o.TopNotchesPerStep;
                 PixelFrame after = SettleAfterScroll();
                 if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
-                if (ScrollStitcher.TopReached(top, after, _motion, _o.Scale))
+                ViewChange change = _sawShift ? ViewChange.Shifted : ScrollStitcher.Compare(top, after, _o.Scale);
+                if (change == ViewChange.Same)
                 {
-                    // A slow app may not have reacted yet: wait once more before calling it the top.
-                    // This settle comes long after the scroll, so what it sees change moves by itself.
-                    _wait(_o.EndConfirmMs);
-                    after = Settle();
+                    // A slow app may not have reacted yet: look once more before calling it the top.
+                    after = Confirm();
                     if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
-                    if (ScrollStitcher.TopReached(top, after, _motion, _o.Scale))
+                    change = _sawShift ? ViewChange.Shifted : ScrollStitcher.Compare(top, after, _o.Scale);
+                    if (change == ViewChange.Same)
                     {
                         top = after;
                         break;
                     }
                 }
+                if (change == ViewChange.Replaced && sent < _o.MaxTopNotches)
+                {
+                    if (!_target.Scroll(-1)) return new ScrollCaptureResult(after, ScrollStop.InputLost, 1);
+                    sent++;
+                    PixelFrame probe = SettleAfterScroll();
+                    if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
+                    ViewChange moved = _sawShift ? ViewChange.Shifted : ScrollStitcher.Compare(after, probe, _o.Scale);
+                    if (moved == ViewChange.Same)
+                    {
+                        probe = Confirm();   // the same slow-app allowance as above
+                        if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
+                        moved = _sawShift ? ViewChange.Shifted : ScrollStitcher.Compare(after, probe, _o.Scale);
+                    }
+                    top = probe;
+                    if (moved != ViewChange.Shifted) break;   // one notch moved nothing that lines up: the top
+                    continue;
+                }
                 top = after;
             }
+            _watchShifts = false;
             if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
 
             // The top is reached: from here Esc keeps what was captured, and the card says so.
@@ -102,8 +123,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 if (step == StitchStep.Unchanged)
                 {
                     // Confirm the end: a slow app may still be reacting to the wheel.
-                    _wait(_o.EndConfirmMs);
-                    PixelFrame again = Settle();
+                    PixelFrame again = Confirm();
                     if (_cancelled()) return Done(stitcher, ScrollStop.Cancelled, frames);
                     if (!again.SameAs(next))
                         step = stitcher.Add(again, out _);
@@ -136,34 +156,41 @@ namespace Kil0bitSystemMonitor.Services.Capture
             return Settle();
         }
 
+        /// <summary>Waits <see cref="ScrollCaptureOptions.EndConfirmMs"/> and looks again: a slow app may still be reacting to the wheel.</summary>
+        private PixelFrame Confirm()
+        {
+            _wait(_o.EndConfirmMs);
+            return Settle();
+        }
+
         /// <summary>
         /// Grab until two grabs agree, or the settle timeout has passed in waiting. Stops early
-        /// when cancelled. When the grabs never agreed, <see cref="_motion"/> is where they
-        /// differed from one to the next; null when they settled.
+        /// when cancelled. While seeking the top, notes in <see cref="_sawShift"/> whether two
+        /// grabs in a row differed by a shift: the view was still gliding.
         /// </summary>
         private PixelFrame Settle()
         {
+            _sawShift = false;
             PixelFrame last = _target.Grab();
-            PixelRect? motion = null;
-            bool settled = false;
             int waited = 0;
             while (waited < _o.SettleTimeoutMs && !_cancelled())
             {
                 _wait(_o.SettlePollMs);
                 waited += _o.SettlePollMs;
                 PixelFrame now = _target.Grab();
-                PixelRect? changed = now.DiffBox(last);
+                bool same = now.SameAs(last);
+                if (!same && _watchShifts && !_sawShift)
+                    _sawShift = ScrollStitcher.Compare(last, now, _o.Scale) == ViewChange.Shifted;
                 last = now;
-                if (changed is not PixelRect c) { settled = true; break; }
-                motion = motion is PixelRect m
-                    ? PixelRect.FromEdges(Math.Min(m.Left, c.Left), Math.Min(m.Top, c.Top), Math.Max(m.Right, c.Right), Math.Max(m.Bottom, c.Bottom))
-                    : c;
+                if (same) break;
             }
-            _motion = settled ? null : motion;
             return last;
         }
 
-        /// <summary>Where the last <see cref="Settle"/> saw the view keep changing; null when it settled.</summary>
-        private PixelRect? _motion;
+        /// <summary>Whether <see cref="Settle"/> looks for shifts between its grabs (the top seek only).</summary>
+        private bool _watchShifts;
+
+        /// <summary>Whether the last <see cref="Settle"/> saw two grabs in a row differ by a shift.</summary>
+        private bool _sawShift;
     }
 }

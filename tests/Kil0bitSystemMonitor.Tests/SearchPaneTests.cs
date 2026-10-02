@@ -166,5 +166,41 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal("# B\nneedle here", window.Editor.SelectedText.Replace("\r\n", "\n"));
         });
+
+        /// <summary>Not shown: lays the editor out by hand, so scrolling has a viewport to work in.</summary>
+        private static void LayOut(MicaPadWindow window)
+        {
+            window.Editor.Measure(new System.Windows.Size(600, 400));
+            window.Editor.Arrange(new Rect(0, 0, 600, 400));
+            window.Editor.UpdateLayout();
+        }
+
+        [Fact]
+        public void A_picked_result_stays_in_view_after_the_saved_scroll_is_restored() => WithWindow((window, env, service) =>
+        {
+            var note = env.Workspace.Open.First();
+            window.Editor.Document.Text = string.Join("\n", Enumerable.Range(1, 300).Select(i => "line " + i)) + "\n\n# Far\nneedle down here";
+            service.Indexer.SetNote(note.Id, note.Title, window.Editor.Document.Text, DateTime.UtcNow);
+            Wait(service.Indexer.WhenIdle());
+            window.ToggleSearch();
+            window.SearchPanel.QueryBox.Text = "needle";
+            Wait(window.SearchPanel.SearchNow());
+            var row = Assert.Single(window.SearchPanel.Rows);
+            Assert.Equal(302, row.FirstLine);
+            env.Workspace.SetTabViewState(note, 0, 0);   // the note was last seen at its top
+            LayOut(window);
+
+            window.OpenSearchResult(row);
+            for (int i = 0; i < 3; i++)
+            {
+                Pump();   // the saved scroll is restored at Loaded priority
+                LayOut(window);
+            }
+
+            Assert.Equal("# Far\nneedle down here", window.Editor.SelectedText.Replace("\r\n", "\n"));
+            double top = window.Editor.TextArea.TextView.GetVisualTopByDocumentLine(row.FirstLine);
+            Assert.True(window.Editor.VerticalOffset > 0, "scrolled back to the saved top");
+            Assert.InRange(top, window.Editor.VerticalOffset, window.Editor.VerticalOffset + window.Editor.ViewportHeight);
+        });
     }
 }

@@ -1920,7 +1920,9 @@ namespace Kil0bitSystemMonitor.Pad
             var start = document.GetLineByNumber(first);
             var end = document.GetLineByNumber(last);
             Editor.Select(start.Offset, end.EndOffset - start.Offset);
-            Editor.ScrollToLine(first);
+            // Queued behind ShowNote's restore of the note's saved scroll (RestoreViewState, same
+            // priority, so it runs first), which would otherwise scroll the passage away again.
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => Editor.ScrollToLine(first)));
             Editor.Focus();
         }
 

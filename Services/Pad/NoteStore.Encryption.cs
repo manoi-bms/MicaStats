@@ -106,6 +106,19 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return target;
         }
 
+        /// <summary>
+        /// Encrypts bytes with the notes key, for MicaPad's own files beside the notes (the search
+        /// vectors). Readable back only with <see cref="TryDecryptBytes"/> on this Windows account.
+        /// </summary>
+        public byte[] EncryptBytes(byte[] plain) => _cipher.Encrypt(plain);
+
+        /// <summary>Decrypts bytes from <see cref="EncryptBytes"/>; false for anything else, plain bytes included.</summary>
+        public bool TryDecryptBytes(byte[] data, out byte[] plain)
+        {
+            plain = Array.Empty<byte>();
+            return StoreCipher.IsEncrypted(data) && _cipher.TryDecrypt(data, out plain);
+        }
+
         /// <summary>Encrypts and writes one store file; the plain bytes are wiped afterwards.</summary>
         private void WriteData(string path, byte[] plain)
         {

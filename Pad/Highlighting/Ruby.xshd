@@ -1,17 +1,18 @@
 <?xml version="1.0"?>
 <!-- MicaPad's Ruby highlighting. Colors are names only: MicaPad paints them from its palette. -->
 <SyntaxDefinition name="MicaPad Ruby" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
-  <Color name="Comment" />
-  <Color name="String" />
-  <Color name="Keywords" />
-  <Color name="Bool" />
-  <Color name="Null" />
-  <Color name="Number" />
-  <Color name="Type" />
-  <Color name="Variable" />
+  <Color name="Comment" underline="false" />
+  <Color name="String" underline="false" />
+  <Color name="Keywords" underline="false" />
+  <Color name="Bool" underline="false" />
+  <Color name="Null" underline="false" />
+  <Color name="Number" underline="false" />
+  <Color name="Type" underline="false" />
+  <Color name="Variable" underline="false" />
   <RuleSet>
     <Span color="Comment" begin="^=begin\b" end="^=end\b" multiline="true" />
-    <Rule color="Comment">\#.*$</Rule>
+    <Span color="Comment" begin="\#" />
+    <Span color="String" begin="(?&lt;![&lt;\w])&lt;&lt;[-~]?['&quot;]?[A-Z_][A-Z0-9_]*['&quot;]?" end="^\s*[A-Z_][A-Z0-9_]*\s*$" multiline="true" />
     <Span color="String" begin="&quot;" end="&quot;" multiline="true">
       <RuleSet>
         <Span begin="\\" end="." />

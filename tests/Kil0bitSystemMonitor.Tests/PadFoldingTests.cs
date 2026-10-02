@@ -68,6 +68,40 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void TypeScript_folds_like_JavaScript()
+        {
+            string ts = "const m = `don't`;\nif (x) {\n  y();\n}";
+            Assert.Equal(new[] { "{\n  y();\n}" }, Folded(ts, BraceFolding.Compute(ts, BraceSyntax.For("typescript"))));
+            Assert.Same(BraceSyntax.JavaScript, BraceSyntax.For("typescript"));
+        }
+
+        [Fact]
+        public void Rust_lifetimes_do_not_swallow_braces()
+        {
+            string rs = "impl<'a> Parser<'a> {\n    pub fn new(input: &'a str) -> Self {\n        Self { input }\n    }\n}";
+            var folds = Folded(rs, BraceFolding.Compute(rs, BraceSyntax.For("rust")));
+            Assert.Equal(2, folds.Length);
+            Assert.Equal(rs.Substring(rs.IndexOf('{')), folds[0]);
+            Assert.StartsWith("{\n        Self", folds[1]);
+        }
+
+        [Fact]
+        public void Go_raw_strings_may_span_lines_and_hide_braces()
+        {
+            string go = "var s = `{\nx\n}`\nfunc f() {\n\tx()\n}";
+            Assert.Equal(new[] { "{\n\tx()\n}" }, Folded(go, BraceFolding.Compute(go, BraceSyntax.For("go"))));
+            string rune = "r := '{'\nfunc f() {\n\tx()\n}";
+            Assert.Single(BraceFolding.Compute(rune, BraceSyntax.For("go")));
+        }
+
+        [Fact]
+        public void Kotlin_triple_quoted_strings_hide_their_braces()
+        {
+            string kt = "val s = \"\"\"\n{\n  a\n}\n\"\"\"\nfun f() {\n  x()\n}";
+            Assert.Equal(new[] { "{\n  x()\n}" }, Folded(kt, BraceFolding.Compute(kt, BraceSyntax.For("kotlin"))));
+        }
+
+        [Fact]
         public void Backtick_quotes_are_only_JavaScript_strings()
         {
             string cs = "var s = \"`\"; if (x) {\n}";

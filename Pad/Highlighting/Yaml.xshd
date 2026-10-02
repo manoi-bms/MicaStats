@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <!-- MicaPad's YAML highlighting. Colors are names only: MicaPad paints them from its palette. -->
 <SyntaxDefinition name="MicaPad YAML" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
-  <Color name="Comment" />
-  <Color name="KeyName" />
-  <Color name="String" />
-  <Color name="Number" />
-  <Color name="Bool" />
-  <Color name="Directive" />
+  <Color name="Comment" underline="false" />
+  <Color name="KeyName" underline="false" />
+  <Color name="String" underline="false" />
+  <Color name="Number" underline="false" />
+  <Color name="Bool" underline="false" />
+  <Color name="Directive" underline="false" />
   <RuleSet>
     <Span color="Comment" begin="(?&lt;=^|\s)\#" />
     <Span color="String" begin="&quot;" end="&quot;">

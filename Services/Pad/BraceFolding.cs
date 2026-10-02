@@ -27,6 +27,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public static BraceSyntax CLike { get; } = new(new[] { "//" }, new[] { ("/*", "*/") }, new[] { '"', '\'' });
         public static BraceSyntax CSharp { get; } = CLike with { LiteralStrings = new[] { ("@\"", true), ("$@\"", true), ("@$\"", true) } };
         public static BraceSyntax JavaScript { get; } = new(new[] { "//" }, new[] { ("/*", "*/") }, new[] { '"', '\'', '`' });
+        /// <summary>Go: raw strings in backticks span lines and nothing escapes in them.</summary>
+        public static BraceSyntax Go { get; } = CLike with { LiteralStrings = new[] { ("`", true) } };
+
+        /// <summary>Rust: <c>'</c> is also a lifetime, so only <c>"</c> opens a string.</summary>
+        public static BraceSyntax Rust { get; } = new(new[] { "//" }, new[] { ("/*", "*/") }, new[] { '"' });
+
+        /// <summary>Kotlin: <c>"""</c> strings span lines.</summary>
+        public static BraceSyntax Kotlin { get; } = CLike with { MultiLineStrings = new[] { ("\"\"\"", "\"\"\"") } };
+
         public static BraceSyntax Php { get; } = new(new[] { "//", "#" }, new[] { ("/*", "*/") }, new[] { '"', '\'' });
         public static BraceSyntax Json { get; } = new(Array.Empty<string>(), None, new[] { '"' });
         public static BraceSyntax Css { get; } = new(Array.Empty<string>(), new[] { ("/*", "*/") }, new[] { '"', '\'' });
@@ -41,6 +50,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
             "css" => Css,
             "powershell" => PowerShell,
             "javascript" => JavaScript,
+            "typescript" => JavaScript,
+            "go" => Go,
+            "rust" => Rust,
+            "kotlin" => Kotlin,
             "php" => Php,
             _ => CLike,
         };

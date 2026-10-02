@@ -30,6 +30,8 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData(@"C:\n\lib.rs", "rust")]
         [InlineData(@"C:\n\app.rb", "ruby")]
         [InlineData(@"C:\n\Gemfile", "ruby")]
+        [InlineData(@"C:\n\Rakefile", "ruby")]
+        [InlineData(@"C:\n\rakefile", "ruby")]
         [InlineData(@"C:\n\Main.kt", "kotlin")]
         [InlineData(@"C:\n\build.gradle.kts", "kotlin")]
         [InlineData(@"C:\n\Dockerfile", "dockerfile")]

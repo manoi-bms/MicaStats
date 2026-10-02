@@ -1,17 +1,17 @@
 <?xml version="1.0"?>
 <!-- MicaPad's TypeScript highlighting. Colors are names only: MicaPad paints them from its palette. -->
 <SyntaxDefinition name="MicaPad TypeScript" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
-  <Color name="Comment" />
-  <Color name="String" />
-  <Color name="Char" />
-  <Color name="Keywords" />
-  <Color name="Bool" />
-  <Color name="Null" />
-  <Color name="Number" />
-  <Color name="Type" />
-  <Color name="Directive" />
+  <Color name="Comment" underline="false" />
+  <Color name="String" underline="false" />
+  <Color name="Char" underline="false" />
+  <Color name="Keywords" underline="false" />
+  <Color name="Bool" underline="false" />
+  <Color name="Null" underline="false" />
+  <Color name="Number" underline="false" />
+  <Color name="Type" underline="false" />
+  <Color name="Directive" underline="false" />
   <RuleSet>
-    <Rule color="Comment">//.*$</Rule>
+    <Span color="Comment" begin="//" />
     <Span color="Comment" begin="/\*" end="\*/" multiline="true" />
     <Span color="String" begin="&quot;" end="&quot;">
       <RuleSet>

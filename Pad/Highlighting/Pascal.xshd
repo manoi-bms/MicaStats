@@ -1,24 +1,28 @@
 <?xml version="1.0"?>
 <!-- MicaPad's Pascal highlighting. Colors are names only: MicaPad paints them from its palette. -->
 <SyntaxDefinition name="MicaPad Pascal" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
-  <Color name="Comment" />
-  <Color name="String" />
-  <Color name="Char" />
-  <Color name="Keywords" />
-  <Color name="Bool" />
-  <Color name="Null" />
-  <Color name="Number" />
-  <Color name="Type" />
-  <Color name="Directive" />
+  <Color name="Comment" underline="false" />
+  <Color name="String" underline="false" />
+  <Color name="Char" underline="false" />
+  <Color name="Keywords" underline="false" />
+  <Color name="Bool" underline="false" />
+  <Color name="Null" underline="false" />
+  <Color name="Number" underline="false" />
+  <Color name="Type" underline="false" />
+  <Color name="Directive" underline="false" />
   <RuleSet ignoreCase="true">
-    <Rule color="Comment">//.*$</Rule>
+    <Span color="Comment" begin="//" />
     <Span color="Directive" begin="\{\$" end="\}" multiline="true" />
     <Span color="Directive" begin="\(\*\$" end="\*\)" multiline="true" />
     <Span color="Comment" begin="\{(?!\$)" end="\}" multiline="true" />
     <Span color="Comment" begin="\(\*(?!\$)" end="\*\)" multiline="true" />
-    <Rule color="String">'(?:[^'\r\n]|'')*'</Rule>
+    <Span color="String" begin="'" end="'(?!')">
+      <RuleSet>
+        <Span begin="'(?=')" end="'" />
+      </RuleSet>
+    </Span>
     <Rule color="Char">\#\d+|\#\$[0-9a-fA-F]+</Rule>
-    <Keywords color="Keywords"><Word>and</Word><Word>array</Word><Word>as</Word><Word>asm</Word><Word>begin</Word><Word>case</Word><Word>class</Word><Word>const</Word><Word>constructor</Word><Word>destructor</Word><Word>div</Word><Word>do</Word><Word>downto</Word><Word>else</Word><Word>end</Word><Word>except</Word><Word>exports</Word><Word>file</Word><Word>finalization</Word><Word>finally</Word><Word>for</Word><Word>function</Word><Word>goto</Word><Word>if</Word><Word>implementation</Word><Word>in</Word><Word>inherited</Word><Word>initialization</Word><Word>inline</Word><Word>interface</Word><Word>is</Word><Word>label</Word><Word>library</Word><Word>mod</Word><Word>not</Word><Word>object</Word><Word>of</Word><Word>or</Word><Word>out</Word><Word>packed</Word><Word>procedure</Word><Word>program</Word><Word>property</Word><Word>raise</Word><Word>record</Word><Word>repeat</Word><Word>resourcestring</Word><Word>set</Word><Word>shl</Word><Word>shr</Word><Word>then</Word><Word>threadvar</Word><Word>to</Word><Word>try</Word><Word>type</Word><Word>unit</Word><Word>until</Word><Word>uses</Word><Word>var</Word><Word>while</Word><Word>with</Word><Word>xor</Word><Word>private</Word><Word>protected</Word><Word>public</Word><Word>published</Word><Word>strict</Word><Word>override</Word><Word>virtual</Word><Word>abstract</Word><Word>overload</Word><Word>reintroduce</Word><Word>static</Word><Word>forward</Word><Word>external</Word><Word>stdcall</Word><Word>cdecl</Word><Word>register</Word></Keywords>
+    <Keywords color="Keywords"><Word>and</Word><Word>array</Word><Word>as</Word><Word>asm</Word><Word>begin</Word><Word>case</Word><Word>class</Word><Word>const</Word><Word>constructor</Word><Word>destructor</Word><Word>div</Word><Word>do</Word><Word>downto</Word><Word>else</Word><Word>end</Word><Word>except</Word><Word>exports</Word><Word>file</Word><Word>finalization</Word><Word>finally</Word><Word>for</Word><Word>function</Word><Word>goto</Word><Word>if</Word><Word>implementation</Word><Word>in</Word><Word>inherited</Word><Word>initialization</Word><Word>inline</Word><Word>interface</Word><Word>is</Word><Word>label</Word><Word>library</Word><Word>mod</Word><Word>not</Word><Word>object</Word><Word>of</Word><Word>or</Word><Word>out</Word><Word>packed</Word><Word>procedure</Word><Word>program</Word><Word>property</Word><Word>raise</Word><Word>record</Word><Word>repeat</Word><Word>resourcestring</Word><Word>set</Word><Word>shl</Word><Word>shr</Word><Word>then</Word><Word>threadvar</Word><Word>to</Word><Word>try</Word><Word>type</Word><Word>unit</Word><Word>until</Word><Word>uses</Word><Word>var</Word><Word>while</Word><Word>with</Word><Word>xor</Word><Word>on</Word><Word>read</Word><Word>write</Word><Word>default</Word><Word>private</Word><Word>protected</Word><Word>public</Word><Word>published</Word><Word>strict</Word><Word>override</Word><Word>virtual</Word><Word>abstract</Word><Word>overload</Word><Word>reintroduce</Word><Word>static</Word><Word>forward</Word><Word>external</Word><Word>stdcall</Word><Word>cdecl</Word><Word>register</Word></Keywords>
     <Keywords color="Bool"><Word>true</Word><Word>false</Word></Keywords>
     <Keywords color="Null"><Word>nil</Word></Keywords>
     <Keywords color="Type"><Word>Integer</Word><Word>Cardinal</Word><Word>Boolean</Word><Word>Byte</Word><Word>Word</Word><Word>LongInt</Word><Word>LongWord</Word><Word>ShortInt</Word><Word>SmallInt</Word><Word>Int64</Word><Word>UInt64</Word><Word>NativeInt</Word><Word>NativeUInt</Word><Word>Char</Word><Word>AnsiChar</Word><Word>WideChar</Word><Word>String</Word><Word>AnsiString</Word><Word>WideString</Word><Word>UnicodeString</Word><Word>ShortString</Word><Word>Real</Word><Word>Single</Word><Word>Double</Word><Word>Extended</Word><Word>Currency</Word><Word>Pointer</Word><Word>Variant</Word><Word>TObject</Word><Word>TClass</Word><Word>TComponent</Word><Word>Exception</Word></Keywords>

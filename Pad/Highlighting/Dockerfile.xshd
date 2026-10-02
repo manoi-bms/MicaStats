@@ -1,15 +1,15 @@
 <?xml version="1.0"?>
 <!-- MicaPad's Dockerfile highlighting. Colors are names only: MicaPad paints them from its palette. -->
 <SyntaxDefinition name="MicaPad Dockerfile" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
-  <Color name="Comment" />
-  <Color name="String" />
-  <Color name="Keywords" />
-  <Color name="Variable" />
-  <Color name="Directive" />
+  <Color name="Comment" underline="false" />
+  <Color name="String" underline="false" />
+  <Color name="Keywords" underline="false" />
+  <Color name="Variable" underline="false" />
+  <Color name="Directive" underline="false" />
   <RuleSet ignoreCase="true">
-    <Rule color="Directive">^\s*\#\s*(syntax|escape|check)\s*=.*$</Rule>
-    <Rule color="Comment">^\s*\#.*$</Rule>
-    <Rule color="Keywords">(?&lt;=^\s*(?:ONBUILD\s+)?)(?:FROM|RUN|CMD|LABEL|MAINTAINER|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)\b</Rule>
+    <Span color="Directive" begin="^\s*\#\s*(syntax|escape|check)\s*=" />
+    <Span color="Comment" begin="^\s*\#" />
+    <Rule color="Keywords">(?&lt;=^\s*(?:ONBUILD\s+)?)(?:FROM|RUN|CMD|LABEL|MAINTAINER|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)(?=\s|$)</Rule>
     <Rule color="Keywords">(?&lt;=^\s*FROM\s.*\s)AS\b</Rule>
     <Span color="String" begin="&quot;" end="&quot;">
       <RuleSet>

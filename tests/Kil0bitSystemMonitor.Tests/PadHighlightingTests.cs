@@ -13,7 +13,7 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void Every_language_with_colors_has_a_definition() => UiThread.Run(() =>
         {
-            foreach (var language in PadLanguages.All.Where(l => l.Definition != null))
+            foreach (var language in PadLanguages.All.Concat(PadLanguages.FenceOnly).Where(l => l.Definition != null))
                 Assert.True(PadHighlighting.For(language) != null, language.Name + " did not load");
             Assert.Null(PadHighlighting.For(PadLanguages.Plain));
             Assert.Null(PadHighlighting.For(PadLanguages.Markdown));
@@ -29,7 +29,7 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void Every_named_color_reads_well_in_both_themes() => UiThread.Run(() =>
         {
-            foreach (var language in PadLanguages.All.Where(l => l.Definition != null))
+            foreach (var language in PadLanguages.All.Concat(PadLanguages.FenceOnly).Where(l => l.Definition != null))
             {
                 var definition = PadHighlighting.For(language)!;
                 foreach (var color in definition.NamedHighlightingColors)
@@ -164,6 +164,11 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("markdown-fence", "`code`", "`code`", "CodeString")]
         [InlineData("markdown-fence", "[a](b)", "[a]", "LinkTag")]
         [InlineData("markdown-fence", "> quote", "> quote", "QuoteComment")]
+        [InlineData("dockerfile", "RUN add-apt-repository ppa", "RUN", "Keywords")]
+        [InlineData("pascal", "on E: Exception do", "on", "Keywords")]
+        [InlineData("pascal", "property X: Integer read FX write FX default 0;", "read", "Keywords")]
+        [InlineData("pascal", "property X: Integer read FX write FX default 0;", "write", "Keywords")]
+        [InlineData("pascal", "property X: Integer read FX write FX default 0;", "default", "Keywords")]
         public void Own_definitions_color_what_they_should(string languageId, string line, string part, string colorName) => UiThread.Run(() =>
         {
             var definition = PadHighlighting.For(PadLanguages.ForFence(languageId)!)!;
@@ -172,6 +177,124 @@ namespace Kil0bitSystemMonitor.Tests
             int start = line.IndexOf(part, System.StringComparison.Ordinal);
 
             Assert.Contains(sections, s => s.Offset == start && s.Length == part.Length && s.Color.Name == colorName);
+        });
+        [Fact]
+        public void Dockerfile_instruction_needs_a_space_or_the_end_after_it() => UiThread.Run(() =>
+        {
+            var document = new TextDocument("RUN add-apt-repository ppa\nFROM-x");
+            var highlighter = new DocumentHighlighter(document, PadHighlighting.For(PadLanguages.ById("dockerfile")!)!);
+            Assert.DoesNotContain(highlighter.HighlightLine(1).Sections, s => s.Color.Name == "Keywords" && s.Offset == 4);
+            Assert.Empty(highlighter.HighlightLine(2).Sections);
+            Assert.Contains(new DocumentHighlighter(new TextDocument("RUN"), PadHighlighting.For(PadLanguages.ById("dockerfile")!)!).HighlightLine(1).Sections, s => s.Color.Name == "Keywords" && s.Length == 3);
+        });
+
+        /// <summary>Quote characters inside a line comment must not open a string (or, for Pascal, the brace a comment) on the next line.</summary>
+        [Theory]
+        [InlineData("shell", "# Don't \"run\" `as` root")]
+        [InlineData("ruby", "# Don't \"call\" `this` twice")]
+        [InlineData("rust", "// the \"quote ' char `x")]
+        [InlineData("go", "// use `x here ' \"")]
+        [InlineData("typescript", "// call `foo first, don't \"touch")]
+        [InlineData("kotlin", "// don't \"touch `this")]
+        [InlineData("pascal", "// TODO: handle { and ' and \"")]
+        [InlineData("dockerfile", "# Don't \"cache\" `this` layer")]
+        [InlineData("dockerfile", "# syntax=docker/dockerfile:1 don't \"x")]
+        public void A_quote_inside_a_line_comment_does_not_color_the_next_line(string languageId, string comment) => UiThread.Run(() =>
+        {
+            var document = new TextDocument(comment + "\nx");
+            var highlighter = new DocumentHighlighter(document, PadHighlighting.For(PadLanguages.ById(languageId)!)!);
+            var first = highlighter.HighlightLine(1).Sections;
+            Assert.Contains(first, s => s.Offset == 0 && s.Length == comment.Length && (s.Color.Name == "Comment" || s.Color.Name == "Directive"));
+            Assert.Empty(highlighter.HighlightLine(2).Sections);
+        });
+
+        [Theory]
+        [InlineData("s := 'it''s { not a comment';\nx")]
+        [InlineData("s := s + '{';\nx")]
+        [InlineData("s := '''';\nx")]
+        public void Pascal_strings_hide_their_braces_and_double_their_quotes(string text) => UiThread.Run(() =>
+        {
+            var highlighter = new DocumentHighlighter(new TextDocument(text), PadHighlighting.For(PadLanguages.ById("pascal")!)!);
+            var first = highlighter.HighlightLine(1).Sections;
+            Assert.DoesNotContain(first, s => s.Color.Name == "Comment");
+            Assert.Single(first.Where(s => s.Color.Name == "String"));
+            Assert.Empty(highlighter.HighlightLine(2).Sections);
+        });
+
+        [Theory]
+        [InlineData("rust", "let d = '\"';\nx", "'\"'")]
+        [InlineData("rust", "let d = '`';\nx", "'`'")]
+        [InlineData("rust", "let d = '\\'';\nx", "'\\''")]
+        [InlineData("go", "r := '`'\nx", "'`'")]
+        [InlineData("go", "r := '\"'\nx", "'\"'")]
+        [InlineData("go", "r := '\\''\nx", "'\\''")]
+        [InlineData("kotlin", "val c = '\"'\nx", "'\"'")]
+        [InlineData("kotlin", "val c = '\\u0041'\nx", "'\\u0041'")]
+        public void A_char_literal_holding_a_quote_does_not_open_a_string(string languageId, string text, string literal) => UiThread.Run(() =>
+        {
+            var highlighter = new DocumentHighlighter(new TextDocument(text), PadHighlighting.For(PadLanguages.ById(languageId)!)!);
+            int start = text.IndexOf(literal, System.StringComparison.Ordinal);
+            Assert.Contains(highlighter.HighlightLine(1).Sections, s => s.Offset == start && s.Length == literal.Length && s.Color.Name == "Char");
+            Assert.Empty(highlighter.HighlightLine(2).Sections);
+        });
+
+        [Fact]
+        public void Heredoc_bodies_are_strings_and_the_code_after_them_is_colored_normally() => UiThread.Run(() =>
+        {
+            var shell = new DocumentHighlighter(new TextDocument("cat <<EOF\nDon't run this as root.\nEOF\necho $HOME"), PadHighlighting.For(PadLanguages.ById("shell")!)!);
+            Assert.Contains(shell.HighlightLine(2).Sections, s => s.Offset == 10 && s.Length == 23 && s.Color.Name == "String");   // offsets are in the document
+            shell.HighlightLine(3);
+            Assert.Contains(shell.HighlightLine(4).Sections, s => s.Offset == 43 && s.Length == 5 && s.Color.Name == "Variable");
+
+            var ruby = new DocumentHighlighter(new TextDocument("puts <<~MSG\n  Couldn't greet\nMSG\nx = nil"), PadHighlighting.For(PadLanguages.ById("ruby")!)!);
+            Assert.Contains(ruby.HighlightLine(2).Sections, s => s.Color.Name == "String");
+            ruby.HighlightLine(3);
+            Assert.Contains(ruby.HighlightLine(4).Sections, s => s.Offset == 37 && s.Length == 3 && s.Color.Name == "Null");
+
+            var herestring = new DocumentHighlighter(new TextDocument("cat <<< \"x\"\ny=$((1<<n))\nx"), PadHighlighting.For(PadLanguages.ById("shell")!)!);
+            herestring.HighlightLine(1);
+            herestring.HighlightLine(2);
+            Assert.Empty(herestring.HighlightLine(3).Sections);
+        });
+
+        /// <summary>A sample token for each own definition and the color name it must get.</summary>
+        private static readonly System.Collections.Generic.Dictionary<string, (string Line, string Part, string Color)> Samples = new()
+        {
+            ["ini"] = ("; note", "; note", "Comment"),
+            ["yaml"] = ("# note", "# note", "Comment"),
+            ["batch"] = ("rem note", "rem note", "Comment"),
+            ["log"] = ("ERROR boom", "ERROR", "LogError"),
+            ["typescript"] = ("// note", "// note", "Comment"),
+            ["shell"] = ("# note", "# note", "Comment"),
+            ["pascal"] = ("// note", "// note", "Comment"),
+            ["go"] = ("// note", "// note", "Comment"),
+            ["dockerfile"] = ("# note", "# note", "Comment"),
+            ["rust"] = ("// note", "// note", "Comment"),
+            ["ruby"] = ("# note", "# note", "Comment"),
+            ["kotlin"] = ("// note", "// note", "Comment"),
+            ["markdown-fence"] = ("> quote", "> quote", "QuoteComment"),
+        };
+
+        [Fact]
+        public void A_whole_file_in_an_own_definition_is_painted_with_its_palette_color_in_both_themes() => UiThread.Run(() =>
+        {
+            var own = PadLanguages.All.Concat(PadLanguages.FenceOnly).Where(l => l.OwnDefinition).ToList();
+            Assert.Equal(own.Select(l => l.Id).OrderBy(x => x), Samples.Keys.OrderBy(x => x));
+            foreach (var language in own)
+                foreach (var palette in new[] { PadPalette.Dark, PadPalette.Light })
+                {
+                    var (line, part, colorName) = Samples[language.Id];
+                    var editor = new ICSharpCode.AvalonEdit.TextEditor { Document = new TextDocument(line) };
+                    var view = editor.TextArea.TextView;
+                    view.LineTransformers.Add(new ThemedHighlightingColorizer(PadHighlighting.For(language)!, () => palette));
+                    view.Measure(new System.Windows.Size(1200, 800));
+                    view.Arrange(new System.Windows.Rect(0, 0, 1200, 800));
+                    view.EnsureVisualLines();
+
+                    var expected = SyntaxColors.Resolve(colorName, null, palette)!.Value;
+                    Assert.True(expected != palette.Text, language.Id + " sample must be a colored category");
+                    Assert.Equal(expected, FenceColorsTests.ForegroundAt(view, 1, line.IndexOf(part, System.StringComparison.Ordinal)));
+                }
         });
     }
 }

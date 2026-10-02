@@ -1,17 +1,17 @@
 <?xml version="1.0"?>
 <!-- MicaPad's Rust highlighting. Colors are names only: MicaPad paints them from its palette. -->
 <SyntaxDefinition name="MicaPad Rust" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
-  <Color name="Comment" />
-  <Color name="String" />
-  <Color name="Char" />
-  <Color name="Keywords" />
-  <Color name="Bool" />
-  <Color name="Null" />
-  <Color name="Number" />
-  <Color name="Type" />
-  <Color name="Directive" />
+  <Color name="Comment" underline="false" />
+  <Color name="String" underline="false" />
+  <Color name="Char" underline="false" />
+  <Color name="Keywords" underline="false" />
+  <Color name="Bool" underline="false" />
+  <Color name="Null" underline="false" />
+  <Color name="Number" underline="false" />
+  <Color name="Type" underline="false" />
+  <Color name="Directive" underline="false" />
   <RuleSet>
-    <Rule color="Comment">//.*$</Rule>
+    <Span color="Comment" begin="//" />
     <Span color="Comment" begin="/\*" end="\*/" multiline="true" />
     <Span color="String" begin="(?&lt;!\w)b?r\#&quot;" end="&quot;\#" multiline="true" />
     <Span color="String" begin="(?&lt;!\w)b?r&quot;" end="&quot;" multiline="true" />
@@ -20,7 +20,11 @@
         <Span begin="\\" end="." />
       </RuleSet>
     </Span>
-    <Rule color="Char">b?'(?:[^'\\\r\n]|\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F_]+\}|.))'</Rule>
+    <Span color="Char" begin="(?&lt;!\w)b?'(?=(?:[^'\\\r\n]|\\[^\r\n]+?)')" end="'">
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
     <Rule color="Directive">\#!?\[[^\]\r\n]*\]</Rule>
     <Rule color="Directive">\b[A-Za-z_]\w*!(?=\s*[(\[{])</Rule>
     <Keywords color="Keywords"><Word>as</Word><Word>async</Word><Word>await</Word><Word>break</Word><Word>const</Word><Word>continue</Word><Word>crate</Word><Word>dyn</Word><Word>else</Word><Word>enum</Word><Word>extern</Word><Word>fn</Word><Word>for</Word><Word>if</Word><Word>impl</Word><Word>in</Word><Word>let</Word><Word>loop</Word><Word>match</Word><Word>mod</Word><Word>move</Word><Word>mut</Word><Word>pub</Word><Word>ref</Word><Word>return</Word><Word>self</Word><Word>Self</Word><Word>static</Word><Word>struct</Word><Word>super</Word><Word>trait</Word><Word>type</Word><Word>union</Word><Word>unsafe</Word><Word>use</Word><Word>where</Word><Word>while</Word></Keywords>

@@ -1,15 +1,15 @@
 <?xml version="1.0"?>
 <!-- MicaPad's Markdown code highlighting. Colors are names only: MicaPad paints them from its palette. -->
 <SyntaxDefinition name="MicaPad Markdown code" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
-  <Color name="HeadingKeywords" />
-  <Color name="CodeString" />
-  <Color name="QuoteComment" />
-  <Color name="RuleOperator" />
-  <Color name="ListOperator" />
-  <Color name="LinkTag" />
-  <Color name="LinkUrlString" />
-  <Color name="EmphasisAttribute" />
-  <Color name="TableOperator" />
+  <Color name="HeadingKeywords" underline="false" />
+  <Color name="CodeString" underline="false" />
+  <Color name="QuoteComment" underline="false" />
+  <Color name="RuleOperator" underline="false" />
+  <Color name="ListOperator" underline="false" />
+  <Color name="LinkTag" underline="false" />
+  <Color name="LinkUrlString" underline="false" />
+  <Color name="EmphasisAttribute" underline="false" />
+  <Color name="TableOperator" underline="false" />
   <RuleSet>
     <Rule color="HeadingKeywords">^\s{0,3}\#{1,6}(\s.*)?$</Rule>
     <Rule color="CodeString">^\s*(```|~~~).*$</Rule>

@@ -269,7 +269,9 @@ changes unless you run a command such as Format table. Turn it all off with
   shaded, and when its first word names a language — `cs`, `js`, `ts`, `json`, `xml`, `html`,
   `css`, `powershell`, `bash`, `python`, `sql`, `cpp`, `java`, `kotlin`, `go`, `rust`, `php`,
   `ruby`, `pascal`, `vb`, `diff`, `dockerfile`, `ini`, `yaml`, `bat`, `md`, `log` and their usual
-  aliases — its code is colored as a file in that language would be.
+  aliases — its code is colored as a file in that language would be. With the mouse over a
+  fenced block (a `$$` math or diagram block too), a **Copy** button appears at its top-right and
+  copies the code between the fences, line breaks as they are, without moving the caret.
 - **Lists**: `- ` items get bullets and `- [x]` tasks are crossed off.
 - **Quotes and callouts**: `>` quotes get a bar, one per level (`>>` is two). A quote followed by
   a line `{.is-info}`, `{.is-success}`, `{.is-warning}` or `{.is-danger}` is a Wiki.js callout: a

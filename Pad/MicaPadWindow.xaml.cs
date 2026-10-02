@@ -115,6 +115,7 @@ namespace Kil0bitSystemMonitor.Pad
             FindBar.Attach(Editor);
             _language = new EditorLanguage(Editor, () => _palette, folds: true);
             _language.FellBackToPlain += ApplyEditorFont;
+            _language.CodeCopy = CopyCode;   // the history preview gets no Copy button
             _previewLanguage = new EditorLanguage(PreviewEditor, () => _palette, folds: false);
             ConfigureDiagrams();
             _diff = new DiffPreview(PreviewEditor, () => _palette);
@@ -1082,6 +1083,23 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
+        /// <summary>The Copy button of a fenced block (ruling R5): its code goes to the clipboard and the status bar says how many lines.</summary>
+        private void CopyCode(string code)
+        {
+            try
+            {
+                SetClipboardText(code);
+            }
+            catch (System.Runtime.InteropServices.ExternalException ex)
+            {
+                Warn("Copying code failed (" + ex.GetType().Name + ")");
+                ShowStatus("Clipboard busy, try again");
+                return;
+            }
+            int lines = TextLines.Split(code).Lines.Count;
+            ShowStatus(lines == 1 ? "Copied" : "Copied " + lines + " lines");
+        }
+
         /// <summary>
         /// A passing notice from a menu action. It never replaces a disk question (file gone, changed
         /// on disk) that is waiting for an answer; it is logged instead.
@@ -2024,7 +2042,8 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnEditorRightButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (DiagramPicture.IsInside(e.OriginalSource as DependencyObject)) return;
+            var source = e.OriginalSource as DependencyObject;
+            if (DiagramPicture.IsInside(source) || CodeCopyLayer.IsInside(source)) return;
             var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
             if (position is { } at) PlaceCaretForMenu(Editor.Document.GetOffset(at.Location));
         }

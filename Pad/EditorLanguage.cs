@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 
@@ -13,7 +14,8 @@ namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
     /// Everything a language adds to one editor, installed and removed together: syntax colors, or
-    /// Markdown formatting (colorizer, background, bullets, emoji, diagram pictures, image previews), and folding.
+    /// Markdown formatting (colorizer, background, bullets, emoji, diagram pictures, image previews,
+    /// the Copy button of fenced blocks), and folding.
     /// <see cref="Apply"/> removes the previous language first, so switching tabs never piles
     /// anything up; asked again for what is already shown, it does nothing.
     /// </summary>
@@ -33,9 +35,11 @@ namespace Kil0bitSystemMonitor.Pad
         private DiagramGenerator? _diagramGenerator;
         private ImageBoard? _imageBoard;
         private ImageGenerator? _imageGenerator;
+        private CodeCopyLayer? _codeCopy;
         private readonly FoldingController? _folding;
         private TextDocument? _appliedTo;
         private bool _emojiLogged;
+        private bool _codeCopyLogged;
 
         /// <summary>Documents whose formatting failed; weak, so a closed tab's document can go.</summary>
         private readonly ConditionalWeakTable<TextDocument, object> _failed = new();
@@ -73,6 +77,15 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>The image previews of the shown Markdown document, or null.</summary>
         internal ImageBoard? ImageBoard => _imageBoard;
+
+        /// <summary>
+        /// Takes a fenced block's code when its Copy button is clicked (ruling R5); set by the window
+        /// before the first <see cref="Apply"/>. Null: no Copy button (the history preview).
+        /// </summary>
+        internal Action<string>? CodeCopy { get; set; }
+
+        /// <summary>The Copy button of the shown Markdown document, or null.</summary>
+        internal CodeCopyLayer? CodeCopyLayer => _codeCopy;
 
         /// <summary>The editor's monospace family while the reading font is on (the window sets it); null otherwise.</summary>
         internal FontFamily? MonoFont { get; set; }
@@ -112,6 +125,11 @@ namespace Kil0bitSystemMonitor.Pad
                 view.ElementGenerators.Add(_emoji);
                 InstallDiagrams();
                 InstallImages();
+                if (CodeCopy is { } copy)
+                {
+                    _codeCopy = new CodeCopyLayer(view, _markdownCache, _palette, copy, CodeCopyFailed);
+                    view.InsertLayer(_codeCopy, KnownLayer.Text, LayerInsertionPosition.Above);
+                }
             }
             else if (PadHighlighting.For(language) is { } definition)
             {
@@ -123,7 +141,11 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>Repaints; the colorizers read the palette as they draw, so a theme switch needs only this.</summary>
-        public void Redraw() => _editor.TextArea.TextView.Redraw();
+        public void Redraw()
+        {
+            _codeCopy?.Paint();
+            _editor.TextArea.TextView.Redraw();
+        }
 
         /// <summary>
         /// Draw diagrams, Kroki, the Kroki server or Load images from the web changed in Settings:
@@ -241,6 +263,24 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
+        /// <summary>
+        /// The Copy button failed: it hides until the mouse moves again, and the note keeps its look
+        /// and its text. Logged once per editor, with the exception type only.
+        /// </summary>
+        private void CodeCopyFailed(Exception ex)
+        {
+            if (_codeCopyLogged) return;
+            _codeCopyLogged = true;
+            try
+            {
+                Warn("The Copy button failed (" + ex.GetType().Name + ")");
+            }
+            catch (Exception)
+            {
+                // Logging is best effort.
+            }
+        }
+
         /// <summary>The structure moved (a fence, a table, a heading underline): lines far from the edit changed look, so repaint them all once the edit is done.</summary>
         private void OnStructureChanged() =>
             _editor.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(Redraw));
@@ -258,6 +298,12 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 RemoveDiagrams();
                 RemoveImages();
+                if (_codeCopy != null)
+                {
+                    _codeCopy.Detach();
+                    view.Layers.Remove(_codeCopy);
+                    _codeCopy = null;
+                }
                 view.LineTransformers.Remove(_markdown);
                 view.BackgroundRenderers.Remove(_markdownBackground!);
                 view.ElementGenerators.Remove(_bullets!);

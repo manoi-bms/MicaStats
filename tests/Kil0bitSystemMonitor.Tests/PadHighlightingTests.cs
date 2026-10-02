@@ -346,6 +346,25 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.DoesNotContain(sections, s => s.Color.Name == "String");
         });
 
+        /// <summary>A <c>]</c> inside an attribute's string does not end the attribute, so its closing quote opens no string.</summary>
+        [Theory]
+        [InlineData("#[doc = \"[x]\"]\nfn main() {}", 2)]
+        [InlineData("#[doc = \"[x]\"] fn main() {}", 1)]
+        [InlineData("#![doc = \"a]b\"]\nfn main() {}", 2)]
+        public void A_rust_attribute_holds_brackets_inside_its_strings(string text, int fnLine) => UiThread.Run(() =>
+        {
+            var document = new TextDocument(text);
+            var highlighter = new DocumentHighlighter(document, PadHighlighting.For(PadLanguages.ById("rust")!)!);
+            string attribute = text.Substring(0, text.IndexOf("\"]", System.StringComparison.Ordinal) + 2);
+            Assert.Contains(highlighter.HighlightLine(1).Sections, s => s.Offset == 0 && s.Length == attribute.Length && s.Color.Name == "Directive");
+
+            var line = document.GetLineByNumber(fnLine);
+            int fn = line.Offset + document.GetText(line).IndexOf("fn", System.StringComparison.Ordinal);
+            var sections = highlighter.HighlightLine(fnLine).Sections;
+            Assert.Contains(sections, s => s.Offset == fn && s.Length == 2 && s.Color.Name == "Keywords");
+            Assert.DoesNotContain(sections, s => s.Color.Name == "String" && s.Offset >= fn);
+        });
+
         [Theory]
         [InlineData("let d = b'\"';", "b'\"'")]
         [InlineData("let d = '\\\\';", "'\\\\'")]

@@ -25,7 +25,16 @@
         <Span begin="\\" end="." />
       </RuleSet>
     </Span>
-    <Rule color="Directive">\#!?\[[^\]\r\n]*\]</Rule>
+    <!-- An attribute: a ] inside one of its strings (#[doc = "[x]"]) does not end it. -->
+    <Span color="Directive" begin="\#!?\[" end="\]">
+      <RuleSet>
+        <Span color="String" begin="&quot;" end="&quot;">
+          <RuleSet>
+            <Span begin="\\" end="." />
+          </RuleSet>
+        </Span>
+      </RuleSet>
+    </Span>
     <Rule color="Directive">\b[A-Za-z_]\w*!(?=\s*[(\[{])</Rule>
     <Keywords color="Keywords"><Word>as</Word><Word>async</Word><Word>await</Word><Word>break</Word><Word>const</Word><Word>continue</Word><Word>crate</Word><Word>dyn</Word><Word>else</Word><Word>enum</Word><Word>extern</Word><Word>fn</Word><Word>for</Word><Word>if</Word><Word>impl</Word><Word>in</Word><Word>let</Word><Word>loop</Word><Word>match</Word><Word>mod</Word><Word>move</Word><Word>mut</Word><Word>pub</Word><Word>ref</Word><Word>return</Word><Word>self</Word><Word>Self</Word><Word>static</Word><Word>struct</Word><Word>super</Word><Word>trait</Word><Word>type</Word><Word>union</Word><Word>unsafe</Word><Word>use</Word><Word>where</Word><Word>while</Word></Keywords>
     <Keywords color="Bool"><Word>true</Word><Word>false</Word></Keywords>

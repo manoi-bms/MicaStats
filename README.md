@@ -161,7 +161,9 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Light or dark**: MicaPad has its own theme switch (the sun and moon button), independent of the rest of MicaStats
 * **Right-click menus** in the text (cut, copy, paste, find) and on tabs (rename, close others, copy the file path, show in folder)
 * **Colors for code and logs**: JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch and log files are colored in both themes; the status bar shows the language and changes it per tab
-* **Markdown as you type**: headings, bold, italic, code, lists, tasks and quotes are formatted in place, with the markers still visible; the file stays plain text
+* **Markdown the way Wiki.js shows it**: headings, tables (with **Format table** to line them up), callouts, footnotes, `:emoji:`, `<kbd>` keys and more, styled in place with the markers still visible; prose in a reading font while code and tables keep the editor font, and fenced code colored by its language
+* **Diagrams and math**: Mermaid, Graphviz and Markmap blocks, and TeX math (`$$` blocks, with `\ce{}` chemistry), drawn as a picture under the block on this PC; other diagram types through Kroki once you turn it on
+* **Image previews**: `![alt](picture.png =200x)` shows the picture under its line; images from the web load only once you turn that on
 * **Folding**: collapse braces, tags, Markdown sections and code blocks from the margin
 * **Editing helpers**: auto-closing brackets and quotes, notepad4-style line operations, bookmarks, and every occurrence of the selected word marked
 * **Links**: web and mail addresses are underlined and open with **Ctrl+Click**; nothing else in a note is ever opened
@@ -170,7 +172,8 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Tools**: Base64, number bases, GUIDs, timestamps, and a calculator that works the sum out itself — nothing in a note is ever run; each is one **Ctrl+Z**
 * **Compare with current**: see what changed since a history version, line by line — removed lines in red, added in green
 * **More than one window** (**Ctrl+Shift+N**), each with its own tabs, place and zoom; closing one moves its tabs into another, so no note is ever closed that way
-* Notes are plain text files in `%APPDATA%\MicaStats\MicaPad`, readable even without MicaStats
+* **Credentials**: select a password or token and choose **Store as credential**; it becomes a labeled pill, revealed or copied only with your PIN
+* Notes are encrypted for your Windows account and kept in `%APPDATA%\MicaStats\MicaPad`
 
 ### Ask MicaStats: answers about your PC
 
@@ -390,6 +393,7 @@ Pause over any taskbar module and its own compact dropdown opens, retargeting as
 * Windows 11 is the primary supported platform
 * Windows 10 build 19041 or later may work, but is not the primary visual target
 * .NET 8 Desktop Runtime when using a framework-dependent release
+* Microsoft Edge WebView2 Runtime for MicaPad's diagrams, math and SVG previews (included in Windows 11)
 * Compatible Windows performance counters and hardware drivers
 
 ### Building MicaStats
@@ -484,6 +488,8 @@ The published application will be created in the `publish` directory.
 | UI library          | ModernWpfUI                                  |
 | Text editor         | AvalonEdit (MIT), for MicaPad                |
 | Text comparison     | DiffPlex (Apache-2.0), for MicaPad's compare |
+| Diagrams and math   | Microsoft Edge WebView2 (hidden, offline) with Mermaid, Viz.js/Graphviz, Markmap and MathJax, for MicaPad |
+| Emoji names         | gemoji (MIT), for MicaPad                    |
 | AI                  | Anthropic .NET SDK, Microsoft.Extensions.AI, MCP C# SDK (ModelContextProtocol.Core) |
 | Windows integration | Win32 APIs                                   |
 | Performance data    | Windows performance counters and system APIs |
@@ -785,7 +791,9 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **ธีมสว่างหรือมืด**: MicaPad มีปุ่มสลับธีมของตัวเอง (ปุ่มดวงอาทิตย์และพระจันทร์) โดยส่วนอื่นของ MicaStats ไม่เปลี่ยน
 * **เมนูคลิกขวา** ในเนื้อความ (ตัด คัดลอก วาง ค้นหา) และบนแท็บ (เปลี่ยนชื่อ ปิดแท็บอื่น คัดลอกพาธไฟล์ เปิดโฟลเดอร์ที่เก็บไฟล์)
 * **สีสำหรับโค้ดและล็อก**: ไฟล์ JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch และไฟล์ล็อก แสดงสีได้ทั้งธีมสว่างและมืด ภาษาแสดงที่แถบสถานะและเปลี่ยนได้ทีละแท็บ
-* **Markdown ขณะพิมพ์**: หัวข้อ ตัวหนา ตัวเอียง โค้ด รายการ งานที่ต้องทำ และข้อความอ้างอิง แสดงผลตามรูปแบบทันที โดยยังเห็นเครื่องหมาย และไฟล์ยังเป็นข้อความธรรมดา
+* **Markdown แบบที่ Wiki.js แสดง**: หัวข้อ ตาราง (พร้อมคำสั่ง **Format table** จัดคอลัมน์ให้ตรง) callout เชิงอรรถ `:emoji:` ปุ่ม `<kbd>` และอื่น ๆ แสดงผลตามรูปแบบทันทีโดยยังเห็นเครื่องหมาย เนื้อความใช้ฟอนต์สำหรับอ่าน ส่วนโค้ดและตารางใช้ฟอนต์ของตัวแก้ไข และบล็อกโค้ดมีสีตามภาษา
+* **แผนภาพและสมการ**: บล็อก Mermaid, Graphviz และ Markmap และสมการ TeX (บล็อก `$$` รวมถึงสูตรเคมี `\ce{}`) วาดเป็นภาพใต้บล็อกบนเครื่องนี้ แผนภาพชนิดอื่นวาดผ่าน Kroki เมื่อเปิดใช้
+* **ตัวอย่างรูปภาพ**: `![alt](picture.png =200x)` แสดงรูปใต้บรรทัดนั้น รูปจากเว็บจะโหลดเฉพาะเมื่อเปิดใช้
 * **ย่อ/ขยายโค้ด**: ย่อส่วนในวงเล็บปีกกา แท็ก หัวข้อ Markdown และบล็อกโค้ดได้จากขอบซ้าย
 * **ตัวช่วยแก้ไข**: ปิดวงเล็บและเครื่องหมายคำพูดอัตโนมัติ คำสั่งจัดการบรรทัดแบบ notepad4 บุ๊กมาร์ก และไฮไลต์คำเดียวกันทั้งหมดเมื่อเลือกคำ
 * **ลิงก์**: ที่อยู่เว็บและอีเมลมีขีดเส้นใต้ และเปิดได้ด้วย **Ctrl+Click** นอกจากนั้นไม่มีสิ่งใดในโน้ตถูกเปิดเลย
@@ -794,7 +802,8 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **เครื่องมือ**: Base64 แปลงเลขฐาน GUID เวลาปัจจุบัน และเครื่องคิดเลขที่คำนวณเอง ไม่มีสิ่งใดในโน้ตถูกรันเลย ทุกคำสั่งย้อนกลับได้ด้วย **Ctrl+Z** ครั้งเดียว
 * **Compare with current**: ดูว่าอะไรเปลี่ยนไปจากเวอร์ชันในประวัติทีละบรรทัด บรรทัดที่ถูกลบเป็นสีแดง บรรทัดที่เพิ่มเป็นสีเขียว
 * **หลายหน้าต่าง** (**Ctrl+Shift+N**) แต่ละหน้าต่างมีแท็บ ตำแหน่ง และการซูมของตัวเอง เมื่อปิดหน้าต่างหนึ่ง แท็บจะย้ายไปอยู่อีกหน้าต่าง จึงไม่มีโน้ตใดถูกปิดไปด้วย
-* โน้ตเก็บเป็นไฟล์ข้อความธรรมดาใน `%APPDATA%\MicaStats\MicaPad` เปิดอ่านได้แม้ไม่มี MicaStats
+* **รหัสลับ**: เลือกรหัสผ่านหรือโทเค็นแล้วเลือก **Store as credential** ข้อความจะกลายเป็นป้ายชื่อ ดูหรือคัดลอกได้ด้วย PIN เท่านั้น
+* โน้ตถูกเข้ารหัสสำหรับบัญชี Windows ของคุณ และเก็บใน `%APPDATA%\MicaStats\MicaPad`
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา
 
@@ -1014,6 +1023,7 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 * รองรับ Windows 11 เป็นหลัก
 * Windows 10 build 19041 ขึ้นไปอาจใช้งานได้ แต่ไม่ใช่เป้าหมายหลักด้านการแสดงผล
 * ต้องมี .NET 8 Desktop Runtime หากใช้รีลีสแบบ framework-dependent
+* ต้องมี Microsoft Edge WebView2 Runtime สำหรับแผนภาพ สมการ และตัวอย่างไฟล์ SVG ใน MicaPad (มีอยู่แล้วใน Windows 11)
 * ต้องมีตัวนับประสิทธิภาพของ Windows และไดรเวอร์ฮาร์ดแวร์ที่รองรับ
 
 ### สำหรับการคอมไพล์
@@ -1108,6 +1118,8 @@ dotnet publish `
 | ไลบรารี UI | ModernWpfUI |
 | โปรแกรมแก้ไขข้อความ | AvalonEdit (MIT) สำหรับ MicaPad |
 | การเปรียบเทียบข้อความ | DiffPlex (Apache-2.0) สำหรับการเปรียบเทียบเวอร์ชันใน MicaPad |
+| แผนภาพและสมการ | Microsoft Edge WebView2 (ซ่อนอยู่ ทำงานออฟไลน์) กับ Mermaid, Viz.js/Graphviz, Markmap และ MathJax สำหรับ MicaPad |
+| ชื่ออีโมจิ | gemoji (MIT) สำหรับ MicaPad |
 | AI | Anthropic .NET SDK, Microsoft.Extensions.AI และ MCP C# SDK (ModelContextProtocol.Core) |
 | การเชื่อมต่อกับ Windows | Win32 API |
 | ข้อมูลประสิทธิภาพ | ตัวนับประสิทธิภาพและ API ของ Windows |

@@ -429,7 +429,7 @@ hotkey and the overlay bring back the window you used last. Opening a file — *
 ### Where notes live
 
 `%APPDATA%\MicaStats\MicaPad\notes\` — one folder per note, with `current.txt` and a `history`
-folder of plain text files. **Settings → MicaPad → Open notes folder** takes you there.
+folder, encrypted for your Windows account (see **Credentials and encryption** above). **Settings → MicaPad → Open notes folder** takes you there.
 
 ---
 

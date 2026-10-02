@@ -61,6 +61,10 @@ namespace Kil0bitSystemMonitor.Tests
             var again = NewStore();
             Assert.False(again.Load("b|m"));
             Assert.Equal(0, again.Count);
+
+            string warning = Assert.Single(_warnings);   // discarded and logged, without contents
+            Assert.DoesNotContain("http", warning, StringComparison.Ordinal);
+            Assert.DoesNotContain("\\", warning, StringComparison.Ordinal);
         }
 
         [Fact]

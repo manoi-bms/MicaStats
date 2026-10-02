@@ -110,7 +110,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             string fileFingerprint = reader.ReadString();
             int dimension = reader.ReadInt32();
             int count = reader.ReadInt32();
-            if (fileFingerprint != fingerprint) return false;
+            if (fileFingerprint != fingerprint)
+            {
+                _warn("The search vectors were made for another server or model; they will be made again.");
+                return false;
+            }
             if (dimension <= 0 || dimension > MaxDimension || count < 0 || count > _capacity) throw new FormatException("header");
 
             for (int i = 0; i < count; i++)

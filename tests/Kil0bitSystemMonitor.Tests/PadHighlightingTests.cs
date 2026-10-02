@@ -42,6 +42,23 @@ namespace Kil0bitSystemMonitor.Tests
             }
         });
 
+        /// <summary>AvalonEdit's own definitions: the groups that hold keywords are keywords, and PowerShell cmdlets are functions, as in Prism.</summary>
+        [Theory]
+        [InlineData("cpp", "if (x) { try { f(); } catch (...) { } }", "if", SyntaxCategory.Keyword)]
+        [InlineData("cpp", "if (x) { try { f(); } catch (...) { } }", "try", SyntaxCategory.Keyword)]
+        [InlineData("java", "public void f() { return null; }", "void", SyntaxCategory.Keyword)]
+        [InlineData("java", "public void f() { return null; }", "null", SyntaxCategory.Keyword)]
+        [InlineData("java", "package a.b;", "package", SyntaxCategory.Keyword)]
+        [InlineData("javascript", "return null;", "null", SyntaxCategory.Keyword)]
+        [InlineData("powershell", "Get-Location | Out-Null", "Get-Location", SyntaxCategory.Function)]
+        public void Built_in_definitions_color_their_words_by_what_they_are(string languageId, string line, string word, SyntaxCategory expected) => UiThread.Run(() =>
+        {
+            var highlighter = new DocumentHighlighter(new TextDocument(line), PadHighlighting.For(PadLanguages.ById(languageId)!)!);
+            int start = line.IndexOf(word, System.StringComparison.Ordinal);
+            var section = Assert.Single(highlighter.HighlightLine(1).Sections, s => s.Offset == start && s.Length == word.Length);
+            Assert.Equal(expected, SyntaxColors.Categorize(section.Color.Name));
+        });
+
         [Fact]
         public void Yaml_apostrophe_in_text_is_not_a_string() => UiThread.Run(() =>
         {

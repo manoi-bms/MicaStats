@@ -38,14 +38,17 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// such overlap: the Preprocessor row sits above Type on purpose, so "DocType" (which contains
         /// "Type") gets the preprocessor-like color of a declaration rather than the type color.
         /// Reorder rows only with the overlaps in mind; spec 2.2 lists this table as it is.
-        /// Function is last, so it takes only names no other row knew (C#'s "MethodCall"), while
-        /// VB's "FunctionKeywords" stays a keyword.
+        /// Function is last, so it takes only names no other row knew (C#'s "MethodCall", PowerShell's
+        /// cmdlet "Command"), while VB's "FunctionKeywords" stays a keyword. The Keyword row also
+        /// names the groups AvalonEdit's C++ and Java keep keywords in ("ControlFlow", "Void",
+        /// "Literals"...); "Literals" is plural so "NumberLiteral" and VB's "DateLiteral" stay as they were.
         /// </summary>
         private static readonly (SyntaxCategory Category, string[] Names)[] Rows =
         {
             (SyntaxCategory.Comment, new[] { "Comment" }),
             (SyntaxCategory.String, new[] { "String", "Char", "Verbatim", "Regex", "AttributeValue" }),
-            (SyntaxCategory.Keyword, new[] { "Keyword", "Modifier", "Visibility", "Access", "This", "Null", "True", "False", "Bool", "Value", "Statement" }),
+            (SyntaxCategory.Keyword, new[] { "Keyword", "Modifier", "Visibility", "Access", "This", "Null", "True", "False", "Bool", "Value", "Statement",
+                                             "ControlFlow", "ExceptionHandling", "Void", "Package", "Literals" }),
             (SyntaxCategory.Number, new[] { "Number", "Digit", "Timestamp" }),
             (SyntaxCategory.Preprocessor, new[] { "Preprocessor", "Directive", "Region", "DocType", "XmlDeclaration", "Header", "Position" }),
             (SyntaxCategory.Type, new[] { "Type", "Class", "Reference" }),
@@ -58,7 +61,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             (SyntaxCategory.Debug, new[] { "Debug", "Trace" }),
             (SyntaxCategory.Added, new[] { "Added" }),
             (SyntaxCategory.Removed, new[] { "Removed" }),
-            (SyntaxCategory.Function, new[] { "Function", "Method" }),
+            (SyntaxCategory.Function, new[] { "Function", "Method", "Command" }),
         };
 
         /// <summary>The category of a definition's color name; an empty or unknown name is Text.</summary>

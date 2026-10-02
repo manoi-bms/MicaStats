@@ -28,6 +28,13 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("SelectionStatements", SyntaxCategory.Keyword)]          // PHP and Java: if, else, switch
         [InlineData("JumpStatements", SyntaxCategory.Keyword)]               // return, break
         [InlineData("ExceptionHandlingStatements", SyntaxCategory.Keyword)]
+        [InlineData("ControlFlow", SyntaxCategory.Keyword)]                  // C++: if, else, switch
+        [InlineData("ExceptionHandling", SyntaxCategory.Keyword)]            // C++: try, catch, throw
+        [InlineData("Void", SyntaxCategory.Keyword)]                         // Java
+        [InlineData("Package", SyntaxCategory.Keyword)]                      // Java: package, import
+        [InlineData("Literals", SyntaxCategory.Keyword)]                     // Java: null
+        [InlineData("JavaScriptLiterals", SyntaxCategory.Keyword)]           // true, false, null
+        [InlineData("DateLiteral", SyntaxCategory.Text)]                     // VB: one literal, not "Literals"
         [InlineData("NumberLiteral", SyntaxCategory.Number)]
         [InlineData("Digits", SyntaxCategory.Number)]
         [InlineData("LogTimestamp", SyntaxCategory.Number)]
@@ -58,6 +65,7 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("MethodName", SyntaxCategory.Function)]
         [InlineData("FunctionCall", SyntaxCategory.Function)]
         [InlineData("JavaScriptGlobalFunctions", SyntaxCategory.Function)]
+        [InlineData("Command", SyntaxCategory.Function)]                     // PowerShell cmdlets, as Prism colors them
         [InlineData("FunctionKeywords", SyntaxCategory.Keyword)]
         [InlineData("Friend", SyntaxCategory.Text)]
         [InlineData("", SyntaxCategory.Text)]

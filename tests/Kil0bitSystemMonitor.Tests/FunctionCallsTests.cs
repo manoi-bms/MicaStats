@@ -167,7 +167,7 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Theory]
-        [InlineData("powershell", "Write-Host $(Get-Date)", "")]
+        [InlineData("powershell", "Write-Host $(Get-Date)", "Write-Host,Get-Date")]   // cmdlets are functions, the $ is not
         [InlineData("javascript", "$(document).ready(f);", "ready")]
         public void A_lone_dollar_is_not_a_function_name(string languageId, string code, string functions) => UiThread.Run(() =>
         {

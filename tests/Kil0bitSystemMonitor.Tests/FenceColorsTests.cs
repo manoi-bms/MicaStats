@@ -145,7 +145,7 @@ namespace Kil0bitSystemMonitor.Tests
             var warnings = new List<string>();
             var highlighter = new FenceHighlighter(new MarkdownDocumentCache(), null, failures.Add, warnings.Add)
             {
-                FunctionPass = (line, failed) => failed(new System.InvalidOperationException("boom")),
+                FunctionPass = (line, failed, _) => failed(new System.InvalidOperationException("boom")),
             };
             var document = new TextDocument("```cs\nint a = f(1);\nint b = g(2);\n```");
 
@@ -167,7 +167,7 @@ namespace Kil0bitSystemMonitor.Tests
             var warnings = new List<string>();
             var colorizer = new MarkdownColorizer(new MarkdownDocumentCache(), () => PadPalette.Dark, null, null, warnings.Add);
 
-            colorizer.Fences.FunctionPass = (line, failed) => failed(new System.InvalidOperationException());
+            colorizer.Fences.FunctionPass = (line, failed, _) => failed(new System.InvalidOperationException());
             var view = new TextView { Document = new TextDocument("```go\nfunc main() {\nf(1)\n```\nafter") };
             view.LineTransformers.Add(colorizer);
             Layout(view);

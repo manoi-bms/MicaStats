@@ -25,19 +25,22 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly Func<PadPalette> _palette;
         private readonly Action<Exception> _onFailure;
         private readonly bool _functionCalls;
+        private readonly bool _tightCalls;
         private readonly Action<string>? _warn;
         private readonly Dictionary<PadColor, Brush> _brushes = new();
 
         /// <param name="onFailure">Told when highlighting fails; the text is left uncolored.</param>
         /// <param name="functionCalls">Color function names too (<see cref="PadLanguage.FunctionCalls"/>).</param>
         /// <param name="warn">Logs the one-time note that function colors failed; the other colors stay.</param>
+        /// <param name="tightCalls">A call's <c>(</c> follows its name directly (<see cref="PadLanguage.TightCalls"/>).</param>
         public ThemedHighlightingColorizer(IHighlightingDefinition definition, Func<PadPalette> palette, Action<Exception>? onFailure = null,
-                                           bool functionCalls = false, Action<string>? warn = null)
+                                           bool functionCalls = false, Action<string>? warn = null, bool tightCalls = false)
             : base(definition)
         {
             _palette = palette;
             _onFailure = onFailure ?? (_ => { });
             _functionCalls = functionCalls;
+            _tightCalls = tightCalls;
             _warn = warn;
         }
 
@@ -45,7 +48,7 @@ namespace Kil0bitSystemMonitor.Pad
         protected override IHighlighter CreateHighlighter(TextView textView, TextDocument document)
         {
             var highlighter = base.CreateHighlighter(textView, document);
-            return _functionCalls ? new FunctionCallHighlighter(highlighter, FunctionsFailed) : highlighter;
+            return _functionCalls ? new FunctionCallHighlighter(highlighter, FunctionsFailed, _tightCalls) : highlighter;
         }
 
         /// <summary>The function pass threw (reported once per document): those lines are shown without function colors.</summary>

@@ -19,7 +19,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// (no tail of it is colored), and neither has <c>1foo(</c>. A line longer than
         /// <paramref name="maxLength"/> has none: a huge line costs nothing.
         /// </summary>
-        public static IReadOnlyList<(int Start, int Length)> Find(string line, int maxLength)
+        /// <param name="tight">
+        /// The <c>(</c> must follow the name directly (<see cref="PadLanguage.TightCalls"/>): in
+        /// PowerShell <c>-f ($x)</c> and <c>-Path (Get-Location)</c> pass arguments, they call nothing.
+        /// </param>
+        public static IReadOnlyList<(int Start, int Length)> Find(string line, int maxLength, bool tight = false)
         {
             if (line.Length > maxLength || line.IndexOf('(') < 0) return Array.Empty<(int, int)>();
 
@@ -36,7 +40,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 while (i < line.Length && IsWordChar(line[i])) i++;
 
                 int next = i;
-                while (next < line.Length && (line[next] == ' ' || line[next] == '\t')) next++;
+                while (!tight && next < line.Length && (line[next] == ' ' || line[next] == '\t')) next++;
                 if (next == line.Length || line[next] != '(') continue;
 
                 var word = line.AsSpan(start, i - start);

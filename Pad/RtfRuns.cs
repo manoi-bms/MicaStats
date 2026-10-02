@@ -84,7 +84,7 @@ namespace Kil0bitSystemMonitor.Pad
                 {
                     var highlighted = highlighter.HighlightLine(n);
                     // As the editor shows the line: function names in their own color (ruling R4).
-                    if (language.FunctionCalls) FunctionCallHighlighter.AddTo(highlighted, FunctionsFailed);
+                    if (language.FunctionCalls) FunctionCallHighlighter.AddTo(highlighted, FunctionsFailed, language.TightCalls);
                     foreach (var section in highlighted.Sections)
                     {
                         var color = section.Color;

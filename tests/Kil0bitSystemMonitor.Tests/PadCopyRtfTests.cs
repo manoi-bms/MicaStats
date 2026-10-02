@@ -116,6 +116,21 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Matches($@"\\cf{word}(\\[a-z]+)*\\fs(\d+)\\afs\2 {keyword}\\plain", rtf);
         });
 
+        [Fact]
+        public void A_powershell_argument_is_copied_without_the_function_color() => PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var copied = CaptureClipboard(window);
+            PadLanguageWindowTests.OpenFile(window, env, "a.ps1", "$t = \"{0}\" -f ($x); $t.Trim()");
+            window.Editor.Select(0, 0);
+
+            window.CopyAsRtf();
+
+            string rtf = copied.Rtf!;
+            int call = ColorNumber(rtf, PadPalette.Light.SyntaxFunction);
+            Assert.Matches($@"\\cf{call}(\\[a-z]+)*\\fs(\d+)\\afs\2 Trim\\plain", rtf);
+            Assert.DoesNotMatch($@"\\cf{call}(\\[a-z]+)*\\fs(\d+)\\afs\2 f\\plain", rtf);
+        });
+
         [Theory]
         [InlineData(null)]                 // a note: Markdown
         [InlineData("a.txt")]              // plain text

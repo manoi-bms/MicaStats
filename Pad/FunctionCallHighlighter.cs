@@ -27,13 +27,16 @@ namespace Kil0bitSystemMonitor.Pad
 
         private readonly IHighlighter _inner;
         private readonly Action<Exception> _onFailure;
+        private readonly bool _tight;
         private bool _failed;
 
         /// <param name="onFailure">Told the first time the pass throws; that line keeps its other colors.</param>
-        public FunctionCallHighlighter(IHighlighter inner, Action<Exception> onFailure)
+        /// <param name="tight">A call's <c>(</c> follows its name directly (<see cref="PadLanguage.TightCalls"/>).</param>
+        public FunctionCallHighlighter(IHighlighter inner, Action<Exception> onFailure, bool tight = false)
         {
             _inner = inner;
             _onFailure = onFailure;
+            _tight = tight;
         }
 
         private static HighlightingColor CreateColor(string name)
@@ -49,8 +52,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <see cref="FunctionCalls.IsKeyword">keyword</see> (PHP's <c>if (</c>, C++'s <c>decltype(</c>,
         /// C#'s <c>when (</c>) gets the keyword color instead, in place. A throw leaves the line as it
         /// was and is passed to <paramref name="onFailure"/>: it costs only this line its function colors.
+        /// With <paramref name="tight"/>, a name spaced from its <c>(</c> is no call (<see cref="FunctionCalls.Find"/>).
         /// </summary>
-        internal static void AddTo(HighlightedLine line, Action<Exception> onFailure)
+        internal static void AddTo(HighlightedLine line, Action<Exception> onFailure, bool tight = false)
         {
             try
             {
@@ -68,7 +72,7 @@ namespace Kil0bitSystemMonitor.Pad
                         && SyntaxColors.Categorize(section.Color?.Name) == SyntaxCategory.Function)
                         (keywords ??= new List<HighlightedSection>()).Add(section);
                 }
-                var merged = WithCalls(sections, FunctionCalls.Find(text, MarkdownLineTokenizer.MaxInlineLength), documentLine.Offset);
+                var merged = WithCalls(sections, FunctionCalls.Find(text, MarkdownLineTokenizer.MaxInlineLength, tight), documentLine.Offset);
 
                 // Nothing has changed the line so far; nothing below throws.
                 if (keywords != null)
@@ -118,7 +122,7 @@ namespace Kil0bitSystemMonitor.Pad
         public HighlightedLine HighlightLine(int lineNumber)
         {
             var line = _inner.HighlightLine(lineNumber);
-            AddTo(line, Failed);
+            AddTo(line, Failed, _tight);
             return line;
         }
 

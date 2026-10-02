@@ -38,6 +38,45 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(expected, Names(line));
         }
 
+        /// <summary>PowerShell (tight calls): a method call has no space before its parenthesis, so a name with one is an argument.</summary>
+        [Theory]
+        [InlineData("Join-Path -Path (Get-Location)", "")]
+        [InlineData("\"{0}\" -f ($x)", "")]
+        [InlineData("$a -split (',')", "")]
+        [InlineData("New-Object System.Drawing.PointF ($m)", "")]
+        [InlineData("$s.Trim(); [Math]::Round($x, 2)", "Trim,Round")]
+        public void With_tight_calls_a_name_spaced_from_its_parenthesis_is_no_call(string line, string expected)
+        {
+            Assert.Equal(expected, string.Join(",", FunctionCalls.Find(line, MarkdownLineTokenizer.MaxInlineLength, tight: true).Select(f => line.Substring(f.Start, f.Length))));
+            Assert.Equal("foo", Names("foo (1)"));   // other languages keep the optional spaces
+        }
+
+        [Theory]
+        [InlineData("Join-Path -Path (Get-Location)", "Path (")]
+        [InlineData("\"{0}\" -f ($x)", "f (")]
+        [InlineData("$a -split (',')", "split (")]
+        [InlineData("New-Object System.Drawing.PointF ($m)", "PointF (")]
+        public void A_powershell_argument_before_a_parenthesis_is_no_call(string code, string argument) => UiThread.Run(() =>
+        {
+            int at = code.IndexOf(argument, StringComparison.Ordinal);
+            var file = HighlighterOf(Show("powershell", code)).HighlightLine(1);
+            var fence = new FenceHighlighter(new MarkdownDocumentCache()).HighlightLine(new TextDocument("```powershell\n" + code + "\n```"), 2)!;
+
+            Assert.NotEqual(SyntaxCategory.Function, CategoryAt(file, at));
+            Assert.NotEqual(SyntaxCategory.Function, CategoryAt(fence, at));
+        });
+
+        [Fact]
+        public void A_powershell_method_call_is_a_call() => UiThread.Run(() =>
+        {
+            const string code = "$s.Trim(); [Math]::Round($x, 2)";
+            var file = HighlighterOf(Show("powershell", code)).HighlightLine(1);
+            var fence = new FenceHighlighter(new MarkdownDocumentCache()).HighlightLine(new TextDocument("```powershell\n" + code + "\n```"), 2)!;
+
+            Assert.Equal("Trim,Round", string.Join(",", FunctionNames(file)));
+            Assert.Equal("Trim,Round", string.Join(",", FunctionNames(fence)));
+        });
+
         [Theory]
         [InlineData("if (a) foreach (b) while (c) return (d)", "")]
         [InlineData("static_assert(x); decltype(y) z; sizeof (int)", "")]

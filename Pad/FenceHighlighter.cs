@@ -42,8 +42,8 @@ namespace Kil0bitSystemMonitor.Pad
             _warn = warn;
         }
 
-        /// <summary>The function pass run on each line of a flagged language (a test seam).</summary>
-        internal Action<HighlightedLine, Action<Exception>> FunctionPass { get; set; } = FunctionCallHighlighter.AddTo;
+        /// <summary>The function pass run on each line of a flagged language, told whether its calls are tight (a test seam).</summary>
+        internal Action<HighlightedLine, Action<Exception>, bool> FunctionPass { get; set; } = FunctionCallHighlighter.AddTo;
 
         private static IHighlightingDefinition? DefaultDefinition(string? id)
         {
@@ -190,7 +190,7 @@ namespace Kil0bitSystemMonitor.Pad
                 engine.CurrentSpanStack = block.Stack;
                 var highlighted = engine.HighlightLine(document, line);
                 // A failure here costs only this line its function colors.
-                if (block.FunctionCalls) FunctionPass(highlighted, FunctionsFailed);
+                if (block.FunctionCalls) FunctionPass(highlighted, FunctionsFailed, block.TightCalls);
                 block.Lines.Add(highlighted);
                 block.Stacks.Add(engine.CurrentSpanStack);
             }
@@ -200,9 +200,11 @@ namespace Kil0bitSystemMonitor.Pad
         {
             string? id = FenceLanguages.IdOfFence(document.GetText(document.GetLineByNumber(open)));
             var definition = _definitionFor(id);
+            var language = PadLanguages.ForFence(id);
             return new Block(definition == null ? null : new HighlightingEngine(definition.MainRuleSet))
             {
-                FunctionCalls = PadLanguages.ForFence(id)?.FunctionCalls == true,
+                FunctionCalls = language?.FunctionCalls == true,
+                TightCalls = language?.TightCalls == true,
             };
         }
 
@@ -215,6 +217,9 @@ namespace Kil0bitSystemMonitor.Pad
 
             /// <summary>The language calls functions as <c>name(...)</c>: its plain names get the Function color.</summary>
             public bool FunctionCalls;
+
+            /// <summary>A call's <c>(</c> follows its name directly (<see cref="PadLanguage.TightCalls"/>).</summary>
+            public bool TightCalls;
 
             /// <summary>Highlighting threw: no colors until the next edit.</summary>
             public bool Failed;

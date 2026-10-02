@@ -133,7 +133,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
             else if (PadHighlighting.For(language) is { } definition)
             {
-                _syntax = new ThemedHighlightingColorizer(definition, _palette, ReportFailure, language.FunctionCalls, message => Warn(message));
+                _syntax = new ThemedHighlightingColorizer(definition, _palette, ReportFailure, language.FunctionCalls, message => Warn(message), language.TightCalls);
                 view.LineTransformers.Add(_syntax);
             }
             _folding?.Attach(language);

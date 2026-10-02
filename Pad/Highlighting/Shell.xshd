@@ -10,7 +10,7 @@
   <RuleSet>
     <Span color="Directive" begin="^\#!" />
     <Span color="Comment" begin="(?&lt;=^|[\s;|&amp;(])\#" />
-    <Span color="String" begin="(?&lt;![&lt;\w])&lt;&lt;-?[ \t]*['&quot;]?[A-Z_][A-Z0-9_]*['&quot;]?" end="^\s*[A-Z_][A-Z0-9_]*\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?[A-Z_][A-Z0-9_]*(?![\w-])['&quot;]?" end="^\s*[A-Z_][A-Z0-9_]*\s*$" multiline="true" />
     <Span color="String" begin="&quot;" end="&quot;" multiline="true">
       <RuleSet>
         <Span begin="\\" end="." />

@@ -12,7 +12,7 @@
   <RuleSet>
     <Span color="Comment" begin="^=begin\b" end="^=end\b" multiline="true" />
     <Span color="Comment" begin="\#" />
-    <Span color="String" begin="(?&lt;![&lt;\w])&lt;&lt;[-~]?['&quot;]?[A-Z_][A-Z0-9_]*['&quot;]?" end="^\s*[A-Z_][A-Z0-9_]*\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])&lt;&lt;[-~]?['&quot;]?[A-Z_][A-Z0-9_]*(?![\w-])['&quot;]?" end="^\s*[A-Z_][A-Z0-9_]*\s*$" multiline="true" />
     <Span color="String" begin="&quot;" end="&quot;" multiline="true">
       <RuleSet>
         <Span begin="\\" end="." />

@@ -257,6 +257,51 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Empty(herestring.HighlightLine(3).Sections);
         });
 
+        /// <summary>Not a heredoc: a mixed-case tag could never be closed, and an arithmetic shift is no heredoc. The line after must stay plain.</summary>
+        [Theory]
+        [InlineData("shell", "cat <<End-of-message")]
+        [InlineData("shell", "cat <<EndOfText")]
+        [InlineData("shell", "cat <<Eof")]
+        [InlineData("shell", "echo $(( 1 << SHIFT ))")]
+        [InlineData("shell", "(( mask = 1 << IDX ))")]
+        [InlineData("ruby", "puts <<~Sql")]
+        [InlineData("ruby", "puts <<End-of-text")]
+        public void A_mixed_case_tag_or_a_shift_does_not_open_a_heredoc(string languageId, string line) => UiThread.Run(() =>
+        {
+            var highlighter = new DocumentHighlighter(new TextDocument(line + "\nx"), PadHighlighting.For(PadLanguages.ById(languageId)!)!);
+            Assert.DoesNotContain(highlighter.HighlightLine(1).Sections, s => s.Color.Name == "String");
+            Assert.Empty(highlighter.HighlightLine(2).Sections);
+        });
+
+        [Theory]
+        [InlineData("shell", "cat <<'EOF'")]
+        [InlineData("shell", "cat <<\"EOF\"")]
+        [InlineData("shell", "cat <<-EOF")]
+        [InlineData("shell", "cat << EOF")]
+        [InlineData("shell", "x=$(cat <<EOF")]
+        [InlineData("ruby", "puts <<-EOS")]
+        public void An_upper_case_tag_opens_a_heredoc_that_its_line_closes(string languageId, string line) => UiThread.Run(() =>
+        {
+            string tag = line.Substring(line.IndexOf("<<", System.StringComparison.Ordinal)).Trim('<', '-', '~', ' ', '\'', '"');
+            var highlighter = new DocumentHighlighter(new TextDocument(line + "\nDon't\n" + tag + "\nx"), PadHighlighting.For(PadLanguages.ById(languageId)!)!);
+            highlighter.HighlightLine(1);
+            Assert.Contains(highlighter.HighlightLine(2).Sections, s => s.Color.Name == "String");
+            highlighter.HighlightLine(3);
+            Assert.Empty(highlighter.HighlightLine(4).Sections);
+        });
+
+        [Theory]
+        [InlineData("let d = b'\"';", "b'\"'")]
+        [InlineData("let d = '\\\\';", "'\\\\'")]
+        [InlineData("let d = '\\u{1F600}';", "'\\u{1F600}'")]
+        public void Rust_byte_backslash_and_unicode_chars_are_one_char(string line, string literal) => UiThread.Run(() =>
+        {
+            var highlighter = new DocumentHighlighter(new TextDocument(line + "\nx"), PadHighlighting.For(PadLanguages.ById("rust")!)!);
+            int start = line.IndexOf(literal, System.StringComparison.Ordinal);
+            Assert.Contains(highlighter.HighlightLine(1).Sections, s => s.Offset == start && s.Length == literal.Length && s.Color.Name == "Char");
+            Assert.Empty(highlighter.HighlightLine(2).Sections);
+        });
+
         /// <summary>A sample token for each own definition and the color name it must get.</summary>
         private static readonly System.Collections.Generic.Dictionary<string, (string Line, string Part, string Color)> Samples = new()
         {

@@ -224,6 +224,24 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             }
         }
 
+        /// <summary>
+        /// Deletes the vectors file in <paramref name="folder"/> and its leftover from a write, with no
+        /// store open on it: Settings turning meaning search off before MicaPad opened this session.
+        /// </summary>
+        public static void DeleteFiles(string folder, Action<string>? warn = null)
+        {
+            string path = Path.Combine(folder, FileName);
+            try
+            {
+                if (File.Exists(path)) File.Delete(path);
+                if (File.Exists(path + ".ready")) File.Delete(path + ".ready");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                warn?.Invoke("The search vectors file could not be deleted (" + ex.GetType().Name + ").");
+            }
+        }
+
         /// <summary>The <paramref name="limit"/> candidates closest to the query by cosine; candidates without a vector are skipped.</summary>
         public IReadOnlyList<VectorHit> Nearest(float[] query, IEnumerable<string> candidates, int limit)
         {

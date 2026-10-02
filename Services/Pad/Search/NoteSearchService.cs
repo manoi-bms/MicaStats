@@ -29,6 +29,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
     /// </summary>
     public sealed class NoteSearchService : IDisposable
     {
+        /// <summary>The folder beside the notes that holds the vectors.</summary>
+        public const string FolderName = "search";
+
         private readonly IDisposable? _ownedEmbedder;
         private readonly IDisposable? _ownedReranker;
 
@@ -39,7 +42,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             if (reranker == null) { var client = new RerankClient(); reranker = client; _ownedReranker = client; }
 
             Settings = settings;
-            var vectors = new VectorStore(Path.Combine(store.Root, "search"), store.EncryptBytes, store.TryDecryptBytes, warn);
+            var vectors = new VectorStore(Path.Combine(store.Root, FolderName), store.EncryptBytes, store.TryDecryptBytes, warn);
             Indexer = new SearchIndexer(vectors, embedder, settings, store.LoadText, warn);
             Search = new NoteSearch(Indexer, embedder, reranker, settings);
         }

@@ -21,11 +21,11 @@ namespace Kil0bitSystemMonitor.Tests
     {
         private const ModifierKeys CtrlShift = ModifierKeys.Control | ModifierKeys.Shift;
 
-        private static void WithWindow(Action<MicaPadWindow, PadTestEnv, NoteSearchService> test) => UiThread.Run(() =>
+        private static void WithWindow(Action<MicaPadWindow, PadTestEnv, NoteSearchService> test, SearchSettings? settings = null, IEmbedder? embedder = null) => UiThread.Run(() =>
         {
             var dispatcher = Dispatcher.CurrentDispatcher;
             using var env = new PadTestEnv(post: action => dispatcher.BeginInvoke(action));
-            using var service = new NoteSearchService(env.Store, () => SearchSettings.Off);
+            using var service = new NoteSearchService(env.Store, () => settings ?? SearchSettings.Off, embedder, warn: _ => { });
             var originalService = MicaPadWindow.SearchService;
             MicaPadWindow.SearchService = service;
             var window = new MicaPadWindow(env.Workspace, new AppConfig());
@@ -122,6 +122,40 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(row.Closed);
             Assert.Equal("Words", window.SearchPanel.StatusText.Text);
         });
+
+        /// <summary>Embeds every text as [1, 0] at once, and notes whether the query was embedded on a thread with a dispatcher (the UI thread).</summary>
+        private sealed class ThreadNotingEmbedder : IEmbedder
+        {
+            public System.Collections.Generic.List<bool> QueryOnUiThread { get; } = new();
+
+            public Task<EmbeddingResult> EmbedAsync(SearchServer server, System.Collections.Generic.IReadOnlyList<string> texts, TimeSpan timeout, System.Threading.CancellationToken cancel)
+            {
+                if (texts.Count == 1 && texts[0] == "needle")
+                    lock (QueryOnUiThread) QueryOnUiThread.Add(Dispatcher.FromThread(System.Threading.Thread.CurrentThread) != null);
+                return Task.FromResult(new EmbeddingResult(texts.Select(_ => new[] { 1f, 0f }).ToList(), SearchFailure.None, 200));
+            }
+        }
+
+        [Fact]
+        public void A_search_runs_off_the_UI_thread()
+        {
+            var embedder = new ThreadNotingEmbedder();
+            WithWindow((window, env, service) =>
+            {
+                var note = env.Workspace.Open.First();
+                window.Editor.Document.Text = "a needle in here";
+                service.Indexer.SetNote(note.Id, note.Title, window.Editor.Document.Text, DateTime.UtcNow);
+                Wait(service.Indexer.WhenIdle());
+
+                window.ToggleSearch();
+                window.SearchPanel.QueryBox.Text = "needle";
+                Wait(window.SearchPanel.SearchNow());
+
+                Assert.Single(window.SearchPanel.Rows);
+                Assert.Equal("Meaning + words", window.SearchPanel.StatusText.Text);
+                lock (embedder.QueryOnUiThread) Assert.Equal(new[] { false }, embedder.QueryOnUiThread.ToArray());
+            }, new SearchSettings(true, new SearchServer("http://gpu/v1", "m", null), false, null), embedder);
+        }
 
         [Fact]
         public void Picking_a_closed_note_reopens_it_with_the_passage_selected() => WithWindow((window, env, service) =>

@@ -302,6 +302,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>A closed note was deleted (search indexing listens). Raised on the UI thread.</summary>
         public event Action<string>? NoteDeleted;
 
+        /// <summary>
+        /// A tab is about to close: raised at the start of <see cref="Close"/>, while the note is still
+        /// open and its text still readable (search indexing sends an edit still waiting). UI thread.
+        /// </summary>
+        public event Action<OpenNote>? NoteClosing;
+
         /// <summary>True while the note has changes not yet handed to the writer.</summary>
         public bool HasPendingChanges(OpenNote note) => _scheduler.IsPending(note.Id);
 
@@ -415,6 +421,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public void Close(OpenNote note)
         {
             if (!_byId.ContainsKey(note.Id)) return;
+            try
+            {
+                NoteClosing?.Invoke(note);
+            }
+            catch (Exception ex)
+            {
+                _warn("Getting ready to close a tab failed (" + ex.GetType().Name + "); it closes anyway");   // a tab always closes
+            }
 
             string windowId = note.WindowId;
             int index = TabsOf(windowId).IndexOf(note);

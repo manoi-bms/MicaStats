@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad;
 using Kil0bitSystemMonitor.Services.Pad.Search;
@@ -19,14 +20,32 @@ namespace Kil0bitSystemMonitor.Pad
     {
         private const string ServerHelp = "Base addresses like http://gpu:8000/v1. MicaPad adds /embeddings and /rerank. Changing the embedding server or model makes the vectors again.";
 
+        /// <summary>How often the index line is read again while the panel is shown.</summary>
+        public static readonly TimeSpan IndexRefreshEvery = TimeSpan.FromSeconds(1);
+
+        private readonly DispatcherTimer _indexRefresh;
         private SearchSettingsHost? _host;
         private bool _loading;
-        private int _testRun;
+        private int _embeddingTestRun;
+        private int _rerankTestRun;
 
         public SearchSettingsPanel()
         {
             InitializeComponent();
+            // The index line follows the indexer while the panel is shown (first indexing, Rebuild,
+            // MicaPad opening meanwhile); the timer runs only between Loaded and Unloaded.
+            _indexRefresh = new DispatcherTimer { Interval = IndexRefreshEvery };
+            _indexRefresh.Tick += (_, _) => RefreshIndex();
+            Loaded += (_, _) =>
+            {
+                RefreshIndex();
+                _indexRefresh.Start();
+            };
+            Unloaded += (_, _) => _indexRefresh.Stop();
         }
+
+        /// <summary>True while the index line is being kept current (tests).</summary>
+        internal bool RefreshesIndex => _indexRefresh.IsEnabled;
 
         public void Load(SearchSettingsHost host)
         {
@@ -62,13 +81,17 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void RefreshEnabled() => RerankToggle.IsEnabled = MeaningToggle.IsOn;
 
-        /// <summary>The index line, from the running search; called on load and after changes.</summary>
+        /// <summary>
+        /// The index line and Rebuild, from the running search: on load, after changes and every
+        /// <see cref="IndexRefreshEvery"/> while shown. Reads the config, never the keys.
+        /// </summary>
         public void RefreshIndex()
         {
-            var service = _host?.Service();
+            if (_host == null) return;
+            var service = _host.Service();
             IndexStatus.Text = service == null
                 ? "The index is made when MicaPad opens."
-                : SearchStatusText.Index(service.Indexer.Progress, service.Settings());
+                : SearchStatusText.Index(service.Indexer.Progress, PadSearchSettings.From(_host.Config, _ => null));
             RebuildButton.IsEnabled = service != null;
         }
 
@@ -78,6 +101,9 @@ namespace Kil0bitSystemMonitor.Pad
             CommitServer(EmbeddingServerBox, () => _host.Config.PadEmbeddingServer, v => _host.Config.PadEmbeddingServer = v);
             _host.Config.PadSemanticSearch = MeaningToggle.IsOn;
             Changed();
+            // Turning it off deletes the stored vectors (spec 2). A running search does so itself;
+            // before MicaPad has opened this session there is none, so the file goes from here.
+            if (!MeaningToggle.IsOn && _host.Service() == null) _host.DeleteStoredVectors();
         }
 
         private void OnRerankToggled(object sender, RoutedEventArgs e)
@@ -227,10 +253,10 @@ namespace Kil0bitSystemMonitor.Pad
             var server = PadSearchSettings.From(_host.Config, _host.Secrets.Get).Embedding;
             if (server == null) { EmbeddingTestResult.Text = "Enter the server address first."; return; }
 
-            int run = ++_testRun;
+            int run = ++_embeddingTestRun;
             EmbeddingTestResult.Text = "Testing…";
-            var result = await _host.Embedder.EmbedAsync(server, new[] { "MicaPad test" }, TimeSpan.FromSeconds(15), default);
-            if (run != _testRun) return;
+            var result = await _host.Embedder.EmbedAsync(server, new[] { SearchIndexer.KnownGoodText }, TimeSpan.FromSeconds(15), default);
+            if (run != _embeddingTestRun) return;   // a newer test of this server took over
             EmbeddingTestResult.Text = result.Vectors != null
                 ? "OK: " + result.Vectors[0].Length + " dimensions"
                 : "The server " + SearchFailureText.Describe(result.Failure, result.Status) + ".";
@@ -243,10 +269,10 @@ namespace Kil0bitSystemMonitor.Pad
             var server = PadSearchSettings.From(_host.Config, _host.Secrets.Get).Reranker;
             if (server == null) { RerankTestResult.Text = "Enter the server address first."; return; }
 
-            int run = ++_testRun;
+            int run = ++_rerankTestRun;
             RerankTestResult.Text = "Testing…";
             var result = await _host.Reranker.RerankAsync(server, "test", new[] { "test", "other" }, 2, TimeSpan.FromSeconds(15), default);
-            if (run != _testRun) return;
+            if (run != _rerankTestRun) return;   // a newer test of this server took over
             RerankTestResult.Text = result.Ranked != null
                 ? "OK"
                 : "The server " + SearchFailureText.Describe(result.Failure, result.Status) + ".";

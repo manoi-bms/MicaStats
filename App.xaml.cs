@@ -38,6 +38,10 @@ namespace Kil0bitSystemMonitor
         private static Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? s_padSearch;
         private static Kil0bitSystemMonitor.Pad.SearchFeeder? s_padSearchFeeder;
 
+        /// <summary>The config the search follows and its handler, removed at exit.</summary>
+        private static Kil0bitSystemMonitor.Models.AppConfig? s_padSearchConfig;
+        private static System.ComponentModel.PropertyChangedEventHandler? s_padSearchConfigChanged;
+
         /// <summary>MicaPad's search; null until MicaPad first opens.</summary>
         internal static Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? PadSearch => s_padSearch;
 
@@ -686,25 +690,50 @@ namespace Kil0bitSystemMonitor
                     Kil0bitSystemMonitor.Pad.MicaPadWindow.ImageLoader = s_images;   // image previews (MicaPadWindow.ConfigureDiagrams)
                 }
 
-                if (s_padSearch == null)
-                {
-                    s_padSearch = new Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService(PadStore,
-                        () => Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.From(config, AiSecrets.Get));
-                    config.PropertyChanged += (_, e) =>
-                    {
-                        if (Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.IsSearchProperty(e.PropertyName))
-                            s_padSearch.Indexer.SettingsChanged();
-                    };
-                    s_padSearchFeeder = new Kil0bitSystemMonitor.Pad.SearchFeeder(s_pad, s_padSearch.Indexer);
-                    Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchService = s_padSearch;        // the Search notes pane (Ctrl+Shift+F)
-                    Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchFeeder = s_padSearchFeeder;   // reconciled each time the pane opens
-                }
+                if (s_padSearch == null) StartPadSearch(config, s_pad);
 
                 Kil0bitSystemMonitor.Pad.MicaPadWindow.Open(s_pad, config, () => ShowSettingsSection("MicaPad"), path);
             }
             catch (Exception ex)
             {
                 Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Opening MicaPad failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// MicaPad's search (search spec 3.5), started with the workspace: the service, its feeder and
+        /// the config handler that passes Settings → Search changes on. Published only once all of it
+        /// exists. A failure is logged (exception type only) and MicaPad opens without search; the
+        /// next open tries again.
+        /// </summary>
+        private static void StartPadSearch(Kil0bitSystemMonitor.Models.AppConfig config, Kil0bitSystemMonitor.Services.Pad.PadWorkspace workspace)
+        {
+            Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? service = null;
+            try
+            {
+                service = new Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService(PadStore,
+                    () => Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.From(config, AiSecrets.Get));
+                var feeder = new Kil0bitSystemMonitor.Pad.SearchFeeder(workspace, service.Indexer);
+                var indexer = service.Indexer;
+                System.ComponentModel.PropertyChangedEventHandler changed = (_, e) =>
+                {
+                    if (Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.IsSearchProperty(e.PropertyName))
+                        indexer.SettingsChanged();
+                };
+                config.PropertyChanged += changed;
+
+                s_padSearchConfig = config;
+                s_padSearchConfigChanged = changed;
+                s_padSearchFeeder = feeder;
+                s_padSearch = service;
+                Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchService = service;   // the Search notes pane (Ctrl+Shift+F)
+                Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchFeeder = feeder;     // reconciled each time the pane opens
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("search",
+                    "Search notes could not start (" + ex.GetType().Name + "); MicaPad opens without it and tries again next time.");
+                service?.Dispose();
             }
         }
 
@@ -833,6 +862,8 @@ namespace Kil0bitSystemMonitor
                 s_padVault?.Lock();
                 Kil0bitSystemMonitor.Pad.SecretClipboard.ClearIfStillOurs();
                 m_padMaintenanceTimer?.Stop();
+                if (s_padSearchConfig != null && s_padSearchConfigChanged != null)
+                    s_padSearchConfig.PropertyChanged -= s_padSearchConfigChanged;
                 s_padSearchFeeder?.Dispose();
                 s_padSearch?.Dispose();
                 s_pad?.Dispose();

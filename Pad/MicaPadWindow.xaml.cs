@@ -1878,7 +1878,9 @@ namespace Kil0bitSystemMonitor.Pad
             var service = SearchService;
             if (service == null) return (Array.Empty<SearchRow>(), "Search is not ready yet.");
 
-            var outcome = await service.Search.SearchAsync(query, cancel);
+            // Off the UI thread: the keyword search and the vector scan take tens of milliseconds over a
+            // large index (longer while the vectors are being saved). The rows are built back here.
+            var outcome = await Task.Run(() => service.Search.SearchAsync(query, cancel), cancel);
             var open = _workspace.Open.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
             var rows = outcome.Hits.Select(p => new SearchRow(
                 p.NoteId, p.Title, !open.Contains(p.NoteId), p.FirstLine, p.LastLine, p.FirstLineText,

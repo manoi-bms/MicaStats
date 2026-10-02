@@ -10,7 +10,8 @@ namespace Kil0bitSystemMonitor.Pad
     /// <summary>
     /// Hands the notes to the search indexer (spec 3.5): every note at start and on
     /// <see cref="ReconcileAll"/>, an open note's text 2 s after its last change (read on the UI
-    /// thread, where <see cref="OpenNote.TextProvider"/> lives), and deletions at once.
+    /// thread, where <see cref="OpenNote.TextProvider"/> lives) or at once when its tab closes
+    /// sooner, and deletions at once.
     /// </summary>
     internal sealed class SearchFeeder : IDisposable
     {
@@ -26,9 +27,10 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace = workspace;
             _indexer = indexer;
             _debounce = debounce ?? DefaultDebounce;
+            ReconcileAll();   // first: when it throws, nothing is left subscribed
             _workspace.NoteTextChanged += OnTextChanged;
+            _workspace.NoteClosing += OnClosing;
             _workspace.NoteDeleted += OnDeleted;
-            ReconcileAll();
         }
 
         /// <summary>Every note again: open ones from their editors, the rest from the store; vanished ones removed.</summary>
@@ -61,6 +63,12 @@ namespace Kil0bitSystemMonitor.Pad
             timer.Start();
         }
 
+        /// <summary>The tab closes while an edit still waits for its debounce: sent now, while the text can still be read.</summary>
+        private void OnClosing(OpenNote note)
+        {
+            if (_timers.ContainsKey(note.Id)) Fire(note.Id);
+        }
+
         private void Fire(string id)
         {
             if (_timers.Remove(id, out var timer)) timer.Stop();
@@ -88,6 +96,7 @@ namespace Kil0bitSystemMonitor.Pad
         public void Dispose()
         {
             _workspace.NoteTextChanged -= OnTextChanged;
+            _workspace.NoteClosing -= OnClosing;
             _workspace.NoteDeleted -= OnDeleted;
             foreach (var timer in _timers.Values) timer.Stop();
             _timers.Clear();

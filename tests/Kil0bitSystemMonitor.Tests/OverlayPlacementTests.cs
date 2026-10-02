@@ -121,6 +121,26 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Keep_on_top_raises_the_overlay()
+        {
+            Assert.True(OverlayPlacement.TopmostFor(alwaysOnTop: true, stickToTaskbar: true));
+            Assert.True(OverlayPlacement.TopmostFor(alwaysOnTop: true, stickToTaskbar: false));
+        }
+
+        [Fact]
+        public void Keep_on_top_off_lowers_a_floating_overlay()
+        {
+            Assert.False(OverlayPlacement.TopmostFor(alwaysOnTop: false, stickToTaskbar: false));
+        }
+
+        [Fact]
+        public void Keep_on_top_off_never_lowers_an_overlay_owned_by_the_taskbar()
+        {
+            // Made not-topmost, an owned window takes its owner down too: the taskbar would lose topmost.
+            Assert.Null(OverlayPlacement.TopmostFor(alwaysOnTop: false, stickToTaskbar: true));
+        }
+
+        [Fact]
         public void Floating_overlay_is_never_attached()
         {
             Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: false, taskbar: NewTaskbar, taskbarShown: true, owner: 0, lastAttempt: OldTaskbar));

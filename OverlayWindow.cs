@@ -258,9 +258,10 @@ namespace Kil0bitSystemMonitor
                         if (e.PropertyName == nameof(_config.Config.ShowOverlay) || e.PropertyName == nameof(_config.Config.HideOnFullscreen) || e.PropertyName == nameof(_config.Config.StickToTaskbar) || e.PropertyName == nameof(_config.Config.ShowPods) || e.PropertyName == nameof(_config.Config.ShowBackground) || e.PropertyName == nameof(_config.Config.AlwaysOnTop))
                         {
                             UpdateVisibility();
-                            // One-time Z-order update for smooth transition
-                            IntPtr zOrder = _config.Config.AlwaysOnTop ? Win32Helper.HWND_TOPMOST : Win32Helper.HWND_NOTOPMOST;
-                            SetWindowPos(_hWnd, zOrder, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE | 0x0040);
+                            // One-time Z-order update for smooth transition; left alone (SWP_NOZORDER) where lowering would take the taskbar down
+                            bool? topmost = OverlayPlacement.TopmostFor(_config.Config.AlwaysOnTop, _config.Config.StickToTaskbar);
+                            IntPtr zOrder = topmost == false ? Win32Helper.HWND_NOTOPMOST : Win32Helper.HWND_TOPMOST;
+                            SetWindowPos(_hWnd, zOrder, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE | 0x0040 | (topmost == null ? 0x0004u : 0u));
                         }
                         _lastStackedFrameKey = null; // appearance may change while readouts are identical
                         UpdateLayer();
@@ -346,11 +347,13 @@ namespace Kil0bitSystemMonitor
             _reattachQueued = false;
             if (_disposed) return;
 
-            // A new shell knows nothing of the old one's appbars or full-screen notice. The same shell
-            // (TaskbarCreated also comes with a DPI change) still has both, and still sends the notices.
+            // A new shell knows nothing of the old one's full-screen notice; the same shell (TaskbarCreated
+            // also comes with a DPI change) still sends its notices. The appbar is always registered again:
+            // a shell that already has it just refuses, and one that lost it gets it back.
             IntPtr taskbar = Win32Helper.FindWindow("Shell_TrayWnd", null!);
             bool newShell = taskbar != IntPtr.Zero && taskbar != _attachedTaskbar;
-            if (newShell) { _appbarRegistered = false; _shellFullscreen = false; }
+            _appbarRegistered = false;
+            if (newShell) _shellFullscreen = false;
             if (_config.Config.StickToTaskbar) AttachToTaskbar(); else AlignToTaskbarCenter();
 
             // Back above the new taskbar now rather than at the next click elsewhere, and never shown

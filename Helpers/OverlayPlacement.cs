@@ -72,5 +72,14 @@ namespace Kil0bitSystemMonitor.Helpers
         /// <param name="lastAttempt">The taskbar the last attach went to: one that refused is not asked again every tick.</param>
         public static bool NeedsTaskbarAttach(bool stickToTaskbar, nint taskbar, bool taskbarShown, nint owner, nint lastAttempt) =>
             stickToTaskbar && taskbar != 0 && taskbarShown && owner != taskbar && taskbar != lastAttempt;
+
+        /// <summary>
+        /// The overlay's topmost state for Keep on top: true to raise it, false to lower it, null to
+        /// leave it. An overlay owned by the taskbar is never lowered, because a window made
+        /// not-topmost takes its owner down with it and the taskbar would lose topmost; the owner
+        /// link alone keeps the overlay above the taskbar.
+        /// </summary>
+        public static bool? TopmostFor(bool alwaysOnTop, bool stickToTaskbar) =>
+            alwaysOnTop ? true : stickToTaskbar ? null : false;
     }
 }

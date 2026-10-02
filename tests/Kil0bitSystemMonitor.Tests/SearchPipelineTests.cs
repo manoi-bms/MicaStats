@@ -92,9 +92,17 @@ namespace Kil0bitSystemMonitor.Tests
             public TimeSpan Delay { get; set; }
             public int Calls;
 
+            /// <summary>Every text sent, in order.</summary>
+            public List<string> Texts { get; } = new();
+
+            /// <summary>Runs inside each call, before it answers (the owner changing Settings meanwhile).</summary>
+            public Action? OnCall { get; set; }
+
             public async Task<EmbeddingResult> EmbedAsync(SearchServer server, IReadOnlyList<string> texts, TimeSpan timeout, CancellationToken cancel)
             {
                 Interlocked.Increment(ref Calls);
+                lock (Texts) Texts.AddRange(texts);
+                OnCall?.Invoke();
                 if (Delay > TimeSpan.Zero)
                 {
                     try { await Task.Delay(Delay, cancel).WaitAsync(timeout, cancel); }
@@ -109,10 +117,12 @@ namespace Kil0bitSystemMonitor.Tests
         {
             public SearchFailure FailWith { get; set; }
             public List<IReadOnlyList<string>> Seen { get; } = new();
+            public List<string> Queries { get; } = new();
 
             public Task<RerankResult> RerankAsync(SearchServer server, string query, IReadOnlyList<string> documents, int topN, TimeSpan timeout, CancellationToken cancel)
             {
                 Seen.Add(documents.ToList());
+                Queries.Add(query);
                 if (FailWith != SearchFailure.None) return Task.FromResult(new RerankResult(null, FailWith, 500));
                 // reverses the order it was given
                 var ranked = Enumerable.Range(0, documents.Count).Reverse().Select((index, rank) => new RerankScore(index, 1.0 / (rank + 1))).ToList();
@@ -215,6 +225,57 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.False(outcome.Reranked);
                 Assert.Equal("b", outcome.Hits[0].NoteId);
                 Assert.Equal("Meaning + words. Not reranked: the reranker failed (HTTP 500)", SearchStatusText.For(outcome, _settings));
+            }
+        }
+
+        [Fact]
+        public async Task Turning_meaning_off_while_the_query_is_embedded_sends_nothing_to_the_reranker()
+        {
+            var embedder = new FakeEmbedder();
+            var reranker = new FakeReranker();
+            var (search, indexer) = await Build(embedder, reranker);
+            using (indexer)
+            {
+                embedder.OnCall = () => _settings = SearchSettings.Off;   // switched off while the query was out
+                var outcome = await search.SearchAsync("noodles", default);
+
+                Assert.Empty(reranker.Seen);
+                Assert.False(outcome.UsedMeaning);
+                Assert.False(outcome.Reranked);
+                Assert.Equal("b", Assert.Single(outcome.Hits).NoteId);   // words only: the query vector is not used
+            }
+        }
+
+        [Fact]
+        public async Task Turning_rerank_off_while_the_query_is_embedded_sends_nothing_to_the_reranker()
+        {
+            var embedder = new FakeEmbedder();
+            var reranker = new FakeReranker();
+            var (search, indexer) = await Build(embedder, reranker);
+            using (indexer)
+            {
+                embedder.OnCall = () => _settings = _settings with { Rerank = false };
+                var outcome = await search.SearchAsync("noodles", default);
+
+                Assert.Empty(reranker.Seen);
+                Assert.True(outcome.UsedMeaning);
+                Assert.False(outcome.Reranked);
+            }
+        }
+
+        [Fact]
+        public async Task A_credential_reference_in_the_query_goes_out_as_credential()
+        {
+            var embedder = new FakeEmbedder();
+            var reranker = new FakeReranker();
+            var (search, indexer) = await Build(embedder, reranker);
+            using (indexer)
+            {
+                await search.SearchAsync("noodles {{secret:K7Q2M9XD}}", default);
+
+                Assert.Contains("noodles [credential]", embedder.Texts);
+                Assert.DoesNotContain(embedder.Texts, t => t.Contains("K7Q2M9XD", StringComparison.Ordinal));
+                Assert.Equal("noodles [credential]", Assert.Single(reranker.Queries));
             }
         }
 

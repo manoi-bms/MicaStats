@@ -31,11 +31,12 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         public static string HashOf(string sentText) =>
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sentText))).ToLowerInvariant();
 
-        /// <summary>The note's passages in order. Blank text has none.</summary>
+        /// <summary>The note's passages in order. Blank text has none. Credential references become <c>[credential]</c> in the title too.</summary>
         public static IReadOnlyList<Passage> Cut(string noteId, string title, string text)
         {
             if (text.Length > MaxNoteChars) text = text.Substring(0, MaxNoteChars);
             text = WithoutSecrets(text);
+            title = WithoutSecrets(title);
             string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
             var passages = new List<Passage>();

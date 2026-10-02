@@ -26,7 +26,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
     /// The query pipeline (spec 3.5): keyword top 50; with meaning search, the query is embedded
     /// (5 s, the last 20 cached) and the top 50 passages by cosine join by Reciprocal Rank Fusion;
     /// with reranking, the top 40 are reordered by the reranker (8 s); then 3 per note, 20 in all.
-    /// A step that fails is skipped and named in the outcome. Cancelling throws.
+    /// A step that fails is skipped and named in the outcome. Cancelling throws. Credential
+    /// references in the query become <c>[credential]</c> before anything (spec 3.1), and Settings
+    /// are read again after the query embedding, so what the owner switched off meanwhile is not used.
     /// </summary>
     public sealed class NoteSearch
     {
@@ -56,7 +58,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         public async Task<SearchOutcome> SearchAsync(string query, CancellationToken cancel)
         {
-            query = query.Trim();
+            query = NotePassages.WithoutSecrets(query.Trim());
             var progress = _indexer.Progress;
             if (query.Length == 0) return SearchOutcome.Empty(query, progress);
 
@@ -69,12 +71,16 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             SearchFailure embedFailure = SearchFailure.None, rerankFailure = SearchFailure.None;
             int? embedStatus = null, rerankStatus = null;
 
+            // What may be used and sent from here on: Settings as they are once the query vector is back.
+            var now = settings;
             if (settings.CanEmbed)
             {
                 var (queryVector, failure, status) = await QueryVectorAsync(settings, query, cancel).ConfigureAwait(false);
                 embedFailure = failure;
                 embedStatus = status;
-                if (queryVector != null)
+                now = _settings();
+                // Meaning search turned off, or another server or model, while the query was out: words only.
+                if (queryVector != null && now.CanEmbed && now.Fingerprint == settings.Fingerprint)
                 {
                     usedMeaning = true;
                     var passages = _indexer.Keywords.AllPassages();
@@ -88,10 +94,10 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             IReadOnlyList<Passage> ordered = SearchFusion.Fuse(keyword, vector);
             bool reranked = false;
 
-            if (settings.CanRerank && ordered.Count > 0)
+            if (now.CanRerank && ordered.Count > 0)
             {
                 var top = ordered.Take(RerankTop).ToList();
-                var result = await _reranker.RerankAsync(settings.Reranker!, query, top.Select(p => p.SentText).ToList(), top.Count, RerankTimeout, cancel).ConfigureAwait(false);
+                var result = await _reranker.RerankAsync(now.Reranker!, query, top.Select(p => p.SentText).ToList(), top.Count, RerankTimeout, cancel).ConfigureAwait(false);
                 if (result.Ranked != null)
                 {
                     reranked = true;

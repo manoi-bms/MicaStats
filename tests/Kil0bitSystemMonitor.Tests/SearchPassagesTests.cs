@@ -90,6 +90,15 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_credential_reference_in_the_title_is_never_indexed()
+        {
+            var p = Assert.Single(NotePassages.Cut("n1", "db {{secret:K7Q2M9XD}}", "# Access\nuser admin"));
+            Assert.StartsWith("db [credential] › Access\n\n", p.SentText, StringComparison.Ordinal);
+            Assert.DoesNotContain("K7Q2M9XD", p.SentText, StringComparison.Ordinal);
+            Assert.DoesNotContain("K7Q2M9XD", p.Title, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void Blank_text_has_no_passages()
         {
             Assert.Empty(NotePassages.Cut("n1", "t", " \n\n \t\n"));

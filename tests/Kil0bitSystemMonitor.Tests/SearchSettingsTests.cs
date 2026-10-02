@@ -52,6 +52,18 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_server_never_prints_its_key()
+        {
+            var server = new SearchServer("http://gpu/v1", "m", "sk-secret");
+
+            Assert.DoesNotContain("sk-secret", server.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Key = ***", server.ToString(), StringComparison.Ordinal);
+            Assert.Contains("BaseUrl = http://gpu/v1", server.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("sk-secret", new SearchSettings(true, server, true, server).ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("***", (server with { Key = null }).ToString(), StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void Keys_never_reach_the_config_file()
         {
             var config = new AppConfig { PadEmbeddingServer = "http://gpu/v1" };

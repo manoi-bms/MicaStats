@@ -51,26 +51,32 @@ namespace Kil0bitSystemMonitor.Services.Capture
             if (next.SameAs(_last)) return StitchStep.Unchanged;
 
             ulong[] prev = Hashes(_last), cur = Hashes(next);
-            if (_top < 0)
+            // The header and footer are fixed from the first pair, but only once that pair really
+            // scrolled: an Unchanged or NoMatch step commits nothing.
+            bool first = _top < 0;
+            int top = _top, bottom = _bottom;
+            if (first)
             {
-                int top = 0;
+                top = 0;
                 while (top < _height && prev[top] == cur[top]) top++;
-                int bottom = 0;
+                bottom = 0;
                 while (bottom < _height - top && prev[_height - 1 - bottom] == cur[_height - 1 - bottom]) bottom++;
                 if (_height - top - bottom < MinBandRows) { top = 0; bottom = 0; }
+            }
+
+            int band = _height - top - bottom;
+            bool[] informative = Informative(next, top, band);
+            int dy = FindShift(prev.AsSpan(top, band), cur.AsSpan(top, band), informative);
+            if (dy == 0) return StitchStep.Unchanged;
+            if (dy < 0) return StitchStep.NoMatch;
+
+            if (first)
+            {
                 _top = top;
                 _bottom = bottom;
                 _header = Rows(_last, 0, top);
                 _band.AddRange(Rows(_last, top, _height - bottom));
-                _footer = Rows(_last, _height - bottom, _height);
             }
-
-            int band = _height - _top - _bottom;
-            bool[] informative = Informative(next, _top, band);
-            int dy = FindShift(prev.AsSpan(_top, band), cur.AsSpan(_top, band), informative);
-            if (dy == 0) return StitchStep.Unchanged;
-            if (dy < 0) return StitchStep.NoMatch;
-
             _band.AddRange(Rows(next, _top + band - dy, _top + band));
             _footer = Rows(next, _height - _bottom, _height);
             _last = next;

@@ -85,6 +85,37 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void An_unchanged_first_pair_does_not_fix_the_header_and_footer()
+        {
+            var page = Page(1200);
+            var footerRows = Page(100, seed: 3);
+            const int caretRow = 20, clockRow = 190;
+            PixelFrame Framed(int top)
+            {
+                var px = (int[])View(page, top, 300).Pixels.Clone();
+                Array.Copy(footerRows.Pixels, 0, px, 200 * W, 100 * W);
+                return new PixelFrame(W, 300, px);
+            }
+            PixelFrame Animated(PixelFrame f, int color) => WithBand(WithBand(f, caretRow, 1, color), clockRow, 1, color);
+
+            var s = new ScrollStitcher(Animated(Framed(0), unchecked((int)0xFF111111)));
+            // Nothing scrolled; only a caret near the top and a clock below it changed.
+            Assert.Equal(StitchStep.Unchanged, s.Add(Animated(Framed(0), unchecked((int)0xFF222222)), out _));
+            for (int top = 80; top <= 400; top += 80)
+                Assert.Equal(StitchStep.Appended, s.Add(Framed(top), out _));
+
+            var result = s.Result();
+            Assert.Equal(700, result.Height);
+            for (int y = 0; y < 600; y++)
+            {
+                if (y == caretRow || y == clockRow) continue;   // the first frame keeps its own caret and clock
+                Assert.True(result.Row(y).SequenceEqual(page.Row(y).ToArray()), "body row " + y);
+            }
+            for (int i = 0; i < 100; i++)
+                Assert.True(result.Row(600 + i).SequenceEqual(footerRows.Row(i).ToArray()), "footer row " + i);
+        }
+
+        [Fact]
         public void A_scrollbar_thumb_in_the_rightmost_columns_does_not_break_the_match()
         {
             var page = Page(800);

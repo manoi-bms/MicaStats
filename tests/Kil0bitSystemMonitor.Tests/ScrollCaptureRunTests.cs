@@ -122,6 +122,17 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void An_app_slower_than_the_floor_and_a_settle_is_caught_by_the_confirm()
+        {
+            var content = ScrollStitcherTests.Page(2000);
+            var page = new FakePage(content, 900) { LagMs = 300 };
+            var env = new Env { OnWait = page.Tick };
+            var r = Run(page, env);
+            Assert.Equal(ScrollStop.End, r.Stop);
+            Assert.True(Same(r.Image, content));
+        }
+
+        [Fact]
         public void A_page_that_never_moves_ends_after_the_confirm_wait()
         {
             var content = ScrollStitcherTests.Page(2000);

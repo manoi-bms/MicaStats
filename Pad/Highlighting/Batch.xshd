@@ -11,7 +11,8 @@
     <Rule color="Comment">^\s*::.*$</Rule>
     <Rule color="LabelDirective">^\s*:[^:\s].*$</Rule>
     <Span color="String" begin="&quot;" end="&quot;" />
-    <Rule color="Variable">%[^%\s]+%|%~?[0-9a-z]|![\w]+!</Rule>
+    <!-- %NAME%; %1, %*, %~dp0 and loop variables %%f, %%~nxf (modifiers, then the digit or letter); !NAME! -->
+    <Rule color="Variable">%[^%\s~][^%\s]*%|%%?(~[a-z]*)?[0-9a-z*]|![\w]+!</Rule>
     <Keywords color="Keywords">
       <Word>echo</Word><Word>set</Word><Word>if</Word><Word>else</Word><Word>for</Word><Word>in</Word>
       <Word>do</Word><Word>goto</Word><Word>call</Word><Word>exit</Word><Word>not</Word><Word>exist</Word>

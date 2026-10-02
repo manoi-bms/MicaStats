@@ -6,9 +6,11 @@
   <Color name="KeyName" underline="false" />
   <Color name="String" underline="false" />
   <RuleSet ignoreCase="true">
-    <Rule color="Comment">^\s*[;\#].*$</Rule>
+    <Span color="Comment" begin="^\s*[;\#]" />
+    <!-- An inline comment: " ;" or " #" after a value or a section, not a value that starts with # ("color = #FF0000"). -->
+    <Span color="Comment" begin="(?&lt;=[^\s=:]\s+)[;\#]" />
     <Rule color="Section">^\s*\[[^\]\r\n]*\]</Rule>
     <Rule color="KeyName">^\s*[^=:\s;\#\[][^=:\r\n]*?(?=\s*[=:])</Rule>
-    <Rule color="String">(?&lt;=[=:]\s*)\S.*$</Rule>
+    <Rule color="String">(?&lt;=[=:]\s*)\S(.*\S)?</Rule>
   </RuleSet>
 </SyntaxDefinition>

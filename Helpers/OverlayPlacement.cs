@@ -81,5 +81,18 @@ namespace Kil0bitSystemMonitor.Helpers
         /// </summary>
         public static bool? TopmostFor(bool alwaysOnTop, bool stickToTaskbar) =>
             alwaysOnTop ? true : stickToTaskbar ? null : false;
+
+        /// <summary>
+        /// Whether the z-order tick raises the overlay to the top of the topmost band. A taskbar
+        /// that covers the overlay stuck to it is always answered, even while it is the active
+        /// window: a restarted Explorer raises its new taskbar over the overlay just attached to
+        /// it and keeps it active. Otherwise Keep on top raises an overlay something covers, but
+        /// never while the taskbar is active, when raising made the taskbar blink.
+        /// </summary>
+        /// <param name="taskbarActive">The taskbar is the foreground window.</param>
+        /// <param name="atTop">Nothing is above the overlay.</param>
+        /// <param name="taskbarAbove">The taskbar is above the overlay.</param>
+        public static bool ShouldRaise(bool alwaysOnTop, bool stickToTaskbar, bool taskbarActive, bool atTop, bool taskbarAbove) =>
+            (stickToTaskbar && taskbarAbove) || (alwaysOnTop && !taskbarActive && !atTop);
     }
 }

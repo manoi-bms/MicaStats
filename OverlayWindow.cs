@@ -301,27 +301,35 @@ namespace Kil0bitSystemMonitor
                     if (!_hideDebounceTimer.IsEnabled && _targetAlpha != 0) _hideDebounceTimer.Start();
                 }
 
-                // Enforce TOPMOST Z-order only if the taskbar is not the foreground active window.
-                // Re-asserting TOPMOST while the taskbar is active and managing its Z-order causes blinking.
-                // However, we must enforce it when other windows (like Task View) are active to keep the overlay visible.
-                if (_overlayVisible && _config.Config.AlwaysOnTop)
+                // Re-assert TOPMOST when something covers the overlay (Task View and the like), but not
+                // merely because the taskbar is active: raising it while the taskbar manages its own
+                // z-order made it blink. A taskbar that actually covers the stuck overlay is the
+                // exception (OverlayPlacement.ShouldRaise).
+                if (_overlayVisible && (_config.Config.AlwaysOnTop || _config.Config.StickToTaskbar))
                 {
                     IntPtr fg = GetForegroundWindow();
                     StringBuilder sb = new StringBuilder(256);
                     Win32Helper.GetClassName(fg, sb, sb.Capacity);
                     string fgClass = sb.ToString();
 
-                    if (fgClass != "Shell_TrayWnd" && fgClass != "Shell_SecondaryTrayWnd")
+                    bool taskbarActive = fgClass == "Shell_TrayWnd" || fgClass == "Shell_SecondaryTrayWnd";
+                    bool atTop = GetWindow(_hWnd, GW_HWNDPREV) == IntPtr.Zero;
+                    bool taskbarAbove = _config.Config.StickToTaskbar && !atTop && IsAbove(taskbar, _hWnd);
+                    if (OverlayPlacement.ShouldRaise(_config.Config.AlwaysOnTop, _config.Config.StickToTaskbar, taskbarActive, atTop, taskbarAbove))
                     {
-                        // Smart check: Only re-assert TOPMOST if we are NOT already the top-most window.
-                        IntPtr prev = GetWindow(_hWnd, GW_HWNDPREV);
-                        if (prev != IntPtr.Zero)
-                        {
-                            SetWindowPos(_hWnd, Win32Helper.HWND_TOPMOST, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE | 0x0040);
-                        }
+                        SetWindowPos(_hWnd, Win32Helper.HWND_TOPMOST, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE | 0x0040);
                     }
                 }
             });
+        }
+
+        /// <summary>Whether <paramref name="window"/> is above <paramref name="below"/>: a walk up the z-order from <paramref name="below"/>, short in the topmost band.</summary>
+        private static bool IsAbove(IntPtr window, IntPtr below)
+        {
+            if (window == IntPtr.Zero) return false;
+            for (IntPtr w = GetWindow(below, GW_HWNDPREV); w != IntPtr.Zero; w = GetWindow(w, GW_HWNDPREV))
+                if (w == window) return true;
+            return false;
         }
 
         private void AttachToTaskbar()

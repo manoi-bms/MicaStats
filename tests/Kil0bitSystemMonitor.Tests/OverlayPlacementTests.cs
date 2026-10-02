@@ -120,6 +120,35 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, taskbarShown: false, owner: 0, lastAttempt: OldTaskbar));
         }
 
+        // Measured through an Explorer restart: attached again at 1.2 s, the new taskbar still sat above the
+        // overlay, and stayed there while it was the foreground window.
+        [Fact]
+        public void A_taskbar_covering_the_stuck_overlay_is_answered_even_while_it_is_active()
+        {
+            Assert.True(OverlayPlacement.ShouldRaise(alwaysOnTop: true, stickToTaskbar: true, taskbarActive: true, atTop: false, taskbarAbove: true));
+            Assert.True(OverlayPlacement.ShouldRaise(alwaysOnTop: false, stickToTaskbar: true, taskbarActive: true, atTop: false, taskbarAbove: true));
+        }
+
+        [Fact]
+        public void An_active_taskbar_below_the_overlay_is_not_fought()
+        {
+            // Raising TOPMOST while the taskbar manages its own z-order made it blink.
+            Assert.False(OverlayPlacement.ShouldRaise(alwaysOnTop: true, stickToTaskbar: true, taskbarActive: true, atTop: false, taskbarAbove: false));
+        }
+
+        [Fact]
+        public void Keep_on_top_raises_an_overlay_something_else_covers()
+        {
+            Assert.True(OverlayPlacement.ShouldRaise(alwaysOnTop: true, stickToTaskbar: false, taskbarActive: false, atTop: false, taskbarAbove: false));
+            Assert.False(OverlayPlacement.ShouldRaise(alwaysOnTop: true, stickToTaskbar: false, taskbarActive: false, atTop: true, taskbarAbove: false));
+        }
+
+        [Fact]
+        public void A_floating_overlay_without_keep_on_top_is_never_raised()
+        {
+            Assert.False(OverlayPlacement.ShouldRaise(alwaysOnTop: false, stickToTaskbar: false, taskbarActive: false, atTop: false, taskbarAbove: true));
+        }
+
         [Fact]
         public void Keep_on_top_raises_the_overlay()
         {

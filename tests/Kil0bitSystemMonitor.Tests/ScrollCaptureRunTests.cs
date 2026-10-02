@@ -298,8 +298,8 @@ namespace Kil0bitSystemMonitor.Tests
 
             Run(page, new Env());
 
-            // One step, then one notch more that moves nothing lining up: the block animates.
-            Assert.Equal(new ScrollCaptureOptions().TopNotchesPerStep + 1, page.UpNotches);
+            // One step, then two probe notches that move nothing lining up: the block animates.
+            Assert.Equal(new ScrollCaptureOptions().TopNotchesPerStep + 2, page.UpNotches);
         }
 
         [Fact]
@@ -391,14 +391,14 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void A_box_shorter_than_one_notch_plus_8_rows_is_taken_for_the_top_and_stops_with_no_match()
         {
-            // An 80-row box scrolled 90 rows a notch: one notch replaces it entirely, so the probe
-            // after the first step up sees nothing line up and calls it the top. The joiner needs
-            // 8 rows of overlap, so the first step down stops with the note.
+            // An 80-row box scrolled 90 rows a notch: one notch replaces it entirely, so both probe
+            // notches after the first step up see nothing line up and call it the top. The joiner
+            // needs 8 rows of overlap, so the first step down stops with the note.
             var box = new InnerBox(80, 2000);
 
             var r = new ScrollCaptureRun(box, _ => { }, () => false).Run();
 
-            Assert.Equal(new ScrollCaptureOptions().TopNotchesPerStep + 1, box.Ups);
+            Assert.Equal(new ScrollCaptureOptions().TopNotchesPerStep + 2, box.Ups);
             Assert.Equal(ScrollStop.NoMatch, r.Stop);
             Assert.Equal("Stopped: the view changed in a way MicaStats could not follow", CaptureService.ScrollNote(r.Stop));
         }
@@ -475,20 +475,35 @@ namespace Kil0bitSystemMonitor.Tests
                 }
             }
 
+            /// <summary>Wheel input takes effect this long after it is sent.</summary>
+            public int LatencyMs;
+            private readonly List<(long At, int Notches)> _late = new();
+
             public bool Scroll(int notches)
+            {
+                if (notches < 0) UpNotches -= notches;
+                else { if (Downs == 0) StartOffset = Offset; Downs++; }
+                if (LatencyMs > 0) _late.Add((Now + LatencyMs, notches));
+                else Apply(notches);
+                return true;
+            }
+
+            private void Apply(int notches)
             {
                 int at = Offset;
                 _from = at;
                 _to = Math.Clamp(_to + notches * _notch, 0, _content.Height - _bodyH);
                 _t0 = Now;
-                if (notches < 0) UpNotches -= notches;
-                else { if (Downs == 0) StartOffset = at; Downs++; }
-                return true;
             }
 
             public PixelFrame Grab()
             {
                 Now += 10;
+                while (_late.Count > 0 && _late[0].At <= Now)
+                {
+                    Apply(_late[0].Notches);
+                    _late.RemoveAt(0);
+                }
                 int w = _content.Width, off = Offset;
                 var px = new int[w * _h];
                 if (_header != null) Array.Copy(_header.Pixels, px, _header.Pixels.Length);
@@ -530,6 +545,214 @@ namespace Kil0bitSystemMonitor.Tests
             RunOn(p);
 
             Assert.Equal(0, p.StartOffset);
+        }
+
+        // ----- Round 4 ------------------------------------------------------------------------------
+
+        /// <summary>A view drawn by a callback from (offset, now), on a virtual clock: the reviewers' probe page.</summary>
+        private sealed class LivePage : IScrollTarget
+        {
+            public long Now;
+            public int UpNotches, Downs, StartOffset = -1;
+            private readonly Func<int, long, PixelFrame> _render;
+            private readonly int _max, _notch;
+            private int _offset;
+
+            public LivePage(Func<int, long, PixelFrame> render, int max, int notch, int offset)
+            {
+                _render = render;
+                _max = max;
+                _notch = notch;
+                _offset = offset;
+            }
+
+            public bool Scroll(int notches)
+            {
+                if (notches < 0) UpNotches -= notches;
+                else { if (Downs == 0) StartOffset = _offset; Downs++; }
+                _offset = Math.Clamp(_offset + notches * _notch, 0, _max);
+                return true;
+            }
+
+            public PixelFrame Grab()
+            {
+                Now += 10;
+                return _render(_offset, Now);
+            }
+        }
+
+        private static ScrollCaptureResult RunOn(LivePage p, bool toTheEnd = false)
+            => new ScrollCaptureRun(p, ms => p.Now += ms, () => !toTheEnd && p.Downs > 0).Run();
+
+        private static int AnimPixel(long now, int periodMs, int seed, int x, int y)
+        {
+            var r = new Random(seed * 7919 + (int)(now / periodMs) * 131 + x * 31 + y * 17);
+            return r.Next(2) == 0 ? unchecked((int)0xFF000000) | r.Next(0xFFFFFF) : unchecked((int)0xFFFFFFFF);
+        }
+
+        /// <summary>
+        /// Claude's docs page: 400 x 900, a 50-row header, a 140 px contents column filling the
+        /// height (an entry every <paramref name="pitch"/> rows) whose active entry follows the
+        /// section in view, the article to its right.
+        /// </summary>
+        private static PixelFrame DocsView(PixelFrame content, PixelFrame header, int pitch, int sectionLen, bool boxed, int offset)
+        {
+            const int W = 400, H = 900, NavW = 140, CX = 150;
+            int white = unchecked((int)0xFFFFFFFF), navBg = unchecked((int)0xFFF6F6F6);
+            var px = new int[W * H];
+            Array.Copy(header.Pixels, px, header.Pixels.Length);
+            int hh = header.Height, count = (H - hh - 6) / pitch;
+            for (int y = hh; y < H; y++)
+            {
+                for (int x = 0; x < NavW; x++) px[y * W + x] = navBg;
+                for (int x = NavW; x < CX; x++) px[y * W + x] = white;
+                content.Row(offset + y - hh).CopyTo(px.AsSpan(y * W + CX, content.Width));
+            }
+            int active = ((offset + 100) / sectionLen) % count;
+            for (int e = 0; e < count; e++)
+            {
+                int y0 = hh + 6 + e * pitch;
+                if (y0 + pitch > H) break;
+                var rnd = new Random(1000 + e);
+                int len = 50 + rnd.Next(70);
+                bool on = e == active;
+                if (on && boxed)
+                    for (int y = y0 + 2; y < y0 + pitch - 2; y++) for (int x = 4; x < NavW - 4; x++) px[y * W + x] = unchecked((int)0xFFDDE8FF);
+                for (int y = y0 + 7; y < y0 + 19; y++)
+                    for (int x = 12; x < 12 + len; x++)
+                        if (rnd.Next(3) == 0)
+                        {
+                            int c = unchecked((int)0xFF000000) | rnd.Next(0x808080);
+                            px[y * W + x] = on && !boxed ? unchecked((int)0xFF2050C0) : c;
+                            if (on && !boxed) px[y * W + x + 1] = unchecked((int)0xFF2050C0);
+                        }
+            }
+            return new PixelFrame(W, H, px);
+        }
+
+        [Theory]
+        [InlineData(false, 400, 2500)]
+        [InlineData(false, 400, 5500)]
+        [InlineData(false, 400, 7000)]
+        [InlineData(false, 400, 8000)]
+        [InlineData(false, 700, 4000)]
+        [InlineData(false, 700, 5500)]
+        [InlineData(true, 700, 8000)]
+        [InlineData(true, 1200, 5500)]
+        [InlineData(true, 1200, 8000)]
+        public void A_contents_column_whose_highlight_follows_the_section_does_not_fake_the_top(bool boxed, int sectionLen, int start)
+        {
+            // Claude: the probe notch crosses a section boundary, so the highlight moves and the
+            // column can no longer be left out; a second probe notch moves the article in a way
+            // that lines up.
+            var content = ScrollStitcherTests.Article(250, 9000, 41, left: 10, right: 34);
+            var header = ScrollStitcherTests.NoiseBlock(400, 50, 3);
+            var p = new LivePage((off, now) => DocsView(content, header, 26, sectionLen, boxed, off), 9000 - 850, 100, start);
+
+            RunOn(p);
+
+            Assert.Equal(0, p.StartOffset);
+        }
+
+        [Fact]
+        public void A_docs_page_with_a_following_contents_column_is_captured_whole()
+        {
+            var content = ScrollStitcherTests.Article(250, 9000, 41, left: 10, right: 34);
+            var header = ScrollStitcherTests.NoiseBlock(400, 50, 3);
+            var p = new LivePage((off, now) => DocsView(content, header, 26, 400, false, off), 9000 - 850, 100, 5500);
+
+            var r = RunOn(p, toTheEnd: true);
+
+            Assert.Equal(0, p.StartOffset);
+            Assert.Equal(ScrollStop.End, r.Stop);
+            Assert.Equal(50 + 9000, r.Image!.Height);
+        }
+
+        [Fact]
+        public void Wheel_input_that_lands_late_while_something_animates_does_not_fake_the_top()
+        {
+            // Codex: wheel input takes effect 300 ms after it is sent, and a block changes every 200 ms.
+            var p = new ClockPage(ScrollStitcherTests.Article(300, 3000, 17), 300, 90, 1700) { LatencyMs = 300 };
+            p.Anims.Add(new Anim(150, 120, 40, 40, 200, Seed: 4));
+
+            RunOn(p);
+
+            Assert.Equal(0, p.StartOffset);
+        }
+
+        [Theory]
+        [InlineData("blockquote", 16, 0)]
+        [InlineData("blockquote", 100, 0)]
+        [InlineData("blockquote", 16, 2500)]
+        [InlineData("table", 16, 0)]
+        [InlineData("table", 100, 2500)]
+        public void A_gif_crossed_by_a_vertical_line_reaches_the_top_quickly(string lines, int periodMs, int start)
+        {
+            // Claude: a 120 x 90 GIF near the top of a 300 x 900 page, and a vertical line through its
+            // columns. Rows that did not change line up with themselves one row off; they must not
+            // count as a shift, or the seek runs to 300 notches.
+            const int w = 300;
+            var px = (int[])ScrollStitcherTests.Article(w, 6000, 33).Pixels.Clone();
+            int gray = unchecked((int)0xFFC8C8C8);
+            if (lines == "blockquote")
+                for (int y = 300; y < 900; y++) for (int x = 40; x < 44; x++) px[y * w + x] = gray;
+            else
+                for (int y = 300; y < 1200; y++) foreach (int x in new[] { 20, 100, 180, 270 }) px[y * w + x] = gray;
+            var content = new PixelFrame(w, 6000, px);
+            var p = new LivePage((off, now) =>
+            {
+                var f = content.Pixels.AsSpan(off * w, 900 * w).ToArray();
+                for (int y = Math.Max(0, 100 - off); y < Math.Min(900, 190 - off); y++)
+                    for (int x = 30; x < 150; x++) f[y * w + x] = AnimPixel(now, periodMs, 3, x, y);
+                return new PixelFrame(w, 900, f);
+            }, 6000 - 900, 100, start);
+
+            RunOn(p);
+
+            Assert.Equal(0, p.StartOffset);
+            Assert.True(p.UpNotches <= (start / 1000 + 2) * (new ScrollCaptureOptions().TopNotchesPerStep + 2), p.UpNotches + " up-notches");
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(2500)]
+        public void A_header_of_repeated_scanlines_with_a_gif_below_reaches_the_top_quickly(int start)
+        {
+            // Codex: a 64-row header whose scanlines repeat every 2 rows lines up with itself 2 rows
+            // off; it did not change, so it is no evidence of a scroll.
+            const int w = 300, h = 900, hh = 64;
+            var scan = ScrollStitcherTests.NoiseBlock(w, 2, 12);
+            var header = new int[w * hh];
+            for (int y = 0; y < hh; y++) scan.Row(y % 2).CopyTo(header.AsSpan(y * w, w));
+            var content = ScrollStitcherTests.Article(w, 6000, 33);
+            var p = new LivePage((off, now) =>
+            {
+                var f = new int[w * h];
+                Array.Copy(header, f, header.Length);
+                Array.Copy(content.Pixels, off * w, f, hh * w, (h - hh) * w);
+                for (int y = Math.Max(hh, hh + 100 - off); y < Math.Min(h, hh + 190 - off); y++)
+                    for (int x = 30; x < 150; x++) f[y * w + x] = AnimPixel(now, 16, 3, x, y);
+                return new PixelFrame(w, h, f);
+            }, 6000 - (h - hh), 100, start);
+
+            RunOn(p);
+
+            Assert.Equal(0, p.StartOffset);
+            Assert.True(p.UpNotches <= (start / 1000 + 2) * (new ScrollCaptureOptions().TopNotchesPerStep + 2), p.UpNotches + " up-notches");
+        }
+
+        [Fact]
+        public void The_notch_cap_is_exact_even_with_a_probe_after_every_step()
+        {
+            // Every 10-notch step replaces the 300-row view (900 rows) and its probe notch lines up,
+            // so each step costs 11 notches; the last step is cut to what the cap leaves.
+            var content = ScrollStitcherTests.Page(28000);
+            var page = new FakePage(content, 27600);
+            var env = new Env { Cancelled = () => page.DownScrolls > 0 };
+
+            Run(page, env);
+
+            Assert.Equal(new ScrollCaptureOptions().MaxTopNotches, page.UpNotches);
         }
 
         [Theory]
@@ -581,7 +804,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             RunOn(p);
 
-            Assert.True(p.UpNotches <= 2 * new ScrollCaptureOptions().TopNotchesPerStep + 1, p.UpNotches + " up-notches");   // two steps and a probe
+            Assert.True(p.UpNotches <= 2 * new ScrollCaptureOptions().TopNotchesPerStep + 2, p.UpNotches + " up-notches");   // two steps and two probes
             Assert.Equal(0, p.StartOffset);
         }
 
@@ -595,7 +818,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             RunOn(p);
 
-            Assert.True(p.UpNotches <= 2 * new ScrollCaptureOptions().TopNotchesPerStep + 1, p.UpNotches + " up-notches");   // two steps and a probe
+            Assert.True(p.UpNotches <= 2 * new ScrollCaptureOptions().TopNotchesPerStep + 2, p.UpNotches + " up-notches");   // two steps and two probes
         }
 
         [Fact]
@@ -607,7 +830,7 @@ namespace Kil0bitSystemMonitor.Tests
             var r = RunOn(p, toTheEnd: true);
 
             Assert.Equal(ScrollStop.Unscrollable, r.Stop);
-            Assert.True(p.UpNotches <= 2 * new ScrollCaptureOptions().TopNotchesPerStep + 1, p.UpNotches + " up-notches");   // two steps and a probe
+            Assert.True(p.UpNotches <= 2 * new ScrollCaptureOptions().TopNotchesPerStep + 2, p.UpNotches + " up-notches");   // two steps and two probes
             Assert.True(p.Downs <= 2, p.Downs + " steps down");
         }
 

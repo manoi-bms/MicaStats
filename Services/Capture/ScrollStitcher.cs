@@ -251,30 +251,31 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 return ViewChange.Shifted;
             // No shift lines up 70% of the changed rows, but a long run of them may still line up:
             // the view scrolled while something else in it changed too (an animated logo in a header).
-            return LongShiftedRun(a, b, Informative(before, 0, h, from, to), Informative(after, 0, h, from, to))
+            return LongShiftedRun(a, b, Informative(before, 0, h, from, to), Informative(after, 0, h, from, to), top, h - bottom)
                 ? ViewChange.Shifted
                 : ViewChange.Replaced;
         }
 
         /// <summary>
         /// Whether some non-zero shift, either way, lines up a run of at least
-        /// <see cref="MinBandRows"/> informative rows in a row; uniform rows neither break nor
-        /// extend a run.
+        /// <see cref="MinBandRows"/> rows in a row, among informative rows from
+        /// <paramref name="fromRow"/> to <paramref name="toRow"/> that changed between the two
+        /// looks. Rows that did not change (and uniform rows) neither form nor extend a run: a
+        /// vertical line or repeated scanlines line up with themselves one or two rows off.
         /// </summary>
-        private static bool LongShiftedRun(ulong[] a, ulong[] b, bool[] aInk, bool[] bInk)
+        private static bool LongShiftedRun(ulong[] a, ulong[] b, bool[] aInk, bool[] bInk, int fromRow, int toRow)
         {
-            int h = a.Length;
-            for (int s = 1; s < h; s++)
-                if (Run(b, a, bInk, s) >= MinBandRows || Run(a, b, aInk, s) >= MinBandRows) return true;
+            for (int s = 1; s < toRow - fromRow; s++)
+                if (Run(b, a, bInk, s, fromRow, toRow) >= MinBandRows || Run(a, b, aInk, s, fromRow, toRow) >= MinBandRows) return true;
             return false;
 
-            // The longest run of rows i with rows[i] == other[i + s].
-            static int Run(ulong[] rows, ulong[] other, bool[] ink, int s)
+            // The longest run of changed rows i with rows[i] == other[i + s].
+            static int Run(ulong[] rows, ulong[] other, bool[] ink, int s, int fromRow, int toRow)
             {
                 int best = 0, run = 0;
-                for (int i = 0; i + s < rows.Length; i++)
+                for (int i = fromRow; i + s < toRow; i++)
                 {
-                    if (!ink[i]) continue;
+                    if (!ink[i] || rows[i] == other[i] || rows[i + s] == other[i + s]) continue;
                     if (rows[i] == other[i + s]) best = Math.Max(best, ++run);
                     else run = 0;
                 }
@@ -296,15 +297,24 @@ namespace Kil0bitSystemMonitor.Services.Capture
         /// </summary>
         /// <param name="softFrom">
         /// Band rows from here down are the soft bottom margin, where something may float over the
-        /// content. A pair whose old row is there and whose new row is above it (old content
-        /// under a floating element, compared with that content uncovered) counts when it matches
-        /// and is left out when it does not. Pairs inside the margin count as usual: a floating
+        /// content. Only when no shift passes with every pair counted, a second pass forgives the
+        /// margin: a pair whose old row is there and whose new row is above it (old content under
+        /// a floating element, compared with that content uncovered) counts when it matches and
+        /// is left out when it does not. Pairs inside the margin count as usual: a floating
         /// element meets itself there, and ignoring them would favour no shift at the end of a
         /// page. The ratio that ranks a candidate leaves the soft pairs out when it has
         /// <see cref="MinOverlapRows"/> other counted rows, so the mismatches it may ignore do not
         /// favour a longer shift.
         /// </param>
         internal static int FindShift(ReadOnlySpan<ulong> prev, ReadOnlySpan<ulong> next, bool[] nextInformative, int softFrom = int.MaxValue)
+        {
+            // Strictly first, every pair counted: a margin mismatch is evidence against a wrong
+            // shift (repeating content with a label in the margin). Lenient only when nothing passes.
+            int best = RankShifts(prev, next, nextInformative, int.MaxValue);
+            return best >= 0 || softFrom >= prev.Length ? best : RankShifts(prev, next, nextInformative, softFrom);
+        }
+
+        private static int RankShifts(ReadOnlySpan<ulong> prev, ReadOnlySpan<ulong> next, bool[] nextInformative, int softFrom)
         {
             int band = prev.Length;
             int shifts = Math.Max(0, band - MinOverlapRows + 1);

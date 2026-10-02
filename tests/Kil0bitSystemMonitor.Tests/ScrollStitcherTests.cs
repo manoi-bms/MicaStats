@@ -733,6 +733,36 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Repeating_content_with_a_label_in_the_soft_margin_joins_at_the_real_shift()
+        {
+            // Codex P1: after 110 distinct rows the content repeats every 20 rows; a unique label sits
+            // at page rows 340-349, rows 250-259 of the frame at 90, inside the 75-row soft margin.
+            // Shift 70 lines up everything but the label: forgiving the margin's mismatches would
+            // pick it and lose 20 rows.
+            var distinct = Page(110, seed: 21);
+            var period = Page(20, seed: 22);
+            var label = Page(10, seed: 23);
+            var px = new int[W * 1000];
+            Array.Copy(distinct.Pixels, px, distinct.Pixels.Length);
+            for (int y = 110; y < 1000; y++) period.Row(y % 20).CopyTo(px.AsSpan(y * W, W));
+            Array.Copy(label.Pixels, 0, px, 340 * W, label.Pixels.Length);
+            var page = new PixelFrame(W, 1000, px);
+
+            // While the label is in view the shift is decided; past it, content that only repeats
+            // every 20 rows cannot tell 90 from 70 or 10, so the walk stops there.
+            var s = new ScrollStitcher(View(page, 0, 300));
+            int last = 0;
+            foreach (int top in new[] { 90, 180, 270 })
+            {
+                Assert.Equal(StitchStep.Appended, s.Add(View(page, top, 300), out int added));
+                Assert.Equal(top - last, added);
+                last = top;
+            }
+
+            Assert.True(s.Result().SameAs(View(page, 0, 570)));
+        }
+
+        [Fact]
         public void A_floating_widget_in_the_soft_margin_does_not_sink_a_longer_step()
         {
             // Codex: a 60-row widget floats at the bottom of a 300-row view. The first step (90) joins

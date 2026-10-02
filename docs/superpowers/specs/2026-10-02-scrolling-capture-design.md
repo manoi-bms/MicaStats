@@ -36,7 +36,16 @@ A new capture mode, **Scrolling**, joins Region, Window, Screen and All screens.
   - If Windows does not route the wheel to the window under the pointer ("Scroll inactive windows when I hover over them" is off), that window is brought to the front first, and must still be in front before every notch.
   - If the window under the centre changes, or the window closes or is minimised, scrolling stops. The capture is kept with the editor note "MicaStats could not send scrolling to that window" (stop reason InputLost).
   - While Ctrl, Shift, Alt or Win is held, MicaStats waits before sending wheel input.
-- **Start at the top.** MicaStats first scrolls up, 10 notches at a time, until the view no longer moves, or until 300 notches have been sent. Capture then starts from there. *(Revised:)* "No longer moves" is a tolerant check (`ScrollStitcher.Unmoved`), so an animation in the area (GIF, video, spinner) does not prevent reaching the top. **(R)** The owner asked for "all content". A wheel scroll moves the view only, never a caret or selection.
+- **Start at the top.** MicaStats first scrolls up, 10 notches at a time, until the view no longer moves, or until 300 notches have been sent. Capture then starts from there. **(R)** The owner asked for "all content". A wheel scroll moves the view only, never a caret or selection.
+  - *(Revised after the final review.)* "No longer moves" is judged on the part that changed only (`ScrollStitcher.Compare`). Rows and columns that stayed still at the edges are left out.
+  - **Same**: the change lines up with no shift. It is identical, a shift of 0 fits it, or fewer than 16 rows changed and no shift lines them up. That is the top.
+  - **Shifted**: a shift lines the change up, or a run of 16 or more rows matches under some shift. The view moved, so seeking goes on.
+  - **Replaced**: the change lines up under no shift. Two looks cannot tell a jump of more than the view's height from an animation, so MicaStats **probes** with one notch up, counted toward the 300-notch cap.
+    - If that look is Shifted against the last one, the area really scrolls, and seeking goes on.
+    - Otherwise the change was animation, and the top is reached.
+  - A step during which the view was still gliding (two grabs in a row differ by a shift) counts as Shifted.
+  - **(R)** The probe is timing-free: it works for GIFs, videos, spinners and a blinking caret at any speed. It costs about one notch per ambiguous step. *Source: ShareX and longshot judge movement only by runs of matching rows, never by timing.*
+  - An area whose one notch moves it further than its height minus 8 rows takes the top early. The down phase then stops with NoMatch and its note anyway.
 - **Step down.** One notch per step, sent as 120 wheel units. **(R)** One notch usually moves 3 lines, about 40 to 150 pixels. That leaves a large overlap for joining. Any app that scrolls a whole page per notch still overlaps enough.
 - **Settle.** After each step, grab every 50 ms until two grabs in a row are identical (smooth scrolling has finished), or 800 ms have passed; then take the last grab. **(R)** This handles animated scrolling without a fixed long wait.
 - **Stop** at the first of these:
@@ -60,14 +69,22 @@ The joiner is a pure unit, `ScrollStitcher`, that works on 32-bit pixel rows.
   - They are fixed only once a real scroll has been seen.
 - **Soft footer.** *(Added after the final review.)* Below the detected footer, a bottom margin of up to a quarter of the view is also taken from the last frame only. The margin is limited so a large scroll still overlaps.
   - This keeps floating elements (a chat widget, a back-to-top button, a link preview) and footers that change (a clock) from repeating at every seam.
-- **Side panels.** *(Added after the final review.)* Columns at the left and right edges that stay identical while the rest moves are fixed panes, such as a navigation pane or a sticky sidebar.
-  - They are left out of the comparison.
-  - They are cropped from the result, so the image is the part that scrolled.
+  - The margin only decides which rows are appended and which close the image. The overlap search still covers the whole band between the header and the detected footer.
+  - When a shift is scored, a mismatch is not counted when the old row lies in the soft margin and the new row lies above it. In that case a floating widget hid the old row, and the widget must not sink a longer step.
+- **Side panels.** *(Added after the final review.)* A side panel is a fixed pane, such as a navigation pane or a sticky sidebar.
+  - In the first real pair, the shift is found with the still edge columns left out.
+  - A panel column stays put at an edge but does not line up under that shift. A column that repeats down a list (a "File folder" type column, grid lines) lines up both ways, so it stays content.
+  - A panel reaches from its edge to its innermost such column. Still columns beyond that, such as a blank gutter, stay in the image and in the comparison.
+  - Panels are left out of the comparison and cut from the scrolled rows only.
+  - With a header or a fixed footer, the image keeps its full width. The panel's columns in the scrolled rows are filled with the panel's most common colour, its background.
+  - Without either, the image is cut to the part that scrolled.
+  - Content passing under a floating side element loses that element's own columns.
 - **Scrollbar strip.** *(Revised.)* The ignored strip at the right edge is 24 pixels at 100% display scaling, scaled with the area's monitor.
 - **Overlap.** In the moving band between the static rows, find the shift `dy` (1 to the band's height minus 8) for which the rows of the new frame line up with the rows of the previous frame shifted up by `dy`.
   - Rows are compared through a hash per row. The rightmost 24 pixels of each row are ignored, so a scrollbar thumb never breaks a match. **(R)**
   - At least 70% of the overlapping rows must match. **(R)** That threshold tolerates small changes such as a blinking caret or an animated badge.
-  - *(Revised after the final review)* Among the shifts that pass, the one with the most matching rows wins, so a short accidental overlap never beats the real scroll. Ties go to the smallest `dy`; a shift of 0 means the view did not move.
+  - *(Revised after the final review)* The candidates are the shifts that pass with at least 8 counted rows and at least half the matching rows of the best-supported shift. Among them the best ratio wins, then more matching rows, then the smallest `dy`. A short accidental overlap never has the support to beat the real scroll, and a sparse grid does not join one row off. A shift of 0 means the view did not move.
+  - Before any shift is ranked, a small change is not a scroll. A change counts as small when fewer than 16 rows changed and no single shift lines up both frames, or when the change is under 16 columns wide. A blinking caret on a still, repeating view therefore never adds rows.
 - **Append.** Only the new frame's last `dy` rows of the moving band are added to the image.
 - **No match.** When no shift reaches the threshold, scrolling stops and the joined image so far is kept. The status line in the editor's title shows "Stopped: the view changed in a way MicaStats could not follow". **(R)** Appending a frame that cannot be joined would produce a broken image without warning.
 - **Width.** A frame whose width differs from the first is refused, which stops the capture the same way as no match. **(R)** The picked area never changes size during a capture.

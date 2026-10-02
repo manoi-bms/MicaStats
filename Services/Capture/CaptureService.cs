@@ -182,6 +182,11 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 return (null, null);
             }
 
+            // Scrollbars grow with the monitor's scale; the joiner leaves a strip that wide out.
+            var monitor = CaptureGeometry.MonitorAt(ScreenCaptureEngine.GetMonitors(),
+                area.X + area.Width / 2, area.Y + area.Height / 2);
+            var options = new ScrollCaptureOptions(Scale: monitor?.Scale ?? 1.0);
+
             bool cancelled = false;
             ScrollCaptureResult result;
             ScrollStatusWindow? card = null;
@@ -195,7 +200,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 CaptureSettle.Pump(PickerClearMs);
 
                 using var target = new ScreenScrollTarget(area);
-                result = new ScrollCaptureRun(target, CaptureSettle.Pump, () => cancelled, card.ShowProgress).Run();
+                result = new ScrollCaptureRun(target, CaptureSettle.Pump, () => cancelled, card.ShowProgress, options).Run();
             }
             finally
             {

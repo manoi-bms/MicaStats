@@ -19,7 +19,11 @@ namespace Kil0bitSystemMonitor.Tests
             public PixelFrame? Override;
             public int OverrideAfterDownScrolls = int.MaxValue;
             public int Top => _to;
-            public int LagMs, ScrollCalls;
+            public int LagMs, ScrollCalls, UpNotches;
+            /// <summary>Scroll calls after this many fail, as when the wheel cannot reach the window.</summary>
+            public int RefuseAfter = int.MaxValue;
+            /// <summary>Paints over each grabbed frame, given the row the view starts at.</summary>
+            public Func<PixelFrame, int, PixelFrame>? Decorate;
             private readonly List<(int Notches, int Left)> _pending = new();
 
             /// <summary>Time passes: a lagging app applies its pending scrolls once their delay is over.</summary>
@@ -53,15 +57,19 @@ namespace Kil0bitSystemMonitor.Tests
                 int top = _to;
                 if (Animate && _fresh) top = (_from + _to) / 2;
                 _fresh = false;
-                return ScrollStitcherTests.View(_content, top, View);
+                var frame = ScrollStitcherTests.View(_content, top, View);
+                return Decorate == null ? frame : Decorate(frame, top);
             }
 
-            public void Scroll(int notches)
+            public bool Scroll(int notches)
             {
+                if (ScrollCalls >= RefuseAfter) return false;
                 ScrollCalls++;
                 if (notches > 0) DownScrolls++;
+                else UpNotches -= notches;
                 if (LagMs > 0) _pending.Add((notches, LagMs));
                 else Apply(notches);
+                return true;
             }
         }
 
@@ -245,6 +253,92 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.NotEmpty(seen);
             for (int i = 1; i < seen.Count; i++) Assert.True(seen[i] > seen[i - 1]);
             Assert.Equal(1000, seen[^1]);
+        }
+
+        // ----- Final review fixes -------------------------------------------------------------
+
+        /// <summary>A block of rows that changes color on every grab, at a fixed place on screen: a GIF or a spinner.</summary>
+        private static Func<PixelFrame, int, PixelFrame> Animation(FakePage page) => (frame, top) =>
+        {
+            var px = (int[])frame.Pixels.Clone();
+            int color = unchecked((int)0xFF000000) | (0x305070 + page.Grabs * 0x030201);
+            for (int y = 100; y < 110; y++)
+                for (int x = 10; x < 40; x++) px[y * frame.Width + x] = color;
+            return new PixelFrame(frame.Width, frame.Height, px);
+        };
+
+        [Fact]
+        public void An_animation_on_a_page_at_the_top_takes_one_step_to_the_top()
+        {
+            var content = ScrollStitcherTests.Page(2000);
+            var page = new FakePage(content, 0);
+            page.Decorate = Animation(page);
+
+            var r = Run(page, new Env());
+
+            Assert.Equal(new ScrollCaptureOptions().TopNotchesPerStep, page.UpNotches);   // not all 300
+            Assert.Equal(ScrollStop.End, r.Stop);
+            Assert.Equal(2000, r.Image!.Height);
+        }
+
+        [Fact]
+        public void The_card_says_Esc_stops_as_soon_as_the_top_is_reached()
+        {
+            var content = ScrollStitcherTests.Page(1000);
+            var page = new FakePage(content, 600);
+            var seen = new List<(int Height, int DownScrolls)>();
+
+            Run(page, new Env(), h => seen.Add((h, page.DownScrolls)));
+
+            Assert.Equal((View, 0), seen[0]);
+        }
+
+        [Fact]
+        public void A_scroll_that_cannot_be_sent_stops_and_keeps_what_was_joined()
+        {
+            var content = ScrollStitcherTests.Page(3000);
+            var page = new FakePage(content, 0) { RefuseAfter = 4 };   // one step up, three down
+
+            var r = Run(page, new Env());
+
+            Assert.Equal(ScrollStop.InputLost, r.Stop);
+            Assert.True(Same(r.Image, ScrollStitcherTests.View(content, 0, View + 3 * Notch)));
+            Assert.Equal(4, page.ScrollCalls);
+        }
+
+        [Fact]
+        public void A_scroll_that_cannot_be_sent_at_the_start_keeps_the_one_frame()
+        {
+            var content = ScrollStitcherTests.Page(3000);
+            var page = new FakePage(content, 600) { RefuseAfter = 0 };
+
+            var r = Run(page, new Env());
+
+            Assert.Equal(ScrollStop.InputLost, r.Stop);
+            Assert.True(Same(r.Image, ScrollStitcherTests.View(content, 600, View)));
+            Assert.Equal(1, r.Frames);
+        }
+
+        [Fact]
+        public void The_monitor_scale_widens_the_scrollbar_strip_for_the_joiner()
+        {
+            // A 34 px scrollbar whose 120-row thumb follows the view, as at 175%.
+            var content = ScrollStitcherTests.Page(2000);
+            PixelFrame WithBar(PixelFrame frame, int top)
+            {
+                var px = (int[])frame.Pixels.Clone();
+                int w = frame.Width, at = top * (View - 120) / (content.Height - View);
+                for (int y = 0; y < View; y++)
+                    for (int x = w - 34; x < w; x++) px[y * w + x] = y >= at && y < at + 120 ? unchecked((int)0xFF888888) : unchecked((int)0xFFEEEEEE);
+                return new PixelFrame(w, View, px);
+            }
+
+            var atOne = Run(new FakePage(content, 0) { Decorate = WithBar }, new Env());
+            var scaled = Run(new FakePage(content, 0) { Decorate = WithBar }, new Env(), null, new ScrollCaptureOptions(Scale: 1.75));
+
+            Assert.Equal(ScrollStop.NoMatch, atOne.Stop);
+            Assert.Equal(ScrollStop.End, scaled.Stop);
+            Assert.Equal(2000, scaled.Image!.Height);
         }
     }
 }

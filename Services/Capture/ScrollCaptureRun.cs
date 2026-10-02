@@ -7,14 +7,19 @@ namespace Kil0bitSystemMonitor.Services.Capture
     {
         PixelFrame Grab();
 
-        /// <summary>Positive scrolls down (content moves up), negative scrolls up.</summary>
-        void Scroll(int notches);
+        /// <summary>
+        /// Positive scrolls down (content moves up), negative scrolls up. False when the wheel
+        /// cannot be sent to the picked window (it closed, another window came over the area, or
+        /// Windows would deliver the wheel elsewhere): the capture then stops.
+        /// </summary>
+        bool Scroll(int notches);
     }
 
-    public enum ScrollStop { End, MaxHeight, MaxSteps, Cancelled, NoMatch, SizeChanged, Unscrollable }
+    public enum ScrollStop { End, MaxHeight, MaxSteps, Cancelled, NoMatch, SizeChanged, Unscrollable, InputLost }
 
     public sealed record ScrollCaptureResult(PixelFrame? Image, ScrollStop Stop, int Frames);
 
+    /// <param name="Scale">The scale of the monitor the area is on, for the joiner's scrollbar strip.</param>
     public sealed record ScrollCaptureOptions(
         int MaxHeight = 20000,
         int MaxSteps = 500,
@@ -23,7 +28,8 @@ namespace Kil0bitSystemMonitor.Services.Capture
         int SettlePollMs = 50,
         int SettleTimeoutMs = 800,
         int ScrollSettleFloorMs = 150,
-        int EndConfirmMs = 400);
+        int EndConfirmMs = 400,
+        double Scale = 1.0);
 
     /// <summary>
     /// The scrolling capture loop (scrolling capture spec 3): scroll to the top, then step down
@@ -50,34 +56,42 @@ namespace Kil0bitSystemMonitor.Services.Capture
 
         public ScrollCaptureResult Run()
         {
-            // Scroll to the top.
+            // Scroll to the top. It is reached when a step leaves the view unmoved: compared
+            // the way the joiner compares, so a GIF or a spinner in the area does not keep it going.
             PixelFrame top = Settle();
             int sent = 0;
             while (sent < _o.MaxTopNotches)
             {
                 if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
-                _target.Scroll(-_o.TopNotchesPerStep);
+                if (!_target.Scroll(-_o.TopNotchesPerStep)) return new ScrollCaptureResult(top, ScrollStop.InputLost, 1);
                 sent += _o.TopNotchesPerStep;
                 PixelFrame after = SettleAfterScroll();
                 if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
-                if (after.SameAs(top))
+                if (ScrollStitcher.Unmoved(top, after, _o.Scale))
                 {
                     // A slow app may not have reacted yet: wait once more before calling it the top.
                     _wait(_o.EndConfirmMs);
                     after = Settle();
                     if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
-                    if (after.SameAs(top)) break;
+                    if (ScrollStitcher.Unmoved(top, after, _o.Scale))
+                    {
+                        top = after;
+                        break;
+                    }
                 }
                 top = after;
             }
             if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
 
+            // The top is reached: from here Esc keeps what was captured, and the card says so.
+            _progress?.Invoke(Math.Min(top.Height, _o.MaxHeight));
+
             // Capture down.
-            var stitcher = new ScrollStitcher(top);
+            var stitcher = new ScrollStitcher(top, _o.Scale);
             int frames = 1, steps = 0;
             while (true)
             {
-                _target.Scroll(1);
+                if (!_target.Scroll(1)) return Done(stitcher, ScrollStop.InputLost, frames);
                 steps++;
                 PixelFrame next = SettleAfterScroll();
                 if (_cancelled()) return Done(stitcher, ScrollStop.Cancelled, frames);

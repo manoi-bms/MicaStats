@@ -58,9 +58,9 @@ namespace Kil0bitSystemMonitor.Services.Capture
         }
 
         /// <summary>Positive scrolls down (negative wheel data), negative scrolls up.</summary>
-        public void Scroll(int notches)
+        public bool Scroll(int notches)
         {
-            if (notches == 0) return;
+            if (notches == 0) return true;
 
             if (!_cursorSaved) _cursorSaved = Win32Helper.GetCursorPos(out _savedCursor);
             SetCursorPos(_area.X + _area.Width / 2, _area.Y + _area.Height / 2);
@@ -83,6 +83,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 _warned = true;
                 DiagnosticsLog.Warn("capture", $"Scrolling capture: {sent} of {count} wheel notches were sent");
             }
+            return true;
         }
 
         /// <summary>Puts the pointer back where it was before the first scroll.</summary>

@@ -261,7 +261,9 @@ namespace Kil0bitSystemMonitor
                             // One-time Z-order update for smooth transition; left alone (SWP_NOZORDER) where lowering would take the taskbar down
                             bool? topmost = OverlayPlacement.TopmostFor(_config.Config.AlwaysOnTop, _config.Config.StickToTaskbar);
                             IntPtr zOrder = topmost == false ? Win32Helper.HWND_NOTOPMOST : Win32Helper.HWND_TOPMOST;
-                            SetWindowPos(_hWnd, zOrder, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE | 0x0040 | (topmost == null ? 0x0004u : 0u));
+                            // SWP_SHOWWINDOW (0x0040) only while shown: a hidden overlay is brought back by its fade-in.
+                            SetWindowPos(_hWnd, zOrder, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE
+                                | (_overlayVisible ? 0x0040u : 0u) | (topmost == null ? 0x0004u : 0u));
                         }
                         _lastStackedFrameKey = null; // appearance may change while readouts are identical
                         UpdateLayer();
@@ -323,11 +325,16 @@ namespace Kil0bitSystemMonitor
             });
         }
 
-        /// <summary>Whether <paramref name="window"/> is above <paramref name="below"/>: a walk up the z-order from <paramref name="below"/>, short in the topmost band.</summary>
+        /// <summary>
+        /// Whether <paramref name="window"/> is above <paramref name="below"/>: a walk up the z-order
+        /// from <paramref name="below"/>, short in the topmost band. Capped, because a z-order that
+        /// changes mid-walk can loop; a walk that hits the cap counts as not above.
+        /// </summary>
         private static bool IsAbove(IntPtr window, IntPtr below)
         {
             if (window == IntPtr.Zero) return false;
-            for (IntPtr w = GetWindow(below, GW_HWNDPREV); w != IntPtr.Zero; w = GetWindow(w, GW_HWNDPREV))
+            int steps = 0;
+            for (IntPtr w = GetWindow(below, GW_HWNDPREV); w != IntPtr.Zero && steps < 1024; w = GetWindow(w, GW_HWNDPREV), steps++)
                 if (w == window) return true;
             return false;
         }

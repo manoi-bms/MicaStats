@@ -823,11 +823,12 @@
                     <!-- Screen capture -->
                     <StackPanel x:Name="CaptureSection" Visibility="Collapsed">
                         <TextBlock Text="Capture" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="Region, window and screen capture with an annotation editor. Shortcuts work anywhere in Windows." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <TextBlock Text="Region, window, screen and scrolling capture with an annotation editor. Shortcuts work anywhere in Windows." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                             <Button Content="Capture region now" Click="OnCaptureRegion" Margin="0,0,8,0" Padding="14,7"/>
                             <Button Content="Capture window" Click="OnCaptureWindow" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="Capture scrolling" Click="OnCaptureScrolling" Margin="0,0,8,0" Padding="14,7"/>
                             <Button Content="Open folder" Click="OnOpenCaptureFolder" Padding="14,7"/>
                         </StackPanel>
 
@@ -965,7 +966,7 @@
                                 <ui:FontIcon Glyph="&#xE765;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
                                     <TextBlock Text="Keyboard shortcuts" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Ctrl+Shift+1 region, Ctrl+Shift+2 window, Ctrl+Shift+3 screen. A shortcut another application already owns is reported in the diagnostics log." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Ctrl+Shift+1 region, Ctrl+Shift+2 window, Ctrl+Shift+3 screen, Ctrl+Shift+4 scrolling. A shortcut another application already owns is reported in the diagnostics log." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureHotkeysToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
                             </Grid>

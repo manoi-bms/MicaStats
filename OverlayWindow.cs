@@ -1885,6 +1885,7 @@ namespace Kil0bitSystemMonitor
                     AppendMenu(hMenu, 0, 1021, "Capture Window	Ctrl+Shift+2");
                     AppendMenu(hMenu, 0, 1022, "Capture Screen	Ctrl+Shift+3");
                     AppendMenu(hMenu, 0, 1023, "Capture All Screens");
+                    AppendMenu(hMenu, 0, 1024, "Capture Scrolling…\tCtrl+Shift+4");
                     AppendMenu(hMenu, 0x0800, 0, null);
                     AppendMenu(hMenu, 0, 1030, "Show Desktop");
                     if (Services.Update.UpdateNotifier.PendingVersion is string pending)
@@ -1939,6 +1940,7 @@ namespace Kil0bitSystemMonitor
                     else if (ch == 1021) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.ActiveWindow, _config.Config, _dispatcher, fromMenu: true);
                     else if (ch == 1022) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Screen, _config.Config, _dispatcher, fromMenu: true);
                     else if (ch == 1023) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.AllScreens, _config.Config, _dispatcher, fromMenu: true);
+                    else if (ch == 1024) Services.Capture.CaptureService.Start(Services.Capture.CaptureMode.Scrolling, _config.Config, _dispatcher, fromMenu: true);
                     else if (ch == 1040) _dispatcher.BeginInvoke(() => DiagnosticsWindow.ShowDiagnostics());
                     else if (ch == 1041) _dispatcher.BeginInvoke(() => App.RecordSlowdownNow());
                     else if (ch == 1030) ShowDesktop();

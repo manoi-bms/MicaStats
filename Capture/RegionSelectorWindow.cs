@@ -52,7 +52,8 @@ namespace Kil0bitSystemMonitor.Capture
 
         private RegionSelectorWindow(BitmapSource frozen, PixelRect bounds,
                                      IReadOnlyList<CaptureTarget> windows,
-                                     IReadOnlyList<MonitorInfo> monitors)
+                                     IReadOnlyList<MonitorInfo> monitors,
+                                     string? hint)
         {
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.NoResize;
@@ -63,7 +64,7 @@ namespace Kil0bitSystemMonitor.Capture
             // AllowsTransparency stays off: the window shows an opaque frozen screenshot, and a
             // layered window would cost a full-desktop alpha blend for no visual gain.
 
-            _surface = new Surface(frozen, bounds, windows, monitors);
+            _surface = new Surface(frozen, bounds, windows, monitors, hint);
             Content = _surface;
 
             SourceInitialized += (s, e) => PositionOverDesktop(bounds);
@@ -93,7 +94,8 @@ namespace Kil0bitSystemMonitor.Capture
         /// Freezes the desktop, runs the picker, and returns the selection. Returns null when
         /// the user cancels. Must be called on the UI thread.
         /// </summary>
-        public static SelectionResult? Pick(bool includeCursor, IntPtr excludeWindow = default)
+        /// <param name="hint">Replaces the hint line at the top when given, for modes that use the area differently.</param>
+        public static SelectionResult? Pick(bool includeCursor, IntPtr excludeWindow = default, string? hint = null)
         {
             var bounds = ScreenCaptureEngine.VirtualBounds();
             if (bounds.IsEmpty) return null;
@@ -108,7 +110,7 @@ namespace Kil0bitSystemMonitor.Capture
             var windows = ScreenCaptureEngine.EnumerateWindows(bounds, excludeWindow);
             var monitors = ScreenCaptureEngine.GetMonitors();
 
-            var win = new RegionSelectorWindow(frozen, bounds, windows, monitors);
+            var win = new RegionSelectorWindow(frozen, bounds, windows, monitors, hint);
             bool? ok = win.ShowDialog();
             if (ok != true || win.Region.IsEmpty) return null;
 
@@ -133,6 +135,7 @@ namespace Kil0bitSystemMonitor.Capture
             private readonly IReadOnlyList<CaptureTarget> _windows;
             private readonly IReadOnlyList<MonitorInfo> _monitors;
             private readonly List<PixelRect> _guides = new();
+            private readonly string? _hint;
 
             private bool _dragging;
             private int _anchorX, _anchorY;
@@ -158,8 +161,10 @@ namespace Kil0bitSystemMonitor.Capture
             public PixelRect Selection => _selection;
 
             public Surface(BitmapSource image, PixelRect bounds,
-                           IReadOnlyList<CaptureTarget> windows, IReadOnlyList<MonitorInfo> monitors)
+                           IReadOnlyList<CaptureTarget> windows, IReadOnlyList<MonitorInfo> monitors,
+                           string? hint)
             {
+                _hint = hint;
                 _image = image;
                 _bounds = bounds;
                 _windows = windows;
@@ -435,7 +440,7 @@ namespace Kil0bitSystemMonitor.Capture
 
             private void DrawHint(DrawingContext dc)
             {
-                var ft = Text("Drag to select   ·   Click a window or screen   ·   M magnifier   ·   S snap   ·   A all   ·   Enter accept   ·   Esc cancel",
+                var ft = Text(_hint ?? "Drag to select   ·   Click a window or screen   ·   M magnifier   ·   S snap   ·   A all   ·   Enter accept   ·   Esc cancel",
                     12, Color.FromRgb(0xDD, 0xE3, 0xEA));
 
                 var monitor = CaptureGeometry.MonitorAt(_monitors, _cursorX, _cursorY);

@@ -263,6 +263,18 @@ namespace Kil0bitSystemMonitor.Services.Capture
             finally { DeleteObject(hBitmap); }
         }
 
+        /// <summary>
+        /// A captured frame to a frozen WPF image. The frame's ARGB ints are BGRA bytes in
+        /// memory, so they go straight into a BGRA32 bitmap without a per-pixel pass.
+        /// </summary>
+        public static BitmapSource ToBitmapSource(PixelFrame frame)
+        {
+            var src = BitmapSource.Create(frame.Width, frame.Height, 96, 96,
+                System.Windows.Media.PixelFormats.Bgra32, null, frame.Pixels, frame.Width * 4);
+            src.Freeze();
+            return src;
+        }
+
         // ----- Output ------------------------------------------------------------------------
 
         public static BitmapEncoder CreateEncoder(CaptureFormat format, int jpegQuality) => format switch

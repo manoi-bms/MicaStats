@@ -13,6 +13,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
         CaptureRegion,
         CaptureWindow,
         CaptureScreen,
+        CaptureScrolling,
         Pad,
         Ai,
     }
@@ -85,7 +86,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
         }
 
         /// <summary>
-        /// The shortcuts <paramref name="cfg"/> asks for, in registration order: the three capture
+        /// The shortcuts <paramref name="cfg"/> asks for, in registration order: the four capture
         /// keys while capture shortcuts are on, MicaPad's when set, and Ask MicaStats' when set
         /// and the assistant is on.
         /// </summary>
@@ -97,6 +98,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 plan.Add(new HotkeyPlan(cfg.CaptureHotkeyRegion, "capture", nameof(CaptureMode.Region), HotkeyTarget.CaptureRegion));
                 plan.Add(new HotkeyPlan(cfg.CaptureHotkeyWindow, "capture", nameof(CaptureMode.ActiveWindow), HotkeyTarget.CaptureWindow));
                 plan.Add(new HotkeyPlan(cfg.CaptureHotkeyFullScreen, "capture", nameof(CaptureMode.Screen), HotkeyTarget.CaptureScreen));
+                plan.Add(new HotkeyPlan(cfg.CaptureHotkeyScrolling, "capture", nameof(CaptureMode.Scrolling), HotkeyTarget.CaptureScrolling));
             }
 
             if (!string.IsNullOrWhiteSpace(cfg.PadHotkey))
@@ -113,6 +115,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
             HotkeyTarget.CaptureRegion => () => CaptureService.Start(CaptureMode.Region, _config(), _dispatcher),
             HotkeyTarget.CaptureWindow => () => CaptureService.Start(CaptureMode.ActiveWindow, _config(), _dispatcher),
             HotkeyTarget.CaptureScreen => () => CaptureService.Start(CaptureMode.Screen, _config(), _dispatcher),
+            HotkeyTarget.CaptureScrolling => () => CaptureService.Start(CaptureMode.Scrolling, _config(), _dispatcher),
             // Queued, not called: the handler runs inside WndProc, and opening a window there would re-enter it.
             HotkeyTarget.Pad => () => _dispatcher.BeginInvoke(_openPad),
             HotkeyTarget.Ai => () => _dispatcher.BeginInvoke(_openAi),

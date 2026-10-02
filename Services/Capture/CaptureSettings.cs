@@ -16,6 +16,8 @@ namespace Kil0bitSystemMonitor.Services.Capture
         Screen,
         /// <summary>Every monitor, as one image.</summary>
         AllScreens,
+        /// <summary>A picked area, scrolled from top to bottom and joined into one tall image.</summary>
+        Scrolling,
     }
 
     /// <summary>

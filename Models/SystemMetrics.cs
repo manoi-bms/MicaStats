@@ -264,6 +264,7 @@ namespace Kil0bitSystemMonitor.Models
         private string _captureHotkeyRegion = "Ctrl+Shift+1";
         private string _captureHotkeyWindow = "Ctrl+Shift+2";
         private string _captureHotkeyFullScreen = "Ctrl+Shift+3";
+        private string _captureHotkeyScrolling = "Ctrl+Shift+4";
 
         // Per-section label colors (null = use global LabelColorHex)
         private string? _netLabelColorHex = null;
@@ -511,6 +512,7 @@ namespace Kil0bitSystemMonitor.Models
         public string CaptureHotkeyRegion { get => _captureHotkeyRegion; set { Set(ref _captureHotkeyRegion, value); } }
         public string CaptureHotkeyWindow { get => _captureHotkeyWindow; set { Set(ref _captureHotkeyWindow, value); } }
         public string CaptureHotkeyFullScreen { get => _captureHotkeyFullScreen; set { Set(ref _captureHotkeyFullScreen, value); } }
+        public string CaptureHotkeyScrolling { get => _captureHotkeyScrolling; set { Set(ref _captureHotkeyScrolling, value); } }
 
         // Per-section label colors (null/empty = inherit global LabelColorHex)
         public string? NetLabelColorHex { get => _netLabelColorHex; set { Set(ref _netLabelColorHex, value); } }

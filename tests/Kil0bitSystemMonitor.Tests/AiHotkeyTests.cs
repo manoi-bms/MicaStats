@@ -41,10 +41,10 @@ namespace Kil0bitSystemMonitor.Tests
             var plan = CaptureHotkeys.Plan(cfg);
 
             Assert.Equal(
-                new[] { HotkeyTarget.CaptureRegion, HotkeyTarget.CaptureWindow, HotkeyTarget.CaptureScreen, HotkeyTarget.Pad },
+                new[] { HotkeyTarget.CaptureRegion, HotkeyTarget.CaptureWindow, HotkeyTarget.CaptureScreen, HotkeyTarget.CaptureScrolling, HotkeyTarget.Pad },
                 plan.Select(p => p.Target));
             Assert.Equal(
-                new[] { cfg.CaptureHotkeyRegion, cfg.CaptureHotkeyWindow, cfg.CaptureHotkeyFullScreen, "Ctrl+Alt+N" },
+                new[] { cfg.CaptureHotkeyRegion, cfg.CaptureHotkeyWindow, cfg.CaptureHotkeyFullScreen, cfg.CaptureHotkeyScrolling, "Ctrl+Alt+N" },
                 plan.Select(p => p.Spec));
             Assert.Empty(CaptureHotkeys.Plan(new AppConfig { CaptureHotkeysEnabled = false, PadHotkey = "", AiAssistantEnabled = false }));
         }

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -141,11 +142,84 @@ namespace Kil0bitSystemMonitor.Services.Capture
                     return (ScreenCaptureEngine.CaptureRectSource(rect, settings.IncludeCursor), "screen");
                 }
 
+                case CaptureMode.Scrolling:
+                    return GrabScrolling();
+
                 default:
                     return (ScreenCaptureEngine.CaptureRectSource(
                         ScreenCaptureEngine.VirtualBounds(), settings.IncludeCursor), "all screens");
             }
         }
+
+        private const string ScrollingHint = "Click the part that scrolls, or drag around it   ·   Esc cancel";
+
+        /// <summary>Areas narrower or shorter than this cannot be joined reliably (scrolling capture spec 2).</summary>
+        private const int MinScrollingSide = 50;
+
+        /// <summary>
+        /// Time for the picker's pixels to leave the screen and the status card to paint before
+        /// the first grab.
+        /// </summary>
+        private const int PickerClearMs = 150;
+
+        /// <summary>
+        /// Scrolling capture (scrolling capture spec 2-5): pick an area, then scroll it from the
+        /// top to the bottom with the wheel and join the frames. The pointer is put back and the
+        /// temporary Esc hotkey released however the run ends.
+        /// </summary>
+        private static (BitmapSource? Image, string? Note) GrabScrolling()
+        {
+            // Never the cursor: the frozen frame only guides the pick, and a pointer drawn into
+            // the frames would repeat down the joined image.
+            var picked = RegionSelectorWindow.Pick(false, hint: ScrollingHint);
+            if (picked == null) return (null, null);
+
+            var area = picked.Region;
+            if (area.Width < MinScrollingSide || area.Height < MinScrollingSide)
+            {
+                DiagnosticsLog.Log("capture", string.Create(CultureInfo.InvariantCulture,
+                    $"Scrolling capture refused: {area.Width}x{area.Height} is under {MinScrollingSide}x{MinScrollingSide}"));
+                return (null, null);
+            }
+
+            bool cancelled = false;
+            ScrollCaptureResult result;
+            ScrollStatusWindow? card = null;
+            try
+            {
+                card = ScrollStatusWindow.Open(area);
+                if (!card.HoldEsc(() => cancelled = true))
+                    DiagnosticsLog.Warn("capture",
+                        "Esc is taken by another application; the scrolling capture stops only at the end of the page or a limit");
+
+                CaptureSettle.Pump(PickerClearMs);
+
+                using var target = new ScreenScrollTarget(area);
+                result = new ScrollCaptureRun(target, CaptureSettle.Pump, () => cancelled, card.ShowProgress).Run();
+            }
+            finally
+            {
+                if (card != null)
+                {
+                    card.ReleaseEsc();
+                    card.Close();
+                }
+            }
+
+            DiagnosticsLog.Log("capture", string.Create(CultureInfo.InvariantCulture,
+                $"Scrolling capture: {result.Frames} frames, {result.Image?.Height ?? 0} px tall, stopped by {result.Stop}"));
+
+            if (result.Image == null) return (null, null);
+            return (ScreenCaptureEngine.ToBitmapSource(result.Image), ScrollNote(result.Stop));
+        }
+
+        /// <summary>The editor title's note for how a scrolling capture ended; null when it simply reached the end.</summary>
+        internal static string? ScrollNote(ScrollStop stop) => stop switch
+        {
+            ScrollStop.Unscrollable => "Nothing scrolled in that area",
+            ScrollStop.NoMatch or ScrollStop.SizeChanged => "Stopped: the view changed in a way MicaStats could not follow",
+            _ => null,
+        };
 
         /// <summary>Copy and/or save without opening the editor.</summary>
         private static void Finish(BitmapSource image, CaptureSettings settings)

@@ -907,6 +907,9 @@ namespace Kil0bitSystemMonitor
         private void OnCaptureWindow(object sender, RoutedEventArgs e) =>
             StartCapture(Kil0bitSystemMonitor.Services.Capture.CaptureMode.ActiveWindow);
 
+        private void OnCaptureScrolling(object sender, RoutedEventArgs e) =>
+            StartCapture(Kil0bitSystemMonitor.Services.Capture.CaptureMode.Scrolling);
+
         private void OnOpenCaptureFolder(object sender, RoutedEventArgs e)
         {
             try

@@ -15,10 +15,25 @@
       </RuleSet>
     </Span>
     <Span color="String" begin="(?&lt;!\w)'" end="'" />
+    <!-- A flow collection ([a, b] or {k: v}) as a value, a list item or a whole line; the Flow rules color its items. -->
+    <Span ruleSet="Flow" begin="(?&lt;=^[ \t]*|:[ \t]+|^[ \t]*-[ \t]+)[\[{]" end="[\]}]" />
     <Rule color="Directive">^(---|\.\.\.)\s*$</Rule>
     <Rule color="KeyName">(?&lt;=^\s*(-\s+)?)[^\s\#'"-][^:\#\r\n]*?(?=:(\s|$))</Rule>
-    <!-- A whole value only: after "key: " or "- ", up to a comment or the line end (not "no data", nor a word in a script block). -->
-    <Rule color="Bool">(?&lt;=:[ \t]+|^\s*-[ \t]+)(true|false|yes|no|on|off|null|~)(?=[ \t]*(\#|$))</Rule>
+    <!-- A whole value only: after "key: ", after "- " or alone on its line, up to a comment or the line end (not "no data", nor a word in a script block). -->
+    <Rule color="Bool">(?&lt;=:[ \t]+|^\s*-[ \t]+|^[ \t]*)(true|false|yes|no|on|off|null|~)(?=[ \t]*(\#|$))</Rule>
+    <Rule color="Number">(?&lt;![\w.])-?\d+(\.\d+)?(?![\w.])</Rule>
+  </RuleSet>
+  <!-- Inside [ ] or { }: an item is Bool when it is the whole item, first or after "," or "key:", up to ",", "]" or "}". -->
+  <RuleSet name="Flow">
+    <Span color="Comment" begin="(?&lt;=\s)\#" />
+    <Span color="String" begin="&quot;" end="&quot;">
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+    <Span color="String" begin="(?&lt;!\w)'" end="'" />
+    <Span ruleSet="Flow" begin="[\[{]" end="[\]}]" />
+    <Rule color="Bool">(?&lt;=^[ \t]*|[,:][ \t]*)(true|false|yes|no|on|off|null|~)(?=[ \t]*([,\]}]|$))</Rule>
     <Rule color="Number">(?&lt;![\w.])-?\d+(\.\d+)?(?![\w.])</Rule>
   </RuleSet>
 </SyntaxDefinition>

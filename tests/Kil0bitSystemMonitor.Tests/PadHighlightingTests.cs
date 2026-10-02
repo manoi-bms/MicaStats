@@ -102,6 +102,9 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("  echo true && exit 0")]
         [InlineData("run: yes please")]
         [InlineData("- off we go")]
+        [InlineData("message: well, no, thanks")]
+        [InlineData("tags: [no way, yes sir]")]
+        [InlineData("title: see [true] here")]
         public void Yaml_bool_words_inside_text_are_not_bool(string line) => UiThread.Run(() =>
         {
             var highlighter = new DocumentHighlighter(new TextDocument(line), PadHighlighting.For(PadLanguages.ById("yaml")!)!);
@@ -164,6 +167,15 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("yaml", "enabled: true # note", "true", "Bool")]
         [InlineData("yaml", "- yes", "yes", "Bool")]
         [InlineData("yaml", "value: ~", "~", "Bool")]
+        [InlineData("yaml", "flags: [true, false, null]", "true", "Bool")]
+        [InlineData("yaml", "flags: [true, false, null]", "false", "Bool")]
+        [InlineData("yaml", "flags: [true, false, null]", "null", "Bool")]
+        [InlineData("yaml", "flags: {active: true, disabled: false}", "true", "Bool")]
+        [InlineData("yaml", "flags: {active: true, disabled: false}", "false", "Bool")]
+        [InlineData("yaml", "- [yes, no]", "no", "Bool")]
+        [InlineData("yaml", "a: {b: [on, {c: off}]}", "off", "Bool")]
+        [InlineData("yaml", "true", "true", "Bool")]
+        [InlineData("yaml", "ports: [80, 443]", "443", "Number")]
         [InlineData("yaml", "count: 42", "42", "Number")]
         [InlineData("batch", "@echo off", "echo", "Keywords")]
         [InlineData("batch", "rem cleanup", "rem cleanup", "Comment")]

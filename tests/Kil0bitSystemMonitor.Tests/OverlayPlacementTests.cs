@@ -86,43 +86,50 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void Overlay_left_without_an_owner_by_an_Explorer_restart_attaches_to_the_new_taskbar()
         {
-            Assert.True(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, owner: 0, lastAttempt: OldTaskbar));
+            Assert.True(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, taskbarShown: true, owner: 0, lastAttempt: OldTaskbar));
         }
 
         [Fact]
         public void Overlay_still_owned_by_a_dead_taskbar_attaches_to_the_new_one()
         {
-            Assert.True(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, owner: OldTaskbar, lastAttempt: OldTaskbar));
+            Assert.True(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, taskbarShown: true, owner: OldTaskbar, lastAttempt: OldTaskbar));
         }
 
         [Fact]
         public void Taskbar_that_appeared_after_startup_is_attached_once_it_is_there()
         {
-            Assert.True(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, owner: 0, lastAttempt: 0));
+            Assert.True(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, taskbarShown: true, owner: 0, lastAttempt: 0));
         }
 
         [Fact]
         public void Overlay_owned_by_the_live_taskbar_is_left_alone()
         {
-            Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, owner: NewTaskbar, lastAttempt: NewTaskbar));
+            Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, taskbarShown: true, owner: NewTaskbar, lastAttempt: NewTaskbar));
         }
 
         [Fact]
         public void Nothing_is_attached_while_Explorer_has_no_taskbar_yet()
         {
-            Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: 0, owner: 0, lastAttempt: OldTaskbar));
+            Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: 0, taskbarShown: true, owner: 0, lastAttempt: OldTaskbar));
+        }
+
+        [Fact]
+        public void A_taskbar_Explorer_has_not_shown_yet_is_left_alone()
+        {
+            // Still being built: its rectangle is not the final one, and aligning to it would move the saved X.
+            Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, taskbarShown: false, owner: 0, lastAttempt: OldTaskbar));
         }
 
         [Fact]
         public void Floating_overlay_is_never_attached()
         {
-            Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: false, taskbar: NewTaskbar, owner: 0, lastAttempt: OldTaskbar));
+            Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: false, taskbar: NewTaskbar, taskbarShown: true, owner: 0, lastAttempt: OldTaskbar));
         }
 
         [Fact]
         public void A_taskbar_that_refused_the_attach_is_not_asked_again_every_tick()
         {
-            Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, owner: 0, lastAttempt: NewTaskbar));
+            Assert.False(OverlayPlacement.NeedsTaskbarAttach(stickToTaskbar: true, taskbar: NewTaskbar, taskbarShown: true, owner: 0, lastAttempt: NewTaskbar));
         }
     }
 }

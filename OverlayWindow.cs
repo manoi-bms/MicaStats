@@ -50,6 +50,8 @@ namespace Kil0bitSystemMonitor
         private bool _appbarRegistered = false;
         private IntPtr _attachedTaskbar;   // the taskbar the last attach went to (OverlayPlacement.NeedsTaskbarAttach)
         private readonly uint _taskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
+        private bool _reattachQueued;      // a burst of TaskbarCreated broadcasts reattaches once
+        private bool _disposed;
         private readonly Action? _onHistoryUpdated;
         private readonly System.ComponentModel.PropertyChangedEventHandler? _onConfigPropertyChanged;
         private uint _currentDpi = 96;
@@ -176,9 +178,13 @@ namespace Kil0bitSystemMonitor
                 Services.Pad.PadIpc.AllowFromLowerIntegrityWhenElevated(_hWnd);
 
                 // Explorer broadcasts TaskbarCreated when its taskbar comes back after a restart.
-                // Elevated, the unelevated shell's broadcast is filtered out unless admitted. It
-                // carries nothing, and the handler only attaches to whatever Shell_TrayWnd exists.
-                if (_taskbarCreatedMessage != 0) ChangeWindowMessageFilterEx(_hWnd, _taskbarCreatedMessage, MSGFLT_ALLOW, IntPtr.Zero);
+                // Elevated, the unelevated shell's broadcast is filtered out unless admitted; unelevated,
+                // the filter already admits it. It carries nothing, and the handler only attaches to
+                // whatever Shell_TrayWnd exists.
+                using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent())
+                    if (_taskbarCreatedMessage != 0
+                        && new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+                        ChangeWindowMessageFilterEx(_hWnd, _taskbarCreatedMessage, MSGFLT_ALLOW, IntPtr.Zero);
 
                 if (_hIcon != IntPtr.Zero) { SendMessage(_hWnd, WM_SETICON, (IntPtr)ICON_BIG, _hIcon); SendMessage(_hWnd, WM_SETICON, (IntPtr)ICON_SMALL, _hIcon); }
 
@@ -271,8 +277,9 @@ namespace Kil0bitSystemMonitor
             _dispatcher.BeginInvoke(() =>
             {
                 // The safety net for a missed TaskbarCreated: a taskbar the overlay is not attached to.
-                if (OverlayPlacement.NeedsTaskbarAttach(_config.Config.StickToTaskbar,
-                        Win32Helper.FindWindow("Shell_TrayWnd", null!), GetWindow(_hWnd, GW_OWNER), _attachedTaskbar))
+                IntPtr taskbar = Win32Helper.FindWindow("Shell_TrayWnd", null!);
+                if (OverlayPlacement.NeedsTaskbarAttach(_config.Config.StickToTaskbar, taskbar, IsWindowVisible(taskbar),
+                        GetWindow(_hWnd, GW_OWNER), _attachedTaskbar))
                     ReattachToTaskbar();
 
                 bool show = ShouldShowOverlay();
@@ -336,19 +343,28 @@ namespace Kil0bitSystemMonitor
         /// </summary>
         private void ReattachToTaskbar()
         {
-            _appbarRegistered = false;
-            _shellFullscreen = false;
+            _reattachQueued = false;
+            if (_disposed) return;
+
+            // A new shell knows nothing of the old one's appbars or full-screen notice. The same shell
+            // (TaskbarCreated also comes with a DPI change) still has both, and still sends the notices.
+            IntPtr taskbar = Win32Helper.FindWindow("Shell_TrayWnd", null!);
+            bool newShell = taskbar != IntPtr.Zero && taskbar != _attachedTaskbar;
+            if (newShell) { _appbarRegistered = false; _shellFullscreen = false; }
             if (_config.Config.StickToTaskbar) AttachToTaskbar(); else AlignToTaskbarCenter();
 
-            // Back above the new taskbar now rather than at the next click elsewhere; never shown by this.
-            IntPtr zOrder = _config.Config.AlwaysOnTop ? Win32Helper.HWND_TOPMOST : Win32Helper.HWND_NOTOPMOST;
-            SetWindowPos(_hWnd, zOrder, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE);
+            // Back above the new taskbar now rather than at the next click elsewhere, and never shown
+            // by this. Only ever raised: made not-topmost, the overlay would take its owner, the
+            // taskbar, down with it.
+            if (_config.Config.AlwaysOnTop)
+                SetWindowPos(_hWnd, Win32Helper.HWND_TOPMOST, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE);
 
             EnsureOverlayOnScreen();
             StartTaskbarRecovery();
             UpdateVisibility();
             UpdateLayer();
-            try { DiagnosticsLog.Log("overlay", "Taskbar came back; overlay attached to it again"); } catch { }
+            if (newShell && _config.Config.StickToTaskbar)
+                try { DiagnosticsLog.Log("overlay", "Explorer's taskbar came back; overlay attached to it again"); } catch { }
         }
 
         /// <summary>
@@ -363,8 +379,11 @@ namespace Kil0bitSystemMonitor
                 TimeSpan.FromMilliseconds(2500), System.Windows.Threading.DispatcherPriority.Background,
                 (s, e) =>
                 {
-                    AlignToTaskbarCenter();
-                    EnsureOverlayOnScreen();
+                    if (!_inSizeMove)   // never snap back mid-drag
+                    {
+                        AlignToTaskbarCenter();
+                        EnsureOverlayOnScreen();
+                    }
                     if (++_recoveryTicks >= 4) { _recoveryTimer?.Stop(); _recoveryTimer = null; }
                 }, _dispatcher);
             _recoveryTimer.Start();
@@ -1685,6 +1704,7 @@ namespace Kil0bitSystemMonitor
 
         public void Dispose()
         {
+            _disposed = true;
             try { if (_onHistoryUpdated != null) _history.Updated -= _onHistoryUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _recoveryTimer?.Stop(); _recoveryTimer = null; _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
         }
 
@@ -1721,7 +1741,11 @@ namespace Kil0bitSystemMonitor
             if (msg == WM_ENTERSIZEMOVE) { _inSizeMove = true; }
             if (msg == WM_EXITSIZEMOVE) { _inSizeMove = false; if (Win32Helper.GetWindowRect(hWnd, out Win32Helper.RECT r)) { _config.Config.X = r.Left; _config.Config.Y = r.Top; _config.SaveConfig(); } }
             if (msg == WM_SHOW_SETTINGS) { _dispatcher.BeginInvoke(() => App.OpenSettings(_viewModel, _config)); return IntPtr.Zero; }
-            if (_taskbarCreatedMessage != 0 && msg == _taskbarCreatedMessage) { _dispatcher.BeginInvoke(ReattachToTaskbar); return IntPtr.Zero; }
+            if (_taskbarCreatedMessage != 0 && msg == _taskbarCreatedMessage)
+            {
+                if (!_reattachQueued) { _reattachQueued = true; _dispatcher.BeginInvoke(ReattachToTaskbar); }
+                return IntPtr.Zero;
+            }
             if (msg == Services.Pad.PadIpc.WM_COPYDATA)
             {
                 // Anything not tagged as a MicaPad request is refused; the path is only ever opened as text.
@@ -1920,6 +1944,7 @@ namespace Kil0bitSystemMonitor
         [DllImport("user32.dll")] static extern IntPtr DefWindowProc(IntPtr h, uint m, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint c);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string name);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
         [DllImport("user32.dll", SetLastError = true)] static extern bool ChangeWindowMessageFilterEx(IntPtr h, uint m, uint action, IntPtr changeFilterStruct);
         [DllImport("kernel32.dll")] static extern IntPtr GetModuleHandle(string? n);
         [DllImport("user32.dll")] static extern IntPtr LoadCursor(IntPtr i, int n);

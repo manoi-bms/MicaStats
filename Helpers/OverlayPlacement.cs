@@ -67,9 +67,10 @@ namespace Kil0bitSystemMonitor.Helpers
         /// it; a taskbar that only appears after MicaStats started was never attached at all.
         /// </summary>
         /// <param name="taskbar">The live <c>Shell_TrayWnd</c>, or zero while Explorer has none.</param>
+        /// <param name="taskbarShown">False while Explorer is still building it, before it has its final place.</param>
         /// <param name="owner">The overlay's current owner window, or zero.</param>
         /// <param name="lastAttempt">The taskbar the last attach went to: one that refused is not asked again every tick.</param>
-        public static bool NeedsTaskbarAttach(bool stickToTaskbar, nint taskbar, nint owner, nint lastAttempt) =>
-            stickToTaskbar && taskbar != 0 && owner != taskbar && taskbar != lastAttempt;
+        public static bool NeedsTaskbarAttach(bool stickToTaskbar, nint taskbar, bool taskbarShown, nint owner, nint lastAttempt) =>
+            stickToTaskbar && taskbar != 0 && taskbarShown && owner != taskbar && taskbar != lastAttempt;
     }
 }

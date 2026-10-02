@@ -27,16 +27,16 @@ namespace Kil0bitSystemMonitor.Pad
 
         private readonly IHighlighter _inner;
         private readonly Action<Exception> _onFailure;
-        private readonly bool _tight;
+        private readonly CallSyntax _syntax;
         private bool _failed;
 
         /// <param name="onFailure">Told the first time the pass throws; that line keeps its other colors.</param>
-        /// <param name="tight">A call's <c>(</c> follows its name directly (<see cref="PadLanguage.TightCalls"/>).</param>
-        public FunctionCallHighlighter(IHighlighter inner, Action<Exception> onFailure, bool tight = false)
+        /// <param name="syntax">The language's call syntax (<see cref="CallSyntax.For"/>); null is <see cref="CallSyntax.Plain"/>.</param>
+        public FunctionCallHighlighter(IHighlighter inner, Action<Exception> onFailure, CallSyntax? syntax = null)
         {
             _inner = inner;
             _onFailure = onFailure;
-            _tight = tight;
+            _syntax = syntax ?? CallSyntax.Plain;
         }
 
         private static HighlightingColor CreateColor(string name)
@@ -50,16 +50,17 @@ namespace Kil0bitSystemMonitor.Pad
         /// Adds a Function section for each name the line's sections leave uncovered, keeping the
         /// sections in offset order. A section the definition colored as a call whose text is a
         /// <see cref="FunctionCalls.IsKeyword">keyword</see> (PHP's <c>if (</c>, C++'s <c>decltype(</c>,
-        /// C#'s <c>when (</c>) gets the keyword color instead, in place; one a declaration names
-        /// (<see cref="FunctionCalls.AfterDeclaration"/>: Python's <c>class Foo(</c>, C#'s
+        /// C#'s <c>when (</c>) gets the keyword color instead, in place; one that a declaration word of
+        /// the language names (<paramref name="syntax"/>: Python's <c>class Foo(</c>, C#'s
         /// <c>record Point(</c>) is dropped, a type being no call. A throw leaves the line as it
         /// was and is passed to <paramref name="onFailure"/>: it costs only this line its function colors.
-        /// With <paramref name="tight"/>, a name spaced from its <c>(</c> is no call (<see cref="FunctionCalls.Find"/>).
         /// </summary>
-        internal static void AddTo(HighlightedLine line, Action<Exception> onFailure, bool tight = false)
+        /// <param name="syntax">The language's call syntax (<see cref="CallSyntax.For"/>); null is <see cref="CallSyntax.Plain"/>.</param>
+        internal static void AddTo(HighlightedLine line, Action<Exception> onFailure, CallSyntax? syntax = null)
         {
             try
             {
+                syntax ??= CallSyntax.Plain;
                 var documentLine = line.DocumentLine;
                 if (documentLine.Length > MarkdownLineTokenizer.MaxInlineLength) return;
                 string text = line.Document.GetText(documentLine);
@@ -72,12 +73,12 @@ namespace Kil0bitSystemMonitor.Pad
                     int at = section.Offset - documentLine.Offset;
                     if (at < 0 || at + section.Length > text.Length) continue;
                     bool keyword = FunctionCalls.IsKeyword(text.AsSpan(at, section.Length)) && !FunctionCalls.AfterMemberAccess(text, at);
-                    if (!keyword && !FunctionCalls.AfterDeclaration(text, at)) continue;
+                    if (!keyword && !syntax.DeclaresTypeAt(text, at)) continue;
                     if (SyntaxColors.Categorize(section.Color?.Name) != SyntaxCategory.Function) continue;
                     if (keyword) (keywords ??= new List<HighlightedSection>()).Add(section);
                     else (declared ??= new List<HighlightedSection>()).Add(section);
                 }
-                var merged = WithCalls(sections, FunctionCalls.Find(text, MarkdownLineTokenizer.MaxInlineLength, tight), documentLine.Offset);
+                var merged = WithCalls(sections, FunctionCalls.Find(text, MarkdownLineTokenizer.MaxInlineLength, syntax), documentLine.Offset);
 
                 // Nothing has changed the line so far; nothing below throws.
                 if (keywords != null)
@@ -129,7 +130,7 @@ namespace Kil0bitSystemMonitor.Pad
         public HighlightedLine HighlightLine(int lineNumber)
         {
             var line = _inner.HighlightLine(lineNumber);
-            AddTo(line, Failed, _tight);
+            AddTo(line, Failed, _syntax);
             return line;
         }
 

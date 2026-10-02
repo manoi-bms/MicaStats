@@ -19,12 +19,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// highlighting definition, or with <see cref="OwnDefinition"/> one of MicaPad's own
     /// <c>Pad/Highlighting/*.xshd</c> files; null means no syntax colors (Plain text, and Markdown,
     /// which MicaPad formats itself). <see cref="FunctionCalls"/> marks a language that calls
-    /// functions as <c>name(...)</c>: names its colors leave plain get the Function color (ruling R4).
-    /// <see cref="TightCalls"/> marks one whose calls never have a space before the <c>(</c>
-    /// (PowerShell, where <c>-f ($x)</c> passes an argument), so <c>name (</c> is no call there.
+    /// functions as <c>name(...)</c>: names its colors leave plain get the Function color (ruling R4),
+    /// following its <see cref="CallSyntax"/>.
     /// </summary>
-    public sealed record PadLanguage(string Id, string Name, string? Definition, bool OwnDefinition, PadFoldKind Fold, bool FunctionCalls = false,
-                                     bool TightCalls = false);
+    public sealed record PadLanguage(string Id, string Name, string? Definition, bool OwnDefinition, PadFoldKind Fold, bool FunctionCalls = false);
 
     /// <summary>A note's language after Auto and the size limit.</summary>
     public sealed record ResolvedLanguage(PadLanguage Language, bool TooLarge)
@@ -58,7 +56,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             new PadLanguage("javascript", "JavaScript", "JavaScript", false, PadFoldKind.Braces, FunctionCalls: true),
             new PadLanguage("typescript", "TypeScript", "TypeScript", true, PadFoldKind.Braces, FunctionCalls: true),
             new PadLanguage("css", "CSS", "CSS", false, PadFoldKind.Braces),
-            new PadLanguage("powershell", "PowerShell", "PowerShell", false, PadFoldKind.Braces, FunctionCalls: true, TightCalls: true),
+            new PadLanguage("powershell", "PowerShell", "PowerShell", false, PadFoldKind.Braces, FunctionCalls: true),
             new PadLanguage("shell", "Shell", "Shell", true, PadFoldKind.None),
             new PadLanguage("python", "Python", "Python", false, PadFoldKind.None, FunctionCalls: true),
             new PadLanguage("sql", "SQL", "TSQL", false, PadFoldKind.None),

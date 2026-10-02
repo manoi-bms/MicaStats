@@ -19,6 +19,10 @@ namespace Kil0bitSystemMonitor.Tests
         private static string Names(string line, int maxLength = MarkdownLineTokenizer.MaxInlineLength) =>
             string.Join(",", FunctionCalls.Find(line, maxLength).Select(f => line.Substring(f.Start, f.Length)));
 
+        /// <summary>The names <see cref="FunctionCalls.Find"/> gives with a language's call syntax.</summary>
+        private static string NamesIn(string languageId, string line) =>
+            string.Join(",", FunctionCalls.Find(line, MarkdownLineTokenizer.MaxInlineLength, CallSyntax.For(languageId)).Select(f => line.Substring(f.Start, f.Length)));
+
         [Theory]
         [InlineData("Console.WriteLine(\"x\");", "WriteLine")]
         [InlineData("foo (1)", "foo")]
@@ -45,10 +49,15 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("$a -split (',')", "")]
         [InlineData("New-Object System.Drawing.PointF ($m)", "")]
         [InlineData("$s.Trim(); [Math]::Round($x, 2)", "Trim,Round")]
+        // function and filter name the function they declare, spaced or not.
+        [InlineData("function Foo ($x) { }", "Foo")]
+        [InlineData("filter Foo\t($x) { $_ }", "Foo")]
+        [InlineData("function Foo($x) { }", "Foo")]
         public void With_tight_calls_a_name_spaced_from_its_parenthesis_is_no_call(string line, string expected)
         {
-            Assert.Equal(expected, string.Join(",", FunctionCalls.Find(line, MarkdownLineTokenizer.MaxInlineLength, tight: true).Select(f => line.Substring(f.Start, f.Length))));
-            Assert.Equal("foo", Names("foo (1)"));   // other languages keep the optional spaces
+            Assert.True(CallSyntax.For("powershell").Tight);
+            Assert.Equal(expected, NamesIn("powershell", line));
+            Assert.Equal("foo", NamesIn("csharp", "foo (1)"));   // other languages keep the optional spaces
         }
 
         [Theory]
@@ -64,6 +73,21 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.NotEqual(SyntaxCategory.Function, CategoryAt(file, at));
             Assert.NotEqual(SyntaxCategory.Function, CategoryAt(fence, at));
+        });
+
+        /// <summary>A PowerShell <c>function</c> or <c>filter</c> names its function even with a space before the parenthesis.</summary>
+        [Theory]
+        [InlineData("function Foo ($x) { }")]
+        [InlineData("filter Foo ($x) { $_ }")]
+        [InlineData("function Foo($x) { }")]
+        public void A_powershell_function_declaration_colors_its_name(string code) => UiThread.Run(() =>
+        {
+            int at = code.IndexOf("Foo", StringComparison.Ordinal);
+            var file = HighlighterOf(Show("powershell", code)).HighlightLine(1);
+            var fence = new FenceHighlighter(new MarkdownDocumentCache()).HighlightLine(new TextDocument("```powershell\n" + code + "\n```"), 2)!;
+
+            Assert.Equal(SyntaxCategory.Function, CategoryAt(file, at));
+            Assert.Equal(SyntaxCategory.Function, CategoryAt(fence, at));
         });
 
         [Fact]
@@ -90,18 +114,35 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(expected, Names(line));
         }
 
-        /// <summary>A name a declaration word names is a type, not a call; <c>not (</c> is C#'s pattern keyword.</summary>
+        /// <summary>
+        /// A name a declaration word of the language names is a type, not a call; <c>not (</c> is C#'s
+        /// pattern keyword. A word that declares nothing in the language (<c>object</c> anywhere,
+        /// <c>struct</c> in Python) leaves the name after it a call.
+        /// </summary>
         [Theory]
-        [InlineData("class Foo(Base):", "")]
-        [InlineData("data class Point(val x: Int)", "")]
-        [InlineData("fn f(g: impl Fn(i32) -> i32)", "f")]
-        [InlineData("if (x is not (1 or 2)) Run();", "Run")]
-        [InlineData("record R(int X); struct S (1); enum E(val v: Int); interface I(); object O(); trait T(); type U(", "")]
-        [InlineData("var p = new Foo(1); myclass Bar(2)", "Foo,Bar")]
-        [InlineData("x.not(1); y = type(z)", "not,type")]
-        public void Find_skips_what_a_declaration_names(string line, string expected)
+        [InlineData("python", "class Foo(Base):", "")]
+        [InlineData("kotlin", "data class Point(val x: Int); enum class E(val v: Int); interface I(", "")]
+        [InlineData("rust", "fn f(g: impl Fn(i32) -> i32)", "f")]
+        [InlineData("rust", "struct S(i32); enum E(1); trait T(); type U(); union V(", "")]
+        [InlineData("csharp", "if (x is not (1 or 2)) Run();", "Run")]
+        [InlineData("csharp", "record R(int X); struct S (1); enum E(1); interface I(); class C(", "")]
+        [InlineData("java", "record R(int x); class C(", "")]
+        [InlineData("typescript", "class A(); interface B(); type C(); enum D(); namespace E(", "")]
+        [InlineData("javascript", "class A(", "")]
+        [InlineData("go", "type T(", "")]
+        [InlineData("php", "class A(); interface B(); trait C(); enum D(", "")]
+        [InlineData("cpp", "class A(); struct B(); enum C(); union D(", "")]
+        [InlineData("ruby", "class A(); module B(", "")]
+        [InlineData("csharp", "var p = new Foo(1); myclass Bar(2)", "Foo,Bar")]
+        [InlineData("csharp", "x.not(1); y = type(z)", "not,type")]
+        [InlineData("csharp", "public object Convert(object value, Type t)", "Convert")]
+        [InlineData("csharp", "object Clone(); public static object Parse(string s)", "Clone,Parse")]
+        [InlineData("kotlin", "object O(1); fun f() = struct(2)", "O,f,struct")]
+        [InlineData("python", "struct Foo(1); impl Bar(2); type Baz(3)", "Foo,Bar,Baz")]
+        [InlineData("pascal", "class Foo(1)", "Foo")]
+        public void Find_skips_what_a_declaration_names(string languageId, string line, string expected)
         {
-            Assert.Equal(expected, Names(line));
+            Assert.Equal(expected, NamesIn(languageId, line));
         }
 
         [Theory]
@@ -117,6 +158,22 @@ namespace Kil0bitSystemMonitor.Tests
 
             line.ValidateInvariants();
             Assert.Equal(expected, CategoryAt(line, code.IndexOf(name, StringComparison.Ordinal)));
+        });
+
+        /// <summary>A word that declares no type in the language (C#'s <c>object</c>) leaves the name after it a method, the definition's own call color included.</summary>
+        [Theory]
+        [InlineData("public object Convert(object value, Type t) => value;", "Convert")]
+        [InlineData("object Clone() => null;", "Clone")]
+        [InlineData("public static object Parse(string s) => s;", "Parse")]
+        public void A_method_returning_object_keeps_its_function_color(string code, string name) => UiThread.Run(() =>
+        {
+            int at = code.IndexOf(name, StringComparison.Ordinal);
+            var file = HighlighterOf(Show("csharp", code)).HighlightLine(1);
+            var fence = new FenceHighlighter(new MarkdownDocumentCache()).HighlightLine(new TextDocument("```csharp\n" + code + "\n```"), 2)!;
+
+            file.ValidateInvariants();
+            Assert.Equal(SyntaxCategory.Function, CategoryAt(file, at));
+            Assert.Equal(SyntaxCategory.Function, CategoryAt(fence, at));
         });
 
         [Theory]

@@ -70,6 +70,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (PadHighlighting.For(language) is not { } definition) return;
             var highlighter = new DocumentHighlighter(document, definition);
+            var calls = CallSyntax.For(language.Id);
             bool functionsLogged = false;
             void FunctionsFailed(Exception ex)
             {
@@ -84,7 +85,7 @@ namespace Kil0bitSystemMonitor.Pad
                 {
                     var highlighted = highlighter.HighlightLine(n);
                     // As the editor shows the line: function names in their own color (ruling R4).
-                    if (language.FunctionCalls) FunctionCallHighlighter.AddTo(highlighted, FunctionsFailed, language.TightCalls);
+                    if (language.FunctionCalls) FunctionCallHighlighter.AddTo(highlighted, FunctionsFailed, calls);
                     foreach (var section in highlighted.Sections)
                     {
                         var color = section.Color;

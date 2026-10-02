@@ -42,8 +42,8 @@ namespace Kil0bitSystemMonitor.Pad
             _warn = warn;
         }
 
-        /// <summary>The function pass run on each line of a flagged language, told whether its calls are tight (a test seam).</summary>
-        internal Action<HighlightedLine, Action<Exception>, bool> FunctionPass { get; set; } = FunctionCallHighlighter.AddTo;
+        /// <summary>The function pass run on each line of a flagged language, given its call syntax (a test seam).</summary>
+        internal Action<HighlightedLine, Action<Exception>, CallSyntax> FunctionPass { get; set; } = FunctionCallHighlighter.AddTo;
 
         private static IHighlightingDefinition? DefaultDefinition(string? id)
         {
@@ -190,7 +190,7 @@ namespace Kil0bitSystemMonitor.Pad
                 engine.CurrentSpanStack = block.Stack;
                 var highlighted = engine.HighlightLine(document, line);
                 // A failure here costs only this line its function colors.
-                if (block.FunctionCalls) FunctionPass(highlighted, FunctionsFailed, block.TightCalls);
+                if (block.FunctionCalls) FunctionPass(highlighted, FunctionsFailed, block.Calls);
                 block.Lines.Add(highlighted);
                 block.Stacks.Add(engine.CurrentSpanStack);
             }
@@ -204,7 +204,7 @@ namespace Kil0bitSystemMonitor.Pad
             return new Block(definition == null ? null : new HighlightingEngine(definition.MainRuleSet))
             {
                 FunctionCalls = language?.FunctionCalls == true,
-                TightCalls = language?.TightCalls == true,
+                Calls = CallSyntax.For(language?.Id),
             };
         }
 
@@ -218,8 +218,8 @@ namespace Kil0bitSystemMonitor.Pad
             /// <summary>The language calls functions as <c>name(...)</c>: its plain names get the Function color.</summary>
             public bool FunctionCalls;
 
-            /// <summary>A call's <c>(</c> follows its name directly (<see cref="PadLanguage.TightCalls"/>).</summary>
-            public bool TightCalls;
+            /// <summary>The language's call syntax for that pass (<see cref="CallSyntax.For"/>).</summary>
+            public CallSyntax Calls = CallSyntax.Plain;
 
             /// <summary>Highlighting threw: no colors until the next edit.</summary>
             public bool Failed;

@@ -100,6 +100,9 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("a.go", "func main() { }", "main", "func")]
         [InlineData("a.js", "if (x) { foo(1); }", "foo", "if")]
         [InlineData("a.php", "<?php if ($x) { f($x); }", "f", "if")]    // PHP colors "if (" as a call; the guard makes it a keyword
+        [InlineData("a.cs", "public object Convert(object value, Type t) => value;", "Convert", "public")]   // object declares no type
+        [InlineData("a.cs", "object Clone() => null;", "Clone", "object")]
+        [InlineData("a.cs", "public static object Parse(string s) => s;", "Parse", "static")]
         public void Function_names_have_the_light_function_color_as_on_screen(string file, string code, string function, string keyword) =>
             PadLanguageWindowTests.WithWindow((window, env, config) =>
         {

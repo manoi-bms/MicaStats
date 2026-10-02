@@ -11,14 +11,25 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
     /// Keeps the keyword index and the vectors in step with the notes (spec 3.5). Every change is
     /// queued and applied in order on one background worker, which also sends the passages that
     /// have no vector to the embedding server, <see cref="BatchSize"/> at a time, newest note
-    /// first, retrying a failed request after <c>retryDelay(n)</c>. When the notes have more
-    /// passages than the store holds, the least recently modified notes' passages go without
-    /// vectors (spec 3.4): their vectors make room for newer ones, and come back when room frees up.
+    /// first, retrying a failed request after <c>retryDelay(n)</c>. Queued changes keep being
+    /// applied while a request is out, so words search never waits for the server. A batch the
+    /// server refuses for its content is halved until the passage it will not take is found; that
+    /// passage is set aside (found by words only) until Settings change or the index is rebuilt.
+    /// When the notes have more passages than the store holds, the least recently modified notes'
+    /// passages go without vectors (spec 3.4): their vectors make room for newer ones, and come
+    /// back when room frees up.
     /// </summary>
     public sealed class SearchIndexer : IDisposable
     {
         /// <summary>Passages per embedding request.</summary>
         public const int BatchSize = 16;
+
+        /// <summary>
+        /// Sent alone when the server refused a single passage, to tell a passage it will not take
+        /// from a server that refuses everything (a wrong model name, a proxy whose server is down).
+        /// The text the Settings Test button sends.
+        /// </summary>
+        public const string KnownGoodText = "MicaPad test";
 
         /// <summary>How long one embedding request may take.</summary>
         public static readonly TimeSpan BatchTimeout = TimeSpan.FromSeconds(60);
@@ -62,6 +73,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         // Worker-only state.
         private readonly Dictionary<string, NoteInfo> _notes = new(StringComparer.Ordinal);
         private readonly HashSet<string> _unfed = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _refused = new(StringComparer.Ordinal);   // hashes of passages the server will not take
+        private readonly List<IReadOnlyList<Passage>> _splits = new();            // halves of a refused batch, sent next
         private readonly List<TaskCompletionSource> _armed = new();
         private List<Passage>? _ranked;   // Ranked(), until the passages change
         private string? _loadedFingerprint;
@@ -73,6 +86,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         private int? _lastStatus;
 
         private IndexProgress _progress = IndexProgress.Empty;
+        private int _generation;   // written on the worker only
 
         /// <param name="vectors">The store; loaded for the settings' server and model on the worker.</param>
         /// <param name="loadStoredText">A closed note's stored text, or null when it has none (read on the worker).</param>
@@ -101,6 +115,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         /// <summary>The latest progress; read from any thread.</summary>
         public IndexProgress Progress => Volatile.Read(ref _progress);
+
+        /// <summary>
+        /// Changes whenever the vectors may have been started over or made by another model:
+        /// Settings applied (meaning search off, another server or model), Rebuild, vectors of
+        /// another length. A query vector cached under an older value is not used again.
+        /// </summary>
+        public int Generation => Volatile.Read(ref _generation);
 
         /// <summary>Raised on the worker thread after progress changes.</summary>
         public event Action? ProgressChanged;
@@ -286,10 +307,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         private void ApplySettings()
         {
             var settings = _settings();
+            Interlocked.Increment(ref _generation);   // an answer still out is dropped; cached query vectors are made again
             _failures = 0;
             _retryAtMs = 0;
             _lastFailure = SearchFailure.None;
             _lastStatus = null;
+            _refused.Clear();                          // another server, model or key may take them
+            _splits.Clear();
 
             if (!settings.Meaning)
             {
@@ -324,8 +348,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         /// <summary>The passages that may have a vector: the newest notes' first, as many as the store holds.</summary>
         private IEnumerable<Passage> Eligible() => Ranked().Take(Vectors.MaxCount);
 
-        /// <summary>Eligible passages with no vector, newest note first.</summary>
-        private List<Passage> WaitingPassages() => Eligible().Where(p => !Vectors.Has(p.Hash)).ToList();
+        /// <summary>Eligible passages with no vector, newest note first; those the server refused are not waiting.</summary>
+        private List<Passage> WaitingPassages() => Eligible().Where(p => !Vectors.Has(p.Hash) && !_refused.Contains(p.Hash)).ToList();
+
+        /// <summary>Passages in use that the server refused.</summary>
+        private int Refused() => _refused.Count == 0 ? 0 : Ranked().Count(p => _refused.Contains(p.Hash));
 
         private bool MeaningLoaded() => _settings().CanEmbed && _loadedFingerprint != null;
 
@@ -336,13 +363,16 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         /// <summary>
         /// Drops every vector no eligible passage uses: those of passages gone, and those of the least
-        /// recently modified notes beyond the store's capacity. Nothing goes while notes a reconcile
-        /// named are still unfed: their vectors are in the store with no passage to claim them yet.
+        /// recently modified notes beyond the store's capacity; refusals of such passages are
+        /// forgotten too. Nothing goes while notes a reconcile named are still unfed: their vectors
+        /// are in the store with no passage to claim them yet.
         /// </summary>
         private void Evict()
         {
             if (_unfed.Count > 0) return;
-            if (Vectors.Keep(Eligible().Select(p => p.Hash).ToHashSet(StringComparer.Ordinal)) > 0) _unsaved = true;
+            var eligible = Eligible().Select(p => p.Hash).ToHashSet(StringComparer.Ordinal);
+            if (Vectors.Keep(eligible) > 0) _unsaved = true;
+            _refused.IntersectWith(eligible);
         }
 
         /// <summary>The next passages to send, or none when nothing may be sent now.</summary>
@@ -351,39 +381,49 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             if (!settings.CanEmbed || _loadedFingerprint != settings.Fingerprint || Environment.TickCount64 < _retryAtMs)
                 return Array.Empty<Passage>();
             var waiting = WaitingPassages();
-            if (waiting.Count == 0) return waiting;
+            if (waiting.Count == 0)
+            {
+                _splits.Clear();
+                return waiting;
+            }
 
             // After the eviction there is room for every waiting passage, unless unfed notes still
             // hold their vectors: then only what fits is sent, so a full store is never asked again and again.
             Evict();
             int room = Vectors.MaxCount - Vectors.Count;
+
+            // The halves of a batch the server refused go first, without what no longer waits.
+            if (_splits.Count > 0)
+            {
+                var stillWaiting = waiting.Select(p => p.Hash).ToHashSet(StringComparer.Ordinal);
+                while (_splits.Count > 0)
+                {
+                    var part = _splits[0];
+                    _splits.RemoveAt(0);
+                    var send = part.Where(p => stillWaiting.Contains(p.Hash)).Take(room).ToList();
+                    if (send.Count > 0) return send;
+                }
+            }
             return waiting.Take(Math.Min(BatchSize, room)).ToList();
         }
 
+        /// <summary>A failure that may be this batch's content (a passage too long for the model, say) rather than the server's state.</summary>
+        private static bool MayBeTheContent(SearchFailure failure) =>
+            failure is SearchFailure.Rejected or SearchFailure.BadAnswer or SearchFailure.ServerError;
+
         private async Task EmbedBatchAsync(SearchSettings settings, IReadOnlyList<Passage> batch, CancellationToken token)
         {
-            EmbeddingResult result;
-            try
-            {
-                result = await _embedder.EmbedAsync(settings.Embedding!, batch.Select(p => p.SentText).ToList(), BatchTimeout, token).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (!token.IsCancellationRequested)
-            {
-                // IEmbedder does not throw; one that does still waits out the retry delay instead of being called again at once.
-                _warn("The embedding request failed (" + ex.GetType().Name + ").");
-                result = new EmbeddingResult(null, ex is OperationCanceledException ? SearchFailure.TimedOut : SearchFailure.Unreachable, null);
-            }
+            int generation = _generation;
+            var result = await WhileApplyingWork(SendAsync(settings.Embedding!, batch.Select(p => p.SentText).ToList(), token), token).ConfigureAwait(false);
+            if (Withdrawn(settings, generation)) return;
             if (result.Vectors != null && result.Vectors.Count != batch.Count)
                 result = new EmbeddingResult(null, SearchFailure.BadAnswer, result.Status);
 
             if (result.Vectors == null)
             {
-                _failures++;
-                _lastFailure = result.Failure;
-                _lastStatus = result.Status;
-                _retryAtMs = Environment.TickCount64 + (long)_retryDelay(_failures).TotalMilliseconds;
-                _warn("The embedding server " + SearchFailureText.Describe(result.Failure, result.Status) + "; indexing waits and tries again.");
-                Publish();
+                if (!MayBeTheContent(result.Failure)) BackOff(result.Failure, result.Status);
+                else if (batch.Count > 1) Split(batch);   // no back-off: the halves go next
+                else await RefuseAsync(settings, generation, batch[0], result, token).ConfigureAwait(false);
                 return;
             }
 
@@ -391,22 +431,122 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             _lastFailure = SearchFailure.None;
             _lastStatus = null;
             _unsaved = true;
-            int refused = 0;
+            // Only what is still in use: an edit applied while the request was out may have replaced some.
+            var eligible = Eligible().Select(p => p.Hash).ToHashSet(StringComparer.Ordinal);
+            int full = 0;
             for (int i = 0; i < batch.Count; i++)
             {
+                if (!eligible.Contains(batch[i].Hash)) continue;
                 var put = Vectors.Put(batch[i].Hash, result.Vectors[i]);
                 if (put == PutResult.WrongDimension)
                 {
                     _warn("The embedding server now gives vectors of another length; the search vectors are made again.");
                     Vectors.Delete();
                     Vectors.Load(settings.Fingerprint);
+                    Interlocked.Increment(ref _generation);
                     put = Vectors.Put(batch[i].Hash, result.Vectors[i]);
                 }
-                if (put == PutResult.Full) refused++;   // stays waiting; NextBatch sends nothing more until there is room
+                if (put == PutResult.Full) full++;   // stays waiting; NextBatch sends nothing more until there is room
             }
-            if (refused > 0) _warn("The search vectors are full; " + refused + " passages wait for room.");
+            if (full > 0) _warn("The search vectors are full; " + full + " passages wait for room.");
             SaveIfDue(idle: false);
             Publish();
+        }
+
+        /// <summary>The two halves of a batch the server refused go next, the first half first.</summary>
+        private void Split(IReadOnlyList<Passage> batch)
+        {
+            int half = batch.Count / 2;
+            _splits.Insert(0, batch.Skip(half).ToList());
+            _splits.Insert(0, batch.Take(half).ToList());
+        }
+
+        /// <summary>
+        /// The server refused one passage. When it still takes <see cref="KnownGoodText"/>, the
+        /// passage is set aside; when it refuses that too, the server is at fault: indexing waits
+        /// and tries again (spec 3.5) and no passage is blamed.
+        /// </summary>
+        private async Task RefuseAsync(SearchSettings settings, int generation, Passage passage, EmbeddingResult result, CancellationToken token)
+        {
+            var known = await WhileApplyingWork(SendAsync(settings.Embedding!, new[] { KnownGoodText }, token), token).ConfigureAwait(false);
+            if (Withdrawn(settings, generation)) return;
+            if (known.Vectors is not { Count: 1 })
+            {
+                BackOff(known.Vectors == null ? known.Failure : SearchFailure.BadAnswer, known.Status);
+                return;
+            }
+
+            _failures = 0;
+            _refused.Add(passage.Hash);
+            _warn("The embedding server " + SearchFailureText.Describe(result.Failure, result.Status) + " for one passage; it is found by words only.");
+            Publish();
+        }
+
+        /// <summary>A failed request that is the server's: the waiting passages wait, and the next request goes after the retry delay.</summary>
+        private void BackOff(SearchFailure failure, int? status)
+        {
+            _splits.Clear();
+            _failures++;
+            _lastFailure = failure;
+            _lastStatus = status;
+            _retryAtMs = Environment.TickCount64 + (long)_retryDelay(_failures).TotalMilliseconds;
+            _warn("The embedding server " + SearchFailureText.Describe(failure, status) + "; indexing waits and tries again.");
+            Publish();
+        }
+
+        /// <summary>Settings changed, or the vectors were started over, while the request was out: its answer is dropped.</summary>
+        private bool Withdrawn(SearchSettings sent, int generation)
+        {
+            if (generation != _generation) return true;
+            var now = _settings();
+            return !now.CanEmbed || now.Fingerprint != sent.Fingerprint;
+        }
+
+        /// <summary>The embedder's answer; an embedder that throws anyway counts as a failed request, so it waits out the retry delay.</summary>
+        private async Task<EmbeddingResult> SendAsync(SearchServer server, IReadOnlyList<string> texts, CancellationToken token)
+        {
+            try
+            {
+                return await _embedder.EmbedAsync(server, texts, BatchTimeout, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!token.IsCancellationRequested)
+            {
+                _warn("The embedding request failed (" + ex.GetType().Name + ").");
+                return new EmbeddingResult(null, ex is OperationCanceledException ? SearchFailure.TimedOut : SearchFailure.Unreachable, null);
+            }
+        }
+
+        /// <summary>
+        /// Waits for a request to the embedding server (up to <see cref="BatchTimeout"/>) while still
+        /// applying the queued work: note texts, removals and settings, so words search is never held
+        /// up by the server. Settings that withdraw the request are seen by <see cref="Withdrawn"/> after.
+        /// </summary>
+        private async Task<EmbeddingResult> WhileApplyingWork(Task<EmbeddingResult> request, CancellationToken token)
+        {
+            while (!request.IsCompleted)
+            {
+                using (var wake = CancellationTokenSource.CreateLinkedTokenSource(token))
+                {
+                    var signal = _signal.WaitAsync(wake.Token);
+                    if (await Task.WhenAny(request, signal).ConfigureAwait(false) != signal)
+                    {
+                        // The answer came first: this wait must not take a later wake-up from the main loop.
+                        wake.Cancel();
+                        try { await signal.ConfigureAwait(false); }
+                        catch (OperationCanceledException) { }
+                    }
+                }
+                token.ThrowIfCancellationRequested();
+
+                bool didWork = false;
+                while (_work.TryDequeue(out var work))
+                {
+                    RunWork(work);
+                    didWork = true;
+                }
+                if (didWork) Publish();
+            }
+            return await request.ConfigureAwait(false);
         }
 
         /// <summary>
@@ -435,13 +575,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         {
             var passages = Keywords.AllPassages();
             int withVectors = passages.Count(p => Vectors.Has(p.Hash));
-            var progress = new IndexProgress(Keywords.NoteCount, passages.Count, withVectors, Waiting(), _lastFailure, _lastStatus, Full());
+            var progress = new IndexProgress(Keywords.NoteCount, passages.Count, withVectors, Waiting(), _lastFailure, _lastStatus, Full(), Refused());
             if (progress == Volatile.Read(ref _progress)) return;
             Volatile.Write(ref _progress, progress);
             ProgressChanged?.Invoke();
         }
 
-        /// <summary>Stops the worker (an embedding request in flight is cancelled); waits up to 2 s for it.</summary>
+        /// <summary>Stops the worker (an embedding request out is cancelled); waits up to 2 s for it.</summary>
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;

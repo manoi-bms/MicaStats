@@ -19,8 +19,12 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         public bool CanRerank => CanEmbed && Rerank && Reranker != null;
     }
 
-    /// <summary>What the index holds and what it is waiting for (Settings status line, pane status line).</summary>
-    public sealed record IndexProgress(int Notes, int Passages, int WithVectors, int Waiting, SearchFailure LastFailure, int? LastStatus, bool Full)
+    /// <summary>
+    /// What the index holds and what it is waiting for (Settings status line, pane status line).
+    /// <see cref="Refused"/>: passages the embedding server would not take on their own (too long
+    /// for its model, say); they are found by words only until Settings change or the index is rebuilt.
+    /// </summary>
+    public sealed record IndexProgress(int Notes, int Passages, int WithVectors, int Waiting, SearchFailure LastFailure, int? LastStatus, bool Full, int Refused = 0)
     {
         /// <summary>Nothing indexed yet.</summary>
         public static IndexProgress Empty { get; } = new(0, 0, 0, 0, SearchFailure.None, null, false);

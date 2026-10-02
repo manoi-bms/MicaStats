@@ -116,7 +116,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         private async Task<(float[]? Vector, SearchFailure Failure, int? Status)> QueryVectorAsync(SearchSettings settings, string query, CancellationToken cancel)
         {
-            string key = settings.Fingerprint + "\n" + query;
+            // After a Rebuild or a reset of the vectors the model may have changed behind the same
+            // address: a vector cached before is not used (its length may no longer match).
+            string key = _indexer.Generation.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n" + settings.Fingerprint + "\n" + query;
             lock (_cacheGate)
             {
                 var node = _cache.First;
@@ -160,15 +162,17 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         public static string Index(IndexProgress p, SearchSettings settings)
         {
+            string refused = p.Refused == 0 ? ""
+                : "; " + p.Refused + (p.Refused == 1 ? " passage" : " passages") + " the server refused";
             if (settings.CanEmbed && p.Waiting > 0)
             {
                 return p.LastFailure != SearchFailure.None
                     ? "Indexing paused: the embedding server " + SearchFailureText.Describe(p.LastFailure, p.LastStatus)
-                    : "Indexing: " + p.WithVectors + " of " + p.Passages + " passages";
+                    : "Indexing: " + p.WithVectors + " of " + p.Passages + " passages" + refused;
             }
             string words = p.Passages + " passages from " + p.Notes + " notes";
             if (!settings.CanEmbed) return words;
-            string meaning = words + "; " + p.WithVectors + " with meaning";
+            string meaning = words + "; " + p.WithVectors + " with meaning" + refused;
             return p.Full ? meaning + ". The index is full: the rest are found by words only." : meaning;
         }
     }

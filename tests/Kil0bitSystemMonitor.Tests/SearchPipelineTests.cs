@@ -307,6 +307,27 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public async Task A_rebuild_for_a_model_of_another_length_embeds_the_query_again()
+        {
+            var embedder = new FakeEmbedder();
+            var (search, indexer) = await Build(embedder, new FakeReranker());
+            using (indexer)
+            {
+                var before = await search.SearchAsync("connectivity", default);   // no word matches: found by meaning only
+                Assert.Contains(before.Hits, p => p.NoteId == "a");
+
+                embedder.Vector = t => t.Contains("connect", StringComparison.Ordinal) || t.Contains("vpn", StringComparison.Ordinal) ? new[] { 1f, 0f, 0f } : new[] { 0f, 1f, 0f };
+                indexer.Rebuild();
+                await indexer.WhenIdle();
+                var after = await search.SearchAsync("connectivity", default);
+
+                Assert.Equal(3, indexer.Vectors.Dimension);
+                Assert.Equal(2, embedder.Texts.Count(t => t == "connectivity"));   // the cached 2-number vector is not used
+                Assert.Contains(after.Hits, p => p.NoteId == "a");
+            }
+        }
+
+        [Fact]
         public async Task A_newer_query_cancels_the_older_one()
         {
             var embedder = new FakeEmbedder();
@@ -351,6 +372,11 @@ namespace Kil0bitSystemMonitor.Tests
                 SearchStatusText.Index(new IndexProgress(9, 25000, 20000, 0, SearchFailure.None, null, true), _settings));
             Assert.Equal("Indexing: 1200 of 25000 passages",
                 SearchStatusText.Index(new IndexProgress(9, 25000, 1200, 18800, SearchFailure.None, null, true), _settings));
+            // Passages the server would not take are named, and are not waiting.
+            Assert.Equal("312 passages from 9 notes; 309 with meaning; 3 passages the server refused",
+                SearchStatusText.Index(new IndexProgress(9, 312, 309, 0, SearchFailure.None, null, false, 3), _settings));
+            Assert.Equal("Indexing: 120 of 312 passages; 1 passage the server refused",
+                SearchStatusText.Index(new IndexProgress(9, 312, 120, 191, SearchFailure.None, null, false, 1), _settings));
         }
     }
 }

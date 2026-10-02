@@ -22,11 +22,15 @@ namespace Kil0bitSystemMonitor.Tests
             public int Dimension { get; set; } = 2;
             public Func<Task>? Gate { get; set; }
 
+            /// <summary>A batch holding a text this matches is refused (HTTP 422), as a server refuses a passage too long for its model.</summary>
+            public Func<string, bool>? RejectWhen { get; set; }
+
             public async Task<EmbeddingResult> EmbedAsync(SearchServer server, IReadOnlyList<string> texts, TimeSpan timeout, CancellationToken cancel)
             {
                 lock (Batches) Batches.Add(texts.ToList());
                 if (Gate != null) await Gate();
                 if (FailWith != SearchFailure.None) return new EmbeddingResult(null, FailWith, 503);
+                if (RejectWhen != null && texts.Any(RejectWhen)) return new EmbeddingResult(null, SearchFailure.Rejected, 422);
                 return new EmbeddingResult(texts.Select(t => Enumerable.Range(0, Dimension).Select(i => i == 0 ? (float)t.Length : 1f).ToArray()).ToList(), SearchFailure.None, 200);
             }
 
@@ -327,6 +331,109 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(2, embedder.TextsSent);
             Assert.Equal(1, indexer.Vectors.Count);
+        }
+
+        private static string Paragraphs(int count, Func<int, string> start) =>
+            string.Join("\n\n", Enumerable.Range(0, count).Select(i => start(i) + " " + new string('p', 790)));   // one passage each
+
+        private static int BatchesWith(FakeEmbedder embedder, string marker)
+        {
+            lock (embedder.Batches) return embedder.Batches.Count(b => b.Any(t => t.Contains(marker, StringComparison.Ordinal)));
+        }
+
+        [Fact]
+        public async Task A_passage_the_server_refuses_is_set_aside_and_the_rest_get_vectors()
+        {
+            var embedder = new FakeEmbedder { RejectWhen = t => t.Contains("POISON", StringComparison.Ordinal) };
+            using var indexer = NewIndexer(embedder, _ => TimeSpan.FromHours(1));   // a back-off would leave the rest waiting
+            indexer.SetNote("a", "t", Paragraphs(20, i => i == 5 ? "POISON" : "para " + i), DateTime.UtcNow);
+            await indexer.WhenIdle();
+
+            var passages = indexer.Keywords.AllPassages();
+            Assert.Equal(20, passages.Count);
+            var poison = Assert.Single(passages, p => p.Body.Contains("POISON", StringComparison.Ordinal));
+            Assert.All(passages.Where(p => p != poison), p => Assert.True(indexer.Vectors.Has(p.Hash)));
+            Assert.False(indexer.Vectors.Has(poison.Hash));
+            Assert.Equal(1, indexer.Progress.Refused);
+            Assert.Equal(0, indexer.Progress.Waiting);
+            Assert.Equal(SearchFailure.None, indexer.Progress.LastFailure);
+
+            // A settings change forgets the refusals: the passage is tried again (and refused again).
+            int sent = BatchesWith(embedder, "POISON");
+            indexer.SettingsChanged();
+            await indexer.WhenIdle();
+            Assert.True(BatchesWith(embedder, "POISON") > sent);
+            Assert.Equal(1, indexer.Progress.Refused);
+        }
+
+        [Fact]
+        public async Task A_server_that_refuses_everything_is_waited_for_and_no_passage_is_blamed()
+        {
+            var embedder = new FakeEmbedder { FailWith = SearchFailure.Rejected };   // a wrong model name: 404 for every request
+            using var indexer = NewIndexer(embedder, _ => TimeSpan.FromHours(1));
+            indexer.SetNote("a", "t", Paragraphs(20, i => "para " + i), DateTime.UtcNow);
+            await indexer.WhenIdle();
+
+            Assert.Equal(0, indexer.Progress.Refused);
+            Assert.Equal(20, indexer.Progress.Waiting);
+            Assert.Equal(SearchFailure.Rejected, indexer.Progress.LastFailure);
+            Assert.InRange(embedder.Batches.Count, 1, 6);   // at most 16, 8, 4, 2, 1 and one known-good text, then the back-off
+        }
+
+        [Fact]
+        public async Task Note_changes_are_applied_while_a_batch_is_out()
+        {
+            var embedder = new FakeEmbedder();
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource();
+            embedder.Gate = () => { started.TrySetResult(); return release.Task; };
+            using var indexer = NewIndexer(embedder);
+            try
+            {
+                indexer.SetNote("a", "t", "alpha words", DateTime.UtcNow);
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(10));   // the batch is out, and held
+
+                var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                indexer.ProgressChanged += () =>
+                {
+                    if (indexer.Keywords.Search("beta", 10).Count > 0) applied.TrySetResult();
+                };
+                indexer.SetNote("b", "t", "beta words", DateTime.UtcNow);
+                await applied.Task.WaitAsync(TimeSpan.FromSeconds(5));   // found by words while the server is still answering
+
+                lock (embedder.Batches) Assert.Single(embedder.Batches);
+            }
+            finally
+            {
+                release.TrySetResult();
+            }
+            await indexer.WhenIdle();
+            Assert.Equal(2, indexer.Vectors.Count);
+        }
+
+        [Fact]
+        public async Task An_answer_that_arrives_after_meaning_search_was_turned_off_is_dropped()
+        {
+            var embedder = new FakeEmbedder();
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource();
+            embedder.Gate = () => { started.TrySetResult(); return release.Task; };
+            using var indexer = NewIndexer(embedder);
+            try
+            {
+                indexer.SetNote("a", "t", "alpha words", DateTime.UtcNow);
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                _settings = SearchSettings.Off;   // applied while the batch is still out
+                indexer.SettingsChanged();
+            }
+            finally
+            {
+                release.TrySetResult();
+            }
+            await indexer.WhenIdle();
+
+            Assert.Equal(0, indexer.Vectors.Count);
+            Assert.False(File.Exists(indexer.Vectors.FilePath));
         }
 
         [Fact]

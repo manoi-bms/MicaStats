@@ -21,6 +21,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         Debug,
         Added,
         Removed,
+        Function,
     }
 
     /// <summary>
@@ -37,6 +38,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// such overlap: the Preprocessor row sits above Type on purpose, so "DocType" (which contains
         /// "Type") gets the preprocessor-like color of a declaration rather than the type color.
         /// Reorder rows only with the overlaps in mind; spec 2.2 lists this table as it is.
+        /// Function is last, so it takes only names no other row knew (C#'s "MethodCall"), while
+        /// VB's "FunctionKeywords" stays a keyword.
         /// </summary>
         private static readonly (SyntaxCategory Category, string[] Names)[] Rows =
         {
@@ -55,6 +58,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             (SyntaxCategory.Debug, new[] { "Debug", "Trace" }),
             (SyntaxCategory.Added, new[] { "Added" }),
             (SyntaxCategory.Removed, new[] { "Removed" }),
+            (SyntaxCategory.Function, new[] { "Function", "Method" }),
         };
 
         /// <summary>The category of a definition's color name; an empty or unknown name is Text.</summary>
@@ -85,6 +89,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             SyntaxCategory.Debug => palette.LogDebug,
             SyntaxCategory.Added => palette.DiffAdded,
             SyntaxCategory.Removed => palette.DiffRemoved,
+            SyntaxCategory.Function => palette.SyntaxFunction,
             _ => palette.Text,
         };
 

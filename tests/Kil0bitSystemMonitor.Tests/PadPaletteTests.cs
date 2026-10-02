@@ -67,7 +67,7 @@ namespace Kil0bitSystemMonitor.Tests
                 ("SyntaxKeyword", "Background", 4.5), ("SyntaxNumber", "Background", 4.5),
                 ("SyntaxType", "Background", 4.5), ("SyntaxPreprocessor", "Background", 4.5),
                 ("SyntaxTag", "Background", 4.5), ("SyntaxAttribute", "Background", 4.5),
-                ("SyntaxOperator", "Background", 4.5),
+                ("SyntaxOperator", "Background", 4.5), ("SyntaxFunction", "Background", 4.5),
                 ("LogError", "Background", 4.5), ("LogWarning", "Background", 4.5),
                 ("LogInfo", "Background", 4.5), ("LogDebug", "Background", 4.5),
                 ("DiffAdded", "Background", 4.5), ("DiffRemoved", "Background", 4.5),
@@ -104,7 +104,7 @@ namespace Kil0bitSystemMonitor.Tests
                 .Where(p => p.PropertyType == typeof(PadColor)).ToList();
             var resources = palette.Resources();
 
-            Assert.Equal(61, properties.Count);
+            Assert.Equal(62, properties.Count);
             Assert.Equal(properties.Count, resources.Count);
             Assert.Equal(resources.Count, resources.Select(r => r.Key).Distinct().Count());
             foreach (var property in properties)
@@ -135,6 +135,13 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("#FFFBFBFD", light.Background.ToString());
             Assert.Equal("#FF1B1B1F", light.Text.ToString());
             Assert.Equal("#FF06707C", light.Accent.ToString());
+        }
+
+        [Fact]
+        public void Function_names_have_their_own_color_in_both_themes()
+        {
+            Assert.Equal("#FFDCDCAA", PadPalette.Dark.SyntaxFunction.ToString());
+            Assert.Equal("#FF795E26", PadPalette.Light.SyntaxFunction.ToString());
         }
 
         [Theory]

@@ -41,7 +41,7 @@ namespace Kil0bitSystemMonitor.Tests
         private static List<(int, int, string?)> Sections(HighlightedLine line) =>
             line.Sections.Select(s => (s.Offset, s.Length, s.Color?.Name)).ToList();
 
-        private static PadColor? ForegroundAt(TextView view, int lineNumber, int column)
+        internal static PadColor? ForegroundAt(TextView view, int lineNumber, int column)
         {
             var element = view.GetVisualLine(lineNumber)!.Elements.First(e => e.RelativeTextOffset <= column && column < e.RelativeTextOffset + e.DocumentLength);
             return element.TextRunProperties.ForegroundBrush is SolidColorBrush b ? new PadColor(b.Color.A, b.Color.R, b.Color.G, b.Color.B) : null;
@@ -110,6 +110,32 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.NotEqual(ForegroundAt(view, 1, 0), expected);
             Assert.Equal(expected, ForegroundAt(view, 3, start));
+        });
+
+        private static List<string> FunctionNames(HighlightedLine line) =>
+            line.Sections.Where(s => SyntaxColors.Categorize(s.Color?.Name) == SyntaxCategory.Function)
+                .Select(s => line.Document.GetText(s.Offset, s.Length)).ToList();
+
+        [Fact]
+        public void A_go_fence_colors_function_names() => UiThread.Run(() =>
+        {
+            var view = Render("text\n```go\nfunc main() {\n```");
+            var line = new FenceHighlighter(new MarkdownDocumentCache()).HighlightLine(view.Document, 3)!;
+
+            line.ValidateInvariants();
+            Assert.Equal(new[] { "main" }, FunctionNames(line));
+            Assert.Equal(PadPalette.Dark.SyntaxFunction, ForegroundAt(view, 3, 5));
+            Assert.Equal(PadPalette.Dark.SyntaxKeyword, ForegroundAt(view, 3, 0));   // func stays a keyword
+        });
+
+        [Fact]
+        public void A_sql_fence_gets_no_function_pass() => UiThread.Run(() =>
+        {
+            const string code = "SELECT COUNT(*), dbo.fn_total(1)";
+            var highlighter = new FenceHighlighter(new MarkdownDocumentCache());
+
+            Assert.Empty(FunctionNames(highlighter.HighlightLine(new TextDocument("```sql\n" + code + "\n```"), 2)!));
+            Assert.Equal(new[] { "COUNT", "fn_total" }, FunctionNames(highlighter.HighlightLine(new TextDocument("```js\n" + code + "\n```"), 2)!));
         });
 
         [Fact]

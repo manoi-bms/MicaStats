@@ -1,0 +1,218 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Windows;
+using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Highlighting;
+using Kil0bitSystemMonitor.Pad;
+using Kil0bitSystemMonitor.Services.Pad;
+using Xunit;
+
+using Size = System.Windows.Size;
+
+namespace Kil0bitSystemMonitor.Tests
+{
+    /// <summary>Function names in their own color (ruling R4): where a call is, and that only uncolored text in a flagged language gets it.</summary>
+    public class FunctionCallsTests
+    {
+        private static string Names(string line, int maxLength = MarkdownLineTokenizer.MaxInlineLength) =>
+            string.Join(",", FunctionCalls.Find(line, maxLength).Select(f => line.Substring(f.Start, f.Length)));
+
+        [Theory]
+        [InlineData("Console.WriteLine(\"x\");", "WriteLine")]
+        [InlineData("foo (1)", "foo")]
+        [InlineData("foo\t(1)", "foo")]
+        [InlineData("x = a[1](2)", "")]
+        [InlineData("1foo(", "")]
+        [InlineData("$(document)", "$")]
+        [InlineData("a.b(c(d), e)", "b,c")]
+        [InlineData("my_func2 (x)", "my_func2")]
+        [InlineData("foo = bar", "")]
+        [InlineData("", "")]
+        public void Find_returns_each_name_followed_by_a_parenthesis(string line, string expected)
+        {
+            Assert.Equal(expected, Names(line));
+        }
+
+        [Fact]
+        public void Find_skips_a_line_over_the_inline_limit()
+        {
+            string over = "foo(" + new string(' ', 3997);
+            string exact = "foo(" + new string(' ', 3996);
+
+            Assert.Equal(4001, over.Length);
+            Assert.Empty(FunctionCalls.Find(over, MarkdownLineTokenizer.MaxInlineLength));
+            Assert.Equal("foo", Names(exact));
+        }
+
+        [Fact]
+        public void Only_languages_that_call_with_parentheses_get_the_pass()
+        {
+            var flagged = PadLanguages.All.Concat(PadLanguages.FenceOnly).Where(l => l.FunctionCalls).Select(l => l.Id).OrderBy(id => id);
+
+            Assert.Equal(new[] { "cpp", "csharp", "go", "java", "javascript", "kotlin", "pascal", "php", "powershell", "python", "ruby", "rust", "typescript" }, flagged);
+        }
+
+        [Fact]
+        public void The_pass_colors_only_what_no_section_covers_and_keeps_the_sections_in_order()
+        {
+            const string code = "x(foo(1), \"bar(\", baz (2)) // qux(";
+            var document = new TextDocument("first line\n" + code);
+            var line = new HighlightedLine(document, document.GetLineByNumber(2));
+            int at = line.DocumentLine.Offset;
+            // The string "bar(" with a section nested in it, and the comment to the line end.
+            line.Sections.Add(new HighlightedSection { Offset = at + 10, Length = 6, Color = new HighlightingColor { Name = "String" } });
+            line.Sections.Add(new HighlightedSection { Offset = at + 11, Length = 3, Color = new HighlightingColor { Name = "Char" } });
+            line.Sections.Add(new HighlightedSection { Offset = at + 27, Length = 7, Color = new HighlightingColor { Name = "Comment" } });
+            var failures = new List<Exception>();
+
+            FunctionCallHighlighter.AddTo(line, failures.Add);
+
+            line.ValidateInvariants();
+            Assert.Empty(failures);
+            Assert.Equal(new (int, int, string?)[]
+            {
+                (0, 1, "Function"), (2, 3, "Function"), (10, 6, "String"), (11, 3, "Char"), (18, 3, "Function"), (27, 7, "Comment"),
+            }, line.Sections.Select(s => (s.Offset - at, s.Length, (string?)s.Color.Name)));
+            Assert.Same(line.Sections[0].Color, line.Sections[1].Color);   // one shared color
+        }
+
+        [Fact]
+        public void A_failing_pass_costs_only_that_line_its_function_colors_and_is_reported_once()
+        {
+            var document = new TextDocument("foo(1)\nbar(2)\nbaz(3)");
+            var failures = new List<Exception>();
+            var highlighter = new FunctionCallHighlighter(new BrokenFirstLine(document), failures.Add);
+
+            var first = highlighter.HighlightLine(1);
+            var again = highlighter.HighlightLine(1);
+            var second = highlighter.HighlightLine(2);
+
+            Assert.IsType<ArgumentOutOfRangeException>(Assert.Single(failures));
+            Assert.Equal("Comment", Assert.Single(first.Sections).Color.Name);   // left as the definition gave it
+            Assert.Equal("Comment", Assert.Single(again.Sections).Color.Name);
+            var call = Assert.Single(second.Sections);
+            Assert.Equal((document.GetLineByNumber(2).Offset, 3, "Function"), (call.Offset, call.Length, call.Color.Name));
+        }
+
+        [Theory]
+        [InlineData("csharp", "Foo")]
+        [InlineData("javascript", "foo")]
+        [InlineData("go", "foo")]
+        public void Function_color_never_enters_strings_comments_or_keywords(string languageId, string name) => UiThread.Run(() =>
+        {
+            string code = "if (x) " + name + "(\"bar(\") // baz(";
+            var line = HighlighterOf(Show(languageId, code)).HighlightLine(1);
+
+            line.ValidateInvariants();
+            Assert.Equal(new[] { name }, FunctionNames(line));
+            Assert.Equal(SyntaxCategory.Keyword, CategoryAt(line, code.IndexOf("if", StringComparison.Ordinal)));
+            Assert.Equal(SyntaxCategory.String, CategoryAt(line, code.IndexOf("bar(", StringComparison.Ordinal)));
+            Assert.Equal(SyntaxCategory.Comment, CategoryAt(line, code.IndexOf("baz(", StringComparison.Ordinal)));
+        });
+
+        [Theory]
+        [InlineData("csharp", "void Run() { }", "Run")]
+        [InlineData("javascript", "foo(1);", "foo")]
+        [InlineData("go", "func main() {", "main")]
+        public void A_file_in_a_flagged_language_paints_function_names(string languageId, string code, string name) => UiThread.Run(() =>
+        {
+            var editor = Show(languageId, code);
+
+            Assert.Equal(PadPalette.Dark.SyntaxFunction, FenceColorsTests.ForegroundAt(editor.TextArea.TextView, 1, code.IndexOf(name, StringComparison.Ordinal)));
+        });
+
+        [Fact]
+        public void A_file_in_a_language_that_is_not_flagged_gets_no_function_pass() => UiThread.Run(() =>
+        {
+            const string code = "SELECT COUNT(*), dbo.fn_total(1)";
+            var highlighter = HighlighterOf(Show("sql", code));
+
+            Assert.IsNotType<FunctionCallHighlighter>(highlighter);
+            Assert.Empty(FunctionNames(highlighter.HighlightLine(1)));
+            Assert.Equal(new[] { "COUNT", "fn_total" }, FunctionNames(HighlighterOf(Show("javascript", code)).HighlightLine(1)));
+        });
+
+        [Fact]
+        public void Lines_over_the_inline_limit_get_no_function_pass() => UiThread.Run(() =>
+        {
+            string over = "foo(1);" + new string(' ', 3994);
+            string exact = "foo(1);" + new string(' ', 3993);
+            var highlighter = HighlighterOf(Show("javascript", over + "\n" + exact));
+
+            Assert.Equal(4001, over.Length);
+            Assert.Empty(FunctionNames(highlighter.HighlightLine(1)));
+            Assert.Equal(new[] { "foo" }, FunctionNames(highlighter.HighlightLine(2)));
+        });
+
+        /// <summary>An editor showing <paramref name="code"/> in a language, laid out as a shown window would.</summary>
+        private static TextEditor Show(string languageId, string code)
+        {
+            var editor = new TextEditor { Document = new TextDocument(code) };
+            var language = new EditorLanguage(editor, () => PadPalette.Dark, folds: false) { Warn = _ => { } };
+            language.Apply(PadLanguages.ById(languageId)!);
+            var view = editor.TextArea.TextView;
+            view.Measure(new Size(1200, 800));
+            view.Arrange(new Rect(0, 0, 1200, 800));
+            view.EnsureVisualLines();
+            return editor;
+        }
+
+        /// <summary>The highlighter whole-file colors come from: what the syntax colorizer registered.</summary>
+        private static IHighlighter HighlighterOf(TextEditor editor) =>
+            (IHighlighter)editor.TextArea.TextView.GetService(typeof(IHighlighter))!;
+
+        private static List<string> FunctionNames(HighlightedLine line) =>
+            line.Sections.Where(s => SyntaxColors.Categorize(s.Color?.Name) == SyntaxCategory.Function)
+                .Select(s => line.Document.GetText(s.Offset, s.Length)).ToList();
+
+        /// <summary>The category of the innermost section at <paramref name="column"/>; sections are in order, so the last covering one.</summary>
+        private static SyntaxCategory CategoryAt(HighlightedLine line, int column)
+        {
+            int offset = line.DocumentLine.Offset + column;
+            var category = SyntaxCategory.Text;
+            foreach (var section in line.Sections)
+                if (section.Offset <= offset && offset < section.Offset + section.Length) category = SyntaxColors.Categorize(section.Color?.Name);
+            return category;
+        }
+
+        /// <summary>
+        /// Highlights nothing but its first line's first word, as a comment; that line points past the
+        /// document's end, so the pass throws reading its text.
+        /// </summary>
+        private sealed class BrokenFirstLine : IHighlighter
+        {
+            private readonly TextDocument _document;
+            private readonly TextDocument _longer = new(new string(' ', 100) + "\nfoo(1)");
+
+            public BrokenFirstLine(TextDocument document) => _document = document;
+
+            public IDocument Document => _document;
+
+            public HighlightingColor DefaultTextColor => new();
+
+            public event HighlightingStateChangedEventHandler HighlightingStateChanged { add { } remove { } }
+
+            public HighlightedLine HighlightLine(int lineNumber)
+            {
+                if (lineNumber != 1) return new HighlightedLine(_document, _document.GetLineByNumber(lineNumber));
+                var line = new HighlightedLine(_document, _longer.GetLineByNumber(2));
+                line.Sections.Add(new HighlightedSection { Offset = 0, Length = 3, Color = new HighlightingColor { Name = "Comment" } });
+                return line;
+            }
+
+            public IEnumerable<HighlightingColor> GetColorStack(int lineNumber) => Array.Empty<HighlightingColor>();
+
+            public void UpdateHighlightingState(int lineNumber) { }
+
+            public void BeginHighlighting() { }
+
+            public void EndHighlighting() { }
+
+            public HighlightingColor GetNamedColor(string name) => null!;
+
+            public void Dispose() { }
+        }
+    }
+}

@@ -12,7 +12,8 @@ namespace Kil0bitSystemMonitor.Pad
     /// 1.3). AvalonEdit's highlighting engine runs over the block from its first inside line with an
     /// empty state, so a comment or string that spans lines is colored as in a whole file. Each line
     /// is highlighted once, as far down as the block is shown; an edit keeps the lines above it and
-    /// highlights again from the edited line on.
+    /// highlights again from the edited line on. In a language that calls functions as <c>name(...)</c>,
+    /// the names its colors leave plain get the Function color (<see cref="FunctionCallHighlighter.AddTo"/>).
     /// A block with more than <see cref="MaxBlockLines"/> lines inside gets no colors at all; one with a
     /// line over the inline limit gets none from that line on; one that throws gets none until the next edit.
     /// </summary>
@@ -152,7 +153,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
-        private static void Fill(TextDocument document, int open, Block block, int index)
+        private void Fill(TextDocument document, int open, Block block, int index)
         {
             var engine = block.Engine;
             while (engine != null && !block.Stopped && block.Lines.Count <= index)
@@ -164,7 +165,10 @@ namespace Kil0bitSystemMonitor.Pad
                     break;
                 }
                 engine.CurrentSpanStack = block.Stack;
-                block.Lines.Add(engine.HighlightLine(document, line));
+                var highlighted = engine.HighlightLine(document, line);
+                // A failure here costs only this line its function colors.
+                if (block.FunctionCalls) FunctionCallHighlighter.AddTo(highlighted, Failed);
+                block.Lines.Add(highlighted);
                 block.Stacks.Add(engine.CurrentSpanStack);
             }
         }
@@ -173,7 +177,10 @@ namespace Kil0bitSystemMonitor.Pad
         {
             string? id = FenceLanguages.IdOfFence(document.GetText(document.GetLineByNumber(open)));
             var definition = _definitionFor(id);
-            return new Block(definition == null ? null : new HighlightingEngine(definition.MainRuleSet));
+            return new Block(definition == null ? null : new HighlightingEngine(definition.MainRuleSet))
+            {
+                FunctionCalls = PadLanguages.ForFence(id)?.FunctionCalls == true,
+            };
         }
 
         private sealed class Block
@@ -182,6 +189,9 @@ namespace Kil0bitSystemMonitor.Pad
 
             /// <summary>Null when the language has no colors, or highlighting failed.</summary>
             public HighlightingEngine? Engine;
+
+            /// <summary>The language calls functions as <c>name(...)</c>: its plain names get the Function color.</summary>
+            public bool FunctionCalls;
 
             /// <summary>Highlighting threw: no colors until the next edit.</summary>
             public bool Failed;

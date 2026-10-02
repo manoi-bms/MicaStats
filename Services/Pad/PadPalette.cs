@@ -94,6 +94,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public PadColor SyntaxTag { get; private init; }
         public PadColor SyntaxAttribute { get; private init; }
         public PadColor SyntaxOperator { get; private init; }
+        /// <summary>Function and method names, called or declared (ruling R4).</summary>
+        public PadColor SyntaxFunction { get; private init; }
         /// <summary>Log levels (MicaPad's Log.xshd).</summary>
         public PadColor LogError { get; private init; }
         public PadColor LogWarning { get; private init; }
@@ -170,6 +172,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             SyntaxTag = PadColor.Parse("#4FC1FF"),
             SyntaxAttribute = PadColor.Parse("#9CDCFE"),
             SyntaxOperator = PadColor.Parse("#D4D4D4"),
+            SyntaxFunction = PadColor.Parse("#DCDCAA"),
             LogError = PadColor.Parse("#FF6B6B"),
             LogWarning = PadColor.Parse("#E8A53C"),
             LogInfo = PadColor.Parse("#3FD2E4"),
@@ -241,6 +244,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             SyntaxTag = PadColor.Parse("#800000"),
             SyntaxAttribute = PadColor.Parse("#B00000"),
             SyntaxOperator = PadColor.Parse("#3B3B3B"),
+            SyntaxFunction = PadColor.Parse("#795E26"),
             LogError = PadColor.Parse("#C62828"),
             LogWarning = PadColor.Parse("#8A5200"),
             LogInfo = PadColor.Parse("#06707C"),
@@ -310,6 +314,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             Pair(nameof(SyntaxTag), SyntaxTag),
             Pair(nameof(SyntaxAttribute), SyntaxAttribute),
             Pair(nameof(SyntaxOperator), SyntaxOperator),
+            Pair(nameof(SyntaxFunction), SyntaxFunction),
             Pair(nameof(LogError), LogError),
             Pair(nameof(LogWarning), LogWarning),
             Pair(nameof(LogInfo), LogInfo),

@@ -50,7 +50,13 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("LogDebug", SyntaxCategory.Debug)]
         [InlineData("AddedText", SyntaxCategory.Added)]
         [InlineData("RemovedText", SyntaxCategory.Removed)]
-        [InlineData("MethodCall", SyntaxCategory.Text)]
+        [InlineData("Function", SyntaxCategory.Function)]
+        [InlineData("MethodCall", SyntaxCategory.Function)]
+        [InlineData("MethodName", SyntaxCategory.Function)]
+        [InlineData("FunctionCall", SyntaxCategory.Function)]
+        [InlineData("JavaScriptGlobalFunctions", SyntaxCategory.Function)]
+        [InlineData("FunctionKeywords", SyntaxCategory.Keyword)]
+        [InlineData("Friend", SyntaxCategory.Text)]
         [InlineData("", SyntaxCategory.Text)]
         [InlineData(null, SyntaxCategory.Text)]
         public void Color_names_map_to_categories(string? name, SyntaxCategory expected)
@@ -63,7 +69,8 @@ namespace Kil0bitSystemMonitor.Tests
         {
             Assert.Equal(PadPalette.Dark.SyntaxComment, SyntaxColors.Resolve("Comment", PadColor.Parse("#008000"), PadPalette.Dark));
             Assert.Equal(PadPalette.Light.SyntaxKeyword, SyntaxColors.Resolve("Keywords", null, PadPalette.Light));
-            Assert.Equal(PadPalette.Light.Text, SyntaxColors.Resolve("MethodCall", PadColor.Parse("#FFFF00"), PadPalette.Light));
+            Assert.Equal(PadPalette.Light.SyntaxFunction, SyntaxColors.Resolve("MethodCall", PadColor.Parse("#FFFF00"), PadPalette.Light));
+            Assert.Equal(PadPalette.Light.Text, SyntaxColors.Resolve("Friend", PadColor.Parse("#FFFF00"), PadPalette.Light));
         }
 
         [Fact]

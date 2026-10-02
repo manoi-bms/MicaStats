@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
+using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Highlighting;
 using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services.Pad;
@@ -16,19 +17,48 @@ namespace Kil0bitSystemMonitor.Pad
     /// unnamed one keeps its hue, nudged until it reads at 4.5:1 (<see cref="SyntaxColors.Resolve"/>).
     /// Bold and italic are kept; definition backgrounds are dropped. The shared definitions are
     /// never modified: the palette is read at draw time, so a theme switch only needs a redraw.
+    /// For a language that calls functions as <c>name(...)</c>, the highlighter also gives the names
+    /// the definition leaves plain the Function color (<see cref="FunctionCallHighlighter"/>).
     /// </summary>
     internal sealed class ThemedHighlightingColorizer : HighlightingColorizer
     {
         private readonly Func<PadPalette> _palette;
         private readonly Action<Exception> _onFailure;
+        private readonly bool _functionCalls;
+        private readonly Action<string>? _warn;
         private readonly Dictionary<PadColor, Brush> _brushes = new();
 
         /// <param name="onFailure">Told when highlighting fails; the text is left uncolored.</param>
-        public ThemedHighlightingColorizer(IHighlightingDefinition definition, Func<PadPalette> palette, Action<Exception>? onFailure = null)
+        /// <param name="functionCalls">Color function names too (<see cref="PadLanguage.FunctionCalls"/>).</param>
+        /// <param name="warn">Logs the one-time note that function colors failed; the other colors stay.</param>
+        public ThemedHighlightingColorizer(IHighlightingDefinition definition, Func<PadPalette> palette, Action<Exception>? onFailure = null,
+                                           bool functionCalls = false, Action<string>? warn = null)
             : base(definition)
         {
             _palette = palette;
             _onFailure = onFailure ?? (_ => { });
+            _functionCalls = functionCalls;
+            _warn = warn;
+        }
+
+        /// <summary>AvalonEdit's highlighter for the document, wrapped in the function pass when the language has one.</summary>
+        protected override IHighlighter CreateHighlighter(TextView textView, TextDocument document)
+        {
+            var highlighter = base.CreateHighlighter(textView, document);
+            return _functionCalls ? new FunctionCallHighlighter(highlighter, FunctionsFailed) : highlighter;
+        }
+
+        /// <summary>The function pass threw (reported once per document): those lines are shown without function colors.</summary>
+        private void FunctionsFailed(Exception ex)
+        {
+            try
+            {
+                _warn?.Invoke("Function colors failed (" + ex.GetType().Name + "); some lines are shown without them");
+            }
+            catch (Exception)
+            {
+                // Logging is best effort.
+            }
         }
 
         /// <summary>The highlighter itself (AvalonEdit's rule engine) runs in here; a failure leaves the line uncolored.</summary>

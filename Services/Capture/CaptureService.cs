@@ -199,8 +199,13 @@ namespace Kil0bitSystemMonitor.Services.Capture
 
                 CaptureSettle.Pump(PickerClearMs);
 
-                using var target = new ScreenScrollTarget(area);
+                using var target = new ScreenScrollTarget(area, CaptureSettle.Pump);
                 result = new ScrollCaptureRun(target, CaptureSettle.Pump, () => cancelled, card.ShowProgress, options).Run();
+
+                // Windows drops wheel input to an app running as administrator without a word.
+                if (result.Stop == ScrollStop.Unscrollable && target.WindowMayBeElevated())
+                    DiagnosticsLog.Warn("capture",
+                        "Scrolling capture: nothing scrolled, and the window seems to belong to an app running as administrator; Windows does not deliver wheel input to it from MicaStats unless MicaStats runs as administrator too");
             }
             finally
             {
@@ -223,6 +228,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
         {
             ScrollStop.Unscrollable => "Nothing scrolled in that area",
             ScrollStop.NoMatch or ScrollStop.SizeChanged => "Stopped: the view changed in a way MicaStats could not follow",
+            ScrollStop.InputLost => "MicaStats could not send scrolling to that window",
             _ => null,
         };
 

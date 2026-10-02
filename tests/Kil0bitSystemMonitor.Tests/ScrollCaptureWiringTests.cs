@@ -132,6 +132,58 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Stopped: the view changed in a way MicaStats could not follow", CaptureService.ScrollNote(ScrollStop.SizeChanged));
         }
 
+        // ----- Where the wheel goes (final review) -------------------------------------------------
+
+        private static readonly IntPtr Picked = new(0x1234), Other = new(0x5678);
+
+        private static WheelWindowState Now(IntPtr under, IntPtr inFront, bool alive = true, bool minimised = false, bool ownedByPicked = false)
+            => new(alive, minimised, under, ownedByPicked, inFront);
+
+        [Theory]
+        [InlineData(2, false, true)]      // under the pointer: the wheel reaches it, in front or not
+        [InlineData(2, true, true)]
+        [InlineData(0, true, true)]       // to the focused window: only once it is in front
+        [InlineData(0, false, false)]
+        [InlineData(1, true, true)]       // hybrid: desktop apps get the wheel by focus
+        [InlineData(1, false, false)]
+        [InlineData(null, true, true)]    // unknown, older Windows: focus routing
+        [InlineData(null, false, false)]
+        public void The_wheel_is_sent_only_where_Windows_will_deliver_it(int? routing, bool pickedInFront, bool sends)
+        {
+            var check = ScrollInputGuard.Check(Picked, routing, Now(Picked, pickedInFront ? Picked : Other));
+
+            Assert.Equal(sends ? WheelCheck.Send : WheelCheck.NotInFront, check);
+            Assert.Equal(routing != 2, ScrollInputGuard.NeedsForeground(routing));
+        }
+
+        [Fact]
+        public void The_capture_stops_when_the_picked_window_is_no_longer_under_the_area()
+        {
+            Assert.Equal(WheelCheck.Covered, ScrollInputGuard.Check(Picked, 2, Now(Other, Other)));
+            Assert.Equal(WheelCheck.Gone, ScrollInputGuard.Check(Picked, 2, Now(Picked, Picked, minimised: true)));
+            Assert.Equal(WheelCheck.Gone, ScrollInputGuard.Check(Picked, 2, Now(IntPtr.Zero, Other, alive: false)));
+            Assert.Equal(WheelCheck.NoWindow, ScrollInputGuard.Check(IntPtr.Zero, 2, Now(IntPtr.Zero, Other)));
+            Assert.Equal(WheelCheck.NotInFront, ScrollInputGuard.Check(Picked, 0, Now(Picked, Other)));   // switched away
+            // The picked window's own popup under the centre (a tooltip) is still that window.
+            Assert.Equal(WheelCheck.Send, ScrollInputGuard.Check(Picked, 2, Now(Other, Other, ownedByPicked: true)));
+        }
+
+        [Fact]
+        public void A_held_modifier_key_is_waited_out_for_a_while_then_stops()
+        {
+            Assert.Equal(ModifierGate.Send, ScrollInputGuard.Modifiers(held: false, waitedMs: 0));
+            Assert.Equal(ModifierGate.Wait, ScrollInputGuard.Modifiers(held: true, waitedMs: 0));
+            Assert.Equal(ModifierGate.Wait, ScrollInputGuard.Modifiers(held: true, waitedMs: ScrollInputGuard.ModifierWaitMs - 50));
+            Assert.Equal(ModifierGate.Stop, ScrollInputGuard.Modifiers(held: true, waitedMs: ScrollInputGuard.ModifierWaitMs));
+            Assert.Equal(ModifierGate.Send, ScrollInputGuard.Modifiers(held: false, waitedMs: ScrollInputGuard.ModifierWaitMs));
+        }
+
+        [Fact]
+        public void A_scroll_that_could_not_be_sent_is_noted_in_the_editor()
+        {
+            Assert.Equal("MicaStats could not send scrolling to that window", CaptureService.ScrollNote(ScrollStop.InputLost));
+        }
+
         [Fact]
         public void The_card_counts_pixels_with_grouping_and_says_how_to_stop()
         {

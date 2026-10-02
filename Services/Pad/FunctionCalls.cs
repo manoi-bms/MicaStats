@@ -14,10 +14,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// The (start, length) of each such name in <paramref name="line"/>, left to right. A name is
         /// a whole word of <c>[A-Za-z_$][A-Za-z0-9_$]*</c> with more than a lone <c>$</c> (PowerShell's
-        /// <c>$(...)</c> is no call), and no <see cref="IsKeyword">keyword</see> unless it follows
-        /// <c>.</c>, <c>::</c> or <c>-&gt;</c>. A word with a non-ASCII letter anywhere in it has none
-        /// (no tail of it is colored), and neither has <c>1foo(</c>. A line longer than
-        /// <paramref name="maxLength"/> has none: a huge line costs nothing.
+        /// <c>$(...)</c> is no call), no <see cref="IsKeyword">keyword</see> unless it follows
+        /// <c>.</c>, <c>::</c> or <c>-&gt;</c>, and no type a declaration names (<see cref="AfterDeclaration"/>).
+        /// A word with a non-ASCII letter anywhere in it has none (no tail of it is colored), and
+        /// neither has <c>1foo(</c>. A line longer than <paramref name="maxLength"/> has none: a huge
+        /// line costs nothing.
         /// </summary>
         /// <param name="tight">
         /// The <c>(</c> must follow the name directly (<see cref="PadLanguage.TightCalls"/>): in
@@ -44,7 +45,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 if (next == line.Length || line[next] != '(') continue;
 
                 var word = line.AsSpan(start, i - start);
-                if (IsName(word) && !(IsKeyword(word) && !AfterMemberAccess(line, start)))
+                if (IsName(word) && !(IsKeyword(word) && !AfterMemberAccess(line, start)) && !AfterDeclaration(line, start))
                     (found ??= new List<(int, int)>()).Add((start, i - start));
             }
             return found ?? (IReadOnlyList<(int, int)>)Array.Empty<(int, int)>();
@@ -52,15 +53,30 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// A word some language writes before <c>(</c> without calling anything: <c>if (</c>,
-        /// <c>foreach (</c>, <c>catch (E) when (</c>, <c>decltype(</c>, <c>await (</c>... Letter case
-        /// counts, so <c>Regex.Match(</c> and <c>errors.New(</c> stay calls.
+        /// <c>foreach (</c>, <c>catch (E) when (</c>, <c>decltype(</c>, <c>await (</c>, C#'s <c>is not (</c>...
+        /// Letter case counts, so <c>Regex.Match(</c> and <c>errors.New(</c> stay calls.
         /// </summary>
         internal static bool IsKeyword(ReadOnlySpan<char> word) => word is
             "if" or "elseif" or "else" or "for" or "foreach" or "while" or "do" or "switch" or "case" or "catch"
             or "return" or "function" or "fn" or "match" or "when" or "assert" or "decltype" or "static_assert"
             or "alignof" or "alignas" or "noexcept" or "sizeof" or "typeof" or "nameof" or "async" or "await"
             or "yield" or "new" or "delete" or "throw" or "using" or "lock" or "fixed" or "checked" or "unchecked"
-            or "default";
+            or "default" or "not";
+
+        /// <summary>
+        /// The word before <paramref name="start"/> on the line (spaces skipped) declares a type, so the
+        /// name at <paramref name="start"/> is that type, not a call: Python's <c>class Foo(Base)</c>,
+        /// Kotlin's <c>data class Point(</c>, Rust's <c>impl Fn(</c>, C#'s <c>record Point(</c>.
+        /// </summary>
+        internal static bool AfterDeclaration(string line, int start)
+        {
+            int end = start;
+            while (end > 0 && (line[end - 1] == ' ' || line[end - 1] == '\t')) end--;
+            int from = end;
+            while (from > 0 && IsWordChar(line[from - 1])) from--;
+            return line.AsSpan(from, end - from) is
+                "class" or "struct" or "interface" or "enum" or "record" or "object" or "trait" or "impl" or "type";
+        }
 
         /// <summary>The word at <paramref name="start"/> follows <c>.</c>, <c>::</c> or <c>-&gt;</c>: a member (<c>s.match(</c>, <c>Vec::new(</c>), never a keyword.</summary>
         internal static bool AfterMemberAccess(string line, int start) =>

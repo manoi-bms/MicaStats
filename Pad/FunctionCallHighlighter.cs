@@ -50,7 +50,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// Adds a Function section for each name the line's sections leave uncovered, keeping the
         /// sections in offset order. A section the definition colored as a call whose text is a
         /// <see cref="FunctionCalls.IsKeyword">keyword</see> (PHP's <c>if (</c>, C++'s <c>decltype(</c>,
-        /// C#'s <c>when (</c>) gets the keyword color instead, in place. A throw leaves the line as it
+        /// C#'s <c>when (</c>) gets the keyword color instead, in place; one a declaration names
+        /// (<see cref="FunctionCalls.AfterDeclaration"/>: Python's <c>class Foo(</c>, C#'s
+        /// <c>record Point(</c>) is dropped, a type being no call. A throw leaves the line as it
         /// was and is passed to <paramref name="onFailure"/>: it costs only this line its function colors.
         /// With <paramref name="tight"/>, a name spaced from its <c>(</c> is no call (<see cref="FunctionCalls.Find"/>).
         /// </summary>
@@ -64,22 +66,27 @@ namespace Kil0bitSystemMonitor.Pad
                 var sections = line.Sections;
 
                 List<HighlightedSection>? keywords = null;
+                List<HighlightedSection>? declared = null;
                 foreach (var section in sections)
                 {
                     int at = section.Offset - documentLine.Offset;
                     if (at < 0 || at + section.Length > text.Length) continue;
-                    if (FunctionCalls.IsKeyword(text.AsSpan(at, section.Length)) && !FunctionCalls.AfterMemberAccess(text, at)
-                        && SyntaxColors.Categorize(section.Color?.Name) == SyntaxCategory.Function)
-                        (keywords ??= new List<HighlightedSection>()).Add(section);
+                    bool keyword = FunctionCalls.IsKeyword(text.AsSpan(at, section.Length)) && !FunctionCalls.AfterMemberAccess(text, at);
+                    if (!keyword && !FunctionCalls.AfterDeclaration(text, at)) continue;
+                    if (SyntaxColors.Categorize(section.Color?.Name) != SyntaxCategory.Function) continue;
+                    if (keyword) (keywords ??= new List<HighlightedSection>()).Add(section);
+                    else (declared ??= new List<HighlightedSection>()).Add(section);
                 }
                 var merged = WithCalls(sections, FunctionCalls.Find(text, MarkdownLineTokenizer.MaxInlineLength, tight), documentLine.Offset);
 
                 // Nothing has changed the line so far; nothing below throws.
                 if (keywords != null)
                     foreach (var section in keywords) section.Color = KeywordColor;
-                if (merged == null) return;
+                if (merged == null && declared == null) return;
+                var kept = merged ?? new List<HighlightedSection>(sections);
                 sections.Clear();
-                foreach (var section in merged) sections.Add(section);
+                foreach (var section in kept)
+                    if (declared == null || !declared.Contains(section)) sections.Add(section);
             }
             catch (Exception ex)
             {

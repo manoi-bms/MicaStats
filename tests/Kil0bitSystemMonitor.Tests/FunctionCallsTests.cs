@@ -90,6 +90,35 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(expected, Names(line));
         }
 
+        /// <summary>A name a declaration word names is a type, not a call; <c>not (</c> is C#'s pattern keyword.</summary>
+        [Theory]
+        [InlineData("class Foo(Base):", "")]
+        [InlineData("data class Point(val x: Int)", "")]
+        [InlineData("fn f(g: impl Fn(i32) -> i32)", "f")]
+        [InlineData("if (x is not (1 or 2)) Run();", "Run")]
+        [InlineData("record R(int X); struct S (1); enum E(val v: Int); interface I(); object O(); trait T(); type U(", "")]
+        [InlineData("var p = new Foo(1); myclass Bar(2)", "Foo,Bar")]
+        [InlineData("x.not(1); y = type(z)", "not,type")]
+        public void Find_skips_what_a_declaration_names(string line, string expected)
+        {
+            Assert.Equal(expected, Names(line));
+        }
+
+        [Theory]
+        [InlineData("python", "class Foo(Base):", "Foo", SyntaxCategory.Text)]          // the definition's own MethodCall
+        [InlineData("kotlin", "data class Point(val x: Int)", "Point", SyntaxCategory.Text)]
+        [InlineData("rust", "fn f(g: impl Fn(i32) -> i32) {}", "Fn", SyntaxCategory.Text)]
+        [InlineData("csharp", "if (x is not (1 or 2)) Run();", "not", SyntaxCategory.Keyword)]
+        [InlineData("csharp", "record Point(int X, int Y);", "Point", SyntaxCategory.Text)]
+        [InlineData("csharp", "var p = new Foo(1);", "Foo", SyntaxCategory.Function)]       // as before
+        public void A_declared_name_is_not_a_function(string languageId, string code, string name, SyntaxCategory expected) => UiThread.Run(() =>
+        {
+            var line = HighlighterOf(Show(languageId, code)).HighlightLine(1);
+
+            line.ValidateInvariants();
+            Assert.Equal(expected, CategoryAt(line, code.IndexOf(name, StringComparison.Ordinal)));
+        });
+
         [Theory]
         [InlineData("na\u00EFve(x)", "")]
         [InlineData("caf\u00E9(1)", "")]

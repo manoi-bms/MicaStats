@@ -106,14 +106,15 @@ the panel stays available from the right-click menu as **Show Stats Panel**.
 ## 📸 Screen Capture
 
 Right-click the overlay (or open **Settings → Capture**) for **Capture Region**, **Capture
-Window**, **Capture Screen** and **Capture All Screens**. The shortcuts work anywhere in
-Windows:
+Window**, **Capture Screen**, **Capture All Screens** and **Capture Scrolling…**. The
+shortcuts work anywhere in Windows:
 
 | Shortcut | Captures |
 | --- | --- |
 | **Ctrl+Shift+1** | Region — pick a rectangle, window or screen |
 | **Ctrl+Shift+2** | The window currently in front |
 | **Ctrl+Shift+3** | The screen the pointer is on |
+| **Ctrl+Shift+4** | Scrolling — a long page, chat or document as one tall image |
 
 ### The region picker
 
@@ -127,6 +128,25 @@ selection is exact even across monitors running different scaling.
 - Edges **snap** to window and monitor borders; hold nothing and it just works
 - **Arrow keys** nudge (Shift for 10px, Ctrl to resize), **M** magnifier, **S** snapping,
   **A** everything, **Enter** accept, **Esc** or right-click cancel
+
+### Scrolling capture
+
+For a page, chat or document that is taller than the screen, press **Ctrl+Shift+4** or choose
+**Capture Scrolling…** in the overlay menu (or the **Capture scrolling** button in **Settings →
+Capture**).
+
+- **Pick the part that scrolls** — click it, or drag a rectangle around it. Areas smaller than
+  50×50 px are refused
+- MicaStats moves the pointer there, scrolls to the top, and then scrolls down one wheel notch
+  at a time by itself. Keep the picked area visible on screen while it works. A small card
+  shows the height so far
+- Frames are joined into one tall image. A header or footer that stays put while the rest
+  scrolls appears once, not on every frame
+- **Esc** stops and keeps what was captured so far. If you press it while MicaStats is still
+  scrolling to the top, the capture is cancelled
+- It stops by itself at the end of the content, at 20,000 px tall, or after 500 steps
+- The result opens in the editor, or is copied and saved, like any other capture. If nothing
+  scrolled, or the view changed in a way MicaStats could not follow, the editor title says so
 
 ### The editor
 
@@ -816,7 +836,7 @@ a separate process and keeps its own `mcp-bridge.log` in the same folder.
 - **Settings**: Right-click to quickly jump into the dashboard.
 - **Show Desktop**: Right-click and choose **Show Desktop** to minimise every window; choose it
   again to bring them all back — the same toggle as the corner of the Windows taskbar.
-- **Capture**: The right-click menu also carries Capture Region / Window / Screen / All Screens.
+- **Capture**: The right-click menu also carries Capture Region / Window / Screen / All Screens / Scrolling.
   Choosing one waits for the menu to leave the screen before any pixels are taken — a menu is
   logically closed the moment you click it, but the area underneath takes about a quarter of a
   second to be redrawn, and capturing sooner puts the menu in your screenshot.

@@ -48,6 +48,7 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 **Since v1.13.0** — coming in the next release:
 
 * **Search every note.** MicaPad's new **Search notes** pane (**Ctrl+Shift+F**) finds passages in every note, open or closed. It searches by words, offline and with Thai, and, once you turn it on, by meaning through your own embedding server, reordered by your own reranker. [More below](#search-notes)
+* **Scrolling capture.** Pick the part of a page, chat or document that scrolls (**Ctrl+Shift+4**) and MicaStats scrolls it from top to bottom by itself and joins the frames into one tall image in the editor. Sticky headers and footers appear once, and **Esc** keeps what was captured so far
 * **More languages for code.** TypeScript, shell, Kotlin, Go, Rust, Ruby, Pascal/Delphi and Dockerfile are colored, function names get their own color, and fenced code blocks have a **Copy** button
 * **Colors are back for INI, YAML, batch and log files**, which had shown none since v1.12
 * **The overlay survives an Explorer restart.** When `explorer.exe` restarts or crashes, the overlay attaches itself to the new taskbar within a second, stays on top of it and keeps updating, so there is no need to restart MicaStats
@@ -161,6 +162,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 ### Screen capture and annotation
 
 * **Region, window, screen and all-screens** capture, from the overlay's right-click menu, **Settings → Capture**, or global shortcuts
+* **Scrolling capture** (**Ctrl+Shift+4**, or **Capture Scrolling…** in the overlay menu): pick the part that scrolls and MicaStats scrolls to the top and then down by itself, keeping the view visible, and joins the frames into one tall image. Sticky headers and footers appear once, **Esc** stops and keeps what was captured, and it stops at the end of the content or at 20,000 px. The result opens in the editor
 * The region picker **freezes the screen** before you select, so menus and tooltips stay open instead of closing when the picker takes focus, and the selection stays pixel-exact across monitors running different scaling
 * Windows and screens are highlighted for **one-click capture**; selection edges **snap** to their borders
 * A **magnifier** follows the pointer with a pixel grid, crosshair and the **hex colour** under the cursor — it doubles as an eyedropper
@@ -322,6 +324,7 @@ Windows measures how long your boot took, which app delayed it, and how worn you
 | **Ctrl+Shift+1** | Capture a region (or click a window / screen) |
 | **Ctrl+Shift+2** | Capture the window currently in front |
 | **Ctrl+Shift+3** | Capture the screen the pointer is on |
+| **Ctrl+Shift+4** | Capture a scrolling area as one tall image |
 | **Ctrl+Alt+N** | Show MicaPad |
 | **Ctrl+Alt+A** | Ask MicaStats (while the assistant is on in **Settings → AI**) |
 
@@ -773,6 +776,7 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 * **ค้นหาทุกโน้ต** แผง **Search notes** ใหม่ของ MicaPad (**Ctrl+Shift+F**) ค้นหาข้อความในทุกโน้ตทั้งที่เปิดอยู่และปิดไปแล้ว
   * ค้นด้วยคำได้แบบออฟไลน์ และรองรับภาษาไทย
   * เมื่อเปิดใช้ ค้นตามความหมายผ่านเซิร์ฟเวอร์ embedding ของคุณเอง แล้วเรียงลำดับใหม่ด้วย reranker ของคุณเอง [อ่านต่อด้านล่าง](#ค้นหาโน้ต)
+* **จับภาพแบบเลื่อน** เลือกส่วนของหน้าเว็บ แชท หรือเอกสารที่เลื่อนได้ (**Ctrl+Shift+4**) แล้ว MicaStats จะเลื่อนจากบนลงล่างให้เอง และต่อเฟรมเป็นภาพยาวภาพเดียวในหน้าต่างมาร์กอัป ส่วนหัวและส่วนท้ายที่ตรึงอยู่จะปรากฏเพียงครั้งเดียว และกด **Esc** เพื่อหยุดโดยเก็บภาพที่จับได้แล้วไว้
 * **รองรับภาษาโปรแกรมเพิ่มขึ้น** TypeScript, shell, Kotlin, Go, Rust, Ruby, Pascal/Delphi และ Dockerfile แสดงสีได้แล้ว ชื่อฟังก์ชันมีสีของตัวเอง และบล็อกโค้ดมีปุ่ม **Copy**
 * **ไฟล์ INI, YAML, batch และไฟล์ล็อกกลับมามีสีอีกครั้ง** หลังจากไม่มีสีมาตั้งแต่ v1.12
 * **โอเวอร์เลย์อยู่รอดเมื่อ Explorer รีสตาร์ต** เมื่อ `explorer.exe` รีสตาร์ตหรือแครช โอเวอร์เลย์จะเกาะทาสก์บาร์ใหม่เองภายในหนึ่งวินาที อยู่เหนือทาสก์บาร์และอัปเดตค่าต่อไป ไม่ต้องเปิด MicaStats ใหม่
@@ -862,6 +866,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 ### จับภาพหน้าจอและใส่คำอธิบาย
 
 * จับภาพได้ทั้งแบบ **เลือกพื้นที่, เฉพาะหน้าต่าง, ทั้งจอ และทุกจอรวมกัน** สั่งได้จากเมนูคลิกขวาบนโอเวอร์เลย์, **Settings → Capture** หรือคีย์ลัดที่ใช้ได้ทั้งระบบ
+* **จับภาพแบบเลื่อน** (**Ctrl+Shift+4** หรือ **Capture Scrolling…** ในเมนูโอเวอร์เลย์): เลือกส่วนที่เลื่อนได้ แล้ว MicaStats จะเลื่อนขึ้นไปบนสุดและเลื่อนลงเองโดยคงส่วนนั้นให้มองเห็นบนจอ แล้วต่อเฟรมเป็นภาพยาวภาพเดียว ส่วนหัวและส่วนท้ายที่ตรึงอยู่จะปรากฏเพียงครั้งเดียว กด **Esc** เพื่อหยุดโดยเก็บภาพที่จับได้แล้วไว้ และจะหยุดเองเมื่อถึงท้ายเนื้อหาหรือสูง 20,000 px ผลลัพธ์เปิดในหน้าต่างมาร์กอัป
 * ตัวเลือกพื้นที่จะ **หยุดภาพหน้าจอไว้ก่อน** แล้วให้เลือกบนภาพนิ่งนั้น เมนูและทูลทิปจึงยังค้างอยู่ ไม่หายไปตอนที่ตัวเลือกได้โฟกัส และพื้นที่ที่เลือกแม่นยำระดับพิกเซลแม้จอแต่ละตัวจะตั้งสเกลไม่เท่ากัน
 * ไฮไลต์หน้าต่างและหน้าจอให้ **จับภาพได้ด้วยคลิกเดียว** พร้อมการ **สแนป** ขอบให้ตรงกับกรอบหน้าต่าง
 * **แว่นขยาย** ติดตามเมาส์ แสดงตารางพิกเซล เส้นเล็ง และ **ค่าสีแบบ hex** ใต้เคอร์เซอร์ ใช้เป็นเครื่องมือดูดสีได้ในตัว
@@ -1024,6 +1029,7 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | **Ctrl+Shift+1** | จับภาพเฉพาะพื้นที่ (หรือคลิกเลือกหน้าต่าง/หน้าจอ) |
 | **Ctrl+Shift+2** | จับภาพหน้าต่างที่อยู่ด้านหน้าสุด |
 | **Ctrl+Shift+3** | จับภาพหน้าจอที่เมาส์อยู่ |
+| **Ctrl+Shift+4** | จับภาพส่วนที่เลื่อนได้ต่อกันเป็นภาพยาวภาพเดียว |
 | **Ctrl+Alt+N** | เปิด MicaPad |
 | **Ctrl+Alt+A** | เปิด Ask MicaStats (เมื่อเปิดผู้ช่วยไว้ใน **Settings → AI**) |
 

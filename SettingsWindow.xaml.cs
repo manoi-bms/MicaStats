@@ -574,6 +574,13 @@ namespace Kil0bitSystemMonitor
                 PadHistoryBox.SelectedIndex = Array.IndexOf(PadHistoryChoices, days);
                 RefreshPadVault();
                 SubscribePadVault();
+                PadSearchPanel.Load(new Kil0bitSystemMonitor.Pad.SearchSettingsHost
+                {
+                    Config = _config.Config,
+                    Save = _config.SaveConfig,
+                    Secrets = App.AiSecrets,
+                    Service = () => App.PadSearch,
+                });
             }
             catch (Exception ex)
             {

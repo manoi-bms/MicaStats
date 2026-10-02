@@ -35,6 +35,11 @@ namespace Kil0bitSystemMonitor
         /// <summary>Draws MicaPad's diagrams for every window (one hidden WebView2); created with the first MicaPad window, disposed at exit.</summary>
         private static Kil0bitSystemMonitor.Services.Pad.DiagramRenderer? s_diagrams;
         private static Kil0bitSystemMonitor.Services.Pad.ImageSources? s_images;
+        private static Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? s_padSearch;
+        private static Kil0bitSystemMonitor.Pad.SearchFeeder? s_padSearchFeeder;
+
+        /// <summary>MicaPad's search; null until MicaPad first opens.</summary>
+        internal static Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? PadSearch => s_padSearch;
 
         // ---- diagnostics ----------------------------------------------------------------
 
@@ -681,6 +686,19 @@ namespace Kil0bitSystemMonitor
                     Kil0bitSystemMonitor.Pad.MicaPadWindow.ImageLoader = s_images;   // image previews (MicaPadWindow.ConfigureDiagrams)
                 }
 
+                if (s_padSearch == null)
+                {
+                    s_padSearch = new Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService(PadStore,
+                        () => Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.From(config, AiSecrets.Get));
+                    config.PropertyChanged += (_, e) =>
+                    {
+                        if (Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.IsSearchProperty(e.PropertyName))
+                            s_padSearch.Indexer.SettingsChanged();
+                    };
+                    s_padSearchFeeder = new Kil0bitSystemMonitor.Pad.SearchFeeder(s_pad, s_padSearch.Indexer);
+                    // Task 8 assigns MicaPadWindow.SearchService / SearchFeeder here (the Search notes pane).
+                }
+
                 Kil0bitSystemMonitor.Pad.MicaPadWindow.Open(s_pad, config, () => ShowSettingsSection("MicaPad"), path);
             }
             catch (Exception ex)
@@ -814,6 +832,8 @@ namespace Kil0bitSystemMonitor
                 s_padVault?.Lock();
                 Kil0bitSystemMonitor.Pad.SecretClipboard.ClearIfStillOurs();
                 m_padMaintenanceTimer?.Stop();
+                s_padSearchFeeder?.Dispose();
+                s_padSearch?.Dispose();
                 s_pad?.Dispose();
                 m_captureHotkeys?.Dispose();
                 // Before anything the AI tools read, and before the shared sampler: the history

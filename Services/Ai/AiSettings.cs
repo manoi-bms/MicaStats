@@ -40,5 +40,11 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
         /// <summary>The bearer token local-HTTP MCP clients must send.</summary>
         public const string McpToken = "mcp-token";
+
+        /// <summary>MicaPad's embedding server key (Settings → MicaPad → Search).</summary>
+        public const string PadEmbeddingKey = "pad-embedding-key";
+
+        /// <summary>MicaPad's reranker key.</summary>
+        public const string PadRerankKey = "pad-rerank-key";
     }
 }

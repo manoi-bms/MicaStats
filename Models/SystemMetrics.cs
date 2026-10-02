@@ -546,6 +546,12 @@ namespace Kil0bitSystemMonitor.Models
         private bool _padKroki;
         private bool _padReadingFont = true;
         private bool _padWebImages;
+        private bool _padSemanticSearch;
+        private string _padEmbeddingServer = "";
+        private string _padEmbeddingModel = "";
+        private bool _padRerank;
+        private string _padRerankServer = "";
+        private string _padRerankModel = "";
         private string _padKrokiServer = Kil0bitSystemMonitor.Services.Pad.KrokiClient.DefaultServer;
 
         /// <summary>Global shortcut that shows MicaPad, in <c>HotkeyParser</c> syntax. Empty turns it off.</summary>
@@ -628,6 +634,36 @@ namespace Kil0bitSystemMonitor.Models
         /// that the note was opened.
         /// </summary>
         public bool PadWebImages { get => _padWebImages; set { Set(ref _padWebImages, value); } }
+
+        /// <summary>
+        /// Search notes by meaning (search spec 2): passages of the notes are sent to
+        /// <see cref="PadEmbeddingServer"/>. Off by default: keyword search needs no server and
+        /// nothing leaves the PC until it is on. Turning it off deletes the stored vectors.
+        /// </summary>
+        public bool PadSemanticSearch { get => _padSemanticSearch; set { Set(ref _padSemanticSearch, value); } }
+
+        /// <summary>The embedding server's base address (MicaPad adds <c>/embeddings</c>), normalized like the Kroki server; anything else reads as empty.</summary>
+        public string PadEmbeddingServer
+        {
+            get => _padEmbeddingServer;
+            set { Set(ref _padEmbeddingServer, Kil0bitSystemMonitor.Services.Pad.KrokiClient.TryParseServer(value, out var server) ? server : ""); }
+        }
+
+        /// <summary>The embedding model name sent with each request; empty sends none.</summary>
+        public string PadEmbeddingModel { get => _padEmbeddingModel; set { Set(ref _padEmbeddingModel, (value ?? "").Trim()); } }
+
+        /// <summary>Reorder results with <see cref="PadRerankServer"/>; only used while <see cref="PadSemanticSearch"/> is on.</summary>
+        public bool PadRerank { get => _padRerank; set { Set(ref _padRerank, value); } }
+
+        /// <summary>The reranker's base address (MicaPad adds <c>/rerank</c>), normalized; anything else reads as empty.</summary>
+        public string PadRerankServer
+        {
+            get => _padRerankServer;
+            set { Set(ref _padRerankServer, Kil0bitSystemMonitor.Services.Pad.KrokiClient.TryParseServer(value, out var server) ? server : ""); }
+        }
+
+        /// <summary>The rerank model name; empty sends none.</summary>
+        public string PadRerankModel { get => _padRerankModel; set { Set(ref _padRerankModel, (value ?? "").Trim()); } }
 
         private bool _useGpuRendering;
 

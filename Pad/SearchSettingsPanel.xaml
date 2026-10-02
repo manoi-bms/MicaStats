@@ -1,0 +1,83 @@
+<UserControl x:Class="Kil0bitSystemMonitor.Pad.SearchSettingsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.modernwpf.com/2019">
+    <!-- Settings → MicaPad → Search (search spec 2). Keys go to the secret store and are never shown again. -->
+    <StackPanel>
+        <Grid Margin="0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="Search by meaning" FontWeight="SemiBold" FontSize="15" />
+                <TextBlock Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                           Text="Sends passages of your notes to the embedding server below to find notes by meaning. Keyword search works without it. Turning this off deletes the stored vectors." />
+            </StackPanel>
+            <ui:ToggleSwitch Grid.Column="2" x:Name="MeaningToggle" Toggled="OnMeaningToggled" VerticalAlignment="Center" />
+        </Grid>
+
+        <StackPanel x:Name="EmbeddingFields" Margin="0,0,0,8">
+            <TextBlock Text="Embedding server" FontSize="12.5" Opacity="0.8" />
+            <TextBox x:Name="EmbeddingServerBox" Width="300" HorizontalAlignment="Left" LostFocus="OnEmbeddingServerChanged" />
+            <TextBlock Text="Model" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
+            <TextBox x:Name="EmbeddingModelBox" Width="300" HorizontalAlignment="Left" LostFocus="OnEmbeddingModelChanged" />
+            <TextBlock Text="API key" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
+            <StackPanel x:Name="EmbeddingKeyEntry" Orientation="Horizontal">
+                <PasswordBox x:Name="EmbeddingKeyBox" Width="240" />
+                <Button Content="Save" Margin="8,0,0,0" Click="OnSaveEmbeddingKey" />
+            </StackPanel>
+            <StackPanel x:Name="EmbeddingKeySaved" Orientation="Horizontal" Visibility="Collapsed">
+                <TextBlock Text="Saved" VerticalAlignment="Center" Opacity="0.8" />
+                <Button Content="Remove" Margin="8,0,0,0" Click="OnRemoveEmbeddingKey" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                <Button x:Name="EmbeddingTestButton" Content="Test" Click="OnTestEmbedding" />
+                <TextBlock x:Name="EmbeddingTestResult" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="12.5" TextWrapping="Wrap" />
+            </StackPanel>
+        </StackPanel>
+
+        <Grid Margin="0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="Rerank results" FontWeight="SemiBold" FontSize="15" />
+                <TextBlock Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                           Text="Sends your query and the best passages to the reranker below to put the most relevant first. Needs Search by meaning." />
+            </StackPanel>
+            <ui:ToggleSwitch Grid.Column="2" x:Name="RerankToggle" Toggled="OnRerankToggled" VerticalAlignment="Center" />
+        </Grid>
+
+        <StackPanel x:Name="RerankFields" Margin="0,0,0,8">
+            <TextBlock Text="Reranker server" FontSize="12.5" Opacity="0.8" />
+            <TextBox x:Name="RerankServerBox" Width="300" HorizontalAlignment="Left" LostFocus="OnRerankServerChanged" />
+            <TextBlock Text="Model" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
+            <TextBox x:Name="RerankModelBox" Width="300" HorizontalAlignment="Left" LostFocus="OnRerankModelChanged" />
+            <TextBlock Text="API key" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
+            <StackPanel x:Name="RerankKeyEntry" Orientation="Horizontal">
+                <PasswordBox x:Name="RerankKeyBox" Width="240" />
+                <Button Content="Save" Margin="8,0,0,0" Click="OnSaveRerankKey" />
+            </StackPanel>
+            <StackPanel x:Name="RerankKeySaved" Orientation="Horizontal" Visibility="Collapsed">
+                <TextBlock Text="Saved" VerticalAlignment="Center" Opacity="0.8" />
+                <Button Content="Remove" Margin="8,0,0,0" Click="OnRemoveRerankKey" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                <Button x:Name="RerankTestButton" Content="Test" Click="OnTestRerank" />
+                <TextBlock x:Name="RerankTestResult" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="12.5" TextWrapping="Wrap" />
+            </StackPanel>
+        </StackPanel>
+
+        <TextBlock x:Name="ServerHint" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" />
+        <TextBlock x:Name="KeyHint" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" Visibility="Collapsed" />
+
+        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+            <TextBlock x:Name="IndexStatus" VerticalAlignment="Center" FontSize="12.5" Opacity="0.8" TextWrapping="Wrap" MaxWidth="360" />
+            <Button x:Name="RebuildButton" Content="Rebuild index" Margin="12,0,0,0" Click="OnRebuild" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

@@ -293,7 +293,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
             note.EverHadText = true;
             if (markUnsaved && note.Meta.IsFileBacked) note.HasUnsavedEdits = true;
             _scheduler.MarkChanged(note.Id, now);
+            NoteTextChanged?.Invoke(note);
         }
+
+        /// <summary>A note's text or title changed (search indexing listens). Raised on the UI thread.</summary>
+        public event Action<OpenNote>? NoteTextChanged;
+
+        /// <summary>A closed note was deleted (search indexing listens). Raised on the UI thread.</summary>
+        public event Action<string>? NoteDeleted;
 
         /// <summary>True while the note has changes not yet handed to the writer.</summary>
         public bool HasPendingChanges(OpenNote note) => _scheduler.IsPending(note.Id);
@@ -554,7 +561,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (_byId.ContainsKey(id)) return false;
             if (!_writer.FlushAll(TimeSpan.FromSeconds(2))) return false;
             _recentlyClosed.Remove(id);
-            return _store.DeleteNote(id, _recycleBin);
+            if (!_store.DeleteNote(id, _recycleBin)) return false;
+            NoteDeleted?.Invoke(id);
+            return true;
         }
 
         /// <summary>Sets a custom tab title; a blank one returns to the automatic title.</summary>
@@ -574,6 +583,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 note.Title = trimmed;
             }
             EnqueueSave(note);
+            NoteTextChanged?.Invoke(note);
         }
 
         /// <summary>

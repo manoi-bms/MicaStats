@@ -11,17 +11,18 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         /// <summary>
         /// Reciprocal Rank Fusion: each list gives a passage 1 / (K + rank), rank from 1; a passage
-        /// is identified by note and first line. Ties go to the passage ranked first sooner.
+        /// is identified by note, first line and hash (the pieces cut from one long line share their
+        /// first line). Ties go to the passage ranked first sooner.
         /// </summary>
         public static IReadOnlyList<Passage> Fuse(IReadOnlyList<Passage> first, IReadOnlyList<Passage> second)
         {
-            var scored = new Dictionary<(string, int), (Passage Passage, double Score, int Best, int Order)>();
+            var scored = new Dictionary<(string, int, string), (Passage Passage, double Score, int Best, int Order)>();
             int order = 0;
             void Add(IReadOnlyList<Passage> list)
             {
                 for (int rank = 0; rank < list.Count; rank++)
                 {
-                    var key = (list[rank].NoteId, list[rank].FirstLine);
+                    var key = (list[rank].NoteId, list[rank].FirstLine, list[rank].Hash);
                     double score = 1.0 / (K + rank + 1);
                     scored[key] = scored.TryGetValue(key, out var e)
                         ? (e.Passage, e.Score + score, Math.Min(e.Best, rank), e.Order)

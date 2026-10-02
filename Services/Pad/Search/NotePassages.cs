@@ -20,9 +20,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         public const int MaxNoteChars = 2 * 1024 * 1024;
         public const int MaxFirstLineChars = 200;
 
+        /// <summary>A heading's text is cut to this length, so a huge heading line is not copied whole into every piece cut from it.</summary>
+        public const int MaxHeadingChars = 200;
+
         private const string HeadingSeparator = " › ";
         private static readonly Regex Secret = new(SecretTokens.Pattern, RegexOptions.CultureInvariant);
-        private static readonly Regex Heading = new(@"^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$", RegexOptions.CultureInvariant);
 
         /// <summary>Credential references replaced by <c>[credential]</c>; the vault is never read.</summary>
         public static string WithoutSecrets(string text) => Secret.Replace(text, "[credential]");
@@ -123,14 +125,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
                     continue;
                 }
 
-                var match = Heading.Match(line);
-                if (match.Success)
+                var (level, headingText) = HeadingOf(line);
+                if (level > 0)
                 {
                     Flush(i - 1);
-                    int level = match.Groups[1].Length;
                     while (headings.Count >= level) headings.RemoveAt(headings.Count - 1);
                     while (headings.Count < level - 1) headings.Add("");
-                    headings.Add(match.Groups[2].Value.Trim());
+                    headings.Add(headingText);
                     blocks.Add(new Block(i, i, Path(), true));
                     i++;
                     continue;
@@ -142,6 +143,36 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             }
             Flush(lines.Length - 1);
             return blocks;
+        }
+
+        /// <summary>
+        /// A Markdown heading line's level and text, or level 0: up to 3 spaces, 1 to 6 <c>#</c>, then
+        /// a space, a tab or the line's end. A closing run of <c>#</c> is dropped only after a space or
+        /// tab (<c># C#</c> stays "C#"). The text is cut at <see cref="MaxHeadingChars"/>. One pass over
+        /// the line, however long.
+        /// </summary>
+        private static (int Level, string Text) HeadingOf(string line)
+        {
+            static bool Blank(char c) => c == ' ' || c == '\t';
+
+            int at = 0;
+            while (at < 3 && at < line.Length && line[at] == ' ') at++;
+            int level = 0;
+            while (at + level < line.Length && line[at + level] == '#') level++;
+            if (level == 0 || level > 6) return (0, "");
+            int start = at + level;
+            if (start < line.Length && !Blank(line[start])) return (0, "");
+
+            int end = line.Length;
+            while (end > start && Blank(line[end - 1])) end--;
+            int run = end;
+            while (run > start && line[run - 1] == '#') run--;
+            if (run < end && (run == start || Blank(line[run - 1]))) end = run;   // the closing run
+            while (end > start && Blank(line[end - 1])) end--;
+            while (start < end && Blank(line[start])) start++;
+
+            string text = line.Substring(start, Math.Min(end - start, MaxHeadingChars));
+            return (level, text.Trim());
         }
 
         /// <summary>The fence that opens a code block on this line (``` or ~~~, three or more), or null.</summary>

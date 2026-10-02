@@ -27,6 +27,19 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Fusion_keeps_two_pieces_of_one_long_line_apart()
+        {
+            var pieces = NotePassages.Cut("a", "t", new string('x', 1500) + new string('y', 1500));
+            Assert.Equal(2, pieces.Count);
+            Assert.Equal(pieces[0].FirstLine, pieces[1].FirstLine);
+
+            // the second piece: 1/62 + 1/61; the first: 1/61
+            var fused = SearchFusion.Fuse(new[] { pieces[0], pieces[1] }, new[] { pieces[1] });
+
+            Assert.Equal(new[] { pieces[1], pieces[0] }, fused.ToArray());
+        }
+
+        [Fact]
         public void Fusion_with_one_list_keeps_its_order()
         {
             var a = P("a", 1); var b = P("b", 1);

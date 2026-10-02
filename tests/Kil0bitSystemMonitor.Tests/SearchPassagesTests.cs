@@ -44,10 +44,45 @@ namespace Kil0bitSystemMonitor.Tests
 
             var passages = NotePassages.Cut("n1", "t", text);
 
-            var fence = Assert.Single(passages, p => p.Body.Contains("echo a"));
-            Assert.Contains("echo b", fence.Body);
+            var fence = Assert.Single(passages, p => p.Body.Contains("echo a", StringComparison.Ordinal));
+            Assert.Contains("echo b", fence.Body, StringComparison.Ordinal);
             Assert.Equal(3, fence.FirstLine);
             Assert.Equal(7, fence.LastLine);
+        }
+
+        [Fact]
+        public void A_closing_hash_run_is_dropped_only_after_a_space()
+        {
+            Assert.Equal("C#", NotePassages.Cut("n1", "t", "# C#\nbody")[0].Heading);
+            Assert.Equal("Title", NotePassages.Cut("n1", "t", "# Title ##\nbody")[0].Heading);
+            Assert.Equal("Tabs", NotePassages.Cut("n1", "t", "##\tTabs\t#\t\nbody")[0].Heading);
+            Assert.Equal("", NotePassages.Cut("n1", "t", "#tag line\nbody")[0].Heading);   // no space: not a heading
+            Assert.Equal("", NotePassages.Cut("n1", "t", "    # indented\nbody")[0].Heading);   // four spaces: not a heading
+        }
+
+        [Fact]
+        public void A_heading_with_a_long_run_of_spaces_is_read_in_linear_time()
+        {
+            string line = "# a" + new string(' ', 4000) + "x";
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+
+            var passages = NotePassages.Cut("n1", "t", line + "\nbody");
+
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(1), "took " + clock.Elapsed.TotalMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture) + " ms");
+            Assert.StartsWith("a", passages[0].Heading, StringComparison.Ordinal);
+            Assert.True(passages[0].Heading.Length <= 200);
+        }
+
+        [Fact]
+        public void A_huge_heading_is_capped_in_every_piece()
+        {
+            string capped = new string('h', 200);
+
+            var passages = NotePassages.Cut("n1", "t", "# " + new string('h', 100_000));
+
+            Assert.True(passages.Count > 1);
+            Assert.All(passages, p => Assert.Equal(capped, p.Heading));
+            Assert.All(passages, p => Assert.StartsWith("t › " + capped + "\n\n", p.SentText, StringComparison.Ordinal));
         }
 
         [Fact]
@@ -86,7 +121,7 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var passages = NotePassages.Cut("n1", "t", "db password {{secret:K7Q2M9XD}} here");
             Assert.Equal("db password [credential] here", Assert.Single(passages).Body);
-            Assert.DoesNotContain("K7Q2M9XD", passages[0].SentText);
+            Assert.DoesNotContain("K7Q2M9XD", passages[0].SentText, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -118,7 +153,7 @@ namespace Kil0bitSystemMonitor.Tests
             var passages = NotePassages.Cut("n1", "บันทึก", "# เครือข่าย\nวีพีเอ็นไม่ติด แก้โดยรีสตาร์ท");
             var p = Assert.Single(passages);
             Assert.Equal("เครือข่าย", p.Heading);
-            Assert.StartsWith("บันทึก › เครือข่าย\n\n", p.SentText);
+            Assert.StartsWith("บันทึก › เครือข่าย\n\n", p.SentText, StringComparison.Ordinal);
             Assert.Equal("# เครือข่าย", p.FirstLineText);
         }
 

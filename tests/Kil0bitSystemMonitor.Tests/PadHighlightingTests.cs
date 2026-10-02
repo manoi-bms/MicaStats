@@ -77,6 +77,25 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains(highlighter.HighlightLine(2).Sections, s => s.Offset == lineStart && s.Length == 4 && s.Color.Name == "KeyName");
         });
 
+        /// <summary>A quoted INI value hides a ; or # inside it: it is one string to its closing quote, and only a comment after it is a comment.</summary>
+        [Theory]
+        [InlineData("message = \"Hello ; world\"", "\"Hello ; world\"", null)]
+        [InlineData("x = 'a # b'", "'a # b'", null)]
+        [InlineData("path: \"C:\\a ; b\" ; note", "\"C:\\a ; b\"", "; note")]
+        public void Ini_quoted_values_hide_their_comment_marks(string line, string value, string? comment) => UiThread.Run(() =>
+        {
+            var sections = new DocumentHighlighter(new TextDocument(line), PadHighlighting.For(PadLanguages.ById("ini")!)!).HighlightLine(1).Sections;
+            int start = line.IndexOf(value, System.StringComparison.Ordinal);
+            Assert.Contains(sections, s => s.Offset == start && s.Length == value.Length && s.Color.Name == "String");
+            if (comment == null)
+            {
+                Assert.DoesNotContain(sections, s => s.Color.Name == "Comment");
+                return;
+            }
+            int at = line.LastIndexOf(comment, System.StringComparison.Ordinal);
+            Assert.Contains(sections, s => s.Offset == at && s.Length == comment.Length && s.Color.Name == "Comment");
+        });
+
         /// <summary>A yes/no/on/true word is Bool only as a whole value, never in the middle of text or a script block.</summary>
         [Theory]
         [InlineData("message: no data on disk")]
@@ -135,6 +154,8 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("ini", "key = value # note", "# note", "Comment")]
         [InlineData("ini", "color = #FF0000", "#FF0000", "String")]
         [InlineData("ini", "url = http://x/a;b#top", "http://x/a;b#top", "String")]
+        [InlineData("ini", "[it's]", "[it's]", "Section")]
+        [InlineData("ini", "it's = x", "it's", "KeyName")]
         [InlineData("yaml", "- item: x", "item", "KeyName")]
         [InlineData("yaml", "  - name: x", "name", "KeyName")]
         [InlineData("yaml", "name: MicaPad # note", "name", "KeyName")]

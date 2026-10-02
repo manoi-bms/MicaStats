@@ -10,6 +10,35 @@
   <RuleSet>
     <Span color="Directive" begin="^\#!" />
     <Span color="Comment" begin="(?&lt;=^|[\s;|&amp;(])\#" />
+    <!-- Heredocs. A span cannot refer back to its opening tag, so each common tag has its own span, which only a line holding that tag closes. Any other upper-case tag falls back to the generic span after them, which any upper-case line closes. -->
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?EOF(?![\w-])['&quot;]?" end="^\s*EOF\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?EOT(?![\w-])['&quot;]?" end="^\s*EOT\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?END(?![\w-])['&quot;]?" end="^\s*END\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?EOL(?![\w-])['&quot;]?" end="^\s*EOL\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?EOM(?![\w-])['&quot;]?" end="^\s*EOM\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?EOS(?![\w-])['&quot;]?" end="^\s*EOS\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?HEREDOC(?![\w-])['&quot;]?" end="^\s*HEREDOC\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?SQL(?![\w-])['&quot;]?" end="^\s*SQL\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?JSON(?![\w-])['&quot;]?" end="^\s*JSON\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?YAML(?![\w-])['&quot;]?" end="^\s*YAML\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?XML(?![\w-])['&quot;]?" end="^\s*XML\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?HTML(?![\w-])['&quot;]?" end="^\s*HTML\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?TEXT(?![\w-])['&quot;]?" end="^\s*TEXT\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?TXT(?![\w-])['&quot;]?" end="^\s*TXT\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?MSG(?![\w-])['&quot;]?" end="^\s*MSG\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?MESSAGE(?![\w-])['&quot;]?" end="^\s*MESSAGE\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?USAGE(?![\w-])['&quot;]?" end="^\s*USAGE\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?HELP(?![\w-])['&quot;]?" end="^\s*HELP\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?DATA(?![\w-])['&quot;]?" end="^\s*DATA\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?BODY(?![\w-])['&quot;]?" end="^\s*BODY\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?SCRIPT(?![\w-])['&quot;]?" end="^\s*SCRIPT\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?CONFIG(?![\w-])['&quot;]?" end="^\s*CONFIG\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?CONF(?![\w-])['&quot;]?" end="^\s*CONF\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?SH(?![\w-])['&quot;]?" end="^\s*SH\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?BASH(?![\w-])['&quot;]?" end="^\s*BASH\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?PY(?![\w-])['&quot;]?" end="^\s*PY\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?PYTHON(?![\w-])['&quot;]?" end="^\s*PYTHON\s*$" multiline="true" />
+    <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?MARKER(?![\w-])['&quot;]?" end="^\s*MARKER\s*$" multiline="true" />
     <Span color="String" begin="(?&lt;![&lt;\w])(?&lt;!\(\([^)\r\n]*)&lt;&lt;-?[ \t]*['&quot;]?[A-Z_][A-Z0-9_]*(?![\w-])['&quot;]?" end="^\s*[A-Z_][A-Z0-9_]*\s*$" multiline="true" />
     <Span color="String" begin="&quot;" end="&quot;" multiline="true">
       <RuleSet>

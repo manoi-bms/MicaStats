@@ -290,6 +290,35 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Empty(highlighter.HighlightLine(4).Sections);
         });
 
+        /// <summary>
+        /// A common tag's heredoc ends only on its own tag's line: a bare WARNING, END or COMMIT inside
+        /// is text, and the later Don't opens no string. A rare tag still ends on its own line.
+        /// </summary>
+        [Theory]
+        [InlineData("shell", "cat <<EOF\nWARNING\nEND\nDon't\nEOF\necho $HOME", "$HOME", "Variable")]
+        [InlineData("shell", "cat <<-'SQL'\n\tCOMMIT;\n\tCOMMIT\n\tDon't\n\tSQL\necho $HOME", "$HOME", "Variable")]
+        [InlineData("ruby", "sql = <<~SQL\n  SELECT 1;\n  COMMIT\n  Don't\nSQL\nx = nil", "nil", "Null")]
+        [InlineData("shell", "cat <<ZZTOP\nDon't\nZZTOP\necho $HOME", "$HOME", "Variable")]
+        public void A_heredoc_ends_only_on_its_own_tag_line(string languageId, string text, string part, string colorName) => UiThread.Run(() =>
+        {
+            var document = new TextDocument(text);
+            var highlighter = new DocumentHighlighter(document, PadHighlighting.For(PadLanguages.ById(languageId)!)!);
+            int last = document.LineCount;
+            highlighter.HighlightLine(1);
+            for (int n = 2; n < last; n++)   // the body and the closing tag line: all string
+            {
+                var line = document.GetLineByNumber(n);
+                Assert.True(highlighter.HighlightLine(n).Sections.Any(s => s.Offset == line.Offset && s.Length == line.Length && s.Color.Name == "String"),
+                            "line " + n + " is not all string");
+            }
+
+            var after = document.GetLineByNumber(last);
+            var sections = highlighter.HighlightLine(last).Sections;
+            int start = after.Offset + document.GetText(after).IndexOf(part, System.StringComparison.Ordinal);
+            Assert.Contains(sections, s => s.Offset == start && s.Length == part.Length && s.Color.Name == colorName);
+            Assert.DoesNotContain(sections, s => s.Color.Name == "String");
+        });
+
         [Theory]
         [InlineData("let d = b'\"';", "b'\"'")]
         [InlineData("let d = '\\\\';", "'\\\\'")]

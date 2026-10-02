@@ -19,6 +19,26 @@ namespace Kil0bitSystemMonitor.Tests
             public PixelFrame? Override;
             public int OverrideAfterDownScrolls = int.MaxValue;
             public int Top => _to;
+            public int LagMs, ScrollCalls;
+            private readonly List<(int Notches, int Left)> _pending = new();
+
+            /// <summary>Time passes: a lagging app applies its pending scrolls once their delay is over.</summary>
+            public void Tick(int ms)
+            {
+                for (int i = 0; i < _pending.Count; i++) _pending[i] = (_pending[i].Notches, _pending[i].Left - ms);
+                while (_pending.Count > 0 && _pending[0].Left <= 0)
+                {
+                    Apply(_pending[0].Notches);
+                    _pending.RemoveAt(0);
+                }
+            }
+
+            private void Apply(int notches)
+            {
+                _from = _to;
+                _to = Math.Clamp(_to + notches * Notch, 0, _content.Height - View);
+                _fresh = true;
+            }
 
             public FakePage(PixelFrame content, int top)
             {
@@ -38,10 +58,10 @@ namespace Kil0bitSystemMonitor.Tests
 
             public void Scroll(int notches)
             {
+                ScrollCalls++;
                 if (notches > 0) DownScrolls++;
-                _from = _to;
-                _to = Math.Clamp(_to + notches * Notch, 0, _content.Height - View);
-                _fresh = true;
+                if (LagMs > 0) _pending.Add((notches, LagMs));
+                else Apply(notches);
             }
         }
 
@@ -49,7 +69,8 @@ namespace Kil0bitSystemMonitor.Tests
         {
             public int Waits;
             public Func<bool> Cancelled = () => false;
-            public void Wait(int ms) => Waits += ms;
+            public Action<int>? OnWait;
+            public void Wait(int ms) { Waits += ms; OnWait?.Invoke(ms); }
         }
 
         private static bool Same(PixelFrame? a, PixelFrame b) => a != null && a.Width == b.Width && a.Height == b.Height && a.SameAs(b);
@@ -73,6 +94,65 @@ namespace Kil0bitSystemMonitor.Tests
             var r = Run(new FakePage(content, 900) { Animate = true }, new Env());
             Assert.Equal(ScrollStop.End, r.Stop);
             Assert.True(Same(r.Image, content));
+        }
+
+        [Fact]
+        public void A_half_way_frame_is_never_joined()
+        {
+            // With a step cap there is no later step to catch up, so a half-way frame would show in the result.
+            var content = ScrollStitcherTests.Page(2000);
+            var env = new Env();
+            var r = Run(new FakePage(content, 900) { Animate = true }, env, null, new ScrollCaptureOptions(MaxSteps: 3));
+            Assert.Equal(ScrollStop.MaxSteps, r.Stop);
+            Assert.NotNull(r.Image);
+            Assert.Equal(View + 3 * Notch, r.Image!.Height);
+            Assert.True(Same(r.Image, ScrollStitcherTests.View(content, 0, View + 3 * Notch)));
+            Assert.True(env.Waits > 0);
+        }
+
+        [Fact]
+        public void A_slow_app_is_waited_for_and_the_whole_page_is_captured()
+        {
+            var content = ScrollStitcherTests.Page(2000);
+            var page = new FakePage(content, 900) { LagMs = 120 };
+            var env = new Env { OnWait = page.Tick };
+            var r = Run(page, env);
+            Assert.Equal(ScrollStop.End, r.Stop);
+            Assert.True(Same(r.Image, content));
+        }
+
+        [Fact]
+        public void A_page_that_never_moves_ends_after_the_confirm_wait()
+        {
+            var content = ScrollStitcherTests.Page(2000);
+            var page = new FakePage(content, 0);
+            var env = new Env();
+            var r = Run(page, env, null, new ScrollCaptureOptions(EndConfirmMs: 400));
+            Assert.Equal(ScrollStop.End, r.Stop);
+            Assert.True(env.Waits >= 400);
+            var flat = new FakePage(ScrollStitcherTests.Page(View), 0);
+            var env2 = new Env();
+            Assert.Equal(ScrollStop.Unscrollable, Run(flat, env2).Stop);
+            Assert.True(env2.Waits >= 400);
+        }
+
+        [Fact]
+        public void A_cancel_during_a_settle_is_honoured_before_the_next_scroll()
+        {
+            var content = ScrollStitcherTests.Page(3000);
+            var page = new FakePage(content, 0);
+            var env = new Env();
+            int callsAtCancel = -1;
+            env.Cancelled = () =>
+            {
+                if (env.Waits < 1000) return false;
+                if (callsAtCancel < 0) callsAtCancel = page.ScrollCalls;
+                return true;
+            };
+            var r = Run(page, env);
+            Assert.Equal(ScrollStop.Cancelled, r.Stop);
+            Assert.True(callsAtCancel > 0);
+            Assert.Equal(callsAtCancel, page.ScrollCalls);
         }
 
         [Fact]

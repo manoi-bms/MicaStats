@@ -21,7 +21,9 @@ namespace Kil0bitSystemMonitor.Services.Capture
         int MaxTopNotches = 300,
         int TopNotchesPerStep = 10,
         int SettlePollMs = 50,
-        int SettleTimeoutMs = 800);
+        int SettleTimeoutMs = 800,
+        int ScrollSettleFloorMs = 150,
+        int EndConfirmMs = 400);
 
     /// <summary>
     /// The scrolling capture loop (scrolling capture spec 3): scroll to the top, then step down
@@ -56,10 +58,17 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
                 _target.Scroll(-_o.TopNotchesPerStep);
                 sent += _o.TopNotchesPerStep;
-                PixelFrame after = Settle();
-                bool moved = !after.SameAs(top);
+                PixelFrame after = SettleAfterScroll();
+                if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
+                if (after.SameAs(top))
+                {
+                    // A slow app may not have reacted yet: wait once more before calling it the top.
+                    _wait(_o.EndConfirmMs);
+                    after = Settle();
+                    if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
+                    if (after.SameAs(top)) break;
+                }
                 top = after;
-                if (!moved) break;
             }
             if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
 
@@ -70,8 +79,19 @@ namespace Kil0bitSystemMonitor.Services.Capture
             {
                 _target.Scroll(1);
                 steps++;
-                PixelFrame next = Settle();
-                switch (stitcher.Add(next, out _))
+                PixelFrame next = SettleAfterScroll();
+                if (_cancelled()) return Done(stitcher, ScrollStop.Cancelled, frames);
+                StitchStep step = stitcher.Add(next, out _);
+                if (step == StitchStep.Unchanged)
+                {
+                    // Confirm the end: a slow app may still be reacting to the wheel.
+                    _wait(_o.EndConfirmMs);
+                    PixelFrame again = Settle();
+                    if (_cancelled()) return Done(stitcher, ScrollStop.Cancelled, frames);
+                    if (!again.SameAs(next))
+                        step = stitcher.Add(again, out _);
+                }
+                switch (step)
                 {
                     case StitchStep.Unchanged:
                         return steps == 1
@@ -93,12 +113,18 @@ namespace Kil0bitSystemMonitor.Services.Capture
         private ScrollCaptureResult Done(ScrollStitcher s, ScrollStop stop, int frames)
             => new(s.Result(_o.MaxHeight), stop, frames);
 
-        /// <summary>Grab until two grabs agree, or the settle timeout has passed in waiting.</summary>
+        private PixelFrame SettleAfterScroll()
+        {
+            _wait(_o.ScrollSettleFloorMs);
+            return Settle();
+        }
+
+        /// <summary>Grab until two grabs agree, or the settle timeout has passed in waiting. Stops early when cancelled.</summary>
         private PixelFrame Settle()
         {
             PixelFrame last = _target.Grab();
             int waited = 0;
-            while (waited < _o.SettleTimeoutMs)
+            while (waited < _o.SettleTimeoutMs && !_cancelled())
             {
                 _wait(_o.SettlePollMs);
                 waited += _o.SettlePollMs;

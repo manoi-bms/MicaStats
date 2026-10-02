@@ -4,11 +4,11 @@
 
 **A compact, modern system monitor designed for Windows 11.**
 
-Monitor CPU, memory, GPU, network, and disk activity through a clean taskbar overlay and a menu-style Windows 11 dashboard — with a CPU-Z-style hardware inspector and a full screen-capture and annotation suite built in.
+Monitor CPU, memory, GPU, network, disk and battery through a clean taskbar overlay and a menu-style Windows 11 dashboard — with **MicaPad**, an encrypted notepad that saves itself and searches every note by words or by meaning, **Ask MicaStats** for plain-language answers about your PC, diagnostics for slowdowns, boot and battery, a CPU-Z-style hardware inspector and a full screen-capture and annotation suite built in.
 
 **English** · [ภาษาไทย](#thai)
 
-[Features](#features) · [Screenshots](#screenshots) · [Installation](#installation) · [Build from source](#build-from-source) · [Contributing](#contributing) · [Credits](#credits-and-attribution)
+[What's new](#whats-new) · [Features](#features) · [MicaPad](#micapad-a-notepad-that-never-asks-to-save) · [Screenshots](#screenshots) · [Installation](#installation) · [Build from source](#build-from-source) · [Contributing](#contributing) · [Credits](#credits-and-attribution)
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2011-0078D4?style=flat-square)
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?style=flat-square)
@@ -40,6 +40,26 @@ I recently got a new notebook that came preinstalled with Windows 11. Once I fin
 I also have a MacBook, and on macOS [iStat Menus](https://bjango.com/mac/istatmenus/) has long been my favorite utility — compact metric modules in the menu bar, each with its own beautifully dense dropdown. Nothing on Windows felt quite like it.
 
 So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI on Windows: the stacked label-over-value taskbar modules, the per-section hover dropdowns, the ring gauges, the mirrored up/down network graphs, and the two-tone cyan/red data palette are all modeled on the iStat Menus experience, rebuilt natively for the Windows 11 taskbar.
+
+---
+
+## What's New
+
+**Since v1.13.0** — coming in the next release:
+
+* **Search every note.** MicaPad's new **Search notes** pane (**Ctrl+Shift+F**) finds passages in every note, open or closed. It searches by words, offline and with Thai, and, once you turn it on, by meaning through your own embedding server, reordered by your own reranker. [More below](#search-notes)
+* **More languages for code.** TypeScript, shell, Kotlin, Go, Rust, Ruby, Pascal/Delphi and Dockerfile are colored, function names get their own color, and fenced code blocks have a **Copy** button
+* **Colors are back for INI, YAML, batch and log files**, which had shown none since v1.12
+* **The overlay survives an Explorer restart.** When `explorer.exe` restarts or crashes, the overlay attaches itself to the new taskbar within a second, stays on top of it and keeps updating, so there is no need to restart MicaStats
+
+**v1.13.0** — MicaPad grew into a full notes app:
+* encrypted notes with a PIN-protected credential vault
+* Markdown the way Wiki.js shows it
+* Mermaid, Graphviz and Markmap diagrams and MathJax math, drawn on this PC
+* image previews
+* notepad4-style editing tools
+
+Ask MicaStats became a chat. The [Releases](https://github.com/manoi-bms/MicaStats/releases) page has the notes for every version.
 
 ---
 
@@ -151,30 +171,56 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 
 ### MicaPad: a notepad that never asks to save
 
+Open it from the overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, from the Start menu, or from Explorer's **Open with**.
+
+#### Notes that keep themselves
+
 * **Every note saves itself** a second after you stop typing — no file names, no Save button to remember
 * **Restart Windows any time**: no "Save changes?" dialogs one by one; with **Launch on Startup** on, every tab comes back after you sign in, with the caret where you left it
 * **History for every note** — a version is kept each time you pause after a minute of changes; preview and restore any of them, and Ctrl+Z undoes a restore
+* **Compare with current**: see what changed since a history version, line by line — removed lines in red, added in green
 * **Closing a tab never asks** — Ctrl+Shift+T or the closed-notes list brings it back; deleting sends it to the Recycle Bin
 * **Real files stay safe**: edits to an opened file are always kept, but the file itself changes only on Ctrl+S, in its original encoding (Thai TIS-620 / cp874 included) and line endings
-* Find and replace with regular expressions, go to line, zoom, word wrap
-* **Search every note** (**Ctrl+Shift+F**) by words (offline, Thai included) and, optionally, by meaning with your own embedding and reranker servers; a result opens with its passage selected
-* Open it from the overlay's right-click menu, **Ctrl+Alt+N** anywhere, the Start menu, or Explorer's **Open with**
-* **Light or dark**: MicaPad has its own theme switch (the sun and moon button), independent of the rest of MicaStats
-* **Right-click menus** in the text (cut, copy, paste, find) and on tabs (rename, close others, copy the file path, show in folder)
-* **Colors for code and logs**: JSON, XML, C#, JavaScript, TypeScript, PowerShell, shell, Python, SQL, Java, Kotlin, Go, Rust, Ruby, Pascal/Delphi, Dockerfile, INI, YAML, batch and log files are colored in both themes (fenced code and Markdown inside a fence too); the status bar shows the language and changes it per tab
-* **Markdown the way Wiki.js shows it**: headings, tables (with **Format table** to line them up), callouts, footnotes, `:emoji:`, `<kbd>` keys and more, styled in place with the markers still visible; prose in a reading font while code and tables keep the editor font, and fenced code colored by its language, with a **Copy** button at the top-right of the block under the mouse
+* **More than one window** (**Ctrl+Shift+N**), each with its own tabs, place and zoom; closing one moves its tabs into another, so no note is ever closed that way
+* **Drag tabs** to reorder them (the order is kept), and **F11** for full screen
+
+#### Search notes
+
+* **Ctrl+Shift+F**, or the magnifier in the tab bar, opens a **Search notes** pane beside the text. It searches every note, open or closed
+* **By words**, built in and offline: error codes, IP addresses and IDs match exactly (`ERR-1042`, `10.0.0.1`), and Thai is found without needing spaces between words
+* **By meaning**, once you turn on **Settings → MicaPad → Search → Search by meaning**. Passages go to your own embedding server in the OpenAI format (`/v1/embeddings`), which TEI, vLLM, Infinity, LiteLLM, Ollama and others serve.
+  * **Rerank results** puts the most relevant first, using a reranker in the Cohere/Jina format (`/rerank`).
+  * Words and meaning are combined, so an exact code is never lost.
+* Each result shows the note, its line and the passage, with the matching words in bold. **Enter** or a click opens the note with the passage selected, reopening it first if it was closed
+* A status line says how each search ran and names any server problem, such as unreachable, key refused or timed out. Search then falls back to words and keeps working
+* **Off by default and private**:
+  * Only passages and your query are sent, never whole files. A stored credential is sent only as `[credential]`.
+  * Keys are kept encrypted for your Windows account.
+  * The vectors are stored encrypted beside your notes and deleted when you turn meaning search off.
+
+#### Markdown, code and diagrams
+
+* **Markdown the way Wiki.js shows it**: headings, tables (with **Format table** to line them up), callouts, footnotes, `:emoji:`, `<kbd>` keys and more, styled in place with the markers still visible. Prose is in a reading font while code and tables keep the editor font, and fenced code is colored by its language, with a **Copy** button at the top-right of the block under the mouse
+* **Colors for code and logs**: JSON, XML, C#, JavaScript, TypeScript, PowerShell, shell, Python, SQL, Java, Kotlin, Go, Rust, Ruby, Pascal/Delphi, Dockerfile, INI, YAML, batch and log files are colored in both themes, including fenced code and Markdown inside a fence. The status bar shows the language and lets you change it per tab
 * **Diagrams and math**: Mermaid, Graphviz and Markmap blocks, and TeX math (`$$` blocks, with `\ce{}` chemistry), drawn as a picture under the block on this PC; other diagram types through Kroki once you turn it on
 * **Image previews**: `![alt](picture.png =200x)` shows the picture under its line; images from the web load only once you turn that on
 * **Folding**: collapse braces, tags, Markdown sections and code blocks from the margin
-* **Editing helpers**: auto-closing brackets and quotes, notepad4-style line operations, bookmarks, and every occurrence of the selected word marked
-* **Links**: web and mail addresses are underlined and open with **Ctrl+Click**; nothing else in a note is ever opened
-* **Drag tabs** to reorder them (the order is kept), and **F11** for full screen
 * **Copy as RTF** pastes the note, or the selection, into Word or Outlook with its colors, bold and heading sizes
+
+#### Editing
+
+* Find and replace with regular expressions, go to line, zoom, word wrap
+* **Editing helpers**: auto-closing brackets and quotes, notepad4-style line operations, bookmarks, and every occurrence of the selected word marked
+* **Right-click menus** in the text (cut, copy, paste, find) and on tabs (rename, close others, copy the file path, show in folder)
+* **Links**: web and mail addresses are underlined and open with **Ctrl+Click**; nothing else in a note is ever opened
 * **Tools**: Base64, number bases, GUIDs, timestamps, and a calculator that works the sum out itself — nothing in a note is ever run; each is one **Ctrl+Z**
-* **Compare with current**: see what changed since a history version, line by line — removed lines in red, added in green
-* **More than one window** (**Ctrl+Shift+N**), each with its own tabs, place and zoom; closing one moves its tabs into another, so no note is ever closed that way
-* **Credentials**: select a password or token and choose **Store as credential**; it becomes a labeled pill, revealed or copied only with your PIN
-* Notes are encrypted for your Windows account and kept in `%APPDATA%\MicaStats\MicaPad`
+* **Light or dark**: MicaPad has its own theme switch (the sun and moon button), independent of the rest of MicaStats
+
+#### Privacy
+
+* **Notes are encrypted** for your Windows account (AES-GCM with a key protected by Windows DPAPI) and kept in `%APPDATA%\MicaStats\MicaPad`. Another account, or the files copied to another PC, cannot read them
+* **Credentials**: select a password or token and choose **Store as credential**. It becomes a labeled pill, revealed or copied only with your PIN
+* **Nothing leaves the PC until you turn it on**: web images, Kroki diagrams and search by meaning are each off until switched on in **Settings → MicaPad**
 
 ### Ask MicaStats: answers about your PC
 
@@ -208,6 +254,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * Automatically hide it during full-screen applications
 * Auto-avoid the Start button: the stacked overlay slides into free taskbar space, squeezes its sparklines to fill the remaining corridor exactly, and only then sheds content (graphs, then trailing modules behind a ⋯ marker) so the centred Windows 11 Start button, widgets button and tray never end up underneath it
 * Recovers automatically if a saved position ends up off-screen — for example in the gap between mismatched monitors, or on a display that has since been unplugged
+* **Survives an Explorer restart**: if `explorer.exe` restarts or crashes, the overlay attaches itself to the new taskbar, stays on top of it and keeps updating — no need to restart MicaStats
 * Right-click for settings, capture commands, and **Show Desktop** — the same minimise-everything toggle as the taskbar's own corner
 
 ### Automatic updates
@@ -326,7 +373,15 @@ Compared with the original kil0bit System Monitor, MicaStats focuses on a differ
 * Faster access to individual monitoring categories
 * Cleaner separation between summary information and detailed metrics
 * A more consistent appearance across the taskbar overlay and settings dashboard
-* Additional tooling that the upstream project does not include: the hardware inspector, the screen-capture suite, and the diagnostics log
+* Additional tooling that the upstream project does not include:
+  * MicaPad, an encrypted notepad with Markdown, diagrams and search
+  * Ask MicaStats
+  * Diagnostics for slowdowns, boot, battery and alerts
+  * the process list and the runaway-search watchdog
+  * the hardware inspector
+  * the screen-capture suite
+  * automatic updates
+  * the diagnostics log
 
 The underlying monitoring functionality remains derived from the original project, while the interface and user experience are being developed independently.
 
@@ -492,6 +547,8 @@ The published application will be created in the `publish` directory.
 | Text comparison     | DiffPlex (Apache-2.0), for MicaPad's compare |
 | Diagrams and math   | Microsoft Edge WebView2 (hidden, offline) with Mermaid, Viz.js/Graphviz, Markmap and MathJax, for MicaPad |
 | Emoji names         | gemoji (MIT), for MicaPad                    |
+| Note encryption     | AES-GCM with a key protected by Windows DPAPI, for MicaPad |
+| Note search         | Built-in BM25 keyword index; optional embedding and rerank servers over HTTP (OpenAI `/embeddings`, Cohere/Jina `/rerank` formats), for MicaPad |
 | AI                  | Anthropic .NET SDK, Microsoft.Extensions.AI, MCP C# SDK (ModelContextProtocol.Core) |
 | Windows integration | Win32 APIs                                   |
 | Performance data    | Windows performance counters and system APIs |
@@ -519,6 +576,8 @@ After launching MicaStats:
 10. Enable **Launch on Startup** when MicaStats should start automatically with Windows.
 
 Click the overlay for the full stats panel, hover a module for its own dropdown, and right-click for settings, capture commands and common overlay actions.
+
+Press **Ctrl+Alt+N** for MicaPad, then **Ctrl+Shift+F** inside it to search every note. Once the assistant is on in **Settings → AI**, **Ctrl+Alt+A** asks MicaStats a question.
 
 ---
 
@@ -551,6 +610,14 @@ Unsigned community applications can trigger SmartScreen. Download builds only fr
 ### The overlay moves unexpectedly
 
 Place the overlay in the desired location and enable **Lock Position**.
+
+### The overlay vanished after Explorer restarted
+
+From the next release, MicaStats attaches the overlay to the new taskbar by itself within a second, and the diagnostics log records "Explorer's taskbar came back". On v1.13.0 and earlier, quit MicaStats and start it again.
+
+### MicaPad search says "Words only"
+
+Search by meaning could not use your embedding server: it was unreachable, refused the key or timed out, and the rest of the status line says which. Results still come from words. Check the server address, model and key with **Test** in **Settings → MicaPad → Search**.
 
 ### Something else looks wrong
 
@@ -666,11 +733,11 @@ The `LICENSE` file must retain the original kil0bit System Monitor copyright not
 
 **โปรแกรมมอนิเตอร์ระบบขนาดกะทัดรัด ออกแบบมาสำหรับ Windows 11 โดยเฉพาะ**
 
-ดูการทำงานของ CPU, หน่วยความจำ, GPU, เครือข่าย และดิสก์ ได้จากโอเวอร์เลย์บนทาสก์บาร์และแดชบอร์ดสไตล์เมนูของ Windows 11 — พร้อมเครื่องมือตรวจสอบฮาร์ดแวร์แบบ CPU-Z และชุดจับภาพหน้าจอพร้อมเครื่องมือมาร์กอัปในตัว
+ดูการทำงานของ CPU, หน่วยความจำ, GPU, เครือข่าย, ดิสก์ และแบตเตอรี่ ได้จากโอเวอร์เลย์บนทาสก์บาร์และแดชบอร์ดสไตล์เมนูของ Windows 11 — พร้อม **MicaPad** โน้ตแพดที่เข้ารหัส บันทึกเอง และค้นหาทุกโน้ตได้ทั้งด้วยคำและตามความหมาย, **Ask MicaStats** ถามเรื่องเครื่องด้วยภาษาธรรมดา, การวินิจฉัยเครื่องช้า เวลาบูต และแบตเตอรี่, เครื่องมือตรวจสอบฮาร์ดแวร์แบบ CPU-Z และชุดจับภาพหน้าจอพร้อมเครื่องมือมาร์กอัปในตัว
 
 [English](#micastats) · **ภาษาไทย**
 
-[คุณสมบัติ](#คุณสมบัติ) · [ภาพตัวอย่าง](#ภาพตัวอย่าง) · [การติดตั้ง](#การติดตั้ง) · [คอมไพล์จากซอร์สโค้ด](#การคอมไพล์จากซอร์สโค้ด) · [ร่วมพัฒนา](#การร่วมพัฒนา) · [เครดิต](#เครดิตและการอ้างอิง)
+[มีอะไรใหม่](#มีอะไรใหม่) · [คุณสมบัติ](#คุณสมบัติ) · [MicaPad](#micapad-โน้ตแพดที่ไม่เคยถามให้บันทึก) · [ภาพตัวอย่าง](#ภาพตัวอย่าง) · [การติดตั้ง](#การติดตั้ง) · [คอมไพล์จากซอร์สโค้ด](#การคอมไพล์จากซอร์สโค้ด) · [ร่วมพัฒนา](#การร่วมพัฒนา) · [เครดิต](#เครดิตและการอ้างอิง)
 
 </div>
 
@@ -696,6 +763,28 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 ผมใช้ MacBook ด้วย และบน macOS โปรแกรมโปรดของผมคือ [iStat Menus](https://bjango.com/mac/istatmenus/) — โมดูลข้อมูลกะทัดรัดบนเมนูบาร์ แต่ละอันมีดรอปดาวน์ของตัวเองที่อัดแน่นและสวยงาม แต่บน Windows ยังไม่มีอะไรให้ความรู้สึกแบบนั้น
 
 ผมจึงใช้ [Claude Code](https://claude.com/claude-code) สร้าง UX/UI แบบนั้นขึ้นมาใหม่บน Windows ทั้งโมดูลบนทาสก์บาร์ที่วางป้ายกำกับซ้อนบนค่าตัวเลข, ดรอปดาวน์แยกตามหมวดเมื่อชี้เมาส์ค้าง, เกจวงแหวน, กราฟเครือข่ายขึ้น/ลงแบบสะท้อนกัน และชุดสีข้อมูลสองโทน (ฟ้า/แดง) ทั้งหมดถอดแบบจาก iStat Menus แล้วสร้างขึ้นใหม่ให้เป็นของ Windows 11 โดยแท้
+
+---
+
+## มีอะไรใหม่
+
+**หลัง v1.13.0** (จะมาในรีลีสถัดไป):
+
+* **ค้นหาทุกโน้ต** แผง **Search notes** ใหม่ของ MicaPad (**Ctrl+Shift+F**) ค้นหาข้อความในทุกโน้ตทั้งที่เปิดอยู่และปิดไปแล้ว
+  * ค้นด้วยคำได้แบบออฟไลน์ และรองรับภาษาไทย
+  * เมื่อเปิดใช้ ค้นตามความหมายผ่านเซิร์ฟเวอร์ embedding ของคุณเอง แล้วเรียงลำดับใหม่ด้วย reranker ของคุณเอง [อ่านต่อด้านล่าง](#ค้นหาโน้ต)
+* **รองรับภาษาโปรแกรมเพิ่มขึ้น** TypeScript, shell, Kotlin, Go, Rust, Ruby, Pascal/Delphi และ Dockerfile แสดงสีได้แล้ว ชื่อฟังก์ชันมีสีของตัวเอง และบล็อกโค้ดมีปุ่ม **Copy**
+* **ไฟล์ INI, YAML, batch และไฟล์ล็อกกลับมามีสีอีกครั้ง** หลังจากไม่มีสีมาตั้งแต่ v1.12
+* **โอเวอร์เลย์อยู่รอดเมื่อ Explorer รีสตาร์ต** เมื่อ `explorer.exe` รีสตาร์ตหรือแครช โอเวอร์เลย์จะเกาะทาสก์บาร์ใหม่เองภายในหนึ่งวินาที อยู่เหนือทาสก์บาร์และอัปเดตค่าต่อไป ไม่ต้องเปิด MicaStats ใหม่
+
+**v1.13.0** — MicaPad กลายเป็นแอปจดโน้ตเต็มรูปแบบ:
+* โน้ตเข้ารหัส พร้อมตู้เก็บรหัสลับที่ป้องกันด้วย PIN
+* Markdown แบบที่ Wiki.js แสดง
+* แผนภาพ Mermaid, Graphviz, Markmap และสมการ MathJax ที่วาดบนเครื่องนี้
+* ตัวอย่างรูปภาพ
+* เครื่องมือแก้ไขแบบ notepad4
+
+ส่วน Ask MicaStats กลายเป็นหน้าต่างแชต รายละเอียดของทุกเวอร์ชันอยู่ที่หน้า [Releases](https://github.com/manoi-bms/MicaStats/releases)
 
 ---
 
@@ -783,30 +872,57 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 
 ### MicaPad: โน้ตแพดที่ไม่เคยถามให้บันทึก
 
+เปิดได้จากเมนูคลิกขวาของโอเวอร์เลย์, กด **Ctrl+Alt+N** จากที่ใดก็ได้, เมนู Start หรือ **Open with** ใน Explorer
+
+#### โน้ตที่ดูแลตัวเอง
+
 * **บันทึกเองเสมอ** หนึ่งวินาทีหลังหยุดพิมพ์ ไม่ต้องตั้งชื่อไฟล์ ไม่ต้องจำว่าต้องกดบันทึก
 * **รีสตาร์ต Windows ได้ทุกเมื่อ** ไม่มีหน้าต่าง "Save changes?" ให้กดทีละอัน เมื่อเปิดตัวเลือกเริ่มทำงานพร้อม Windows ไว้ ทุกแท็บจะกลับมาหลังลงชื่อเข้าใช้ พร้อมตำแหน่งเคอร์เซอร์เดิม
 * **ประวัติของทุกโน้ต** เก็บเวอร์ชันไว้ทุกครั้งที่หยุดพิมพ์หลังแก้ไขมาครบหนึ่งนาที ดูย้อนหลังและกู้คืนได้ และกด Ctrl+Z เพื่อยกเลิกการกู้คืน
+* **Compare with current**: ดูว่าอะไรเปลี่ยนไปจากเวอร์ชันในประวัติทีละบรรทัด บรรทัดที่ถูกลบเป็นสีแดง บรรทัดที่เพิ่มเป็นสีเขียว
 * **ปิดแท็บโดยไม่ถาม** เปิดกลับได้ด้วย Ctrl+Shift+T หรือจากรายการโน้ตที่ปิดแล้ว โน้ตที่ลบจะไปอยู่ในถังรีไซเคิล
 * **ไฟล์จริงปลอดภัย** การแก้ไขไฟล์ที่เปิดอยู่ถูกเก็บไว้เสมอ แต่ตัวไฟล์จะเปลี่ยนเมื่อกด Ctrl+S เท่านั้น โดยคงการเข้ารหัสเดิม (รวมถึง TIS-620 / cp874) และรูปแบบการขึ้นบรรทัดเดิม
-* ค้นหาและแทนที่ด้วย regular expression, ไปยังบรรทัด, ซูม, ตัดบรรทัดอัตโนมัติ
-* **ค้นหาทุกโน้ต** (**Ctrl+Shift+F**) ด้วยคำ (ทำงานออฟไลน์ รองรับภาษาไทย) และเลือกค้นหาตามความหมายได้ด้วยเซิร์ฟเวอร์ embedding และ reranker ของคุณเอง ผลลัพธ์จะเปิดโน้ตพร้อมเลือกข้อความตรงนั้นไว้
-* เปิดได้จากเมนูคลิกขวาของโอเวอร์เลย์, **Ctrl+Alt+N** จากที่ใดก็ได้, เมนู Start หรือ **Open with** ใน Explorer
-* **ธีมสว่างหรือมืด**: MicaPad มีปุ่มสลับธีมของตัวเอง (ปุ่มดวงอาทิตย์และพระจันทร์) โดยส่วนอื่นของ MicaStats ไม่เปลี่ยน
-* **เมนูคลิกขวา** ในเนื้อความ (ตัด คัดลอก วาง ค้นหา) และบนแท็บ (เปลี่ยนชื่อ ปิดแท็บอื่น คัดลอกพาธไฟล์ เปิดโฟลเดอร์ที่เก็บไฟล์)
-* **สีสำหรับโค้ดและล็อก**: ไฟล์ JSON, XML, C#, JavaScript, TypeScript, PowerShell, shell, Python, SQL, Java, Kotlin, Go, Rust, Ruby, Pascal/Delphi, Dockerfile, INI, YAML, batch และไฟล์ล็อก แสดงสีได้ทั้งธีมสว่างและมืด (รวมโค้ดในบล็อก fence และ Markdown ใน fence) ภาษาแสดงที่แถบสถานะและเปลี่ยนได้ทีละแท็บ
-* **Markdown แบบที่ Wiki.js แสดง**: หัวข้อ ตาราง (พร้อมคำสั่ง **Format table** จัดคอลัมน์ให้ตรง) callout เชิงอรรถ `:emoji:` ปุ่ม `<kbd>` และอื่น ๆ แสดงผลตามรูปแบบทันทีโดยยังเห็นเครื่องหมาย เนื้อความใช้ฟอนต์สำหรับอ่าน ส่วนโค้ดและตารางใช้ฟอนต์ของตัวแก้ไข และบล็อกโค้ดมีสีตามภาษา พร้อมปุ่ม **Copy** ที่มุมขวาบนของบล็อกเมื่อชี้เมาส์ เพื่อคัดลอกโค้ดในบล็อก
+* **หลายหน้าต่าง** (**Ctrl+Shift+N**) แต่ละหน้าต่างมีแท็บ ตำแหน่ง และการซูมของตัวเอง เมื่อปิดหน้าต่างหนึ่ง แท็บจะย้ายไปอยู่อีกหน้าต่าง จึงไม่มีโน้ตใดถูกปิดไปด้วย
+* **ลากแท็บ** เพื่อจัดลำดับใหม่ (ลำดับถูกจำไว้) และกด **F11** เพื่อแสดงเต็มจอ
+
+#### ค้นหาโน้ต
+
+* กด **Ctrl+Shift+F** หรือปุ่มแว่นขยายบนแถบแท็บ เพื่อเปิดแผง **Search notes** ข้างเนื้อความ ค้นหาได้ในทุกโน้ตทั้งที่เปิดอยู่และปิดไปแล้ว
+* **ค้นด้วยคำ** มีในตัวและทำงานออฟไลน์ รหัสข้อผิดพลาด ที่อยู่ IP และเลขประจำตัวตรงกันแบบพอดีคำ (`ERR-1042`, `10.0.0.1`) และหาคำภาษาไทยเจอได้โดยไม่ต้องเว้นวรรค
+* **ค้นตามความหมาย** เมื่อเปิด **Settings → MicaPad → Search → Search by meaning**
+  * ข้อความบางส่วนจะถูกส่งไปยังเซิร์ฟเวอร์ embedding ของคุณเองในรูปแบบ OpenAI (`/v1/embeddings`) ซึ่ง TEI, vLLM, Infinity, LiteLLM, Ollama และอื่น ๆ รองรับ
+  * **Rerank results** เรียงผลที่เกี่ยวข้องที่สุดขึ้นก่อน ด้วย reranker ในรูปแบบ Cohere/Jina (`/rerank`)
+  * ผลจากคำและจากความหมายถูกรวมกัน รหัสที่ตรงกันพอดีจึงไม่หายไป
+* ผลแต่ละรายการแสดงชื่อโน้ต บรรทัด และข้อความช่วงนั้นพร้อมคำที่ตรงกันเป็นตัวหนา กด **Enter** หรือคลิกเพื่อเปิดโน้ตพร้อมเลือกข้อความช่วงนั้นไว้ ถ้าโน้ตปิดอยู่จะเปิดกลับมาให้
+* บรรทัดสถานะบอกว่าการค้นหาแต่ละครั้งทำงานอย่างไร และระบุปัญหาของเซิร์ฟเวอร์ (ติดต่อไม่ได้ ปฏิเสธคีย์ หรือหมดเวลา) แล้วค้นด้วยคำต่อไปโดยไม่สะดุด
+* **ปิดไว้เป็นค่าเริ่มต้นและเป็นส่วนตัว**:
+  * ส่งเฉพาะข้อความบางส่วนกับคำค้นของคุณ ไม่ส่งทั้งไฟล์ และรหัสลับที่เก็บไว้จะถูกส่งเป็น `[credential]` เท่านั้น
+  * คีย์ถูกเข้ารหัสสำหรับบัญชี Windows ของคุณ
+  * เวกเตอร์ถูกเก็บแบบเข้ารหัสไว้ข้างโน้ต และถูกลบเมื่อปิดการค้นหาตามความหมาย
+
+#### Markdown โค้ด และแผนภาพ
+
+* **Markdown แบบที่ Wiki.js แสดง**: หัวข้อ ตาราง (พร้อมคำสั่ง **Format table** จัดคอลัมน์ให้ตรง) callout เชิงอรรถ `:emoji:` ปุ่ม `<kbd>` และอื่น ๆ แสดงผลตามรูปแบบทันทีโดยยังเห็นเครื่องหมาย เนื้อความใช้ฟอนต์สำหรับอ่าน ส่วนโค้ดและตารางใช้ฟอนต์ของตัวแก้ไข และบล็อกโค้ดมีสีตามภาษา พร้อมปุ่ม **Copy** ที่มุมขวาบนของบล็อกเมื่อชี้เมาส์
+* **สีสำหรับโค้ดและล็อก**: ไฟล์ JSON, XML, C#, JavaScript, TypeScript, PowerShell, shell, Python, SQL, Java, Kotlin, Go, Rust, Ruby, Pascal/Delphi, Dockerfile, INI, YAML, batch และไฟล์ล็อก แสดงสีได้ทั้งธีมสว่างและมืด รวมถึงโค้ดในบล็อก fence และ Markdown ใน fence ภาษาแสดงที่แถบสถานะและเปลี่ยนได้ทีละแท็บ
 * **แผนภาพและสมการ**: บล็อก Mermaid, Graphviz และ Markmap และสมการ TeX (บล็อก `$$` รวมถึงสูตรเคมี `\ce{}`) วาดเป็นภาพใต้บล็อกบนเครื่องนี้ แผนภาพชนิดอื่นวาดผ่าน Kroki เมื่อเปิดใช้
 * **ตัวอย่างรูปภาพ**: `![alt](picture.png =200x)` แสดงรูปใต้บรรทัดนั้น รูปจากเว็บจะโหลดเฉพาะเมื่อเปิดใช้
 * **ย่อ/ขยายโค้ด**: ย่อส่วนในวงเล็บปีกกา แท็ก หัวข้อ Markdown และบล็อกโค้ดได้จากขอบซ้าย
-* **ตัวช่วยแก้ไข**: ปิดวงเล็บและเครื่องหมายคำพูดอัตโนมัติ คำสั่งจัดการบรรทัดแบบ notepad4 บุ๊กมาร์ก และไฮไลต์คำเดียวกันทั้งหมดเมื่อเลือกคำ
-* **ลิงก์**: ที่อยู่เว็บและอีเมลมีขีดเส้นใต้ และเปิดได้ด้วย **Ctrl+Click** นอกจากนั้นไม่มีสิ่งใดในโน้ตถูกเปิดเลย
-* **ลากแท็บ** เพื่อจัดลำดับใหม่ (ลำดับถูกจำไว้) และกด **F11** เพื่อแสดงเต็มจอ
 * **Copy as RTF** คัดลอกโน้ตหรือส่วนที่เลือกไปวางใน Word หรือ Outlook พร้อมสี ตัวหนา และขนาดหัวข้อ
+
+#### การแก้ไข
+
+* ค้นหาและแทนที่ด้วย regular expression, ไปยังบรรทัด, ซูม, ตัดบรรทัดอัตโนมัติ
+* **ตัวช่วยแก้ไข**: ปิดวงเล็บและเครื่องหมายคำพูดอัตโนมัติ คำสั่งจัดการบรรทัดแบบ notepad4 บุ๊กมาร์ก และไฮไลต์คำเดียวกันทั้งหมดเมื่อเลือกคำ
+* **เมนูคลิกขวา** ในเนื้อความ (ตัด คัดลอก วาง ค้นหา) และบนแท็บ (เปลี่ยนชื่อ ปิดแท็บอื่น คัดลอกพาธไฟล์ เปิดโฟลเดอร์ที่เก็บไฟล์)
+* **ลิงก์**: ที่อยู่เว็บและอีเมลมีขีดเส้นใต้ และเปิดได้ด้วย **Ctrl+Click** นอกจากนั้นไม่มีสิ่งใดในโน้ตถูกเปิดเลย
 * **เครื่องมือ**: Base64 แปลงเลขฐาน GUID เวลาปัจจุบัน และเครื่องคิดเลขที่คำนวณเอง ไม่มีสิ่งใดในโน้ตถูกรันเลย ทุกคำสั่งย้อนกลับได้ด้วย **Ctrl+Z** ครั้งเดียว
-* **Compare with current**: ดูว่าอะไรเปลี่ยนไปจากเวอร์ชันในประวัติทีละบรรทัด บรรทัดที่ถูกลบเป็นสีแดง บรรทัดที่เพิ่มเป็นสีเขียว
-* **หลายหน้าต่าง** (**Ctrl+Shift+N**) แต่ละหน้าต่างมีแท็บ ตำแหน่ง และการซูมของตัวเอง เมื่อปิดหน้าต่างหนึ่ง แท็บจะย้ายไปอยู่อีกหน้าต่าง จึงไม่มีโน้ตใดถูกปิดไปด้วย
+* **ธีมสว่างหรือมืด**: MicaPad มีปุ่มสลับธีมของตัวเอง (ปุ่มดวงอาทิตย์และพระจันทร์) โดยส่วนอื่นของ MicaStats ไม่เปลี่ยน
+
+#### ความเป็นส่วนตัว
+
+* **โน้ตถูกเข้ารหัส** สำหรับบัญชี Windows ของคุณ (AES-GCM ด้วยคีย์ที่ป้องกันด้วย Windows DPAPI) และเก็บใน `%APPDATA%\MicaStats\MicaPad` บัญชีอื่นหรือไฟล์ที่คัดลอกไปเครื่องอื่นจะอ่านไม่ได้
 * **รหัสลับ**: เลือกรหัสผ่านหรือโทเค็นแล้วเลือก **Store as credential** ข้อความจะกลายเป็นป้ายชื่อ ดูหรือคัดลอกได้ด้วย PIN เท่านั้น
-* โน้ตถูกเข้ารหัสสำหรับบัญชี Windows ของคุณ และเก็บใน `%APPDATA%\MicaStats\MicaPad`
+* **ไม่มีอะไรออกจากเครื่องจนกว่าคุณจะเปิดใช้**: รูปจากเว็บ แผนภาพผ่าน Kroki และการค้นหาตามความหมาย ปิดไว้ทั้งหมดจนกว่าจะเปิดใน **Settings → MicaPad**
 
 ### Ask MicaStats: ถามเรื่องเครื่องของคุณได้ด้วยภาษาธรรมดา
 
@@ -840,6 +956,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * ซ่อนอัตโนมัติเมื่อมีโปรแกรมทำงานแบบเต็มจอ
 * หลบปุ่ม Start อัตโนมัติ: โอเวอร์เลย์จะเลื่อนไปยังพื้นที่ว่างบนทาสก์บาร์ก่อน แล้วบีบกราฟเส้นให้พอดีกับช่องว่างที่เหลือ จากนั้นจึงค่อยลดเนื้อหา (ซ่อนกราฟก่อน แล้วจึงซ่อนโมดูลท้าย ๆ ไว้หลังเครื่องหมาย ⋯) เพื่อไม่ให้ทับปุ่ม Start ที่อยู่กึ่งกลาง ปุ่มวิดเจ็ต และถาดระบบ
 * กู้ตำแหน่งอัตโนมัติเมื่อตำแหน่งที่บันทึกไว้ตกไปอยู่นอกจอ เช่น ช่องว่างระหว่างจอที่ขนาดไม่เท่ากัน หรือจอที่ถอดออกไปแล้ว
+* **อยู่รอดเมื่อ Explorer รีสตาร์ต**: เมื่อ `explorer.exe` รีสตาร์ตหรือแครช โอเวอร์เลย์จะเกาะทาสก์บาร์ใหม่เอง อยู่เหนือทาสก์บาร์ และอัปเดตค่าต่อไป ไม่ต้องเปิด MicaStats ใหม่
 * คลิกขวาเพื่อเข้าถึงการตั้งค่า คำสั่งจับภาพหน้าจอ และ **Show Desktop** ซึ่งย่อหน้าต่างทั้งหมดเพื่อดูเดสก์ท็อป (กดซ้ำเพื่อเรียกคืน) เหมือนปุ่มมุมขวาของทาสก์บาร์
 
 ### การอัปเดตอัตโนมัติ
@@ -958,7 +1075,15 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 * เข้าถึงข้อมูลแต่ละหมวดได้เร็วขึ้น
 * แยกข้อมูลสรุปกับข้อมูลละเอียดออกจากกันชัดเจนขึ้น
 * หน้าตาสอดคล้องกันมากขึ้นระหว่างโอเวอร์เลย์บนทาสก์บาร์กับแดชบอร์ดตั้งค่า
-* เพิ่มเครื่องมือที่โปรเจกต์ต้นทางไม่มี ได้แก่ ตัวตรวจสอบฮาร์ดแวร์ ชุดจับภาพหน้าจอ และไฟล์บันทึกการทำงาน
+* เพิ่มเครื่องมือที่โปรเจกต์ต้นทางไม่มี ได้แก่:
+  * MicaPad โน้ตแพดเข้ารหัสที่มี Markdown แผนภาพ และการค้นหา
+  * Ask MicaStats
+  * การวินิจฉัยเครื่องช้า เวลาบูต แบตเตอรี่ และการแจ้งเตือน
+  * รายการโปรเซส และตัวเฝ้าระวังการค้นหาที่หลุดควบคุม
+  * ตัวตรวจสอบฮาร์ดแวร์
+  * ชุดจับภาพหน้าจอ
+  * การอัปเดตอัตโนมัติ
+  * ไฟล์บันทึกการทำงาน
 
 ส่วนกลไกการอ่านค่าต่าง ๆ ยังคงพัฒนาต่อจากโปรเจกต์ต้นฉบับ ขณะที่หน้าตาและประสบการณ์ใช้งานพัฒนาแยกเป็นอิสระ
 
@@ -1124,6 +1249,8 @@ dotnet publish `
 | การเปรียบเทียบข้อความ | DiffPlex (Apache-2.0) สำหรับการเปรียบเทียบเวอร์ชันใน MicaPad |
 | แผนภาพและสมการ | Microsoft Edge WebView2 (ซ่อนอยู่ ทำงานออฟไลน์) กับ Mermaid, Viz.js/Graphviz, Markmap และ MathJax สำหรับ MicaPad |
 | ชื่ออีโมจิ | gemoji (MIT) สำหรับ MicaPad |
+| การเข้ารหัสโน้ต | AES-GCM ด้วยคีย์ที่ป้องกันด้วย Windows DPAPI สำหรับ MicaPad |
+| การค้นหาโน้ต | ดัชนีคำแบบ BM25 ในตัว และเลือกใช้เซิร์ฟเวอร์ embedding และ rerank ผ่าน HTTP ได้ (รูปแบบ OpenAI `/embeddings` และ Cohere/Jina `/rerank`) สำหรับ MicaPad |
 | AI | Anthropic .NET SDK, Microsoft.Extensions.AI และ MCP C# SDK (ModelContextProtocol.Core) |
 | การเชื่อมต่อกับ Windows | Win32 API |
 | ข้อมูลประสิทธิภาพ | ตัวนับประสิทธิภาพและ API ของ Windows |
@@ -1151,6 +1278,8 @@ MicaStats ใช้เทคโนโลยีเดสก์ท็อปขอ�
 10. เปิด **Launch on Startup** หากต้องการให้เริ่มพร้อม Windows
 
 คลิกที่โอเวอร์เลย์เพื่อเปิดแผงข้อมูลเต็ม ชี้เมาส์ค้างบนโมดูลเพื่อดูดรอปดาวน์เฉพาะหมวด และคลิกขวาเพื่อเข้าถึงการตั้งค่า คำสั่งจับภาพหน้าจอ และคำสั่งอื่น ๆ
+
+กด **Ctrl+Alt+N** เพื่อเปิด MicaPad แล้วกด **Ctrl+Shift+F** ในนั้นเพื่อค้นหาทุกโน้ต และเมื่อเปิดผู้ช่วยใน **Settings → AI** แล้ว กด **Ctrl+Alt+A** เพื่อถาม MicaStats
 
 ---
 
@@ -1183,6 +1312,14 @@ MicaStats ใช้เทคโนโลยีเดสก์ท็อปขอ�
 ### โอเวอร์เลย์ขยับเองโดยไม่ตั้งใจ
 
 จัดวางโอเวอร์เลย์ให้อยู่ในตำแหน่งที่ต้องการ แล้วเปิด **Lock Position**
+
+### โอเวอร์เลย์หายไปหลัง Explorer รีสตาร์ต
+
+ตั้งแต่รีลีสถัดไป MicaStats จะเกาะทาสก์บาร์ใหม่เองภายในหนึ่งวินาที และไฟล์บันทึกการทำงานจะมีบรรทัด "Explorer's taskbar came back" ส่วนใน v1.13.0 และก่อนหน้า ให้ปิด MicaStats แล้วเปิดใหม่
+
+### การค้นหาใน MicaPad ขึ้นว่า "Words only"
+
+การค้นหาตามความหมายใช้เซิร์ฟเวอร์ embedding ของคุณไม่ได้ เพราะติดต่อไม่ได้ ปฏิเสธคีย์ หรือหมดเวลา ส่วนที่เหลือของบรรทัดสถานะบอกว่าเป็นกรณีใด ผลลัพธ์ยังมาจากการค้นด้วยคำตามปกติ ตรวจสอบที่อยู่เซิร์ฟเวอร์ ชื่อโมเดล และคีย์ด้วยปุ่ม **Test** ใน **Settings → MicaPad → Search**
 
 ### มีอาการผิดปกติอื่น ๆ
 

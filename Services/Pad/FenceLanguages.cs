@@ -5,7 +5,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 {
     /// <summary>
     /// The MicaPad language a fenced code block names by the first word of its info string (spec
-    /// 1.2), compared without case. Unknown words (bash, sh, the diagram words) name none: such a
+    /// 1.2), compared without case. Unknown words (the diagram words) name none: such a
     /// block is monospace but not colored.
     /// </summary>
     public static class FenceLanguages
@@ -15,7 +15,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Every fence word, lower case.</summary>
         public static IEnumerable<string> Words => IdByWord.Keys;
 
-        /// <summary>The <see cref="PadLanguages"/> id a fence word names, or null.</summary>
+        /// <summary>The <see cref="PadLanguages"/> id (listed or fence-only) a fence word names, or null.</summary>
         public static string? IdOf(string? word) =>
             word != null && IdByWord.TryGetValue(word, out var id) ? id : null;
 
@@ -31,7 +31,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
 
             Add("csharp", "cs", "csharp", "c#");
-            Add("javascript", "js", "javascript", "jsx", "mjs", "cjs", "ts", "typescript", "tsx", "node");
+            Add("javascript", "js", "javascript", "jsx", "mjs", "cjs", "node");
+            Add("typescript", "ts", "typescript", "tsx", "mts", "cts");
             Add("json", "json", "jsonc", "json5");
             Add("xml", "xml", "xaml", "svg", "csproj", "xsd", "plist");
             Add("html", "html", "htm", "xhtml");
@@ -48,6 +49,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
             Add("yaml", "yaml", "yml");
             Add("batch", "bat", "batch", "cmd");
             Add("log", "log");
+            Add("shell", "bash", "sh", "shell", "zsh", "ksh", "shellscript");
+            Add("pascal", "pascal", "delphi", "pas", "objectpascal", "dpr");
+            Add("go", "go", "golang");
+            Add("dockerfile", "dockerfile", "docker", "containerfile");
+            Add("rust", "rust", "rs");
+            Add("ruby", "ruby", "rb");
+            Add("kotlin", "kotlin", "kt", "kts");
+            Add("markdown-fence", "md", "markdown");
             return map;
         }
     }

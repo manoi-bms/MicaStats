@@ -90,9 +90,26 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void An_unknown_language_is_not_colored() => UiThread.Run(() =>
         {
-            var view = Render("plain\n```bash\necho hi\n```");
+            var view = Render("plain\n```klingon\necho hi\n```");
 
             Assert.Equal(ForegroundAt(view, 1, 0), ForegroundAt(view, 3, 0));
+        });
+
+        [Theory]
+        [InlineData("bash", "shell", "# note", "# note")]
+        [InlineData("md", "markdown-fence", "# Title", "# Title")]
+        [InlineData("ts", "typescript", "interface A { b: string }", "interface")]
+        public void A_new_language_fence_is_colored_like_a_file_in_that_language(string word, string id, string code, string part) => UiThread.Run(() =>
+        {
+            var view = Render("text\n```" + word + "\n" + code + "\n```");
+            var definition = PadHighlighting.For(PadLanguages.ForFence(id)!)!;
+            var document = new TextDocument(code);
+            int start = code.IndexOf(part, System.StringComparison.Ordinal);
+            var section = new DocumentHighlighter(document, definition).HighlightLine(1).Sections.First(x => x.Offset == start && x.Color != null);
+            var expected = SyntaxColors.Resolve(section.Color.Name, null, PadPalette.Dark)!.Value;
+
+            Assert.NotEqual(ForegroundAt(view, 1, 0), expected);
+            Assert.Equal(expected, ForegroundAt(view, 3, start));
         });
 
         [Fact]

@@ -11,7 +11,38 @@ namespace Kil0bitSystemMonitor.Tests
         [Theory]
         [InlineData("cs", "csharp")]
         [InlineData("C#", "csharp")]
-        [InlineData("TSX", "javascript")]
+        [InlineData("TSX", "typescript")]
+        [InlineData("ts", "typescript")]
+        [InlineData("typescript", "typescript")]
+        [InlineData("mts", "typescript")]
+        [InlineData("cts", "typescript")]
+        [InlineData("js", "javascript")]
+        [InlineData("jsx", "javascript")]
+        [InlineData("bash", "shell")]
+        [InlineData("sh", "shell")]
+        [InlineData("shell", "shell")]
+        [InlineData("zsh", "shell")]
+        [InlineData("ksh", "shell")]
+        [InlineData("shellscript", "shell")]
+        [InlineData("pascal", "pascal")]
+        [InlineData("delphi", "pascal")]
+        [InlineData("pas", "pascal")]
+        [InlineData("objectpascal", "pascal")]
+        [InlineData("dpr", "pascal")]
+        [InlineData("go", "go")]
+        [InlineData("golang", "go")]
+        [InlineData("dockerfile", "dockerfile")]
+        [InlineData("docker", "dockerfile")]
+        [InlineData("containerfile", "dockerfile")]
+        [InlineData("rust", "rust")]
+        [InlineData("rs", "rust")]
+        [InlineData("ruby", "ruby")]
+        [InlineData("rb", "ruby")]
+        [InlineData("kotlin", "kotlin")]
+        [InlineData("kt", "kotlin")]
+        [InlineData("kts", "kotlin")]
+        [InlineData("md", "markdown-fence")]
+        [InlineData("Markdown", "markdown-fence")]
         [InlineData("node", "javascript")]
         [InlineData("json5", "json")]
         [InlineData("xaml", "xml")]
@@ -29,21 +60,20 @@ namespace Kil0bitSystemMonitor.Tests
         public void A_word_names_its_language(string word, string id) => Assert.Equal(id, FenceLanguages.IdOf(word));
 
         [Theory]
-        [InlineData("bash")]
-        [InlineData("sh")]
+        [InlineData("klingon")]
         [InlineData("mermaid")]
         [InlineData("")]
         [InlineData(null)]
         public void Other_words_name_no_language(string? word) => Assert.Null(FenceLanguages.IdOf(word));
 
         [Fact]
-        public void There_are_62_words_and_each_names_a_language_with_colors() => UiThread.Run(() =>
+        public void There_are_89_words_and_each_names_a_language_with_colors() => UiThread.Run(() =>
         {
             var words = FenceLanguages.Words.ToList();
-            Assert.Equal(62, words.Count);
+            Assert.Equal(89, words.Count);
             foreach (string word in words)
             {
-                var language = PadLanguages.ById(FenceLanguages.IdOf(word));
+                var language = PadLanguages.ForFence(FenceLanguages.IdOf(word));
                 Assert.True(language != null, word + " names no MicaPad language");
                 Assert.True(PadHighlighting.For(language!) != null, word + " has no colors");
             }

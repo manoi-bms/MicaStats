@@ -38,7 +38,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private static IHighlightingDefinition? DefaultDefinition(string? id)
         {
-            var language = PadLanguages.ById(id);
+            var language = PadLanguages.ForFence(id);
             return language == null ? null : PadHighlighting.For(language);
         }
 

@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!-- MicaPad's Shell highlighting. Colors are names only: MicaPad paints them from its palette. -->
+<SyntaxDefinition name="MicaPad Shell" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" />
+  <Color name="String" />
+  <Color name="Keywords" />
+  <Color name="Variable" />
+  <Color name="Directive" />
+  <Color name="Number" />
+  <RuleSet>
+    <Rule color="Directive">^\#!.*$</Rule>
+    <Rule color="Comment">(?&lt;=^|[\s;|&amp;(])\#.*$</Rule>
+    <Span color="String" begin="&quot;" end="&quot;" multiline="true">
+      <RuleSet>
+        <Span begin="\\" end="." />
+        <Rule color="Variable">\$\{[^}\r\n]*\}|\$[#?!@*$0-9-]|\$\w+</Rule>
+      </RuleSet>
+    </Span>
+    <Span color="String" begin="'" end="'" multiline="true" />
+    <Rule color="Variable">\$\{[^}\r\n]*\}|\$[#?!@*$0-9-]|\$\w+</Rule>
+    <Keywords color="Keywords"><Word>if</Word><Word>then</Word><Word>else</Word><Word>elif</Word><Word>fi</Word><Word>for</Word><Word>while</Word><Word>until</Word><Word>do</Word><Word>done</Word><Word>case</Word><Word>esac</Word><Word>in</Word><Word>function</Word><Word>select</Word><Word>time</Word><Word>return</Word><Word>exit</Word><Word>break</Word><Word>continue</Word><Word>local</Word><Word>export</Word><Word>declare</Word><Word>readonly</Word><Word>unset</Word><Word>set</Word><Word>shift</Word><Word>source</Word><Word>alias</Word><Word>eval</Word><Word>exec</Word><Word>trap</Word><Word>echo</Word><Word>printf</Word><Word>read</Word><Word>cd</Word></Keywords>
+    <Rule color="Number">(?&lt;![\w.-])\d+(?![\w.-])</Rule>
+  </RuleSet>
+</SyntaxDefinition>

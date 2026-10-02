@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!-- MicaPad's Kotlin highlighting. Colors are names only: MicaPad paints them from its palette. -->
+<SyntaxDefinition name="MicaPad Kotlin" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" />
+  <Color name="String" />
+  <Color name="Char" />
+  <Color name="Keywords" />
+  <Color name="Bool" />
+  <Color name="Null" />
+  <Color name="Number" />
+  <Color name="Type" />
+  <Color name="Directive" />
+  <RuleSet>
+    <Rule color="Comment">//.*$</Rule>
+    <Span color="Comment" begin="/\*" end="\*/" multiline="true" />
+    <Span color="String" begin="&quot;&quot;&quot;" end="&quot;&quot;&quot;" multiline="true" />
+    <Span color="String" begin="&quot;(?!&quot;&quot;)" end="&quot;">
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+    <Rule color="Char">'(?:[^'\\\r\n]|\\(?:u[0-9a-fA-F]{4}|.))'</Rule>
+    <Rule color="Directive">@[A-Za-z_]\w*</Rule>
+    <Keywords color="Keywords"><Word>abstract</Word><Word>annotation</Word><Word>as</Word><Word>break</Word><Word>by</Word><Word>catch</Word><Word>class</Word><Word>companion</Word><Word>const</Word><Word>constructor</Word><Word>continue</Word><Word>crossinline</Word><Word>data</Word><Word>do</Word><Word>else</Word><Word>enum</Word><Word>expect</Word><Word>external</Word><Word>final</Word><Word>finally</Word><Word>for</Word><Word>fun</Word><Word>if</Word><Word>in</Word><Word>infix</Word><Word>init</Word><Word>inline</Word><Word>inner</Word><Word>interface</Word><Word>internal</Word><Word>is</Word><Word>lateinit</Word><Word>noinline</Word><Word>object</Word><Word>open</Word><Word>operator</Word><Word>override</Word><Word>package</Word><Word>private</Word><Word>protected</Word><Word>public</Word><Word>reified</Word><Word>return</Word><Word>sealed</Word><Word>super</Word><Word>suspend</Word><Word>tailrec</Word><Word>this</Word><Word>throw</Word><Word>try</Word><Word>typealias</Word><Word>val</Word><Word>var</Word><Word>vararg</Word><Word>when</Word><Word>where</Word><Word>while</Word><Word>import</Word></Keywords>
+    <Keywords color="Bool"><Word>true</Word><Word>false</Word></Keywords>
+    <Keywords color="Null"><Word>null</Word></Keywords>
+    <Keywords color="Type"><Word>Int</Word><Word>Long</Word><Word>Short</Word><Word>Byte</Word><Word>Float</Word><Word>Double</Word><Word>Boolean</Word><Word>Char</Word><Word>String</Word><Word>Unit</Word><Word>Any</Word><Word>Nothing</Word><Word>Array</Word><Word>List</Word><Word>Map</Word><Word>Set</Word><Word>MutableList</Word><Word>MutableMap</Word><Word>MutableSet</Word><Word>Pair</Word></Keywords>
+    <Rule color="Number">\b0[xX][0-9a-fA-F_]+\b|\b\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d+)?[uUlLfF]?</Rule>
+  </RuleSet>
+</SyntaxDefinition>

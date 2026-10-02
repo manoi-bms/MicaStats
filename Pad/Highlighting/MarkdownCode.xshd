@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!-- MicaPad's Markdown code highlighting. Colors are names only: MicaPad paints them from its palette. -->
+<SyntaxDefinition name="MicaPad Markdown code" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="HeadingKeywords" />
+  <Color name="CodeString" />
+  <Color name="QuoteComment" />
+  <Color name="RuleOperator" />
+  <Color name="ListOperator" />
+  <Color name="LinkTag" />
+  <Color name="LinkUrlString" />
+  <Color name="EmphasisAttribute" />
+  <Color name="TableOperator" />
+  <RuleSet>
+    <Rule color="HeadingKeywords">^\s{0,3}\#{1,6}(\s.*)?$</Rule>
+    <Rule color="CodeString">^\s*(```|~~~).*$</Rule>
+    <Rule color="QuoteComment">^\s{0,3}&gt;.*$</Rule>
+    <Rule color="RuleOperator">^\s{0,3}(?:-(?:\s*-){2,}|\*(?:\s*\*){2,}|_(?:\s*_){2,})\s*$</Rule>
+    <Rule color="ListOperator">^\s*(?:[-*+]|\d+[.)])(?=\s)</Rule>
+    <Rule color="CodeString">(?&lt;!`)``[^`\r\n]+(?:`[^`\r\n]+)*``(?!`)|(?&lt;!`)`[^`\r\n]+`(?!`)</Rule>
+    <Rule color="LinkTag">!?\[[^\]\r\n]*\]</Rule>
+    <Rule color="LinkUrlString">(?&lt;=\])\([^)\r\n]*\)</Rule>
+    <Rule color="LinkUrlString">&lt;https?://[^&gt;\s]+&gt;</Rule>
+    <Rule color="EmphasisAttribute">\*\*[^*\r\n]+\*\*|__[^_\r\n]+__</Rule>
+    <Rule color="EmphasisAttribute">(?&lt;![*\w])\*[^*\s][^*\r\n]*\*(?![*\w])|(?&lt;![_\w])_[^_\s][^_\r\n]*_(?![_\w])</Rule>
+    <Rule color="TableOperator">\|</Rule>
+  </RuleSet>
+</SyntaxDefinition>

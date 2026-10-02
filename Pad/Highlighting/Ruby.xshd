@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!-- MicaPad's Ruby highlighting. Colors are names only: MicaPad paints them from its palette. -->
+<SyntaxDefinition name="MicaPad Ruby" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" />
+  <Color name="String" />
+  <Color name="Keywords" />
+  <Color name="Bool" />
+  <Color name="Null" />
+  <Color name="Number" />
+  <Color name="Type" />
+  <Color name="Variable" />
+  <RuleSet>
+    <Span color="Comment" begin="^=begin\b" end="^=end\b" multiline="true" />
+    <Rule color="Comment">\#.*$</Rule>
+    <Span color="String" begin="&quot;" end="&quot;" multiline="true">
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+    <Span color="String" begin="'" end="'" multiline="true">
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+    <Rule color="Variable">@@?[A-Za-z_]\w*|\$[A-Za-z_]\w*</Rule>
+    <Rule color="Variable">(?&lt;![:\w]):[A-Za-z_]\w*[?!]?</Rule>
+    <Keywords color="Keywords"><Word>alias</Word><Word>and</Word><Word>begin</Word><Word>BEGIN</Word><Word>break</Word><Word>case</Word><Word>class</Word><Word>def</Word><Word>defined</Word><Word>do</Word><Word>else</Word><Word>elsif</Word><Word>end</Word><Word>END</Word><Word>ensure</Word><Word>for</Word><Word>if</Word><Word>in</Word><Word>module</Word><Word>next</Word><Word>not</Word><Word>or</Word><Word>redo</Word><Word>rescue</Word><Word>retry</Word><Word>return</Word><Word>self</Word><Word>super</Word><Word>then</Word><Word>undef</Word><Word>unless</Word><Word>until</Word><Word>when</Word><Word>while</Word><Word>yield</Word><Word>raise</Word><Word>require</Word><Word>require_relative</Word><Word>include</Word><Word>extend</Word><Word>attr_accessor</Word><Word>attr_reader</Word><Word>attr_writer</Word><Word>puts</Word><Word>print</Word><Word>private</Word><Word>protected</Word><Word>public</Word><Word>lambda</Word><Word>proc</Word><Word>loop</Word></Keywords>
+    <Keywords color="Bool"><Word>true</Word><Word>false</Word></Keywords>
+    <Keywords color="Null"><Word>nil</Word></Keywords>
+    <Keywords color="Type"><Word>String</Word><Word>Integer</Word><Word>Float</Word><Word>Array</Word><Word>Hash</Word><Word>Symbol</Word><Word>Object</Word><Word>Class</Word><Word>Module</Word><Word>Proc</Word><Word>Range</Word><Word>Regexp</Word><Word>Struct</Word><Word>Comparable</Word><Word>Enumerable</Word><Word>Kernel</Word><Word>NilClass</Word></Keywords>
+    <Rule color="Number">\b0[xX][0-9a-fA-F_]+\b|\b\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d+)?</Rule>
+  </RuleSet>
+</SyntaxDefinition>

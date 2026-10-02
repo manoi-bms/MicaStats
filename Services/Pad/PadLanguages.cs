@@ -52,19 +52,37 @@ namespace Kil0bitSystemMonitor.Services.Pad
             new PadLanguage("html", "HTML", "HTML", false, PadFoldKind.Xml),
             new PadLanguage("csharp", "C#", "C#", false, PadFoldKind.Braces),
             new PadLanguage("javascript", "JavaScript", "JavaScript", false, PadFoldKind.Braces),
+            new PadLanguage("typescript", "TypeScript", "TypeScript", true, PadFoldKind.Braces),
             new PadLanguage("css", "CSS", "CSS", false, PadFoldKind.Braces),
             new PadLanguage("powershell", "PowerShell", "PowerShell", false, PadFoldKind.Braces),
+            new PadLanguage("shell", "Shell", "Shell", true, PadFoldKind.None),
             new PadLanguage("python", "Python", "Python", false, PadFoldKind.None),
             new PadLanguage("sql", "SQL", "TSQL", false, PadFoldKind.None),
             new PadLanguage("cpp", "C/C++", "C++", false, PadFoldKind.Braces),
             new PadLanguage("java", "Java", "Java", false, PadFoldKind.Braces),
+            new PadLanguage("kotlin", "Kotlin", "Kotlin", true, PadFoldKind.Braces),
+            new PadLanguage("go", "Go", "Go", true, PadFoldKind.Braces),
+            new PadLanguage("rust", "Rust", "Rust", true, PadFoldKind.Braces),
             new PadLanguage("php", "PHP", "PHP", false, PadFoldKind.Braces),
+            new PadLanguage("ruby", "Ruby", "Ruby", true, PadFoldKind.None),
+            new PadLanguage("pascal", "Pascal/Delphi", "Pascal", true, PadFoldKind.None),
             new PadLanguage("vb", "VB", "VB", false, PadFoldKind.None),
             new PadLanguage("diff", "Diff", "Patch", false, PadFoldKind.None),
+            new PadLanguage("dockerfile", "Dockerfile", "Dockerfile", true, PadFoldKind.None),
             new PadLanguage("ini", "INI", "Ini", true, PadFoldKind.None),
             new PadLanguage("yaml", "YAML", "Yaml", true, PadFoldKind.None),
             new PadLanguage("batch", "Batch", "Batch", true, PadFoldKind.None),
             new PadLanguage("log", "Log", "Log", true, PadFoldKind.None),
+        };
+
+        /// <summary>
+        /// Languages only a fenced block can name: not in the menu and never a note's language.
+        /// MicaPad's real Markdown formatting cannot nest inside a fence, so a <c>```md</c> block
+        /// gets this small own definition instead.
+        /// </summary>
+        public static IReadOnlyList<PadLanguage> FenceOnly { get; } = new[]
+        {
+            new PadLanguage("markdown-fence", "Markdown", "MarkdownCode", true, PadFoldKind.None),
         };
 
         private static readonly Dictionary<string, string> ByExtension = new(StringComparer.OrdinalIgnoreCase)
@@ -76,7 +94,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
             [".html"] = "html", [".htm"] = "html",
             [".cs"] = "csharp",
             [".js"] = "javascript", [".mjs"] = "javascript", [".cjs"] = "javascript",
-            [".ts"] = "javascript", [".tsx"] = "javascript", [".jsx"] = "javascript",
+            [".jsx"] = "javascript",
+            [".ts"] = "typescript", [".tsx"] = "typescript", [".mts"] = "typescript", [".cts"] = "typescript",
+            [".sh"] = "shell", [".bash"] = "shell", [".zsh"] = "shell", [".ksh"] = "shell",
+            [".bashrc"] = "shell", [".bash_profile"] = "shell", [".zshrc"] = "shell", [".profile"] = "shell",
+            [".pas"] = "pascal", [".dpr"] = "pascal", [".dpk"] = "pascal", [".lpr"] = "pascal", [".pp"] = "pascal",
+            [".go"] = "go",
+            [".rs"] = "rust",
+            [".rb"] = "ruby", [".rake"] = "ruby", [".gemspec"] = "ruby",
+            [".kt"] = "kotlin", [".kts"] = "kotlin",
+            [".dockerfile"] = "dockerfile",
             [".css"] = "css",
             [".ps1"] = "powershell", [".psm1"] = "powershell", [".psd1"] = "powershell",
             [".py"] = "python", [".pyw"] = "python",
@@ -97,6 +124,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public static PadLanguage? ById(string? id) =>
             id == null ? null : All.FirstOrDefault(l => string.Equals(l.Id, id, StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>The language a fenced block's id names: a listed language or a <see cref="FenceOnly"/> one, or null.</summary>
+        public static PadLanguage? ForFence(string? id) =>
+            ById(id) ?? (id == null ? null : FenceOnly.FirstOrDefault(l => string.Equals(l.Id, id, StringComparison.OrdinalIgnoreCase)));
+
         /// <summary>
         /// The language a file's extension implies, or Plain text. <c>.editorconfig</c> and
         /// <c>.gitconfig</c> count: for a name that starts with a dot, the whole name is the extension.
@@ -104,7 +135,19 @@ namespace Kil0bitSystemMonitor.Services.Pad
         public static PadLanguage ForPath(string path)
         {
             string extension = Path.GetExtension(path);
-            return extension.Length > 0 && ByExtension.TryGetValue(extension, out string? id) ? ById(id)! : Plain;
+            if (extension.Length > 0 && ByExtension.TryGetValue(extension, out string? id)) return ById(id)!;
+            return ByFileName(Path.GetFileName(path)) is { } named ? ById(named)! : Plain;
+        }
+
+        /// <summary>Files known by name rather than extension: Dockerfile, Dockerfile.dev, Containerfile, Gemfile, Rakefile.</summary>
+        private static string? ByFileName(string name)
+        {
+            if (name.Equals("Dockerfile", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("Dockerfile.", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("Containerfile", StringComparison.OrdinalIgnoreCase)) return "dockerfile";
+            if (name.Equals("Gemfile", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("Rakefile", StringComparison.OrdinalIgnoreCase)) return "ruby";
+            return null;
         }
 
         /// <summary>

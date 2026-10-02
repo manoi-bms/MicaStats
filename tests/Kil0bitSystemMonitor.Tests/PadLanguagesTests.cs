@@ -19,7 +19,24 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData(@"C:\n\a.svg", "xml")]
         [InlineData(@"C:\n\a.htm", "html")]
         [InlineData(@"C:\n\a.cs", "csharp")]
-        [InlineData(@"C:\n\a.ts", "javascript")]
+        [InlineData(@"C:\n\a.ts", "typescript")]
+        [InlineData(@"C:\n\a.tsx", "typescript")]
+        [InlineData(@"C:\n\a.mts", "typescript")]
+        [InlineData(@"C:\n\deploy.sh", "shell")]
+        [InlineData(@"C:\n\.bashrc", "shell")]
+        [InlineData(@"C:\n\Unit1.pas", "pascal")]
+        [InlineData(@"C:\n\Project1.dpr", "pascal")]
+        [InlineData(@"C:\n\main.go", "go")]
+        [InlineData(@"C:\n\lib.rs", "rust")]
+        [InlineData(@"C:\n\app.rb", "ruby")]
+        [InlineData(@"C:\n\Gemfile", "ruby")]
+        [InlineData(@"C:\n\Main.kt", "kotlin")]
+        [InlineData(@"C:\n\build.gradle.kts", "kotlin")]
+        [InlineData(@"C:\n\Dockerfile", "dockerfile")]
+        [InlineData(@"C:\n\dockerfile", "dockerfile")]
+        [InlineData(@"C:\n\Dockerfile.dev", "dockerfile")]
+        [InlineData(@"C:\n\app.dockerfile", "dockerfile")]
+        [InlineData(@"C:\n\Containerfile", "dockerfile")]
         [InlineData(@"C:\n\a.jsx", "javascript")]
         [InlineData(@"C:\n\a.css", "css")]
         [InlineData(@"C:\n\a.psm1", "powershell")]
@@ -89,7 +106,7 @@ namespace Kil0bitSystemMonitor.Tests
         public void Languages_are_listed_once_with_names_and_fold_kinds()
         {
             var all = PadLanguages.All;
-            Assert.Equal(20, all.Count);
+            Assert.Equal(28, all.Count);
             Assert.Equal(all.Count, all.Select(l => l.Id).Distinct().Count());
             Assert.All(all, l => Assert.False(string.IsNullOrWhiteSpace(l.Name)));
             Assert.Same(PadLanguages.Plain, all[0]);
@@ -98,6 +115,21 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(PadFoldKind.Xml, PadLanguages.ById("html")!.Fold);
             Assert.Equal(PadFoldKind.Headings, PadLanguages.Markdown.Fold);
             Assert.Equal(PadFoldKind.None, PadLanguages.ById("python")!.Fold);
+            foreach (string id in new[] { "typescript", "kotlin", "go", "rust" }) Assert.Equal(PadFoldKind.Braces, PadLanguages.ById(id)!.Fold);
+            foreach (string id in new[] { "shell", "ruby", "pascal", "dockerfile" }) Assert.Equal(PadFoldKind.None, PadLanguages.ById(id)!.Fold);
+            Assert.Equal("Pascal/Delphi", PadLanguages.ById("pascal")!.Name);
+            Assert.All(new[] { "typescript", "shell", "pascal", "go", "dockerfile", "rust", "ruby", "kotlin" }, id => Assert.True(PadLanguages.ById(id)!.OwnDefinition));
+            Assert.Null(PadLanguages.ById("markdown-fence"));
+            Assert.NotNull(PadLanguages.ForFence("markdown-fence"));
+            Assert.NotNull(PadLanguages.ForFence("Markdown-Fence"));
+            Assert.Same(PadLanguages.ById("json"), PadLanguages.ForFence("json"));
+            Assert.Null(PadLanguages.ForFence("klingon"));
+            Assert.Null(PadLanguages.ForFence(null));
+            Assert.Equal(new[]
+            {
+                "plain", "markdown", "json", "xml", "html", "csharp", "javascript", "typescript", "css", "powershell", "shell", "python", "sql",
+                "cpp", "java", "kotlin", "go", "rust", "php", "ruby", "pascal", "vb", "diff", "dockerfile", "ini", "yaml", "batch", "log",
+            }, all.Select(l => l.Id));
             Assert.True(PadLanguages.ById("log")!.OwnDefinition);
             Assert.Null(PadLanguages.Markdown.Definition);
         }

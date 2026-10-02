@@ -267,8 +267,8 @@ changes unless you run a command such as Format table. Turn it all off with
   (superscript).
 - **Code**: `` `inline code` `` gets its own color. A fenced block (```` ``` ```` or `~~~`) is
   shaded, and when its first word names a language — `cs`, `js`, `ts`, `json`, `xml`, `html`,
-  `css`, `powershell`, `python`, `sql`, `cpp`, `java`, `php`, `vb`, `diff`, `ini`, `yaml`, `bat`,
-  `log` and their usual aliases — its code is colored as a file in that language would be.
+  `css`, `powershell`, `bash`, `python`, `sql`, `cpp`, `java`, `kotlin`, `go`, `rust`, `php`, `ruby`,
+  `pascal`, `vb`, `diff`, `dockerfile`, `ini`, `yaml`, `bat`, `md`, `log` and their usual aliases — its code is colored as a file in that language would be.
 - **Lists**: `- ` items get bullets and `- [x]` tasks are crossed off.
 - **Quotes and callouts**: `>` quotes get a bar, one per level (`>>` is two). A quote followed by
   a line `{.is-info}`, `{.is-success}`, `{.is-warning}` or `{.is-danger}` is a Wiki.js callout: a
@@ -351,12 +351,13 @@ Pictures need the Microsoft Edge WebView2 Runtime, which Windows 11 includes.
 
 ### Colors for code, logs and settings files
 
-JSON, XML, HTML, C#, JavaScript, CSS, PowerShell, Python, SQL, C/C++, Java, PHP, VB, diff, INI,
-YAML, batch and log files open colored, in both themes. The language shows in the status bar;
+JSON, XML, HTML, C#, JavaScript, TypeScript, CSS, PowerShell, shell scripts (`.sh`, `.bashrc`),
+Python, SQL, C/C++, Java, Kotlin, Go, Rust, PHP, Ruby, Pascal/Delphi (`.pas`, `.dpr`), VB, diff,
+Dockerfile (also files named `Dockerfile` or `Containerfile`), INI, YAML, batch and log files open colored, in both themes. The language shows in the status bar;
 click it to pick another for that tab (or **Auto** to go back to the file type). Notes and
 `.md`/`.txt` files are Markdown. Text over 2 MB is shown plain, so huge files stay fast.
 
-JSON, C#, JavaScript, CSS, C/C++, Java, PHP and PowerShell fold at braces, XML and HTML at tags,
+JSON, C#, JavaScript, TypeScript, CSS, C/C++, Java, Kotlin, Go, Rust, PHP and PowerShell fold at braces, XML and HTML at tags,
 and Markdown at headings and code blocks: click the ⊟ box in the margin to fold, ⊞ to open again.
 Moving to text inside a fold (Find, Go to line) opens it.
 

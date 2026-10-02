@@ -160,7 +160,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * Open it from the overlay's right-click menu, **Ctrl+Alt+N** anywhere, the Start menu, or Explorer's **Open with**
 * **Light or dark**: MicaPad has its own theme switch (the sun and moon button), independent of the rest of MicaStats
 * **Right-click menus** in the text (cut, copy, paste, find) and on tabs (rename, close others, copy the file path, show in folder)
-* **Colors for code and logs**: JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch and log files are colored in both themes; the status bar shows the language and changes it per tab
+* **Colors for code and logs**: JSON, XML, C#, JavaScript, TypeScript, PowerShell, shell, Python, SQL, Java, Kotlin, Go, Rust, Ruby, Pascal/Delphi, Dockerfile, INI, YAML, batch and log files are colored in both themes (fenced code and Markdown inside a fence too); the status bar shows the language and changes it per tab
 * **Markdown the way Wiki.js shows it**: headings, tables (with **Format table** to line them up), callouts, footnotes, `:emoji:`, `<kbd>` keys and more, styled in place with the markers still visible; prose in a reading font while code and tables keep the editor font, and fenced code colored by its language
 * **Diagrams and math**: Mermaid, Graphviz and Markmap blocks, and TeX math (`$$` blocks, with `\ce{}` chemistry), drawn as a picture under the block on this PC; other diagram types through Kroki once you turn it on
 * **Image previews**: `![alt](picture.png =200x)` shows the picture under its line; images from the web load only once you turn that on
@@ -790,7 +790,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * เปิดได้จากเมนูคลิกขวาของโอเวอร์เลย์, **Ctrl+Alt+N** จากที่ใดก็ได้, เมนู Start หรือ **Open with** ใน Explorer
 * **ธีมสว่างหรือมืด**: MicaPad มีปุ่มสลับธีมของตัวเอง (ปุ่มดวงอาทิตย์และพระจันทร์) โดยส่วนอื่นของ MicaStats ไม่เปลี่ยน
 * **เมนูคลิกขวา** ในเนื้อความ (ตัด คัดลอก วาง ค้นหา) และบนแท็บ (เปลี่ยนชื่อ ปิดแท็บอื่น คัดลอกพาธไฟล์ เปิดโฟลเดอร์ที่เก็บไฟล์)
-* **สีสำหรับโค้ดและล็อก**: ไฟล์ JSON, XML, C#, PowerShell, Python, SQL, INI, YAML, batch และไฟล์ล็อก แสดงสีได้ทั้งธีมสว่างและมืด ภาษาแสดงที่แถบสถานะและเปลี่ยนได้ทีละแท็บ
+* **สีสำหรับโค้ดและล็อก**: ไฟล์ JSON, XML, C#, JavaScript, TypeScript, PowerShell, shell, Python, SQL, Java, Kotlin, Go, Rust, Ruby, Pascal/Delphi, Dockerfile, INI, YAML, batch และไฟล์ล็อก แสดงสีได้ทั้งธีมสว่างและมืด (รวมโค้ดในบล็อก fence และ Markdown ใน fence) ภาษาแสดงที่แถบสถานะและเปลี่ยนได้ทีละแท็บ
 * **Markdown แบบที่ Wiki.js แสดง**: หัวข้อ ตาราง (พร้อมคำสั่ง **Format table** จัดคอลัมน์ให้ตรง) callout เชิงอรรถ `:emoji:` ปุ่ม `<kbd>` และอื่น ๆ แสดงผลตามรูปแบบทันทีโดยยังเห็นเครื่องหมาย เนื้อความใช้ฟอนต์สำหรับอ่าน ส่วนโค้ดและตารางใช้ฟอนต์ของตัวแก้ไข และบล็อกโค้ดมีสีตามภาษา
 * **แผนภาพและสมการ**: บล็อก Mermaid, Graphviz และ Markmap และสมการ TeX (บล็อก `$$` รวมถึงสูตรเคมี `\ce{}`) วาดเป็นภาพใต้บล็อกบนเครื่องนี้ แผนภาพชนิดอื่นวาดผ่าน Kroki เมื่อเปิดใช้
 * **ตัวอย่างรูปภาพ**: `![alt](picture.png =200x)` แสดงรูปใต้บรรทัดนั้น รูปจากเว็บจะโหลดเฉพาะเมื่อเปิดใช้

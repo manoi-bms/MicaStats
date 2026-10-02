@@ -151,10 +151,21 @@ namespace Kil0bitSystemMonitor.Services.Capture
             }
         }
 
-        private const string ScrollingHint = "Click the part that scrolls, or drag around it   ·   Esc cancel";
+        /// <summary>
+        /// The picker's hint. A drag is the better pick: a click takes the whole window, title bar
+        /// and panels included, and only side panels that stay put are left out of the join.
+        /// </summary>
+        internal const string ScrollingHint = "Drag around the part that scrolls (a click takes the whole window)   ·   Esc cancel";
 
         /// <summary>Areas narrower or shorter than this cannot be joined reliably (scrolling capture spec 2).</summary>
         private const int MinScrollingSide = 50;
+
+        /// <summary>Shown beside an area refused for being too small (scrolling capture spec 2).</summary>
+        internal static string TooSmallNotice => string.Create(CultureInfo.InvariantCulture,
+            $"Pick a larger area: at least {MinScrollingSide} {(char)0x00D7} {MinScrollingSide} px");
+
+        /// <summary>How long the too-small notice stays up.</summary>
+        private const int NoticeMs = 2000;
 
         /// <summary>
         /// Time for the picker's pixels to leave the screen and the status card to paint before
@@ -179,6 +190,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
             {
                 DiagnosticsLog.Log("capture", string.Create(CultureInfo.InvariantCulture,
                     $"Scrolling capture refused: {area.Width}x{area.Height} is under {MinScrollingSide}x{MinScrollingSide}"));
+                ScrollStatusWindow.Notice(area, TooSmallNotice, NoticeMs);
                 return (null, null);
             }
 
@@ -220,17 +232,26 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 $"Scrolling capture: {result.Frames} frames, {result.Image?.Height ?? 0} px tall, stopped by {result.Stop}"));
 
             if (result.Image == null) return (null, null);
-            return (ScreenCaptureEngine.ToBitmapSource(result.Image), ScrollNote(result.Stop));
+            return (ScreenCaptureEngine.ToBitmapSource(result.Image), ScrollNote(result.Stop, options));
         }
 
-        /// <summary>The editor title's note for how a scrolling capture ended; null when it simply reached the end.</summary>
-        internal static string? ScrollNote(ScrollStop stop) => stop switch
+        /// <summary>
+        /// The editor title's note for how a scrolling capture ended, with the limits of
+        /// <paramref name="options"/> (the defaults when null); null when it reached the end or Esc stopped it.
+        /// </summary>
+        internal static string? ScrollNote(ScrollStop stop, ScrollCaptureOptions? options = null)
         {
-            ScrollStop.Unscrollable => "Nothing scrolled in that area",
-            ScrollStop.NoMatch or ScrollStop.SizeChanged => "Stopped: the view changed in a way MicaStats could not follow",
-            ScrollStop.InputLost => "MicaStats could not send scrolling to that window",
-            _ => null,
-        };
+            var o = options ?? new ScrollCaptureOptions();
+            return stop switch
+            {
+                ScrollStop.Unscrollable => "Nothing scrolled in that area",
+                ScrollStop.NoMatch or ScrollStop.SizeChanged => "Stopped: the view changed in a way MicaStats could not follow",
+                ScrollStop.InputLost => "MicaStats could not send scrolling to that window",
+                ScrollStop.MaxHeight => string.Create(CultureInfo.InvariantCulture, $"Stopped at the {o.MaxHeight:N0} px limit"),
+                ScrollStop.MaxSteps => string.Create(CultureInfo.InvariantCulture, $"Stopped at the {o.MaxSteps:N0}-step limit"),
+                _ => null,
+            };
+        }
 
         /// <summary>Copy and/or save without opening the editor.</summary>
         private static void Finish(BitmapSource image, CaptureSettings settings)

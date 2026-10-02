@@ -130,6 +130,42 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Nothing scrolled in that area", CaptureService.ScrollNote(ScrollStop.Unscrollable));
             Assert.Equal("Stopped: the view changed in a way MicaStats could not follow", CaptureService.ScrollNote(ScrollStop.NoMatch));
             Assert.Equal("Stopped: the view changed in a way MicaStats could not follow", CaptureService.ScrollNote(ScrollStop.SizeChanged));
+            Assert.Equal("Stopped at the 20,000 px limit", CaptureService.ScrollNote(ScrollStop.MaxHeight));
+            Assert.Equal("Stopped at the 500-step limit", CaptureService.ScrollNote(ScrollStop.MaxSteps));
+            Assert.Equal("Stopped at the 1,500 px limit", CaptureService.ScrollNote(ScrollStop.MaxHeight, new ScrollCaptureOptions(MaxHeight: 1500)));
+            Assert.Null(CaptureService.ScrollNote(ScrollStop.Cancelled));
+        }
+
+        [Fact]
+        public void A_refused_small_area_gets_a_notice_with_the_minimum()
+        {
+            string times = ((char)0x00D7).ToString();
+
+            Assert.Equal("Pick a larger area: at least 50 " + times + " 50 px", CaptureService.TooSmallNotice);
+        }
+
+        [Fact]
+        public void The_picker_hint_says_to_drag_around_the_part_that_scrolls()
+        {
+            Assert.StartsWith("Drag around the part that scrolls", CaptureService.ScrollingHint, StringComparison.Ordinal);
+            Assert.Contains("a click takes the whole window", CaptureService.ScrollingHint, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData(800, 600, 1872, 992, 1.0)]                    // fits: shown at its own size
+        [InlineData(1200, 20000, 1872, 992, 992.0 / 20000)]       // a 20,000 px scroll capture: fitted to the height
+        [InlineData(4000, 1000, 1872, 992, 1872.0 / 4000)]        // too wide: fitted to the width
+        [InlineData(800, 600, 0, 0, 1.0)]                         // no room known: left alone
+        public void A_pinned_capture_is_scaled_down_to_fit_the_work_area(double width, double height, double roomWidth, double roomHeight, double expected)
+        {
+            double fit = PinnedCaptureWindow.FitScale(width, height, roomWidth, roomHeight);
+
+            Assert.Equal(expected, fit, 6);
+            if (roomWidth > 0)
+            {
+                Assert.True(width * fit <= roomWidth + 1e-9);
+                Assert.True(height * fit <= roomHeight + 1e-9);
+            }
         }
 
         // ----- Where the wheel goes (final review) -------------------------------------------------

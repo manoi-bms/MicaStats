@@ -19,7 +19,8 @@ namespace Kil0bitSystemMonitor.Capture
 {
     /// <summary>
     /// The small card shown while a scrolling capture runs (scrolling capture spec 3): how tall
-    /// the joined image is so far, and how to stop.
+    /// the joined image is so far, and how to stop. <see cref="Notice"/> shows the same card
+    /// briefly with one line, for an area refused before the capture starts (spec 2).
     ///
     /// <para>
     /// It sits outside the picked area (<see cref="ScrollStatusPlacement"/>), so no grab sees it,
@@ -45,7 +46,8 @@ namespace Kil0bitSystemMonitor.Capture
         private Action? _onEsc;
         private bool _escHeld;
 
-        private ScrollStatusWindow(PixelRect area, PixelRect work, double scale)
+        /// <param name="notice">A one-line notice instead of the progress card.</param>
+        private ScrollStatusWindow(PixelRect area, PixelRect work, double scale, string? notice = null)
         {
             _area = area;
             _work = work;
@@ -64,13 +66,13 @@ namespace Kil0bitSystemMonitor.Capture
 
             _status = new TextBlock
             {
-                Text = TopText(escHeld: true),
+                Text = notice ?? TopText(escHeld: true),
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
                 FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
                 Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xF6, 0xFA)),
             };
-            Content = BuildCard(_status);
+            Content = BuildCard(_status, notice == null ? "Keep the area on screen until it finishes" : null);
 
             SourceInitialized += (s, e) => OnSourceInitialized();
             Loaded += (s, e) => Reposition();
@@ -84,13 +86,31 @@ namespace Kil0bitSystemMonitor.Capture
         /// Shows the card beside <paramref name="area"/>, on the monitor holding the area's centre.
         /// Must be called on the UI thread.
         /// </summary>
-        public static ScrollStatusWindow Open(PixelRect area)
+        public static ScrollStatusWindow Open(PixelRect area) => OpenCard(area, null);
+
+        /// <summary>
+        /// Shows <paramref name="text"/> beside <paramref name="area"/> for
+        /// <paramref name="milliseconds"/>, then closes by itself. Must be called on the UI thread.
+        /// </summary>
+        public static void Notice(PixelRect area, string text, int milliseconds)
+        {
+            var card = OpenCard(area, text);
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(milliseconds) };
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                card.Close();
+            };
+            timer.Start();
+        }
+
+        private static ScrollStatusWindow OpenCard(PixelRect area, string? notice)
         {
             var monitor = CaptureGeometry.MonitorAt(ScreenCaptureEngine.GetMonitors(),
                 area.X + area.Width / 2, area.Y + area.Height / 2);
             var work = monitor?.WorkArea ?? ScreenCaptureEngine.VirtualBounds();
 
-            var card = new ScrollStatusWindow(area, work, monitor?.Scale ?? 1.0);
+            var card = new ScrollStatusWindow(area, work, monitor?.Scale ?? 1.0, notice);
             card.Show();
             return card;
         }
@@ -145,18 +165,19 @@ namespace Kil0bitSystemMonitor.Capture
         private static string StopHint(bool escHeld, bool cancels) =>
             !escHeld ? "Stops at the end of the page" : cancels ? "Esc to cancel" : "Esc to stop";
 
-        private static UIElement BuildCard(TextBlock status)
+        private static UIElement BuildCard(TextBlock status, string? secondLine)
         {
             var stack = new StackPanel();
             stack.Children.Add(status);
-            stack.Children.Add(new TextBlock
-            {
-                Text = "Keep the area on screen until it finishes",
-                FontSize = 11,
-                FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
-                Foreground = new SolidColorBrush(Color.FromArgb(0xB0, 0xDD, 0xE3, 0xEA)),
-                Margin = new Thickness(0, 2, 0, 0),
-            });
+            if (secondLine != null)
+                stack.Children.Add(new TextBlock
+                {
+                    Text = secondLine,
+                    FontSize = 11,
+                    FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
+                    Foreground = new SolidColorBrush(Color.FromArgb(0xB0, 0xDD, 0xE3, 0xEA)),
+                    Margin = new Thickness(0, 2, 0, 0),
+                });
 
             return new Border
             {

@@ -135,18 +135,27 @@ For a page, chat or document that is taller than the screen, press **Ctrl+Shift+
 **Capture Scrolling…** in the overlay menu (or the **Capture scrolling** button in **Settings →
 Capture**).
 
-- **Pick the part that scrolls** — click it, or drag a rectangle around it. Areas smaller than
-  50×50 px are refused
+- **Drag around the part that scrolls.** A click also works, but it takes the whole window,
+  title bar and toolbars included. Areas smaller than 50×50 px are refused with a short notice
 - MicaStats moves the pointer there, scrolls to the top, and then scrolls down one wheel notch
-  at a time by itself. Keep the picked area visible on screen while it works. A small card
-  shows the height so far
+  at a time by itself. Keep the picked area visible on screen while it works, and hold no keys:
+  Ctrl or Shift would turn the wheel into zoom or sideways scrolling. A small card shows the
+  height so far
+- The wheel goes only to the window you picked. If Windows sends the wheel to the window in
+  front (**Scroll inactive windows when I hover over them** is off), MicaStats brings the picked
+  window to the front first. If another window comes over the area, or the picked one closes,
+  scrolling stops
 - Frames are joined into one tall image. A header or footer that stays put while the rest
-  scrolls appears once, not on every frame
+  scrolls appears once, not on every frame, and so does something floating near the bottom,
+  such as a chat button. Side panels that stay put while the rest scrolls, such as a
+  navigation pane or a sticky sidebar, are left out: the image is the part that scrolled
 - **Esc** stops and keeps what was captured so far. If you press it while MicaStats is still
   scrolling to the top, the capture is cancelled
 - It stops by itself at the end of the content, at 20,000 px tall, or after 500 steps
-- The result opens in the editor, or is copied and saved, like any other capture. If nothing
-  scrolled, or the view changed in a way MicaStats could not follow, the editor title says so
+- The result opens in the editor, or is copied and saved, like any other capture. The editor
+  title says why it stopped when it was not the end of the content: a limit, nothing
+  scrolled, the view changed in a way MicaStats could not follow, or the scrolling could not
+  be sent to that window
 
 ### The editor
 

@@ -91,7 +91,8 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void A_fenced_block_is_kept_whole_even_with_blank_lines()
         {
-            string text = "before\n\n```bash\necho a\n\necho b\n```\n\nafter";
+            // Long neighbours, so the fence is a passage of its own rather than packed with them.
+            string text = new string('b', 790) + "\n\n```bash\necho a\n\necho b\n```\n\n" + new string('a', 790);
 
             var passages = NotePassages.Cut("n1", "t", text);
 
@@ -253,24 +254,27 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
             var passages = new List<Passage>();
-            var body = new StringBuilder();
             int first = -1, last = -1;
             string heading = "";
 
+            // A passage's body is the note's own lines first..last, blank lines included.
+            string Span(int from, int to) => string.Join("\n", lines, from, to - from + 1);
+
             void Emit()
             {
-                if (first >= 0 && body.ToString().Trim().Length > 0)
-                    passages.Add(Make(noteId, title, heading, first, last, lines, body.ToString()));
+                if (first >= 0)
+                {
+                    string body = Span(first, last);
+                    if (body.Trim().Length > 0) passages.Add(Make(noteId, title, heading, first, last, lines, body));
+                }
                 first = -1;
-                body.Clear();
             }
 
             foreach (var block in Blocks(lines))
             {
                 if (block.StartsSection) Emit();
-                string blockText = string.Join("\n", lines, block.First, block.Last - block.First + 1);
 
-                if (blockText.Length > MaxChars)
+                if (Span(block.First, block.Last).Length > MaxChars)
                 {
                     Emit();
                     foreach (var piece in Pieces(lines, block.First, block.Last))
@@ -278,17 +282,12 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
                     continue;
                 }
 
-                if (first >= 0 && body.Length + 2 + blockText.Length > TargetChars) Emit();
+                if (first >= 0 && Span(first, block.Last).Length > TargetChars) Emit();
                 if (first < 0)
                 {
                     first = block.First;
                     heading = block.Heading;
                 }
-                else
-                {
-                    body.Append("\n\n");
-                }
-                body.Append(blockText);
                 last = block.Last;
             }
             Emit();
@@ -298,7 +297,10 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         private static Passage Make(string noteId, string title, string heading, int first, int last, string[] lines, string body)
         {
             string sent = (heading.Length > 0 ? title + HeadingSeparator + heading : title) + "\n\n" + body;
-            string firstLine = lines[first].Trim();
+            // Trim a bounded prefix only: a 2 MB line is cut into hundreds of pieces that all start on it.
+            string line = lines[first];
+            if (line.Length > MaxFirstLineChars * 4) line = line.Substring(0, MaxFirstLineChars * 4);
+            string firstLine = line.Trim();
             if (firstLine.Length > MaxFirstLineChars) firstLine = firstLine.Substring(0, MaxFirstLineChars);
             return new Passage(noteId, title, heading, first + 1, last + 1, firstLine, body, sent, HashOf(sent));
         }

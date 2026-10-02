@@ -2767,8 +2767,11 @@ namespace Kil0bitSystemMonitor.Tests
                 SearchStatusText.Index(new IndexProgress(9, 312, 312, 0, SearchFailure.None, null, false), _settings));
             Assert.Equal("312 passages from 9 notes",
                 SearchStatusText.Index(new IndexProgress(9, 312, 0, 0, SearchFailure.None, null, false), SearchSettings.Off));
-            Assert.Equal("312 passages from 9 notes; 20000 with meaning. The index is full: the rest are found by words only.",
-                SearchStatusText.Index(new IndexProgress(9, 312, 20000, 5, SearchFailure.None, null, true), _settings));
+            // Full = more passages than the store holds (the indexer works it out each pass); Waiting then drains to 0.
+            Assert.Equal("25000 passages from 9 notes; 20000 with meaning. The index is full: the rest are found by words only.",
+                SearchStatusText.Index(new IndexProgress(9, 25000, 20000, 0, SearchFailure.None, null, true), _settings));
+            Assert.Equal("Indexing: 1200 of 25000 passages",
+                SearchStatusText.Index(new IndexProgress(9, 25000, 1200, 18800, SearchFailure.None, null, true), _settings));
         }
     }
 }
@@ -3125,7 +3128,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         public static string Index(IndexProgress p, SearchSettings settings)
         {
-            if (settings.CanEmbed && p.Waiting > 0 && !p.Full)
+            if (settings.CanEmbed && p.Waiting > 0)
             {
                 return p.LastFailure != SearchFailure.None
                     ? "Indexing paused: the embedding server " + SearchFailureText.Describe(p.LastFailure, p.LastStatus)

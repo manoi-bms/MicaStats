@@ -39,7 +39,7 @@ A new capture mode, **Scrolling**, joins Region, Window, Screen and All screens.
 - **Start at the top.** MicaStats first scrolls up, 10 notches at a time, until the view no longer moves, or until 300 notches have been sent. Capture then starts from there. **(R)** The owner asked for "all content". A wheel scroll moves the view only, never a caret or selection.
   - *(Revised after the final review.)* "No longer moves" is judged on the part that changed only (`ScrollStitcher.Compare`). Rows and columns that stayed still at the edges are left out.
   - **Same**: the change lines up with no shift. It is identical, a shift of 0 fits it, fewer than 16 rows changed and no single shift lines up both frames, or the change is under 16 columns wide (a caret). That is the top.
-  - **Shifted**: a shift lines the change up, or 16 or more rows that changed between the two looks match as one run under some shift. Unchanged rows never form or extend a run. The view moved, so seeking goes on.
+  - **Shifted**: a shift lines the change up, or 16 or more matched pairs form one run under some shift, where both rows of each pair changed between the two looks. Unchanged rows are skipped: they neither form a run nor break one. The view moved, so seeking goes on.
   - **Replaced**: the change lines up under no shift. Two looks cannot tell a jump of more than the view's height from an animation, so MicaStats **probes** with one notch up.
     - The probe gets the same settle and slow-app confirm as any step.
     - If it is Shifted against the last look, the area really scrolls, and seeking goes on.
@@ -48,7 +48,7 @@ A new capture mode, **Scrolling**, joins Region, Window, Screen and All screens.
     - The second probe covers a probe that crossed a change of its own (a contents column highlighting the next section) and a scroll that arrived late.
   - A step during which the view was still gliding (two grabs in a row differ by a shift) counts as Shifted.
   - Every notch counts toward the 300-notch cap, probes included. Each batch is clamped to what is left, so the cap is exact.
-  - **(R)** The probe judges movement by matching rows, not by timing, so GIFs, videos, spinners and a blinking caret reach the top whatever their speed. It costs one or two notches per ambiguous step. *Source: ShareX and longshot judge movement only by runs of matching rows.*
+  - **(R)** The probe judges movement by matching rows, not by timing. GIFs, spinners, videos and a blinking caret that change in place reach the top whatever their speed; an animation that moves vertically does not (see Known limits). It costs one or two notches per ambiguous step. *Source: ShareX and longshot judge movement only by runs of matching rows.*
   - An area whose one notch moves it further than its height minus 8 rows takes the top early. The down phase then stops with NoMatch and its note anyway.
 - **Step down.** One notch per step, sent as 120 wheel units. **(R)** One notch usually moves 3 lines, about 40 to 150 pixels. That leaves a large overlap for joining. Any app that scrolls a whole page per notch still overlaps enough.
 - **Settle.** After each step, grab every 50 ms until two grabs in a row are identical (smooth scrolling has finished), or 800 ms have passed; then take the last grab. **(R)** This handles animated scrolling without a fixed long wait.
@@ -74,7 +74,7 @@ The joiner is a pure unit, `ScrollStitcher`, that works on 32-bit pixel rows.
 - **Soft footer.** *(Added after the final review.)* Below the detected footer, a bottom margin of up to a quarter of the view is also taken from the last frame only. The margin is limited so a large scroll still overlaps.
   - This keeps floating elements (a chat widget, a back-to-top button, a link preview) and footers that change (a clock) from repeating at every seam.
   - The margin only decides which rows are appended and which close the image. The overlap search still covers the whole band between the header and the detected footer.
-  - Shifts are ranked strictly first, with every mismatch counted. Only when that finds no shift does a second pass forgive a mismatch where the old row lies in the soft margin and the new row lies above it. In that case a floating widget hid the old row, and the widget must not sink a longer step. The fallback never overrides a strict match, so a label in the margin still rules out a wrong shift on repeating content.
+  - Shifts are ranked strictly first, with every mismatch counted. Only when that finds no shift at all does a second pass forgive a mismatch where the old row lies in the soft margin and the new row lies above it. In that case a floating widget hid the old row, and the widget must not sink a longer step. A strict result of shift 0 also blocks the second pass. The fallback never overrides a strict match, so a label in the margin still rules out a wrong shift on repeating content.
 - **Side panels.** *(Added after the final review.)* A side panel is a fixed pane, such as a navigation pane or a sticky sidebar.
   - In the first real pair, the shift is found with the still edge columns left out.
   - A panel column stays put at an edge but does not line up under that shift. A column that repeats down a list (a "File folder" type column, grid lines) lines up both ways, so it stays content.
@@ -129,13 +129,18 @@ The joiner is a pure unit, `ScrollStitcher`, that works on 32-bit pixel rows.
 
 *(Recorded after the final review and its regression rounds.)*
 
-- **Repeating content with no unique rows** cannot tell a shift from another shift a period away. An example is an empty grid scrolled by a multiple of its cell height. Such content can end early. With a hover highlight under the parked pointer, the image can also come out silently short or long.
-- **Several animations in view during the down phase,** such as an animated logo while a GIF is visible, can stop the capture with the NoMatch note.
+- **Repeating content with no unique rows** cannot tell a shift from another shift a period away. An example is an empty grid scrolled by a multiple of its cell height. Such content can end early or join at a wrong shift without a note. With a hover highlight under the parked pointer, the image can also come out silently short or long.
+- **A tall uniform region,** such as an empty bordered card, an image placeholder or a blank area with a vertical rule, can be joined wrongly. When it fills the view under an animation, it can also be taken for the top, so the start of the page is missing.
+- **A floating widget that sinks the real overlap below 70%** lets a duplicated block of any size win the strict pass. That repeats rows without a note.
+- **An animation that moves vertically,** such as a bouncing sprite or a video panning up or down, makes the top seek run to the 300-notch cap (about 35 s). The capture is still correct.
+- **One large animation, or several, in view during the down phase** stops the capture with the NoMatch note. Examples are a 380×500 video, or an animated logo while a GIF is visible.
+- **A contents column whose sections are 2 notches tall or shorter,** or wheel input that arrives 500 ms or more late, can take the top early. The capture then stops with the NoMatch note.
 - **Lazy-loaded images** that appear 600 ms or more after they scroll into view leave a placeholder band, or stop with NoMatch.
 - **Content passing under a floating side element** loses that element's own columns.
 - **A hover highlight under the parked pointer** can turn list columns into panel fill. This needs the owner's end-to-end check on Explorer.
 - **Horizontally uniform coloured rows between white gutters** (a gradient) give NoMatch when they fill the whole overlap.
 - **An exact duplicate block** at least half the size of the real overlap, with an imperfect real match, can win the ranking.
+- These limits came out of synthetic probes during review. On 1,350 realistic synthetic pages (article, chat, code, Explorer, an editor, docs with a contents column, floating buttons), the result was exact or stopped with a note.
 
 ## Not in this feature
 

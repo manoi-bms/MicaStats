@@ -184,6 +184,39 @@ say *Too large to compare*.
 Every version from the last day is kept; then one per hour for a week; then one per day up to the
 limit in **Settings → MicaPad** (90 days by default). The newest version is always kept.
 
+### Search notes
+
+**Ctrl+Shift+F** or the magnifier in the tab strip opens **Search notes** where History opens (one
+closes the other). It searches every note, open or closed, as its text is now — not history
+versions, and not other files on the PC. A one-line selection in the editor becomes the query.
+
+* **By words**, always: offline, built in, nothing leaves the PC. Thai, Chinese and Japanese work
+  without spaces, and a query can mix them with English (`vpn ไม่ติด`). Results come 300 ms after
+  you stop typing, or at once with **Enter**.
+* Each result shows the note, a *closed* tag when it is closed, its line and the passage with the
+  matching words in bold — at most 3 per note and 20 in all.
+* **Enter** (after **↓** into the list) or a click opens the note with the passage selected: shown
+  here, brought forward in the window that has it open, or reopened here when it was closed. If
+  you edited the note since, the selection follows the text. **Esc** goes back to the editor;
+  **Esc** again closes the pane.
+
+**Search by meaning** (**Settings → MicaPad → Search**, off at first) also finds passages that say
+the same thing in other words. It needs your own embedding server in the OpenAI `/v1/embeddings`
+format — TEI, vLLM, Infinity, LiteLLM or Ollama: enter its base address, such as
+`http://gpu:8000/v1` or `http://localhost:11434/v1`, and MicaPad adds `/embeddings`. **Rerank
+results** then puts the most relevant first with a reranker in the Cohere/Jina `/rerank` format.
+**Test** checks each server.
+
+* What is sent, and only while these are on: passages of your notes and your queries to the
+  embedding server, and your query with the best passages to the reranker. Credentials never are:
+  each one is sent as `[credential]`.
+* API keys are stored encrypted, never in `config.json`, and are not shown again after **Save**.
+* The vectors are kept encrypted beside the notes (`MicaPad\search\`). Turning **Search by
+  meaning** off deletes them; a new server or model starts them over, and **Rebuild index** does
+  it by hand.
+* When a server cannot be reached, refuses the key or times out, the status line under the query
+  says so and the search falls back to words (or to the order before reranking).
+
 ### Real files
 
 Opening a file (Ctrl+O, or Open with) edits a *copy*: your changes are saved continuously, but the

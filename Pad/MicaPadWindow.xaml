@@ -114,10 +114,12 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Row 0: tabs. Row 1: info bar. Row 2: find bar. Row 3: editor and history. Row 4: status. -->
+        <!-- Row 0: tabs. Row 1: info bar. Row 2: find bar. Row 3: editor, and history or search. Row 4: status. -->
         <DockPanel Grid.Row="0" Background="{DynamicResource Pad.Chrome}" LastChildFill="True">
             <Button x:Name="MenuButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
                     Content="&#xE700;" ToolTip="Menu" Click="OnMenuButtonClick" Margin="0,4,6,0" />
+            <Button x:Name="SearchButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
+                    Content="&#xE721;" ToolTip="Search notes (Ctrl+Shift+F)" Click="OnSearchButtonClick" Margin="0,4,0,0" />
             <Button x:Name="ClosedNotesButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
                     Content="&#xE70D;" ToolTip="Closed notes" Click="OnClosedNotesClick" Margin="0,4,0,0" />
             <Button x:Name="ThemeButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
@@ -192,6 +194,7 @@
             </DockPanel>
 
             <local:HistoryPane x:Name="HistoryPanel" Grid.Column="1" />
+            <local:SearchPane x:Name="SearchPanel" Grid.Column="1" />
 
             <Border x:Name="GoToLineBox" Grid.Column="0" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Margin="0,8,24,0" Padding="10,6" Background="{DynamicResource Pad.Popup}" BorderBrush="{DynamicResource Pad.PopupBorder}"

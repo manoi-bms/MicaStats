@@ -696,7 +696,8 @@ namespace Kil0bitSystemMonitor
                             s_padSearch.Indexer.SettingsChanged();
                     };
                     s_padSearchFeeder = new Kil0bitSystemMonitor.Pad.SearchFeeder(s_pad, s_padSearch.Indexer);
-                    // Task 8 assigns MicaPadWindow.SearchService / SearchFeeder here (the Search notes pane).
+                    Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchService = s_padSearch;        // the Search notes pane (Ctrl+Shift+F)
+                    Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchFeeder = s_padSearchFeeder;   // reconciled each time the pane opens
                 }
 
                 Kil0bitSystemMonitor.Pad.MicaPadWindow.Open(s_pad, config, () => ShowSettingsSection("MicaPad"), path);

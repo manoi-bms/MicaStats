@@ -157,6 +157,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * **Closing a tab never asks** — Ctrl+Shift+T or the closed-notes list brings it back; deleting sends it to the Recycle Bin
 * **Real files stay safe**: edits to an opened file are always kept, but the file itself changes only on Ctrl+S, in its original encoding (Thai TIS-620 / cp874 included) and line endings
 * Find and replace with regular expressions, go to line, zoom, word wrap
+* **Search every note** (**Ctrl+Shift+F**) by words (offline, Thai included) and, optionally, by meaning with your own embedding and reranker servers; a result opens with its passage selected
 * Open it from the overlay's right-click menu, **Ctrl+Alt+N** anywhere, the Start menu, or Explorer's **Open with**
 * **Light or dark**: MicaPad has its own theme switch (the sun and moon button), independent of the rest of MicaStats
 * **Right-click menus** in the text (cut, copy, paste, find) and on tabs (rename, close others, copy the file path, show in folder)
@@ -285,6 +286,7 @@ Inside MicaPad:
 | **Ctrl+Shift+N** | New window |
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | Open file · save to its file · save as |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | Find · replace · next / previous |
+| **Ctrl+Shift+F** | Search every note |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | Go to line · word wrap · history |
 | **F11** | Full screen |
 | **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | Duplicate line · move lines · join lines |
@@ -787,6 +789,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **ปิดแท็บโดยไม่ถาม** เปิดกลับได้ด้วย Ctrl+Shift+T หรือจากรายการโน้ตที่ปิดแล้ว โน้ตที่ลบจะไปอยู่ในถังรีไซเคิล
 * **ไฟล์จริงปลอดภัย** การแก้ไขไฟล์ที่เปิดอยู่ถูกเก็บไว้เสมอ แต่ตัวไฟล์จะเปลี่ยนเมื่อกด Ctrl+S เท่านั้น โดยคงการเข้ารหัสเดิม (รวมถึง TIS-620 / cp874) และรูปแบบการขึ้นบรรทัดเดิม
 * ค้นหาและแทนที่ด้วย regular expression, ไปยังบรรทัด, ซูม, ตัดบรรทัดอัตโนมัติ
+* **ค้นหาทุกโน้ต** (**Ctrl+Shift+F**) ด้วยคำ (ทำงานออฟไลน์ รองรับภาษาไทย) และเลือกค้นหาตามความหมายได้ด้วยเซิร์ฟเวอร์ embedding และ reranker ของคุณเอง ผลลัพธ์จะเปิดโน้ตพร้อมเลือกข้อความตรงนั้นไว้
 * เปิดได้จากเมนูคลิกขวาของโอเวอร์เลย์, **Ctrl+Alt+N** จากที่ใดก็ได้, เมนู Start หรือ **Open with** ใน Explorer
 * **ธีมสว่างหรือมืด**: MicaPad มีปุ่มสลับธีมของตัวเอง (ปุ่มดวงอาทิตย์และพระจันทร์) โดยส่วนอื่นของ MicaStats ไม่เปลี่ยน
 * **เมนูคลิกขวา** ในเนื้อความ (ตัด คัดลอก วาง ค้นหา) และบนแท็บ (เปลี่ยนชื่อ ปิดแท็บอื่น คัดลอกพาธไฟล์ เปิดโฟลเดอร์ที่เก็บไฟล์)
@@ -915,6 +918,7 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | **Ctrl+Shift+N** | หน้าต่างใหม่ |
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | เปิดไฟล์ · บันทึกลงไฟล์ · บันทึกเป็น |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | ค้นหา · แทนที่ · ถัดไป / ก่อนหน้า |
+| **Ctrl+Shift+F** | ค้นหาทุกโน้ต |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | ไปยังบรรทัด · ตัดบรรทัดอัตโนมัติ · ประวัติ |
 | **F11** | เต็มจอ |
 | **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | ทำซ้ำบรรทัด · ย้ายบรรทัด · รวมบรรทัด |

@@ -20,6 +20,7 @@ using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Pad.Search;
 using static Kil0bitSystemMonitor.Pad.EditorMenus;
 
 // UseWindowsForms puts System.Windows.Forms and System.Drawing in scope; these names exist in both.
@@ -146,6 +147,10 @@ namespace Kil0bitSystemMonitor.Pad
             PreviewEditor.ContextMenuOpening += (s, e) => RefreshPreviewMenu(OpenedByMouse(e));
             HistoryPanel.VersionSelected += OnVersionSelected;
             HistoryPanel.CloseRequested += CloseHistory;
+            SearchPanel.CloseRequested += CloseSearch;
+            SearchPanel.ReturnRequested += () => Editor.Focus();
+            SearchPanel.ResultChosen += OpenSearchResult;
+            SearchPanel.Run = RunSearchAsync;
             FindBar.ReplacingAll += () =>
             {
                 if (_shown != null) _workspace.SnapshotNow(_shown, SnapshotReason.BeforeReplace);
@@ -492,8 +497,14 @@ namespace Kil0bitSystemMonitor.Pad
             else if (modifiers == ModifierKeys.None && key == Key.F3) FindBar.FindNext();
             else if (modifiers == ModifierKeys.Shift && key == Key.F3) FindBar.FindPrevious();
             else if (ctrl && key == Key.G) ShowGoToLine();
+            // Esc in the Search notes pane is the pane's own: back to the editor, or from the list to the query.
+            else if (modifiers == ModifierKeys.None && key == Key.Escape && SearchPanel.IsKeyboardFocusWithin) return false;
             else if (modifiers == ModifierKeys.None && key == Key.Escape && FindBar.IsOpen) FindBar.Close();
             else if (ctrlShift && key == Key.H) ToggleHistory();
+            else if (ctrlShift && key == Key.F) ToggleSearch();
+            // Esc again, back in the editor, closes the pane (search spec 1); a text box (go to line, rename) keeps its Esc.
+            else if (modifiers == ModifierKeys.None && key == Key.Escape && SearchPanel.Visibility == Visibility.Visible
+                     && Keyboard.FocusedElement is not System.Windows.Controls.TextBox) CloseSearch();
             else if (modifiers == ModifierKeys.None && key == Key.F11) ToggleFullScreen();
             // Under the history preview the note keys do nothing: swallowed, so AvalonEdit's own
             // Ctrl+D (delete line) cannot reach the hidden editor either. A focused text box keeps them.
@@ -1608,6 +1619,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void ShowHistory()
         {
+            if (SearchPanel.Visibility == Visibility.Visible) SearchPanel.Visibility = Visibility.Collapsed;   // they share the column
             if (_shown == null) return;
             EndPreview();
             // A pause or forced snapshot may still be queued; list what is really on disk.
@@ -1823,6 +1835,93 @@ namespace Kil0bitSystemMonitor.Pad
 
             _closedRows.Remove(row);
             FilterClosed();
+        }
+
+        // ---- search notes (search spec 1) ---------------------------------------------------
+
+        /// <summary>MicaPad's search, set by App when MicaPad first opens; null leaves the pane with words disabled.</summary>
+        internal static NoteSearchService? SearchService { get; set; }
+
+        /// <summary>Hands notes to the indexer; the pane reconciles through it each time it opens.</summary>
+        internal static SearchFeeder? SearchFeeder { get; set; }
+
+        private void OnSearchButtonClick(object sender, RoutedEventArgs e) => ToggleSearch();
+
+        /// <summary>Ctrl+Shift+F: opens the Search notes pane (closing History), or closes it.</summary>
+        internal void ToggleSearch()
+        {
+            if (SearchPanel.Visibility == Visibility.Visible)
+            {
+                CloseSearch();
+                return;
+            }
+            if (HistoryPanel.Visibility == Visibility.Visible)
+            {
+                EndPreview();
+                HistoryPanel.Visibility = Visibility.Collapsed;
+            }
+            SearchFeeder?.FlushPending();
+            SearchFeeder?.ReconcileAll();
+            // A selection of one line becomes the query, as Ctrl+F does.
+            string selected = Editor.SelectedText;
+            SearchPanel.Open(selected.Length > 0 && !selected.Contains('\n') ? selected.Trim() : null);
+        }
+
+        private void CloseSearch()
+        {
+            SearchPanel.Visibility = Visibility.Collapsed;
+            Editor.Focus();
+        }
+
+        private async Task<(IReadOnlyList<SearchRow> Rows, string Status)> RunSearchAsync(string query, CancellationToken cancel)
+        {
+            var service = SearchService;
+            if (service == null) return (Array.Empty<SearchRow>(), "Search is not ready yet.");
+
+            var outcome = await service.Search.SearchAsync(query, cancel);
+            var open = _workspace.Open.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
+            var rows = outcome.Hits.Select(p => new SearchRow(
+                p.NoteId, p.Title, !open.Contains(p.NoteId), p.FirstLine, p.LastLine, p.FirstLineText,
+                SearchSnippet.Make(p.Body, query))).ToList();
+            return (rows, SearchStatusText.For(outcome, service.Settings()));
+        }
+
+        /// <summary>
+        /// Shows the result's note and selects its passage: in this window, in the window that has
+        /// it open (which comes forward), or reopened here when it was closed (search spec 1).
+        /// </summary>
+        internal void OpenSearchResult(SearchRow row)
+        {
+            var note = _workspace.Open.FirstOrDefault(n => n.Id == row.NoteId) ?? _workspace.Reopen(row.NoteId, _windowId);
+            if (note == null)
+            {
+                // Still stored but unreadable right now: it stays closed, and stays in the index.
+                if (_workspace.Store.LoadMeta(row.NoteId) != null)
+                {
+                    ShowReopenFailed();
+                    return;
+                }
+                ShowNotice("That note is no longer there.");
+                SearchFeeder?.ReconcileAll();
+                return;
+            }
+
+            var owner = note.WindowId == _windowId ? this : Registered(_workspace, note.WindowId);
+            ShowNote(note);
+            owner?.SelectPassage(row);
+        }
+
+        /// <summary>Selects the row's passage where its first line is now, and scrolls to it.</summary>
+        private void SelectPassage(SearchRow row)
+        {
+            var document = Editor.Document;
+            int first = SearchLocate.FindLine(document.LineCount, n => document.GetText(document.GetLineByNumber(n)), row.FirstLine, row.FirstLineText);
+            int last = Math.Clamp(first + (row.LastLine - row.FirstLine), first, document.LineCount);
+            var start = document.GetLineByNumber(first);
+            var end = document.GetLineByNumber(last);
+            Editor.Select(start.Offset, end.EndOffset - start.Offset);
+            Editor.ScrollToLine(first);
+            Editor.Focus();
         }
 
         // ---- keys, menu, settings -----------------------------------------------------------

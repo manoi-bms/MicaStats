@@ -45,7 +45,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
             (SyntaxCategory.Comment, new[] { "Comment" }),
             (SyntaxCategory.String, new[] { "String", "Char", "Verbatim", "Regex", "AttributeValue" }),
-            (SyntaxCategory.Keyword, new[] { "Keyword", "Modifier", "Visibility", "Access", "This", "Null", "True", "False", "Bool", "Value" }),
+            (SyntaxCategory.Keyword, new[] { "Keyword", "Modifier", "Visibility", "Access", "This", "Null", "True", "False", "Bool", "Value", "Statement" }),
             (SyntaxCategory.Number, new[] { "Number", "Digit", "Timestamp" }),
             (SyntaxCategory.Preprocessor, new[] { "Preprocessor", "Directive", "Region", "DocType", "XmlDeclaration", "Header", "Position" }),
             (SyntaxCategory.Type, new[] { "Type", "Class", "Reference" }),

@@ -97,6 +97,26 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Theory]
+        [InlineData("a.go", "func main() { }", "main", "func")]
+        [InlineData("a.js", "if (x) { foo(1); }", "foo", "if")]
+        [InlineData("a.php", "<?php if ($x) { f($x); }", "f", "if")]    // PHP colors "if (" as a call; the guard makes it a keyword
+        public void Function_names_have_the_light_function_color_as_on_screen(string file, string code, string function, string keyword) =>
+            PadLanguageWindowTests.WithWindow((window, env, config) =>
+        {
+            var copied = CaptureClipboard(window);
+            PadLanguageWindowTests.OpenFile(window, env, file, code);
+            window.Editor.Select(0, 0);
+
+            window.CopyAsRtf();
+
+            string rtf = copied.Rtf!;
+            int call = ColorNumber(rtf, PadPalette.Light.SyntaxFunction);
+            int word = ColorNumber(rtf, PadPalette.Light.SyntaxKeyword);
+            Assert.Matches($@"\\cf{call}(\\[a-z]+)*\\fs(\d+)\\afs\2 {function}\\plain", rtf);   // bold where the definition is
+            Assert.Matches($@"\\cf{word}(\\[a-z]+)*\\fs(\d+)\\afs\2 {keyword}\\plain", rtf);
+        });
+
+        [Theory]
         [InlineData(null)]                 // a note: Markdown
         [InlineData("a.txt")]              // plain text
         [InlineData("a.json")]

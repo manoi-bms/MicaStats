@@ -38,7 +38,7 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly Dictionary<PadColor, TextDecoration> _dotted = new();
 
         /// <param name="onFailure">Told when a line cannot be formatted; that line is left as it is.</param>
-        /// <param name="warn">Logs the one-time note that fence colors failed.</param>
+        /// <param name="warn">Logs the one-time notes that fence colors, or function colors inside fences, failed.</param>
         /// <param name="fenceDefinition">Test seam: the highlighting of a fence language id.</param>
         /// <param name="monoFont">The editor's monospace family while the reading font is on, else null.</param>
         public MarkdownColorizer(MarkdownDocumentCache cache, Func<PadPalette> palette, Action<Exception>? onFailure = null, Func<FontFamily?>? monoFont = null,
@@ -46,11 +46,14 @@ namespace Kil0bitSystemMonitor.Pad
         {
             _cache = cache;
             _warn = warn;
-            _fences = new FenceHighlighter(cache, fenceDefinition, FenceFailed);
+            _fences = new FenceHighlighter(cache, fenceDefinition, FenceFailed, warn);
             _palette = palette;
             _onFailure = onFailure ?? (_ => { });
             _monoFont = monoFont ?? (() => null);
         }
+
+        /// <summary>The colors inside fenced code (a test seam).</summary>
+        internal FenceHighlighter Fences => _fences;
 
         protected override void OnAddToTextView(TextView textView)
         {

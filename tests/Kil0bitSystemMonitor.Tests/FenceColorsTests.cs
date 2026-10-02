@@ -139,6 +139,43 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_failing_function_pass_in_a_fence_is_logged_once_on_its_own_and_the_block_keeps_its_colors() => UiThread.Run(() =>
+        {
+            var failures = new List<System.Exception>();
+            var warnings = new List<string>();
+            var highlighter = new FenceHighlighter(new MarkdownDocumentCache(), null, failures.Add, warnings.Add)
+            {
+                FunctionPass = (line, failed) => failed(new System.InvalidOperationException("boom")),
+            };
+            var document = new TextDocument("```cs\nint a = f(1);\nint b = g(2);\n```");
+
+            var first = highlighter.HighlightLine(document, 2);
+            var second = highlighter.HighlightLine(document, 3);
+
+            Assert.Empty(failures);                                         // not the block's failure: its colors stay
+            Assert.NotEmpty(first!.Sections);
+            Assert.NotEmpty(second!.Sections);
+            var warning = Assert.Single(warnings);
+            Assert.StartsWith("Function colors", warning);
+            Assert.Contains("InvalidOperationException", warning);
+            Assert.DoesNotContain("boom", warning);
+        });
+
+        [Fact]
+        public void The_markdown_colorizer_hands_its_log_to_the_fence_function_pass() => UiThread.Run(() =>
+        {
+            var warnings = new List<string>();
+            var colorizer = new MarkdownColorizer(new MarkdownDocumentCache(), () => PadPalette.Dark, null, null, warnings.Add);
+
+            colorizer.Fences.FunctionPass = (line, failed) => failed(new System.InvalidOperationException());
+            var view = new TextView { Document = new TextDocument("```go\nfunc main() {\nf(1)\n```\nafter") };
+            view.LineTransformers.Add(colorizer);
+            Layout(view);
+
+            Assert.StartsWith("Function colors", Assert.Single(warnings));
+        });
+
+        [Fact]
         public void A_block_over_2000_inside_lines_is_not_colored_at_all() => UiThread.Run(() =>
         {
             var highlighter = new FenceHighlighter(new MarkdownDocumentCache());

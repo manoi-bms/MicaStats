@@ -27,15 +27,23 @@ namespace Kil0bitSystemMonitor.Pad
 
         private readonly Func<string?, IHighlightingDefinition?> _definitionFor;
         private readonly Action<Exception>? _onFailure;
+        private readonly Action<string>? _warn;
+        private bool _functionsLogged;
 
         /// <param name="definitionFor">The highlighting of a fence's language id (a test seam); null uses MicaPad's languages.</param>
         /// <param name="onFailure">Told when highlighting a block throws; that block gets no colors until the next edit.</param>
-        public FenceHighlighter(MarkdownDocumentCache cache, Func<string?, IHighlightingDefinition?>? definitionFor = null, Action<Exception>? onFailure = null)
+        /// <param name="warn">Logs the one-time note that function colors failed; the blocks keep their other colors.</param>
+        public FenceHighlighter(MarkdownDocumentCache cache, Func<string?, IHighlightingDefinition?>? definitionFor = null, Action<Exception>? onFailure = null,
+                                Action<string>? warn = null)
         {
             _cache = cache;
             _definitionFor = definitionFor ?? DefaultDefinition;
             _onFailure = onFailure;
+            _warn = warn;
         }
+
+        /// <summary>The function pass run on each line of a flagged language (a test seam).</summary>
+        internal Action<HighlightedLine, Action<Exception>> FunctionPass { get; set; } = FunctionCallHighlighter.AddTo;
 
         private static IHighlightingDefinition? DefaultDefinition(string? id)
         {
@@ -153,6 +161,21 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
+        /// <summary>The function pass threw on a line: that line keeps its other colors. Logged once, with the exception type only.</summary>
+        private void FunctionsFailed(Exception ex)
+        {
+            if (_functionsLogged) return;
+            _functionsLogged = true;
+            try
+            {
+                _warn?.Invoke("Function colors inside fenced code failed (" + ex.GetType().Name + "); some lines are shown without them");
+            }
+            catch (Exception)
+            {
+                // Logging is best effort.
+            }
+        }
+
         private void Fill(TextDocument document, int open, Block block, int index)
         {
             var engine = block.Engine;
@@ -167,7 +190,7 @@ namespace Kil0bitSystemMonitor.Pad
                 engine.CurrentSpanStack = block.Stack;
                 var highlighted = engine.HighlightLine(document, line);
                 // A failure here costs only this line its function colors.
-                if (block.FunctionCalls) FunctionCallHighlighter.AddTo(highlighted, Failed);
+                if (block.FunctionCalls) FunctionPass(highlighted, FunctionsFailed);
                 block.Lines.Add(highlighted);
                 block.Stacks.Add(engine.CurrentSpanStack);
             }

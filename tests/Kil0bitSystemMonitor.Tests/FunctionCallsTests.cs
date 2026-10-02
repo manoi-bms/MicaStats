@@ -25,12 +25,38 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("foo\t(1)", "foo")]
         [InlineData("x = a[1](2)", "")]
         [InlineData("1foo(", "")]
-        [InlineData("$(document)", "$")]
         [InlineData("a.b(c(d), e)", "b,c")]
         [InlineData("my_func2 (x)", "my_func2")]
         [InlineData("foo = bar", "")]
         [InlineData("", "")]
+        // A lone $ is no name: PowerShell's $(...) is a subexpression (so jQuery's $(...) goes too).
+        [InlineData("$(Get-Date)", "")]
+        [InlineData("$(document).ready(f)", "ready")]
+        [InlineData("$fn(1); _(\"text\")", "$fn,_")]
         public void Find_returns_each_name_followed_by_a_parenthesis(string line, string expected)
+        {
+            Assert.Equal(expected, Names(line));
+        }
+
+        [Theory]
+        [InlineData("if (a) foreach (b) while (c) return (d)", "")]
+        [InlineData("static_assert(x); decltype(y) z; sizeof (int)", "")]
+        [InlineData("async (x) => await (x); yield (x)", "")]
+        [InlineData("catch (E) when (x) { Run(); }", "Run")]
+        [InlineData("IF (a) Match(b) New(c)", "IF,Match,New")]                 // case counts: Regex.Match, errors.New
+        // After ".", "::" or "->" a keyword is a member: str.match, promise.catch, Vec::new, $o->delete.
+        [InlineData("s.match(re); p.catch(e); Vec::new(); $o->delete(k)", "match,catch,new,delete")]
+        public void Find_skips_keywords_unless_they_are_members(string line, string expected)
+        {
+            Assert.Equal(expected, Names(line));
+        }
+
+        [Theory]
+        [InlineData("na\u00EFve(x)", "")]
+        [InlineData("caf\u00E9(1)", "")]
+        [InlineData("\u0E0A\u0E37\u0E48foo(1)", "")]                             // Thai letters and marks, then ASCII
+        [InlineData("\u0E01\u0E32\u0E23 foo(1)", "foo")]
+        public void A_name_is_the_whole_word_and_only_ascii_names_are_colored(string line, string expected)
         {
             Assert.Equal(expected, Names(line));
         }
@@ -79,6 +105,26 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_keyword_the_definition_colored_as_a_call_is_repainted_as_a_keyword_in_place()
+        {
+            const string code = "if ($x) $o->delete($k);";
+            var document = new TextDocument(code);
+            var line = new HighlightedLine(document, document.GetLineByNumber(1));
+            var call = new HighlightingColor { Name = "FunctionCall" };
+            line.Sections.Add(new HighlightedSection { Offset = 0, Length = 2, Color = call });
+            line.Sections.Add(new HighlightedSection { Offset = 12, Length = 6, Color = call });   // a member: stays a call
+            var failures = new List<Exception>();
+
+            FunctionCallHighlighter.AddTo(line, failures.Add);
+
+            line.ValidateInvariants();
+            Assert.Empty(failures);
+            Assert.Equal(new[] { (0, 2, SyntaxCategory.Keyword), (12, 6, SyntaxCategory.Function) },
+                         line.Sections.Select(s => (s.Offset, s.Length, SyntaxColors.Categorize(s.Color.Name))));
+            Assert.Same(call, line.Sections[1].Color);
+        }
+
+        [Fact]
         public void A_failing_pass_costs_only_that_line_its_function_colors_and_is_reported_once()
         {
             var document = new TextDocument("foo(1)\nbar(2)\nbaz(3)");
@@ -97,19 +143,35 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Theory]
-        [InlineData("csharp", "Foo")]
-        [InlineData("javascript", "foo")]
-        [InlineData("go", "foo")]
-        public void Function_color_never_enters_strings_comments_or_keywords(string languageId, string name) => UiThread.Run(() =>
+        [InlineData("csharp", "if (x) Foo(\"bar(\") // baz(", "Foo", "if")]
+        [InlineData("javascript", "if (x) foo(\"bar(\") // baz(", "foo", "if")]
+        [InlineData("go", "if (x) foo(\"bar(\") // baz(", "foo", "if")]
+        // Definitions that color a keyword before "(" as a call: PHP's FunctionCall, C++'s MethodName, C#'s MethodCall.
+        [InlineData("php", "<?php if ($x) { foreach ($a as $b) { while (true) { return f($x); } } }", "f", "if,foreach,while,return")]
+        [InlineData("php", "<?php $o->delete($k); if ($k) { }", "delete", "if")]
+        [InlineData("cpp", "static_assert(x); decltype(y) z; foo(1);", "foo", "static_assert,decltype")]
+        [InlineData("csharp", "try { } catch (E) when (x) { Run(); }", "Run", "catch,when")]
+        // Keywords ES5's definition leaves plain.
+        [InlineData("javascript", "async (x) => await (x); yield (x);", "", "")]
+        public void Function_color_never_enters_strings_comments_or_keywords(string languageId, string code, string functions, string keywords) => UiThread.Run(() =>
         {
-            string code = "if (x) " + name + "(\"bar(\") // baz(";
             var line = HighlighterOf(Show(languageId, code)).HighlightLine(1);
 
             line.ValidateInvariants();
-            Assert.Equal(new[] { name }, FunctionNames(line));
-            Assert.Equal(SyntaxCategory.Keyword, CategoryAt(line, code.IndexOf("if", StringComparison.Ordinal)));
+            Assert.Equal(functions, string.Join(",", FunctionNames(line)));
+            foreach (string keyword in keywords.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                Assert.True(SyntaxCategory.Keyword == CategoryAt(line, code.IndexOf(keyword, StringComparison.Ordinal)), keyword + " is not a keyword");
+            if (!code.Contains("\"bar(\"", StringComparison.Ordinal)) return;
             Assert.Equal(SyntaxCategory.String, CategoryAt(line, code.IndexOf("bar(", StringComparison.Ordinal)));
             Assert.Equal(SyntaxCategory.Comment, CategoryAt(line, code.IndexOf("baz(", StringComparison.Ordinal)));
+        });
+
+        [Theory]
+        [InlineData("powershell", "Write-Host $(Get-Date)", "")]
+        [InlineData("javascript", "$(document).ready(f);", "ready")]
+        public void A_lone_dollar_is_not_a_function_name(string languageId, string code, string functions) => UiThread.Run(() =>
+        {
+            Assert.Equal(functions, string.Join(",", FunctionNames(HighlighterOf(Show(languageId, code)).HighlightLine(1))));
         });
 
         [Theory]

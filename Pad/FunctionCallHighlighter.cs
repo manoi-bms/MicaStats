@@ -20,7 +20,10 @@ namespace Kil0bitSystemMonitor.Pad
         /// The one color every added section shares. <c>Underline = false</c> draws nothing, but
         /// without some style AvalonEdit's colorizer would skip the color as empty and never paint it.
         /// </summary>
-        private static readonly HighlightingColor FunctionColor = CreateColor();
+        private static readonly HighlightingColor FunctionColor = CreateColor("Function");
+
+        /// <summary>What a keyword the definition colored as a call is repainted with.</summary>
+        private static readonly HighlightingColor KeywordColor = CreateColor("Keywords");
 
         private readonly IHighlighter _inner;
         private readonly Action<Exception> _onFailure;
@@ -33,17 +36,19 @@ namespace Kil0bitSystemMonitor.Pad
             _onFailure = onFailure;
         }
 
-        private static HighlightingColor CreateColor()
+        private static HighlightingColor CreateColor(string name)
         {
-            var color = new HighlightingColor { Name = "Function", Underline = false };
+            var color = new HighlightingColor { Name = name, Underline = false };
             color.Freeze();
             return color;
         }
 
         /// <summary>
         /// Adds a Function section for each name the line's sections leave uncovered, keeping the
-        /// sections in offset order. A throw leaves the line as it was and is passed to
-        /// <paramref name="onFailure"/>: it costs only this line its function colors.
+        /// sections in offset order. A section the definition colored as a call whose text is a
+        /// <see cref="FunctionCalls.IsKeyword">keyword</see> (PHP's <c>if (</c>, C++'s <c>decltype(</c>,
+        /// C#'s <c>when (</c>) gets the keyword color instead, in place. A throw leaves the line as it
+        /// was and is passed to <paramref name="onFailure"/>: it costs only this line its function colors.
         /// </summary>
         internal static void AddTo(HighlightedLine line, Action<Exception> onFailure)
         {
@@ -51,32 +56,24 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 var documentLine = line.DocumentLine;
                 if (documentLine.Length > MarkdownLineTokenizer.MaxInlineLength) return;
-                var calls = FunctionCalls.Find(line.Document.GetText(documentLine), MarkdownLineTokenizer.MaxInlineLength);
-                if (calls.Count == 0) return;
-
-                // Sections are sorted by offset: the ones starting before a name's end come first,
-                // and if none of them reaches past the name's start, nothing covers the name.
+                string text = line.Document.GetText(documentLine);
                 var sections = line.Sections;
-                var merged = new List<HighlightedSection>(sections.Count + calls.Count);
-                int next = 0;
-                int reach = int.MinValue;
-                bool added = false;
-                foreach (var (start, length) in calls)
-                {
-                    int from = documentLine.Offset + start;
-                    int to = from + length;
-                    for (; next < sections.Count && sections[next].Offset < to; next++)
-                    {
-                        reach = Math.Max(reach, sections[next].Offset + sections[next].Length);
-                        merged.Add(sections[next]);
-                    }
-                    if (reach > from) continue;
-                    merged.Add(new HighlightedSection { Offset = from, Length = length, Color = FunctionColor });
-                    added = true;
-                }
-                if (!added) return;
-                for (; next < sections.Count; next++) merged.Add(sections[next]);
 
+                List<HighlightedSection>? keywords = null;
+                foreach (var section in sections)
+                {
+                    int at = section.Offset - documentLine.Offset;
+                    if (at < 0 || at + section.Length > text.Length) continue;
+                    if (FunctionCalls.IsKeyword(text.AsSpan(at, section.Length)) && !FunctionCalls.AfterMemberAccess(text, at)
+                        && SyntaxColors.Categorize(section.Color?.Name) == SyntaxCategory.Function)
+                        (keywords ??= new List<HighlightedSection>()).Add(section);
+                }
+                var merged = WithCalls(sections, FunctionCalls.Find(text, MarkdownLineTokenizer.MaxInlineLength), documentLine.Offset);
+
+                // Nothing has changed the line so far; nothing below throws.
+                if (keywords != null)
+                    foreach (var section in keywords) section.Color = KeywordColor;
+                if (merged == null) return;
                 sections.Clear();
                 foreach (var section in merged) sections.Add(section);
             }
@@ -84,6 +81,38 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 onFailure(ex);
             }
+        }
+
+        /// <summary>
+        /// <paramref name="sections"/> with a Function section for each call no section covers, in
+        /// offset order; null when no call is added.
+        /// </summary>
+        private static List<HighlightedSection>? WithCalls(IList<HighlightedSection> sections, IReadOnlyList<(int Start, int Length)> calls, int lineOffset)
+        {
+            if (calls.Count == 0) return null;
+
+            // Sections are sorted by offset: the ones starting before a name's end come first,
+            // and if none of them reaches past the name's start, nothing covers the name.
+            var merged = new List<HighlightedSection>(sections.Count + calls.Count);
+            int next = 0;
+            int reach = int.MinValue;
+            bool added = false;
+            foreach (var (start, length) in calls)
+            {
+                int from = lineOffset + start;
+                int to = from + length;
+                for (; next < sections.Count && sections[next].Offset < to; next++)
+                {
+                    reach = Math.Max(reach, sections[next].Offset + sections[next].Length);
+                    merged.Add(sections[next]);
+                }
+                if (reach > from) continue;
+                merged.Add(new HighlightedSection { Offset = from, Length = length, Color = FunctionColor });
+                added = true;
+            }
+            if (!added) return null;
+            for (; next < sections.Count; next++) merged.Add(sections[next]);
+            return merged;
         }
 
         public HighlightedLine HighlightLine(int lineNumber)

@@ -25,6 +25,9 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("Bool", SyntaxCategory.Keyword)]
         [InlineData("Null", SyntaxCategory.Keyword)]
         [InlineData("Modifiers", SyntaxCategory.Keyword)]
+        [InlineData("SelectionStatements", SyntaxCategory.Keyword)]          // PHP and Java: if, else, switch
+        [InlineData("JumpStatements", SyntaxCategory.Keyword)]               // return, break
+        [InlineData("ExceptionHandlingStatements", SyntaxCategory.Keyword)]
         [InlineData("NumberLiteral", SyntaxCategory.Number)]
         [InlineData("Digits", SyntaxCategory.Number)]
         [InlineData("LogTimestamp", SyntaxCategory.Number)]

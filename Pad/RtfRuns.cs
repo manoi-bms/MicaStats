@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Highlighting;
+using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 
 namespace Kil0bitSystemMonitor.Pad
@@ -11,7 +12,8 @@ namespace Kil0bitSystemMonitor.Pad
     /// <summary>
     /// The styled runs MicaPad shows for a stretch of a document, in the <b>light</b> palette
     /// (spec 4.4: RTF is pasted onto white pages). Syntax colors come from the language's
-    /// highlighting definition through <see cref="SyntaxColors"/>; Markdown from the tokenizer and
+    /// highlighting definition through <see cref="SyntaxColors"/>, with function names as the editor
+    /// colors them (<see cref="FunctionCallHighlighter"/>); Markdown from the tokenizer and
     /// <see cref="MarkdownStyles"/>, with fenced code lines shaded as the editor paints them. Bare
     /// links get the link color in every language, as the editor underlines them. Offsets are
     /// relative to <c>start</c>.
@@ -68,11 +70,21 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (PadHighlighting.For(language) is not { } definition) return;
             var highlighter = new DocumentHighlighter(document, definition);
+            bool functionsLogged = false;
+            void FunctionsFailed(Exception ex)
+            {
+                if (functionsLogged) return;
+                functionsLogged = true;
+                DiagnosticsLog.Warn("pad", "Function colors failed in Copy as RTF (" + ex.GetType().Name + "); some lines are copied without them");
+            }
+
             try
             {
                 for (int n = first; n <= last; n++)
                 {
                     var highlighted = highlighter.HighlightLine(n);
+                    // As the editor shows the line: function names in their own color (ruling R4).
+                    if (language.FunctionCalls) FunctionCallHighlighter.AddTo(highlighted, FunctionsFailed);
                     foreach (var section in highlighted.Sections)
                     {
                         var color = section.Color;

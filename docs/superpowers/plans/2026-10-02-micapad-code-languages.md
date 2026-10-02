@@ -150,3 +150,79 @@ the mouse over fenced blocks.
 ## After the last task (controller)
 
 Final whole-branch review, one fix wave, a short rulings section appended to this plan (execution rulings, parked findings, the owner's e2e checklist: a `.sh`, `.pas`, `.go`, `.ts`, `Dockerfile` file and the same as fences in both themes; function names in C#/JS/Go; the Copy button over code, math and a diagram), then the deploy for e2e (standing rule).
+
+---
+
+## Execution record (2026-10-02)
+
+Executed subagent-driven on branch `feat/micapad-code-languages`: three tasks, each with a task review
+and fix rounds. The final whole-branch review ran in parallel by Claude and **Codex** (the owner's
+standing request), followed by three fix rounds, each re-checked by both. Final suite: 3380 tests
+passing.
+
+### Rulings made during execution
+
+1. **Own definitions now paint in whole files.** AvalonEdit's colorizer skips a color with no style,
+   and MicaPad's `.xshd` colors were names only, so INI, YAML, Batch and Log files have shown no colors
+   since v1.12 (only fences painted). Every `<Color>` now carries `underline="false"`, which is neutral:
+   `SyntaxPaint` only acts on `true`.
+2. **Grammar robustness.**
+   - Line comments are end-less Spans, so a quote in a comment never opens a string.
+   - Pascal strings are Spans with the `''` escape.
+   - Char literals are Spans with a closing-quote lookahead, so Rust lifetimes stay code.
+   - Heredocs: the common tags (EOF, SQL, END, …) end only on their own tag line. Any other upper-case
+     tag ends at the first line holding only an upper-case word. Mixed-case tags and arithmetic `<<`
+     open nothing, and `<<\EOF` works.
+3. **Brace folding.** TypeScript folds as JavaScript. Go knows backtick strings, Rust skips char
+   literals (lifetimes stay code), and Kotlin knows `"""`.
+4. **Function color.**
+   - A keyword guard repaints built-in "call" colors on keywords as Keyword: PHP `if (`, C++
+     `static_assert(`, C# `when`, and so on. Words after `.`, `::` and `->` stay calls.
+   - `Statement`, `ControlFlow`, `ExceptionHandling`, `Void`, `Package` and `Literals` joined the
+     Keyword row. PowerShell `Command` (cmdlets) is Function.
+   - Per-language declaration words keep `class Foo(` and `impl Fn(` uncolored. `object` is not one,
+     so C# `object Clone()` keeps its color.
+   - In PowerShell, a name spaced from its `(` is an argument, except after `function` or `filter`.
+   - A lone `$` is never a name.
+   - Copy as RTF runs the same pass.
+5. **YAML, INI and Batch, now that they paint.**
+   - YAML Bool counts only as a whole value or a whole flow item. It never applies inside a block
+     scalar, or to a colon inside a plain scalar (`urn:true`).
+   - The YAML key starts after the list dash.
+   - INI quoted values, escaped quotes included, are protected, and an inline `;` or `#` comment is a
+     Comment.
+   - Batch colors all of `%~dp0` and `%%~nxf`.
+6. **Copy button.**
+   - It arranges from its own final width, so it is placed right after a resize.
+   - It stays shown while the pointer is over it, and hides for blank blocks.
+   - An unclosed block copies without a trailing break.
+   - A vault reference is copied as its reference text.
+
+### Parked (real, deferred)
+
+- The Copy button keeps its old height after a zoom or a late image/diagram layout until the mouse
+  moves.
+- Ruby `%q(it's)` opens a `'` string.
+- A YAML flow at line start inside a block-scalar body still gets Bool.
+- Rust `dyn Fn(` is colored as a call, and class names are plain rather than Type.
+- Text after a heredoc tag on its opening line is String.
+- In a Dockerfile, a mid-line `#` followed by `'` colors to the line end.
+- Brace folding does not know Rust raw strings.
+- **Repo-wide:** in xUnit 2.9.2, `Assert.Equal(string[], IEnumerable<string>)` ignores whitespace and
+  line-ending differences (probed), so about 325 such assertions in the suite may be weaker than they
+  look. The new tests on this branch compare exactly.
+
+### Owner's e2e checklist
+
+- Open a `.sh`, `.pas`/`.dpr`, `.go`, `.rs`, `.rb`, `.kt`, `.ts`, `Dockerfile`, `.ini`, `.yml` and
+  `.bat` file in both themes. Each should be colored; INI, YAML and Batch files now show colors too.
+- Check the same languages as fences in a note: ` ```bash `, ` ```delphi `, ` ```go `, ` ```md `, and
+  so on.
+- In C#, JavaScript, Go and Python files, function names have their own color, while PHP `if (` and
+  `foreach (` and C++ `static_assert(` keep the keyword color.
+- Folding in TypeScript, Go, Rust and Kotlin files.
+- The Copy button over a code block, a `$$` math block and a diagram source:
+  - a click copies exactly the code;
+  - a right-click, double-click or drag starting on it leaves the caret and selection alone;
+  - try zoom far from 100% and F11.
+- Copy as RTF from a C# file into Word: function names keep their color.

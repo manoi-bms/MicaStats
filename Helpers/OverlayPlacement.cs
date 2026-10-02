@@ -58,5 +58,18 @@ namespace Kil0bitSystemMonitor.Helpers
             int x = Math.Clamp(desiredX, taskbar.Left, maxX);
             return (x, y);
         }
+
+        /// <summary>
+        /// True when a taskbar-stuck overlay must be attached to <paramref name="taskbar"/> again.
+        /// The attachment is the taskbar owning the overlay, which keeps it above the taskbar
+        /// even while the taskbar is the active window. When Explorer restarts, its taskbar dies
+        /// and Windows sets the overlay's owner to none, so a click on the new taskbar would cover
+        /// it; a taskbar that only appears after MicaStats started was never attached at all.
+        /// </summary>
+        /// <param name="taskbar">The live <c>Shell_TrayWnd</c>, or zero while Explorer has none.</param>
+        /// <param name="owner">The overlay's current owner window, or zero.</param>
+        /// <param name="lastAttempt">The taskbar the last attach went to: one that refused is not asked again every tick.</param>
+        public static bool NeedsTaskbarAttach(bool stickToTaskbar, nint taskbar, nint owner, nint lastAttempt) =>
+            stickToTaskbar && taskbar != 0 && owner != taskbar && taskbar != lastAttempt;
     }
 }

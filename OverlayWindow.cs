@@ -24,8 +24,8 @@ namespace Kil0bitSystemMonitor
         private readonly MetricsHistory _history = null!;
         private readonly System.Windows.Threading.Dispatcher _dispatcher = null!;
         private readonly System.Threading.Timer _zOrderTimer = null!;
-        private System.Windows.Threading.DispatcherTimer? _startupRecoveryTimer;
-        private int _startupRecoveryTicks;
+        private System.Windows.Threading.DispatcherTimer? _recoveryTimer;
+        private int _recoveryTicks;
 
         private bool _isHovered = false;
         private bool _trackingMouse = false;
@@ -48,6 +48,8 @@ namespace Kil0bitSystemMonitor
         private bool _inSizeMove;       // inside the native move loop: avoidance must not fight the drag
         private float? _testWidthCapPx = null; // render-harness override (reflection) for the Start-menu width cap
         private bool _appbarRegistered = false;
+        private IntPtr _attachedTaskbar;   // the taskbar the last attach went to (OverlayPlacement.NeedsTaskbarAttach)
+        private readonly uint _taskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
         private readonly Action? _onHistoryUpdated;
         private readonly System.ComponentModel.PropertyChangedEventHandler? _onConfigPropertyChanged;
         private uint _currentDpi = 96;
@@ -124,6 +126,8 @@ namespace Kil0bitSystemMonitor
         private const uint ABN_FULLSCREENAPP = 0x00000002;
         private const uint ABM_WINDOWPOSCHANGED = 0x00000009;
         private const uint GW_HWNDPREV = 3;
+        private const uint GW_OWNER = 4;
+        private const uint MSGFLT_ALLOW = 1;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct WINDOWPOS { public IntPtr hwnd; public IntPtr hwndInsertAfter; public int x; public int y; public int cx; public int cy; public uint flags; }
@@ -171,6 +175,11 @@ namespace Kil0bitSystemMonitor
                 // A second launch with --pad (Explorer's Open with) arrives as WM_COPYDATA; when this instance is elevated the filter must admit the unelevated sender.
                 Services.Pad.PadIpc.AllowFromLowerIntegrityWhenElevated(_hWnd);
 
+                // Explorer broadcasts TaskbarCreated when its taskbar comes back after a restart.
+                // Elevated, the unelevated shell's broadcast is filtered out unless admitted. It
+                // carries nothing, and the handler only attaches to whatever Shell_TrayWnd exists.
+                if (_taskbarCreatedMessage != 0) ChangeWindowMessageFilterEx(_hWnd, _taskbarCreatedMessage, MSGFLT_ALLOW, IntPtr.Zero);
+
                 if (_hIcon != IntPtr.Zero) { SendMessage(_hWnd, WM_SETICON, (IntPtr)ICON_BIG, _hIcon); SendMessage(_hWnd, WM_SETICON, (IntPtr)ICON_SMALL, _hIcon); }
 
                 _currentDpi = GetDpiForWindow(_hWnd);
@@ -204,15 +213,7 @@ namespace Kil0bitSystemMonitor
                 // retry shortly after: with LaunchOnStartup the shell taskbar is often not yet
                 // findable at login, so the first attempt can no-op until Explorer is ready.
                 EnsureOverlayOnScreen();
-                _startupRecoveryTimer = new System.Windows.Threading.DispatcherTimer(
-                    TimeSpan.FromMilliseconds(2500), System.Windows.Threading.DispatcherPriority.Background,
-                    (s, e) =>
-                    {
-                        AlignToTaskbarCenter();
-                        EnsureOverlayOnScreen();
-                        if (++_startupRecoveryTicks >= 4) { _startupRecoveryTimer?.Stop(); _startupRecoveryTimer = null; }
-                    }, _dispatcher);
-                _startupRecoveryTimer.Start();
+                StartTaskbarRecovery();
 
                 // MetricsHistory has already marshalled to the dispatcher and appended the sample,
                 // so this runs on the UI thread and the history is current.
@@ -269,6 +270,11 @@ namespace Kil0bitSystemMonitor
         {
             _dispatcher.BeginInvoke(() =>
             {
+                // The safety net for a missed TaskbarCreated: a taskbar the overlay is not attached to.
+                if (OverlayPlacement.NeedsTaskbarAttach(_config.Config.StickToTaskbar,
+                        Win32Helper.FindWindow("Shell_TrayWnd", null!), GetWindow(_hWnd, GW_OWNER), _attachedTaskbar))
+                    ReattachToTaskbar();
+
                 bool show = ShouldShowOverlay();
 
                 if (show)
@@ -315,10 +321,53 @@ namespace Kil0bitSystemMonitor
             IntPtr taskbarHwnd = Win32Helper.FindWindow("Shell_TrayWnd", null!);
             if (taskbarHwnd != IntPtr.Zero)
             {
+                _attachedTaskbar = taskbarHwnd;
                 Win32Helper.SetWindowLongPtr(_hWnd, Win32Helper.GWL_HWNDPARENT, taskbarHwnd);
                 RegisterAppBar();
                 AlignToTaskbarCenter();
             }
+        }
+
+        /// <summary>
+        /// Explorer's taskbar came back (TaskbarCreated), or one exists that the overlay is not
+        /// attached to (<see cref="OverlayPlacement.NeedsTaskbarAttach"/>). The old taskbar took
+        /// the owner link, the appbar registration and any full-screen notice with it, so this
+        /// attaches to the new one, registers again, and realigns while it settles.
+        /// </summary>
+        private void ReattachToTaskbar()
+        {
+            _appbarRegistered = false;
+            _shellFullscreen = false;
+            if (_config.Config.StickToTaskbar) AttachToTaskbar(); else AlignToTaskbarCenter();
+
+            // Back above the new taskbar now rather than at the next click elsewhere; never shown by this.
+            IntPtr zOrder = _config.Config.AlwaysOnTop ? Win32Helper.HWND_TOPMOST : Win32Helper.HWND_NOTOPMOST;
+            SetWindowPos(_hWnd, zOrder, 0, 0, 0, 0, Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE);
+
+            EnsureOverlayOnScreen();
+            StartTaskbarRecovery();
+            UpdateVisibility();
+            UpdateLayer();
+            try { DiagnosticsLog.Log("overlay", "Taskbar came back; overlay attached to it again"); } catch { }
+        }
+
+        /// <summary>
+        /// Aligns to the taskbar and rescues an off-screen overlay four more times, 2.5 s apart:
+        /// a taskbar that has just appeared, at login or after Explorer restarted, can still be settling.
+        /// </summary>
+        private void StartTaskbarRecovery()
+        {
+            _recoveryTimer?.Stop();
+            _recoveryTicks = 0;
+            _recoveryTimer = new System.Windows.Threading.DispatcherTimer(
+                TimeSpan.FromMilliseconds(2500), System.Windows.Threading.DispatcherPriority.Background,
+                (s, e) =>
+                {
+                    AlignToTaskbarCenter();
+                    EnsureOverlayOnScreen();
+                    if (++_recoveryTicks >= 4) { _recoveryTimer?.Stop(); _recoveryTimer = null; }
+                }, _dispatcher);
+            _recoveryTimer.Start();
         }
 
         private void RegisterAppBar() { if (_appbarRegistered || _hWnd == IntPtr.Zero) return; APPBARDATA abd = new APPBARDATA { cbSize = Marshal.SizeOf(typeof(APPBARDATA)), hWnd = _hWnd, uCallbackMessage = WM_APPBAR_CALLBACK }; SHAppBarMessage(ABM_NEW, ref abd); _appbarRegistered = true; }
@@ -1636,7 +1685,7 @@ namespace Kil0bitSystemMonitor
 
         public void Dispose()
         {
-            try { if (_onHistoryUpdated != null) _history.Updated -= _onHistoryUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _startupRecoveryTimer?.Stop(); _startupRecoveryTimer = null; _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
+            try { if (_onHistoryUpdated != null) _history.Updated -= _onHistoryUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _recoveryTimer?.Stop(); _recoveryTimer = null; _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
         }
 
         /// <summary>The tab-separated shortcut column for MicaPad's menu item; empty when no valid hotkey is set.</summary>
@@ -1672,6 +1721,7 @@ namespace Kil0bitSystemMonitor
             if (msg == WM_ENTERSIZEMOVE) { _inSizeMove = true; }
             if (msg == WM_EXITSIZEMOVE) { _inSizeMove = false; if (Win32Helper.GetWindowRect(hWnd, out Win32Helper.RECT r)) { _config.Config.X = r.Left; _config.Config.Y = r.Top; _config.SaveConfig(); } }
             if (msg == WM_SHOW_SETTINGS) { _dispatcher.BeginInvoke(() => App.OpenSettings(_viewModel, _config)); return IntPtr.Zero; }
+            if (_taskbarCreatedMessage != 0 && msg == _taskbarCreatedMessage) { _dispatcher.BeginInvoke(ReattachToTaskbar); return IntPtr.Zero; }
             if (msg == Services.Pad.PadIpc.WM_COPYDATA)
             {
                 // Anything not tagged as a MicaPad request is refused; the path is only ever opened as text.
@@ -1869,6 +1919,8 @@ namespace Kil0bitSystemMonitor
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
         [DllImport("user32.dll")] static extern IntPtr DefWindowProc(IntPtr h, uint m, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint c);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string name);
+        [DllImport("user32.dll", SetLastError = true)] static extern bool ChangeWindowMessageFilterEx(IntPtr h, uint m, uint action, IntPtr changeFilterStruct);
         [DllImport("kernel32.dll")] static extern IntPtr GetModuleHandle(string? n);
         [DllImport("user32.dll")] static extern IntPtr LoadCursor(IntPtr i, int n);
         [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)] static extern bool UpdateLayeredWindow(IntPtr h, IntPtr hd, ref POINT pd, ref SIZE ps, IntPtr hs, ref POINT pr, int c, ref BLENDFUNCTION b, int f);

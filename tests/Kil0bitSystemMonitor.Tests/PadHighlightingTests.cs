@@ -376,6 +376,8 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("shell", "cat <<-'SQL'\n\tCOMMIT;\n\tCOMMIT\n\tDon't\n\tSQL\necho $HOME", "$HOME", "Variable")]
         [InlineData("ruby", "sql = <<~SQL\n  SELECT 1;\n  COMMIT\n  Don't\nSQL\nx = nil", "nil", "Null")]
         [InlineData("shell", "cat <<ZZTOP\nDon't\nZZTOP\necho $HOME", "$HOME", "Variable")]
+        [InlineData("shell", "cat <<\\EOF\nDon't\nEOF\necho $HOME", "$HOME", "Variable")]           // a backslash-quoted tag
+        [InlineData("shell", "cat <<-\\ZZTOP\n\tDon't\n\tZZTOP\necho $HOME", "$HOME", "Variable")]
         public void A_heredoc_ends_only_on_its_own_tag_line(string languageId, string text, string part, string colorName) => UiThread.Run(() =>
         {
             var document = new TextDocument(text);

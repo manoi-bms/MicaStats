@@ -60,6 +60,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         public int Count { get { lock (_gate) return _vectors.Count; } }
 
+        /// <summary>The most vectors this store holds (<see cref="Capacity"/> unless the constructor said otherwise).</summary>
+        public int MaxCount => _capacity;
+
         /// <summary>
         /// Empties the store for <paramref name="fingerprint"/> and reads the file when it was made
         /// for it. True when vectors were read.

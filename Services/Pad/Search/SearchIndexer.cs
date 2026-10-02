@@ -11,7 +11,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
     /// Keeps the keyword index and the vectors in step with the notes (spec 3.5). Every change is
     /// queued and applied in order on one background worker, which also sends the passages that
     /// have no vector to the embedding server, <see cref="BatchSize"/> at a time, newest note
-    /// first, retrying a failed request after <c>retryDelay(n)</c>.
+    /// first, retrying a failed request after <c>retryDelay(n)</c>. When the notes have more
+    /// passages than the store holds, the least recently modified notes' passages go without
+    /// vectors (spec 3.4): their vectors make room for newer ones, and come back when room frees up.
     /// </summary>
     public sealed class SearchIndexer : IDisposable
     {
@@ -61,12 +63,12 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         private readonly Dictionary<string, NoteInfo> _notes = new(StringComparer.Ordinal);
         private readonly HashSet<string> _unfed = new(StringComparer.Ordinal);
         private readonly List<TaskCompletionSource> _armed = new();
+        private List<Passage>? _ranked;   // Ranked(), until the passages change
         private string? _loadedFingerprint;
         private int _failures;
         private long _retryAtMs;
         private long _lastSaveMs;
         private bool _unsaved;
-        private bool _full;
         private SearchFailure _lastFailure;
         private int? _lastStatus;
 
@@ -268,6 +270,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             _notes[noteId] = new NoteInfo(title, modifiedUtc);
             Keywords.Set(noteId, NotePassages.Cut(noteId, title, text));
             _unfed.Remove(noteId);
+            _ranked = null;
             _unsaved = true;
         }
 
@@ -276,6 +279,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             _notes.Remove(noteId);
             Keywords.Remove(noteId);
             _unfed.Remove(noteId);
+            _ranked = null;
             _unsaved = true;
         }
 
@@ -286,7 +290,6 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             _retryAtMs = 0;
             _lastFailure = SearchFailure.None;
             _lastStatus = null;
-            _full = false;
 
             if (!settings.Meaning)
             {
@@ -304,24 +307,57 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             }
         }
 
-        /// <summary>Passages in use with no vector, newest note first, one per hash.</summary>
-        private List<Passage> WaitingPassages() => Keywords.AllPassages()
-            .Where(p => !Vectors.Has(p.Hash))
-            .GroupBy(p => p.Hash, StringComparer.Ordinal)
-            .Select(g => g.First())
-            .OrderByDescending(p => _notes.TryGetValue(p.NoteId, out var info) ? info.ModifiedUtc : DateTime.MinValue)
-            .ThenBy(p => p.NoteId, StringComparer.Ordinal)
-            .ThenBy(p => p.FirstLine)
-            .ToList();
+        /// <summary>Every passage in use, one per hash, newest note first (the hash's newest use counts).</summary>
+        private List<Passage> Ranked()
+        {
+            if (_ranked != null) return _ranked;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            _ranked = Keywords.AllPassages()
+                .OrderByDescending(p => _notes.TryGetValue(p.NoteId, out var info) ? info.ModifiedUtc : DateTime.MinValue)
+                .ThenBy(p => p.NoteId, StringComparer.Ordinal)
+                .ThenBy(p => p.FirstLine)
+                .Where(p => seen.Add(p.Hash))
+                .ToList();
+            return _ranked;
+        }
 
-        private int Waiting() => _settings().CanEmbed && _loadedFingerprint != null ? WaitingPassages().Count : 0;
+        /// <summary>The passages that may have a vector: the newest notes' first, as many as the store holds.</summary>
+        private IEnumerable<Passage> Eligible() => Ranked().Take(Vectors.MaxCount);
+
+        /// <summary>Eligible passages with no vector, newest note first.</summary>
+        private List<Passage> WaitingPassages() => Eligible().Where(p => !Vectors.Has(p.Hash)).ToList();
+
+        private bool MeaningLoaded() => _settings().CanEmbed && _loadedFingerprint != null;
+
+        private int Waiting() => MeaningLoaded() ? WaitingPassages().Count : 0;
+
+        /// <summary>More passages in use than the store holds: the oldest notes' go without vectors.</summary>
+        private bool Full() => MeaningLoaded() && Ranked().Count > Vectors.MaxCount;
+
+        /// <summary>
+        /// Drops every vector no eligible passage uses: those of passages gone, and those of the least
+        /// recently modified notes beyond the store's capacity. Nothing goes while notes a reconcile
+        /// named are still unfed: their vectors are in the store with no passage to claim them yet.
+        /// </summary>
+        private void Evict()
+        {
+            if (_unfed.Count > 0) return;
+            if (Vectors.Keep(Eligible().Select(p => p.Hash).ToHashSet(StringComparer.Ordinal)) > 0) _unsaved = true;
+        }
 
         /// <summary>The next passages to send, or none when nothing may be sent now.</summary>
         private IReadOnlyList<Passage> NextBatch(SearchSettings settings)
         {
-            if (_full || !settings.CanEmbed || _loadedFingerprint != settings.Fingerprint || Environment.TickCount64 < _retryAtMs)
+            if (!settings.CanEmbed || _loadedFingerprint != settings.Fingerprint || Environment.TickCount64 < _retryAtMs)
                 return Array.Empty<Passage>();
-            return WaitingPassages().Take(BatchSize).ToList();
+            var waiting = WaitingPassages();
+            if (waiting.Count == 0) return waiting;
+
+            // After the eviction there is room for every waiting passage, unless unfed notes still
+            // hold their vectors: then only what fits is sent, so a full store is never asked again and again.
+            Evict();
+            int room = Vectors.MaxCount - Vectors.Count;
+            return waiting.Take(Math.Min(BatchSize, room)).ToList();
         }
 
         private async Task EmbedBatchAsync(SearchSettings settings, IReadOnlyList<Passage> batch, CancellationToken token)
@@ -355,30 +391,28 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             _lastFailure = SearchFailure.None;
             _lastStatus = null;
             _unsaved = true;
+            int refused = 0;
             for (int i = 0; i < batch.Count; i++)
             {
-                switch (Vectors.Put(batch[i].Hash, result.Vectors[i]))
+                var put = Vectors.Put(batch[i].Hash, result.Vectors[i]);
+                if (put == PutResult.WrongDimension)
                 {
-                    case PutResult.Full:
-                        _full = true;
-                        break;
-                    case PutResult.WrongDimension:
-                        _warn("The embedding server now gives vectors of another length; the search vectors are made again.");
-                        Vectors.Delete();
-                        Vectors.Load(settings.Fingerprint);
-                        Vectors.Put(batch[i].Hash, result.Vectors[i]);
-                        break;
+                    _warn("The embedding server now gives vectors of another length; the search vectors are made again.");
+                    Vectors.Delete();
+                    Vectors.Load(settings.Fingerprint);
+                    put = Vectors.Put(batch[i].Hash, result.Vectors[i]);
                 }
-                if (_full) break;
+                if (put == PutResult.Full) refused++;   // stays waiting; NextBatch sends nothing more until there is room
             }
+            if (refused > 0) _warn("The search vectors are full; " + refused + " passages wait for room.");
             SaveIfDue(idle: false);
             Publish();
         }
 
         /// <summary>
-        /// Drops the vectors no passage uses and writes the file, when anything changed since the last
+        /// Evicts (see <see cref="Evict"/>) and writes the file, when anything changed since the last
         /// save: while indexing at most every <c>saveEvery</c>, and at once when the worker is idle
-        /// with nothing waiting. Vectors stay while notes a reconcile named have not been fed yet.
+        /// with nothing waiting.
         /// </summary>
         private void SaveIfDue(bool idle)
         {
@@ -392,7 +426,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             bool due = now - _lastSaveMs >= _saveEvery.TotalMilliseconds;
             if (!due && !(idle && Waiting() == 0)) return;
 
-            if (_unfed.Count == 0) Vectors.Keep(Keywords.AllPassages().Select(p => p.Hash).ToHashSet(StringComparer.Ordinal));
+            Evict();
             if (Vectors.Save()) _lastSaveMs = now;
             _unsaved = false;
         }
@@ -401,7 +435,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         {
             var passages = Keywords.AllPassages();
             int withVectors = passages.Count(p => Vectors.Has(p.Hash));
-            var progress = new IndexProgress(Keywords.NoteCount, passages.Count, withVectors, Waiting(), _lastFailure, _lastStatus, _full);
+            var progress = new IndexProgress(Keywords.NoteCount, passages.Count, withVectors, Waiting(), _lastFailure, _lastStatus, Full());
             if (progress == Volatile.Read(ref _progress)) return;
             Volatile.Write(ref _progress, progress);
             ProgressChanged?.Invoke();

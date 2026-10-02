@@ -37,8 +37,8 @@ namespace Kil0bitSystemMonitor.Tests
         private SearchSettings _settings = new(true, Server, false, null);
         private readonly Dictionary<string, string> _stored = new();
 
-        private SearchIndexer NewIndexer(FakeEmbedder embedder, Func<int, TimeSpan>? retry = null) => new(
-            new VectorStore(Path.Combine(_dir.Root, "search"), b => b.ToArray(), (byte[] d, out byte[] p) => { p = d; return true; }),
+        private SearchIndexer NewIndexer(FakeEmbedder embedder, Func<int, TimeSpan>? retry = null, int capacity = VectorStore.Capacity) => new(
+            new VectorStore(Path.Combine(_dir.Root, "search"), b => b.ToArray(), (byte[] d, out byte[] p) => { p = d; return true; }, capacity: capacity),
             embedder,
             () => _settings,
             id => _stored.TryGetValue(id, out var t) ? t : null,
@@ -244,6 +244,74 @@ namespace Kil0bitSystemMonitor.Tests
                 await indexer.WhenIdle();
                 Assert.Equal(i + 1, indexer.Keywords.NoteCount);
             }
+        }
+
+        private static bool HasVector(SearchIndexer indexer, string noteId) =>
+            indexer.Vectors.Has(indexer.Keywords.PassagesOf(noteId).Single().Hash);
+
+        [Fact]
+        public async Task At_capacity_the_oldest_notes_go_without_vectors_and_the_store_recovers()
+        {
+            var embedder = new FakeEmbedder();
+            using var indexer = NewIndexer(embedder, capacity: 2);
+            var start = DateTime.UtcNow;
+            indexer.SetNote("a", "t", "alpha words", start.AddMinutes(1));
+            indexer.SetNote("b", "t", "beta words", start.AddMinutes(2));
+            indexer.SetNote("c", "t", "gamma words", start.AddMinutes(3));
+            await indexer.WhenIdle();
+
+            Assert.False(HasVector(indexer, "a"));
+            Assert.True(HasVector(indexer, "b"));
+            Assert.True(HasVector(indexer, "c"));
+            Assert.True(indexer.Progress.Full);
+            Assert.Equal(0, indexer.Progress.Waiting);
+
+            indexer.SetNote("a", "t", "alpha words edited", start.AddMinutes(4));   // the oldest note becomes the newest
+            await indexer.WhenIdle();
+
+            Assert.True(HasVector(indexer, "a"));
+            Assert.False(HasVector(indexer, "b"));                                  // now the oldest
+            Assert.True(HasVector(indexer, "c"));
+            Assert.True(indexer.Progress.Full);
+
+            indexer.RemoveNote("c");
+            await indexer.WhenIdle();
+
+            Assert.False(indexer.Progress.Full);
+            Assert.Equal(0, indexer.Progress.Waiting);
+            Assert.All(indexer.Keywords.AllPassages(), p => Assert.True(indexer.Vectors.Has(p.Hash)));
+            Assert.Equal(2, indexer.Vectors.Count);
+        }
+
+        [Fact]
+        public async Task While_named_notes_are_unfed_a_full_store_evicts_nothing_and_sends_nothing()
+        {
+            var start = DateTime.UtcNow;
+            using (var first = NewIndexer(new FakeEmbedder(), capacity: 2))
+            {
+                first.SetNote("a", "t", "alpha words", start.AddMinutes(1));
+                first.SetNote("b", "t", "beta words", start.AddMinutes(2));
+                await first.WhenIdle();
+            }
+
+            var embedder = new FakeEmbedder();
+            using var indexer = NewIndexer(embedder, capacity: 2);
+            indexer.Reconcile(new[] { "a", "b", "c" });
+            indexer.SetNote("c", "t", "gamma words", start.AddMinutes(3));
+            await indexer.WhenIdle().WaitAsync(TimeSpan.FromSeconds(10));   // a resend loop would never go idle
+
+            Assert.Equal(0, embedder.TextsSent);                             // no room while "a" and "b" keep their vectors
+            Assert.Equal(2, indexer.Vectors.Count);
+            Assert.Equal(1, indexer.Progress.Waiting);
+
+            indexer.SetNote("a", "t", "alpha words", start.AddMinutes(1));
+            indexer.SetNote("b", "t", "beta words", start.AddMinutes(2));
+            await indexer.WhenIdle().WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Equal(1, embedder.TextsSent);
+            Assert.True(HasVector(indexer, "c"));
+            Assert.True(HasVector(indexer, "b"));
+            Assert.False(HasVector(indexer, "a"));
         }
 
         [Fact]

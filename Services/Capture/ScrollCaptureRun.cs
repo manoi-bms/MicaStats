@@ -56,8 +56,10 @@ namespace Kil0bitSystemMonitor.Services.Capture
 
         public ScrollCaptureResult Run()
         {
-            // Scroll to the top. It is reached when a step leaves the view unmoved: compared
-            // the way the joiner compares, so a GIF or a spinner in the area does not keep it going.
+            // Scroll to the top. It is reached when a step leaves the view unmoved, judged on the
+            // part that changed. A part that changed without lining up under any shift counts as
+            // unmoved only where the view also changes while nothing scrolls (a GIF, a spinner):
+            // otherwise one step up may have replaced a whole scrolling pane.
             PixelFrame top = Settle();
             int sent = 0;
             while (sent < _o.MaxTopNotches)
@@ -67,13 +69,14 @@ namespace Kil0bitSystemMonitor.Services.Capture
                 sent += _o.TopNotchesPerStep;
                 PixelFrame after = SettleAfterScroll();
                 if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
-                if (ScrollStitcher.Unmoved(top, after, _o.Scale))
+                if (ScrollStitcher.TopReached(top, after, _motion, _o.Scale))
                 {
                     // A slow app may not have reacted yet: wait once more before calling it the top.
+                    // This settle comes long after the scroll, so what it sees change moves by itself.
                     _wait(_o.EndConfirmMs);
                     after = Settle();
                     if (_cancelled()) return new ScrollCaptureResult(null, ScrollStop.Cancelled, 0);
-                    if (ScrollStitcher.Unmoved(top, after, _o.Scale))
+                    if (ScrollStitcher.TopReached(top, after, _motion, _o.Scale))
                     {
                         top = after;
                         break;
@@ -133,21 +136,34 @@ namespace Kil0bitSystemMonitor.Services.Capture
             return Settle();
         }
 
-        /// <summary>Grab until two grabs agree, or the settle timeout has passed in waiting. Stops early when cancelled.</summary>
+        /// <summary>
+        /// Grab until two grabs agree, or the settle timeout has passed in waiting. Stops early
+        /// when cancelled. When the grabs never agreed, <see cref="_motion"/> is where they
+        /// differed from one to the next; null when they settled.
+        /// </summary>
         private PixelFrame Settle()
         {
             PixelFrame last = _target.Grab();
+            PixelRect? motion = null;
+            bool settled = false;
             int waited = 0;
             while (waited < _o.SettleTimeoutMs && !_cancelled())
             {
                 _wait(_o.SettlePollMs);
                 waited += _o.SettlePollMs;
                 PixelFrame now = _target.Grab();
-                bool same = now.SameAs(last);
+                PixelRect? changed = now.DiffBox(last);
                 last = now;
-                if (same) break;
+                if (changed is not PixelRect c) { settled = true; break; }
+                motion = motion is PixelRect m
+                    ? PixelRect.FromEdges(Math.Min(m.Left, c.Left), Math.Min(m.Top, c.Top), Math.Max(m.Right, c.Right), Math.Max(m.Bottom, c.Bottom))
+                    : c;
             }
+            _motion = settled ? null : motion;
             return last;
         }
+
+        /// <summary>Where the last <see cref="Settle"/> saw the view keep changing; null when it settled.</summary>
+        private PixelRect? _motion;
     }
 }

@@ -33,7 +33,7 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         /// <summary>Every pixel a different opaque color: every row and every column is distinct.</summary>
-        private static PixelFrame Noise(int width, int height, int seed)
+        internal static PixelFrame Noise(int width, int height, int seed)
         {
             var rnd = new Random(seed);
             var px = new int[width * height];
@@ -42,7 +42,7 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         /// <summary>Frames of equal height side by side, left to right.</summary>
-        private static PixelFrame Beside(params PixelFrame[] parts)
+        internal static PixelFrame Beside(params PixelFrame[] parts)
         {
             int width = parts.Sum(p => p.Width), height = parts[0].Height;
             var px = new int[width * height];
@@ -417,15 +417,267 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
-        public void An_animation_in_a_view_that_did_not_move_is_unchanged()
+        public void A_part_changed_in_place_is_the_top_only_where_the_view_also_changes_by_itself()
         {
-            // A 40-row GIF changes; nothing else does. Exact comparison would call that a mismatch.
+            // A 40 x 50 block changed and nothing lines up. From two looks that could be a GIF or a
+            // pane replaced by a long scroll, so it counts as unmoved only inside a region seen
+            // changing while nothing scrolled.
             var page = Page(800);
             var before = WithBlock(View(page, 0, 300), 10, 100, 50, 40, unchecked((int)0xFF102030));
             var after = WithBlock(View(page, 0, 300), 10, 100, 50, 40, unchecked((int)0xFF405060));
 
+            Assert.False(ScrollStitcher.Unmoved(before, after));
+            Assert.False(ScrollStitcher.TopReached(before, after, selfMotion: null));
+            Assert.True(ScrollStitcher.TopReached(before, after, new PixelRect(10, 100, 50, 40)));
+            Assert.True(ScrollStitcher.TopReached(before, after, new PixelRect(0, 90, 80, 70)));
+            Assert.False(ScrollStitcher.TopReached(before, after, new PixelRect(10, 200, 50, 40)));
+            Assert.Equal(new PixelRect(10, 100, 50, 40), before.DiffBox(after));
+        }
+
+        [Fact]
+        public void A_few_rows_changed_in_place_are_still_unmoved()
+        {
+            // A caret or a clock: under 16 rows changed.
+            var page = Page(800);
+            var before = WithBlock(View(page, 0, 300), 10, 100, 30, 12, unchecked((int)0xFF102030));
+            var after = WithBlock(View(page, 0, 300), 10, 100, 30, 12, unchecked((int)0xFF405060));
+
             Assert.True(ScrollStitcher.Unmoved(before, after));
-            Assert.Equal(StitchStep.Unchanged, new ScrollStitcher(before).Add(after, out _));
+            Assert.True(ScrollStitcher.TopReached(before, after, selfMotion: null));
+        }
+
+        [Fact]
+        public void A_scrolling_pane_replaced_under_a_large_fixed_header_has_moved()
+        {
+            // A 225-row header and 30 px panels stay put; the 75-row pane between the panels was
+            // replaced by a long scroll up. Three quarters of the rows still match in place.
+            var content = Page(2000);
+            var header = Noise(W, 225, seed: 51);
+            var leftPanel = Noise(30, 75, seed: 52);
+            var rightPanel = Noise(30, 75, seed: 53);
+            PixelFrame Layout(int top)
+            {
+                var pane = Noise(W - 60, 75, seed: 1000 + top);   // nothing in common between two tops
+                var px = new int[W * 300];
+                Array.Copy(header.Pixels, px, header.Pixels.Length);
+                var lower = Beside(leftPanel, pane, rightPanel);
+                Array.Copy(lower.Pixels, 0, px, 225 * W, lower.Pixels.Length);
+                return new PixelFrame(W, 300, px);
+            }
+
+            Assert.False(ScrollStitcher.Unmoved(Layout(1700), Layout(800)));
+            Assert.False(ScrollStitcher.TopReached(Layout(1700), Layout(800), selfMotion: null));
+            Assert.True(ScrollStitcher.Unmoved(Layout(0), Layout(0)));
+        }
+
+        // ----- Probes from the re-review (each failed at e8ce4cc) -----------------------------------
+
+        private static readonly int White = unchecked((int)0xFFFFFFFF), Gray = unchecked((int)0xFFC0C0C0);
+
+        private static int Ink(Random r) => unchecked((int)0xFF000000) | r.Next(0x808080);
+
+        /// <summary>Walks a page top to bottom in <paramref name="step"/>-row steps, then shows the last view again.</summary>
+        private static PixelFrame Walk(PixelFrame page, int h, int step, Func<PixelFrame, PixelFrame>? decorate = null)
+        {
+            decorate ??= f => f;
+            var s = new ScrollStitcher(decorate(View(page, 0, h)));
+            int top = 0;
+            while (top + h < page.Height)
+            {
+                int next = Math.Min(top + step, page.Height - h);
+                Assert.Equal(StitchStep.Appended, s.Add(decorate(View(page, next, h)), out _));
+                top = next;
+            }
+            Assert.Equal(StitchStep.Unchanged, s.Add(decorate(View(page, top, h)), out _));
+            return s.Result();
+        }
+
+        /// <summary>A spreadsheet-like grid: a gray line every cell, vertical lines every 50 px, sparse text.</summary>
+        private static PixelFrame Grid(int width, int height, int cell, int textEvery, int seed)
+        {
+            var px = new int[width * height];
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                    px[y * width + x] = y % cell == 0 ? Gray : (x % 50 == 0 ? Gray : White);
+            for (int c = 0; c * cell < height; c++)
+            {
+                if (c % textEvery != 0) continue;
+                var rr = new Random(seed * 1000 + c);
+                for (int r = 6; r < 15 && c * cell + r < height; r++)
+                    for (int x = 60; x < 140; x++)
+                        if (rr.Next(3) == 0) px[(c * cell + r) * width + x] = Ink(rr);
+            }
+            return new PixelFrame(width, height, px);
+        }
+
+        [Theory]
+        [InlineData(21, 3, 600, 100)]   // most-matching-rows joined these at 100 and 37 by turns
+        [InlineData(20, 6, 300, 60)]    // no shift at all won outright
+        [InlineData(20, 6, 300, 100)]
+        [InlineData(20, 8, 300, 100)]   // still empty rows at the bottom make the real overlap short
+        public void A_sparse_repeating_grid_joins_at_the_real_shift(int cell, int textEvery, int h, int step)
+        {
+            var page = Grid(200, 2400, cell, textEvery, 5);
+
+            Assert.True(Walk(page, h, step).SameAs(page));
+        }
+
+        /// <summary>
+        /// A list view: items 20 rows tall, a distinct name in columns 10-109, and a Type column in
+        /// 130-169 that reads the same ("File folder") for the first <paramref name="sameRows"/> rows.
+        /// </summary>
+        private static PixelFrame List(int width, int height, int sameRows, int seed)
+        {
+            var rnd = new Random(seed);
+            var px = Enumerable.Repeat(White, width * height).ToArray();
+            var same = new int[12 * 40];
+            var sr = new Random(99);
+            for (int i = 0; i < same.Length; i++) same[i] = sr.Next(3) == 0 ? unchecked((int)0xFF202020) : White;
+            for (int item = 0; item * 20 < height; item++)
+                for (int r = 4; r < 16 && item * 20 + r < height; r++)
+                {
+                    int y = item * 20 + r;
+                    for (int x = 10; x < 110; x++) if (rnd.Next(3) == 0) px[y * width + x] = Ink(rnd);
+                    for (int x = 130; x < 170; x++)
+                        px[y * width + x] = item * 20 < sameRows ? same[(r - 4) * 40 + x - 130] : (rnd.Next(3) == 0 ? Ink(rnd) : White);
+                }
+            return new PixelFrame(width, height, px);
+        }
+
+        [Theory]
+        [InlineData(60)]
+        [InlineData(100)]
+        public void A_column_that_repeats_down_a_list_is_not_a_side_panel(int step)
+        {
+            // The Type column is the same on every row and the step is whole items, so it stays put
+            // too; but it also lines up under the shift, so it is content, not a panel.
+            var page = List(220, 2000, 700, 4);
+
+            Assert.True(Walk(page, 300, step).SameAs(page));
+        }
+
+        [Fact]
+        public void A_fixed_side_element_is_cut_to_its_own_columns_and_the_blank_gutter_stays()
+        {
+            // Text in columns 40-170 on every row; a share bar at x 4-23 and a widget at x 185-209
+            // stay put. Only the columns out to each element's inner edge are cut.
+            var rnd = new Random(9);
+            var px = Enumerable.Repeat(White, 240 * 1500).ToArray();
+            for (int y = 0; y < 1500; y++)
+            {
+                int len = 60 + rnd.Next(71);
+                for (int x = 40; x < 40 + len; x++) if (rnd.Next(3) == 0) px[y * 240 + x] = Ink(rnd);
+            }
+            var page = new PixelFrame(240, 1500, px);
+            int blue = unchecked((int)0xFF2060E0);
+            PixelFrame Paint(PixelFrame f, int x0, int y0, int w, int h)
+            {
+                var p = (int[])f.Pixels.Clone();
+                for (int y = y0; y < y0 + h; y++)
+                    for (int x = x0; x < x0 + w; x++) p[y * f.Width + x] = (x + y) % 3 == 0 ? blue : White;
+                return new PixelFrame(f.Width, f.Height, p);
+            }
+            PixelFrame Decorate(PixelFrame f) => Paint(Paint(f, 4, 60, 20, 160), 185, 200, 25, 40);
+
+            var result = Walk(page, 300, 90, Decorate);
+
+            Assert.Equal(185 - 24, result.Width);
+            var kept = new int[(185 - 24) * 1500];
+            for (int y = 0; y < 1500; y++) page.Row(y).Slice(24, 185 - 24).CopyTo(kept.AsSpan(y * (185 - 24)));
+            Assert.True(result.SameAs(new PixelFrame(185 - 24, 1500, kept)));
+        }
+
+        [Fact]
+        public void Side_panels_are_cut_from_the_scrolled_rows_only_and_the_header_keeps_its_width()
+        {
+            // A window clicked whole: a 20-row toolbar across the top, a navigation pane at the left.
+            const int width = 300, pane = 40;
+            var content = Noise(width - pane, 1200, seed: 71);
+            var toolbar = Noise(width, 20, seed: 72);
+            var nav = new int[pane * 280];
+            for (int i = 0; i < nav.Length; i++) nav[i] = i % 7 == 0 ? unchecked((int)0xFF404040) : unchecked((int)0xFFF0F0F0);
+            var navPane = new PixelFrame(pane, 280, nav);
+            PixelFrame Framed(int top)
+            {
+                var px = new int[width * 300];
+                Array.Copy(toolbar.Pixels, px, toolbar.Pixels.Length);
+                var body = Beside(navPane, View(content, top, 280));
+                Array.Copy(body.Pixels, 0, px, 20 * width, body.Pixels.Length);
+                return new PixelFrame(width, 300, px);
+            }
+
+            var s = new ScrollStitcher(Framed(0));
+            for (int top = 90; top <= 900; top += 90)
+                Assert.Equal(StitchStep.Appended, s.Add(Framed(top), out _));
+            var result = s.Result();
+
+            Assert.Equal(width, result.Width);
+            Assert.Equal(20 + 1180, result.Height);
+            for (int y = 0; y < 20; y++) Assert.True(result.Row(y).SequenceEqual(toolbar.Row(y)), "toolbar row " + y);
+            for (int y = 0; y < 1180; y++)
+            {
+                var row = result.Row(20 + y);
+                Assert.True(row.Slice(pane).SequenceEqual(content.Row(y)), "content row " + y);
+                Assert.True(row.Slice(0, pane).IndexOfAnyExcept(unchecked((int)0xFFF0F0F0)) < 0, "pane area row " + y);
+            }
+        }
+
+        [Fact]
+        public void A_small_real_move_is_not_unmoved()
+        {
+            // A sparse view: one 6-row line of text on white moves down by a few rows.
+            var rnd = new Random(1);
+            var line = new int[6 * 150];
+            for (int i = 0; i < line.Length; i++) line[i] = rnd.Next(3) == 0 ? unchecked((int)0xFF000000) : White;
+            PixelFrame At(int row)
+            {
+                var px = new int[200 * 300];
+                Array.Fill(px, White);
+                for (int r = 0; r < 6; r++) Array.Copy(line, r * 150, px, (row + r) * 200 + 20, 150);
+                return new PixelFrame(200, 300, px);
+            }
+
+            foreach (int k in new[] { 1, 4, 7 })
+                Assert.False(ScrollStitcher.Unmoved(At(100), At(100 + k)), "moved " + k);
+        }
+
+        [Fact]
+        public void The_soft_footer_does_not_narrow_the_overlap_search()
+        {
+            // Rows 180-314 are blank. On the second step only rows 135-209 of the new view line up
+            // with informative rows: inside the full band, but below the 75-row bottom margin's top.
+            var page = Page(1000);
+            var px = (int[])page.Pixels.Clone();
+            for (int y = 180; y < 315; y++) for (int x = 0; x < W; x++) px[y * W + x] = unchecked((int)0xFFFFFFFF);
+            var gapped = new PixelFrame(W, 1000, px);
+
+            var s = new ScrollStitcher(View(gapped, 0, 300));
+            for (int top = 90; top <= 630; top += 90)
+                Assert.Equal(StitchStep.Appended, s.Add(View(gapped, top, 300), out _));
+            Assert.Equal(StitchStep.Appended, s.Add(View(gapped, 700, 300), out _));
+
+            Assert.True(s.Result().SameAs(gapped));
+        }
+
+        [Fact]
+        public void A_step_longer_than_the_room_above_the_margin_still_joins()
+        {
+            // First step 60 rows: a 75-row margin under a 20-row header leaves 205 rows above it.
+            // The next step is 230 rows; the 25 rows now hidden under the header come from the
+            // previous frame.
+            var page = Page(1000);
+            int header = unchecked((int)0xFF3366CC);
+            PixelFrame Framed(int top) => WithBand(View(page, top, 300), 0, 20, header);
+
+            var s = new ScrollStitcher(Framed(0));
+            Assert.Equal(StitchStep.Appended, s.Add(Framed(60), out _));
+            Assert.Equal(StitchStep.Appended, s.Add(Framed(290), out int added));
+
+            Assert.Equal(230, added);
+            var result = s.Result();
+            Assert.Equal(590, result.Height);
+            for (int y = 0; y < 20; y++) Assert.Equal(header, result.Row(y)[0]);
+            for (int y = 20; y < 590; y++) Assert.True(result.Row(y).SequenceEqual(page.Row(y).ToArray()), "body row " + y);
         }
 
         [Fact]

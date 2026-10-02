@@ -148,7 +148,8 @@ Capture**).
 - Frames are joined into one tall image. A header or footer that stays put while the rest
   scrolls appears once, not on every frame, and so does something floating near the bottom,
   such as a chat button. Side panels that stay put while the rest scrolls, such as a
-  navigation pane or a sticky sidebar, are left out: the image is the part that scrolled
+  navigation pane or a sticky sidebar, are left out of the scrolled part; a title bar or
+  toolbar across the top keeps its full width
 - **Esc** stops and keeps what was captured so far. If you press it while MicaStats is still
   scrolling to the top, the capture is cancelled
 - It stops by itself at the end of the content, at 20,000 px tall, or after 500 steps

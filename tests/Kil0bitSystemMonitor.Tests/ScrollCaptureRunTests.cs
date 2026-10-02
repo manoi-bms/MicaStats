@@ -282,6 +282,137 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_large_animation_on_a_page_at_the_top_still_takes_one_step_to_the_top()
+        {
+            // A 60 x 50 GIF: too big to pass as a caret, so it is recognised by changing on its own.
+            var content = ScrollStitcherTests.Page(2000);
+            var page = new FakePage(content, 0);
+            page.Decorate = (frame, top) =>
+            {
+                var px = (int[])frame.Pixels.Clone();
+                int color = unchecked((int)0xFF000000) | (0x305070 + page.Grabs * 0x030201);
+                for (int y = 120; y < 180; y++)
+                    for (int x = 10; x < 60; x++) px[y * frame.Width + x] = color;
+                return new PixelFrame(frame.Width, frame.Height, px);
+            };
+
+            Run(page, new Env());
+
+            Assert.Equal(new ScrollCaptureOptions().TopNotchesPerStep, page.UpNotches);
+        }
+
+        [Fact]
+        public void A_pane_replaced_by_one_step_up_under_a_large_fixed_header_is_not_the_top()
+        {
+            // A 225-row header and 30 px panels stay put; between the panels a 75-row pane shows
+            // the page. One step up (900 rows) replaces the pane completely while three quarters
+            // of the rows stay the same: the run must keep going up.
+            var content = ScrollStitcherTests.Page(2000);
+            int w = content.Width;
+            var header = ScrollStitcherTests.Noise(w, 225, seed: 61);
+            var leftPanel = ScrollStitcherTests.Noise(30, 75, seed: 62);
+            var rightPanel = ScrollStitcherTests.Noise(30, 75, seed: 63);
+            PixelFrame Layout(PixelFrame frame, int top)
+            {
+                var px = new int[w * View];
+                Array.Copy(header.Pixels, px, header.Pixels.Length);
+                var pane = new int[(w - 60) * 75];
+                for (int y = 0; y < 75; y++) frame.Row(y).Slice(0, w - 60).CopyTo(pane.AsSpan(y * (w - 60)));
+                var lower = ScrollStitcherTests.Beside(leftPanel, new PixelFrame(w - 60, 75, pane), rightPanel);
+                Array.Copy(lower.Pixels, 0, px, 225 * w, lower.Pixels.Length);
+                return new PixelFrame(w, View, px);
+            }
+            var page = new FakePage(content, 1700) { Decorate = Layout };
+
+            var r = Run(page, new Env());
+
+            // 1700 to 800 to 0, then a step that leaves it unmoved.
+            Assert.Equal(3 * new ScrollCaptureOptions().TopNotchesPerStep, page.UpNotches);
+            Assert.True(Same(r.Image, Layout(ScrollStitcherTests.View(content, 0, View), 0)));
+        }
+
+        /// <summary>
+        /// A static 600-row page of text with a scroll box in rows 220 to 220 + its height,
+        /// columns 20-175, white beside it. The wheel scrolls only the box, 90 rows a notch.
+        /// </summary>
+        private sealed class InnerBox : IScrollTarget
+        {
+            public const int W = 200, H = 600, BoxTop = 220;
+            private readonly PixelFrame _static, _content;
+            private readonly int _boxH;
+            public int Offset, Downs, JumpAtDown = -1, JumpRows;
+            public InnerBox(int boxH, int offset)
+            {
+                _boxH = boxH;
+                Offset = offset;
+                _static = Text(W, H, 3);
+                _content = Text(156, 4000, 11);
+            }
+            public PixelFrame Content => _content;
+            private int MaxOffset => _content.Height - _boxH;
+            private static PixelFrame Text(int w, int h, int seed)
+            {
+                var rnd = new Random(seed);
+                var px = new int[w * h];
+                for (int y = 0; y < h; y++)
+                {
+                    int ink = unchecked((int)0xFF000000) | rnd.Next(0xFFFFFF);
+                    int a = rnd.Next(w - 40), b = a + 1 + rnd.Next(30);
+                    for (int x = 0; x < w; x++) px[y * w + x] = x >= a && x <= b ? ink : unchecked((int)0xFFFFFFFF);
+                }
+                return new PixelFrame(w, h, px);
+            }
+            public PixelFrame Grab()
+            {
+                var px = (int[])_static.Pixels.Clone();
+                for (int y = BoxTop; y < BoxTop + _boxH; y++)
+                {
+                    for (int x = 0; x < W; x++) px[y * W + x] = unchecked((int)0xFFFFFFFF);
+                    _content.Row(Offset + y - BoxTop).CopyTo(px.AsSpan(y * W + 20, 156));
+                }
+                return new PixelFrame(W, H, px);
+            }
+            public bool Scroll(int notches)
+            {
+                if (notches > 0 && ++Downs == JumpAtDown)
+                {
+                    Offset = Math.Min(MaxOffset, Offset + JumpRows);
+                    return true;
+                }
+                Offset = Math.Clamp(Offset + notches * Notch, 0, MaxOffset);
+                return true;
+            }
+        }
+
+        [Theory]
+        [InlineData(120)]
+        [InlineData(160)]
+        [InlineData(180)]
+        public void A_scroll_box_inside_a_still_page_is_scrolled_all_the_way_to_its_top(int boxH)
+        {
+            // From 2,000 rows down, one step up (900 rows) replaces the whole box while the page
+            // around it stays the same: that is not the top.
+            var box = new InnerBox(boxH, 2000);
+
+            var r = new ScrollCaptureRun(box, _ => { }, () => false).Run();
+
+            Assert.Equal(ScrollStop.End, r.Stop);
+            // The page above, the whole box content from its first row, the page below.
+            Assert.Equal(InnerBox.H + box.Content.Height - boxH, r.Image!.Height);
+            Assert.True(r.Image.Row(InnerBox.BoxTop).Slice(20, 156).SequenceEqual(box.Content.Row(0)));
+        }
+
+        [Fact]
+        public void A_scroll_box_whose_content_jumps_stops_with_no_match()
+        {
+            var box = new InnerBox(160, 0) { JumpAtDown = 4, JumpRows = 700 };
+
+            var r = new ScrollCaptureRun(box, _ => { }, () => false).Run();
+
+            Assert.Equal(ScrollStop.NoMatch, r.Stop);
+        }
+
+        [Fact]
         public void The_card_says_Esc_stops_as_soon_as_the_top_is_reached()
         {
             var content = ScrollStitcherTests.Page(1000);

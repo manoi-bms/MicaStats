@@ -6,25 +6,44 @@ namespace Kil0bitSystemMonitor.Services.Capture
     /// <summary>What adding a frame did.</summary>
     public enum StitchStep { Appended, Unchanged, NoMatch, WidthChanged }
 
+    /// <summary>How a view changed between two looks, judged on the part that changed.</summary>
+    public enum ViewChange
+    {
+        /// <summary>Identical, or changed in place only (a caret, a clock).</summary>
+        Same,
+        /// <summary>The changed part lines up under a shift up or down: it scrolled.</summary>
+        Shifted,
+        /// <summary>The changed part lines up under no shift: replaced, or animating.</summary>
+        Replaced,
+    }
+
     /// <summary>
     /// Joins the frames of a scrolling capture into one tall image (scrolling capture spec 4).
     ///
     /// <para>
     /// The first pair that really scrolled fixes the geometry. Rows that stay put at the top
-    /// are a header, kept from the first frame. At the bottom, a margin is kept from the last
-    /// frame only: the rows that stay put (a footer) and, when the scroll leaves room, more
-    /// rows up to a quarter of the frame. Each step appends only rows from above that margin,
-    /// so something floating near the bottom (a chat bubble, a cookie card, a footer clock)
-    /// shows once instead of at every seam. Columns at the left and right edges that stay put
-    /// while the rest scrolls are side panels: they are left out of the comparison and of the
-    /// image, which is the scrolled content.
+    /// are a header, kept from the first frame; rows that stay put at the bottom are a footer.
+    /// The shift is searched over every row between them. Appending works from a bottom
+    /// margin kept from the last frame only: the footer and, when the scroll leaves room, more
+    /// rows up to a quarter of the frame. Each step appends rows from above that margin, so
+    /// something floating near the bottom (a chat bubble, a cookie card, a footer clock) shows
+    /// once instead of at every seam.
     /// </para>
     ///
     /// <para>
-    /// Between them, the shift chosen is the one with the most matching rows, among the shifts
-    /// where at least <see cref="MatchThreshold"/> of the counted rows match and at least
-    /// <see cref="MinOverlapRows"/> rows are counted; ties go to the smaller shift. Rows are
-    /// compared by a hash that leaves out a scrollbar strip at the right edge
+    /// A side panel is a run of columns at the left or right edge that stays put while the rest
+    /// scrolls and does not line up under the shift; columns that line up both ways (a blank
+    /// gutter, a column that reads the same on every row of a list) are content. Panels are
+    /// left out of the comparison and of the scrolled rows: with a header or footer the image
+    /// keeps its full width and the panels' place in the scrolled rows is filled with their
+    /// background; without one the image is cut to the scrolled part.
+    /// </para>
+    ///
+    /// <para>
+    /// The shift chosen has the best ratio of matching rows among the shifts where at least
+    /// <see cref="MatchThreshold"/> of at least <see cref="MinOverlapRows"/> counted rows match
+    /// and the matching rows are at least half the most any shift has (see
+    /// <see cref="FindShift"/>). Rows are compared by a hash that leaves out a scrollbar strip at the right edge
     /// (<see cref="ScrollbarColumns"/>), and uniform rows such as blank lines are not counted.
     /// </para>
     /// </summary>
@@ -36,20 +55,21 @@ namespace Kil0bitSystemMonitor.Services.Capture
         public const int MinOverlapRows = 8;
         public const int MinBandRows = 16;
 
-        /// <summary>Fewer moving columns than this between side panels is not trusted: nothing is left out then.</summary>
+        /// <summary>Fewer moving columns than this between still edges is not trusted: nothing is left out then.</summary>
         public const int MinMovingColumns = 16;
 
         private readonly int _width;
         private readonly int _height;
         private readonly int _scrollbar;
+        /// <summary>The joined content rows, full width; the panels' columns are filled or cut in <see cref="Result"/>.</summary>
         private readonly List<int[]> _band = new();
         private int[][] _header = Array.Empty<int[]>();
         /// <summary>The last frame's bottom margin: rows of content, then the fixed footer.</summary>
         private int[][] _footer = Array.Empty<int[]>();
         private PixelFrame _last;
         private int _top = -1, _bottom = -1, _fixedFooter;
-        /// <summary>Columns cut from the image at each edge (side panels; the right one includes the scrollbar strip).</summary>
-        private int _left, _right;
+        /// <summary>Side panel columns at each edge (the right one with the scrollbar strip), and their backgrounds.</summary>
+        private int _left, _right, _leftFill, _rightFill;
         /// <summary>The columns compared: <c>[_from, _to)</c>.</summary>
         private int _from, _to;
 
@@ -87,49 +107,80 @@ namespace Kil0bitSystemMonitor.Services.Capture
             // The geometry is fixed from the first pair, but only once that pair really
             // scrolled: an Unchanged or NoMatch step commits nothing.
             bool first = _top < 0;
-            int top = _top, bottom = _bottom, from = _from, to = _to, left = _left, right = _right;
-            ulong[] prev = Hashes(_last, from, to), cur = Hashes(next, from, to);
+            int edge = _width - _scrollbar;
+            int top, bottom, from = _from, to = _to;
+            ulong[] prev, cur;
             if (first)
             {
-                top = 0;
-                while (top < _height && prev[top] == cur[top]) top++;
-                bottom = 0;
-                while (bottom < _height - top && prev[_height - 1 - bottom] == cur[_height - 1 - bottom]) bottom++;
+                prev = Hashes(_last, 0, edge);
+                cur = Hashes(next, 0, edge);
+                (top, bottom) = StillRows(prev, cur);
                 if (_height - top - bottom < MinBandRows) { top = 0; bottom = 0; }
 
-                (left, right) = FixedSides(_last, next, top, _height - bottom);
-                if (left > 0 || right > 0)
+                // Columns that stay put at the edges are left out of the search; which of them
+                // are panels is settled once the shift is known.
+                (int left, int right) = StillColumns(_last, next, top, _height - bottom, edge);
+                from = left;
+                to = edge - right;
+                if (from > 0 || to < edge)
                 {
-                    // Without a right panel the scrollbar strip stays in the image but out of the comparison.
-                    from = left;
-                    to = right > 0 ? _width - right : _width - _scrollbar;
                     prev = Hashes(_last, from, to);
                     cur = Hashes(next, from, to);
                 }
+            }
+            else
+            {
+                top = _top;
+                bottom = _fixedFooter;   // the search spans the band; the soft margin only shapes the output
+                prev = Hashes(_last, from, to);
+                cur = Hashes(next, from, to);
             }
 
             int band = _height - top - bottom;
             int dy = FindShift(prev.AsSpan(top, band), cur.AsSpan(top, band), Informative(next, top, band, from, to));
             if (dy == 0) return StitchStep.Unchanged;
-            if (dy < 0) return IsUnmoved(_last, next, _scrollbar) ? StitchStep.Unchanged : StitchStep.NoMatch;
+            if (dy < 0) return StitchStep.NoMatch;
 
-            if (first)
+            if (first) Commit(next, top, bottom, band, dy, from, to, edge);
+
+            // Append the new rows from above the margin. A step longer than the room there
+            // leaves rows hidden under the header now: they are in the previous frame's margin.
+            int start = _height - _bottom - dy;
+            if (start < _top)
             {
-                _top = top;
-                _fixedFooter = bottom;
-                _bottom = BottomMargin(band, dy, bottom);
-                _left = left;
-                _right = right;
-                _from = from;
-                _to = to;
-                _header = Rows(_last, 0, top);
-                _band.AddRange(Rows(_last, top, _height - _bottom));
+                _band.AddRange(Rows(_last, _height - _bottom, _height - _bottom + (_top - start)));
+                start = _top;
             }
-            _band.AddRange(Rows(next, _height - _bottom - dy, _height - _bottom));
+            _band.AddRange(Rows(next, start, _height - _bottom));
             _footer = Rows(next, _height - _bottom, _height);
             _last = next;
             addedRows = dy;
             return StitchStep.Appended;
+        }
+
+        /// <summary>Fixes the geometry from the first pair that scrolled by <paramref name="dy"/>.</summary>
+        private void Commit(PixelFrame next, int top, int bottom, int band, int dy, int from, int to, int edge)
+        {
+            // A panel stays put but does not line up under the shift. Each panel reaches from
+            // its edge to its innermost such column; still columns beyond it are content.
+            int left = 0;
+            for (int x = from - 1; x >= 0; x--)
+                if (!MatchesShifted(_last, next, x, top, band, dy)) { left = x + 1; break; }
+            int right = 0;
+            for (int x = to; x < edge; x++)
+                if (!MatchesShifted(_last, next, x, top, band, dy)) { right = edge - x; break; }
+
+            _top = top;
+            _fixedFooter = bottom;
+            _bottom = BottomMargin(band, dy, bottom);
+            _left = left;
+            _right = right > 0 ? right + _scrollbar : 0;
+            _from = left;
+            _to = edge - right;
+            _leftFill = Background(_last, 0, left, top, _height - bottom);
+            _rightFill = Background(_last, edge - right, edge, top, _height - bottom);
+            _header = Rows(_last, 0, top);
+            _band.AddRange(Rows(_last, top, _height - _bottom));
         }
 
         /// <summary>
@@ -143,55 +194,97 @@ namespace Kil0bitSystemMonitor.Services.Capture
             int soft = _footer.Length - _fixedFooter;
             int room = Math.Max(0, maxHeight - _header.Length - _fixedFooter);
             int content = Math.Min(room, _band.Count + soft);
+
+            bool panels = _left > 0 || _right > 0;
+            bool fullWidth = !panels || _header.Length > 0 || _fixedFooter > 0;
+            int width = fullWidth ? _width : _width - _left - _right;
+            int[] Edge(int[] row) => fullWidth ? row : row[_left..(_width - _right)];
+            int[] Scrolled(int[] row)
+            {
+                if (!panels) return row;
+                if (!fullWidth) return row[_left..(_width - _right)];
+                var filled = (int[])row.Clone();
+                filled.AsSpan(0, _left).Fill(_leftFill);
+                filled.AsSpan(_width - _right).Fill(_rightFill);
+                return filled;
+            }
+
             var rows = new List<int[]>(_header.Length + content + _fixedFooter);
-            rows.AddRange(_header);
-            for (int i = 0; i < content; i++) rows.Add(i < _band.Count ? _band[i] : _footer[i - _band.Count]);
-            for (int i = soft; i < _footer.Length; i++) rows.Add(_footer[i]);
-            return PixelFrame.Stack(rows, _width - _left - _right);
+            foreach (var row in _header) rows.Add(Edge(row));
+            for (int i = 0; i < content; i++) rows.Add(Scrolled(i < _band.Count ? _band[i] : _footer[i - _band.Count]));
+            for (int i = soft; i < _footer.Length; i++) rows.Add(Edge(_footer[i]));
+            return PixelFrame.Stack(rows, width);
         }
 
         /// <summary>
-        /// Whether <paramref name="after"/> shows the view of <paramref name="before"/> unmoved:
-        /// identical, or with only a part of it changed in place (a GIF, a video, a spinner, a
-        /// caret) while no shift either way lines the changed rows up and most of the frame
-        /// still matches where it was. Used for "the top is reached" and "the end is reached".
+        /// How <paramref name="after"/> differs from <paramref name="before"/>, judged on the part
+        /// that changed: the rows and columns that stayed put at the edges are left out.
         /// </summary>
-        public static bool Unmoved(PixelFrame before, PixelFrame after, double scale = 1.0) =>
-            IsUnmoved(before, after, ScrollbarColumns(before.Width, scale));
-
-        private static bool IsUnmoved(PixelFrame before, PixelFrame after, int scrollbar)
+        public static ViewChange Compare(PixelFrame before, PixelFrame after, double scale = 1.0)
         {
-            if (before.Width != after.Width || before.Height != after.Height) return false;
-            if (before.SameAs(after)) return true;
+            if (before.Width != after.Width || before.Height != after.Height) return ViewChange.Replaced;
+            if (before.SameAs(after)) return ViewChange.Same;
 
-            int to = before.Width - scrollbar, h = before.Height;
-            ulong[] a = Hashes(before, 0, to), b = Hashes(after, 0, to);
-            int top = 0, bottom = 0;
-            while (top < h && a[top] == b[top]) top++;
-            while (bottom < h - top && a[h - 1 - bottom] == b[h - 1 - bottom]) bottom++;
-            int band = h - top - bottom;
-            if (band < MinBandRows) return true;   // a few rows changed in place: a caret, a clock
+            int h = before.Height, edge = before.Width - ScrollbarColumns(before.Width, scale);
+            ulong[] a = Hashes(before, 0, edge), b = Hashes(after, 0, edge);
+            var (top, bottom) = StillRows(a, b);
+            int rows = h - top - bottom;
+            if (rows == 0) return ViewChange.Same;   // only the scrollbar strip changed
+            if (rows < MinBandRows)
+                return SmallShift(a, b, before, after, top, h - bottom, edge) ? ViewChange.Shifted : ViewChange.Same;
 
-            // A scroll either way lines the changed rows up under some shift.
-            if (FindShift(a.AsSpan(top, band), b.AsSpan(top, band), Informative(after, top, band, 0, to)) > 0) return false;
-            if (FindShift(b.AsSpan(top, band), a.AsSpan(top, band), Informative(before, top, band, 0, to)) > 0) return false;
+            var (left, right) = StillColumns(before, after, top, h - bottom, edge);
+            int from = left, to = edge - right;
+            a = Hashes(before, from, to);
+            b = Hashes(after, from, to);
+            int down = FindShift(a.AsSpan(top, rows), b.AsSpan(top, rows), Informative(after, top, rows, from, to));
+            if (down == 0) return ViewChange.Same;
+            if (down > 0) return ViewChange.Shifted;
+            return FindShift(b.AsSpan(top, rows), a.AsSpan(top, rows), Informative(before, top, rows, from, to)) > 0
+                ? ViewChange.Shifted
+                : ViewChange.Replaced;
+        }
 
-            // Nothing lines up: unmoved when the frame matches best where it was. A jump past
-            // the view's height changes nearly every row and fails here.
-            return FindShift(a, b, Informative(after, 0, h, 0, to)) == 0;
+        /// <summary>Whether the view did not move between the two looks: <see cref="Compare"/> says <see cref="ViewChange.Same"/>.</summary>
+        public static bool Unmoved(PixelFrame before, PixelFrame after, double scale = 1.0) =>
+            Compare(before, after, scale) == ViewChange.Same;
+
+        /// <summary>
+        /// Whether <paramref name="after"/>, a look after scrolling up, shows the top: the view
+        /// did not move, or the part that changed lines up under no shift and lies inside
+        /// <paramref name="selfMotion"/>, where the view was seen changing while nothing scrolled
+        /// (a GIF, a video, a spinner). Otherwise a changed part counts as moved: one step up
+        /// can replace a whole scrolling pane.
+        /// </summary>
+        public static bool TopReached(PixelFrame before, PixelFrame after, PixelRect? selfMotion, double scale = 1.0)
+        {
+            switch (Compare(before, after, scale))
+            {
+                case ViewChange.Same: return true;
+                case ViewChange.Shifted: return false;
+            }
+            if (selfMotion is not PixelRect motion) return false;
+            var changed = before.DiffBox(after, before.Width - ScrollbarColumns(before.Width, scale));
+            return changed is not PixelRect c
+                || (c.Left >= motion.Left && c.Top >= motion.Top && c.Right <= motion.Right && c.Bottom <= motion.Bottom);
         }
 
         /// <summary>
         /// The shift (rows the content moved up) that best lines <paramref name="next"/> up with
-        /// <paramref name="prev"/>: among the shifts where at least <see cref="MatchThreshold"/>
-        /// of at least <see cref="MinOverlapRows"/> counted rows match, the one with the most
-        /// matching rows, the smaller on a tie. 0 when not moving fits best, -1 when none fits.
+        /// <paramref name="prev"/>. Candidates are the shifts where at least
+        /// <see cref="MatchThreshold"/> of at least <see cref="MinOverlapRows"/> counted rows match
+        /// and whose matching rows are at least half the most any candidate has; among them the
+        /// best ratio wins, then more matching rows, then the smaller shift. 0 when not moving
+        /// fits best, -1 when none fits.
         /// </summary>
         internal static int FindShift(ReadOnlySpan<ulong> prev, ReadOnlySpan<ulong> next, bool[] nextInformative)
         {
             int band = prev.Length;
-            int best = -1, bestMatches = 0;
-            for (int dy = 0; dy <= band - MinOverlapRows; dy++)
+            int shifts = Math.Max(0, band - MinOverlapRows + 1);
+            var matchesAt = new int[shifts];
+            var countedAt = new int[shifts];
+            int mostMatches = 0;
+            for (int dy = 0; dy < shifts; dy++)
             {
                 int counted = 0, matches = 0;
                 for (int i = 0; i < band - dy; i++)
@@ -200,24 +293,109 @@ namespace Kil0bitSystemMonitor.Services.Capture
                     counted++;
                     if (next[i] == prev[i + dy]) matches++;
                 }
-                if (counted < MinOverlapRows) continue;
-                if ((double)matches / counted < MatchThreshold) continue;
-                // Most matching rows, not the best ratio: a short accidental overlap (a repeated
-                // motif) can match all of its few rows and must not beat the real shift.
-                if (matches > bestMatches)
+                if (counted < MinOverlapRows || (double)matches / counted < MatchThreshold) continue;
+                matchesAt[dy] = matches;
+                countedAt[dy] = counted;
+                mostMatches = Math.Max(mostMatches, matches);
+            }
+
+            // Neither measure alone: a short accidental overlap (a repeated motif) matches all of
+            // its few rows, and on a repeating grid a wrong shift with a longer overlap matches
+            // more rows than the real one. So: enough support first, then the best fit.
+            int best = -1;
+            double bestRatio = 0;
+            for (int dy = 0; dy < shifts; dy++)
+            {
+                if (countedAt[dy] == 0 || 2 * matchesAt[dy] < mostMatches) continue;
+                double ratio = (double)matchesAt[dy] / countedAt[dy];
+                if (best < 0 || ratio > bestRatio + 1e-9
+                    || (Math.Abs(ratio - bestRatio) <= 1e-9 && matchesAt[dy] > matchesAt[best]))
                 {
                     best = dy;
-                    bestMatches = matches;
+                    bestRatio = ratio;
                 }
             }
             return best;
         }
 
+        /// <summary>Rows identical at the top and at the bottom of two frames' hashes.</summary>
+        private static (int Top, int Bottom) StillRows(ulong[] a, ulong[] b)
+        {
+            int h = a.Length, top = 0, bottom = 0;
+            while (top < h && a[top] == b[top]) top++;
+            while (bottom < h - top && a[h - 1 - bottom] == b[h - 1 - bottom]) bottom++;
+            return (top, bottom);
+        }
+
+        /// <summary>
+        /// Columns identical in both frames over rows <paramref name="fromRow"/> to
+        /// <paramref name="toRow"/>, counted from the left edge and from <paramref name="edge"/>
+        /// (the scrollbar strip's left) inwards; none when fewer than
+        /// <see cref="MinMovingColumns"/> are left between them.
+        /// </summary>
+        private static (int Left, int Right) StillColumns(PixelFrame a, PixelFrame b, int fromRow, int toRow, int edge)
+        {
+            int left = 0;
+            while (left < edge && SameColumn(a, b, left, fromRow, toRow)) left++;
+            int right = 0;
+            while (edge - 1 - right >= left && SameColumn(a, b, edge - 1 - right, fromRow, toRow)) right++;
+            return edge - left - right < MinMovingColumns ? (0, 0) : (left, right);
+        }
+
+        private static bool SameColumn(PixelFrame a, PixelFrame b, int x, int fromRow, int toRow)
+        {
+            int w = a.Width;
+            int[] pa = a.Pixels, pb = b.Pixels;
+            for (int y = fromRow; y < toRow; y++)
+                if (pa[y * w + x] != pb[y * w + x]) return false;
+            return true;
+        }
+
+        /// <summary>Whether column <paramref name="x"/> of <paramref name="next"/> lines up with <paramref name="prev"/>'s moved up by <paramref name="dy"/> over the band's overlap.</summary>
+        private static bool MatchesShifted(PixelFrame prev, PixelFrame next, int x, int top, int band, int dy)
+        {
+            int w = prev.Width;
+            int[] pp = prev.Pixels, pn = next.Pixels;
+            for (int y = top; y < top + band - dy; y++)
+                if (pn[y * w + x] != pp[(y + dy) * w + x]) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// For a change of fewer than <see cref="MinBandRows"/> rows: whether some non-zero shift
+        /// lines every informative changed row of one frame up with a row of the other, as when a
+        /// short line of text on a blank view moved a few rows.
+        /// </summary>
+        private static bool SmallShift(ulong[] a, ulong[] b, PixelFrame before, PixelFrame after, int fromRow, int toRow, int edge)
+        {
+            bool[] afterInk = Informative(after, fromRow, toRow - fromRow, 0, edge);
+            bool[] beforeInk = Informative(before, fromRow, toRow - fromRow, 0, edge);
+            int h = a.Length;
+            for (int s = -(h - 1); s < h; s++)
+            {
+                if (s == 0) continue;
+                if (LinesUp(b, a, afterInk, fromRow, s) || LinesUp(a, b, beforeInk, fromRow, s)) return true;
+            }
+            return false;
+
+            static bool LinesUp(ulong[] rows, ulong[] other, bool[] ink, int fromRow, int s)
+            {
+                bool any = false;
+                for (int i = 0; i < ink.Length; i++)
+                {
+                    if (!ink[i]) continue;
+                    int y = fromRow + i, j = y + s;
+                    if (j < 0 || j >= other.Length || rows[y] != other[j]) return false;
+                    any = true;
+                }
+                return any;
+            }
+        }
+
         /// <summary>
         /// The bottom margin each step appends from above: the rows that stayed put, or more, up
-        /// to a quarter of the frame. It is limited by the first shift so the content above it
-        /// still overlaps by <see cref="MinOverlapRows"/> plus room for later steps to scroll
-        /// half as far again; a large scroll with a small overlap keeps just the footer.
+        /// to a quarter of the frame. It is limited by the first shift so the room above it holds
+        /// a step half as long again; a longer step takes its first rows from the previous frame.
         /// </summary>
         private int BottomMargin(int band, int dy, int footer)
         {
@@ -226,47 +404,23 @@ namespace Kil0bitSystemMonitor.Services.Capture
             return Math.Max(footer, soft);
         }
 
-        /// <summary>
-        /// Side panels: columns at the left and right edges that are identical in both frames over
-        /// the rows <paramref name="fromRow"/> to <paramref name="toRow"/>, counted from each edge
-        /// until a column differs. The right ones are looked for left of the scrollbar strip, and
-        /// when found the strip is cut with them. A run of plain columns (a page's own blank
-        /// margin) is not a panel: it does not disturb the comparison and stays in the image.
-        /// </summary>
-        private (int Left, int Right) FixedSides(PixelFrame a, PixelFrame b, int fromRow, int toRow)
+        /// <summary>The most common color in columns <paramref name="x0"/> to <paramref name="x1"/>, rows <paramref name="y0"/> to <paramref name="y1"/>: a panel's background.</summary>
+        private static int Background(PixelFrame frame, int x0, int x1, int y0, int y1)
         {
-            int edge = _width - _scrollbar;
-            int left = 0;
-            bool leftDrawn = false;
-            while (left < edge && SameColumn(a, b, left, fromRow, toRow, ref leftDrawn)) left++;
-            if (!leftDrawn) left = 0;
-
-            int right = 0;
-            bool rightDrawn = false;
-            while (edge - 1 - right >= left && SameColumn(a, b, edge - 1 - right, fromRow, toRow, ref rightDrawn)) right++;
-            if (!rightDrawn) right = 0;
-
-            // What moved must be wide enough, and left of the strip: a strip that changed alone
-            // (a scrollbar thumb) is not content to join.
-            if (edge - left - right < MinMovingColumns) return (0, 0);
-            return (left, right > 0 ? right + _scrollbar : 0);
-        }
-
-        /// <summary>Whether column <paramref name="x"/> is the same in both frames; sets <paramref name="drawn"/> when it is and is not one plain color.</summary>
-        private static bool SameColumn(PixelFrame a, PixelFrame b, int x, int fromRow, int toRow, ref bool drawn)
-        {
-            int w = a.Width;
-            int[] pa = a.Pixels, pb = b.Pixels;
-            int plain = pa[fromRow * w + x];
-            bool varies = false;
-            for (int y = fromRow; y < toRow; y++)
+            if (x1 <= x0 || y1 <= y0) return 0;
+            var counts = new Dictionary<int, int>();
+            int best = 0, bestCount = 0;
+            for (int y = y0; y < y1; y++)
             {
-                int p = pa[y * w + x];
-                if (p != pb[y * w + x]) return false;
-                if (p != plain) varies = true;
+                var row = frame.Row(y);
+                for (int x = x0; x < x1; x++)
+                {
+                    counts.TryGetValue(row[x], out int n);
+                    counts[row[x]] = ++n;
+                    if (n > bestCount) { bestCount = n; best = row[x]; }
+                }
             }
-            if (varies) drawn = true;
-            return true;
+            return best;
         }
 
         private static ulong[] Hashes(PixelFrame frame, int from, int to)
@@ -300,12 +454,11 @@ namespace Kil0bitSystemMonitor.Services.Capture
             return result;
         }
 
-        /// <summary>Rows <paramref name="from"/> to <paramref name="to"/>, without the side panels.</summary>
-        private int[][] Rows(PixelFrame frame, int from, int to)
+        /// <summary>Rows <paramref name="from"/> to <paramref name="to"/>, full width.</summary>
+        private static int[][] Rows(PixelFrame frame, int from, int to)
         {
-            int width = _width - _left - _right;
             var rows = new int[Math.Max(0, to - from)][];
-            for (int y = from; y < to; y++) rows[y - from] = frame.Row(y).Slice(_left, width).ToArray();
+            for (int y = from; y < to; y++) rows[y - from] = frame.Row(y).ToArray();
             return rows;
         }
     }

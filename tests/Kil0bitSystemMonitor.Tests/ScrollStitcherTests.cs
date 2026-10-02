@@ -88,17 +88,19 @@ namespace Kil0bitSystemMonitor.Tests
         public void An_unchanged_first_pair_does_not_fix_the_header_and_footer()
         {
             var page = Page(1200);
+            int Steady = unchecked((int)0xFF111111);
             var footerRows = Page(100, seed: 3);
-            const int caretRow = 20, clockRow = 190;
+            const int caretRow = 20, clockRow = 280;   // the clock sits inside a 100-row footer
             PixelFrame Framed(int top)
             {
                 var px = (int[])View(page, top, 300).Pixels.Clone();
                 Array.Copy(footerRows.Pixels, 0, px, 200 * W, 100 * W);
+                for (int x = 0; x < W; x++) px[clockRow * W + x] = Steady;
                 return new PixelFrame(W, 300, px);
             }
             PixelFrame Animated(PixelFrame f, int color) => WithBand(WithBand(f, caretRow, 1, color), clockRow, 1, color);
 
-            var s = new ScrollStitcher(Animated(Framed(0), unchecked((int)0xFF111111)));
+            var s = new ScrollStitcher(Animated(Framed(0), Steady));
             // Nothing scrolled; only a caret near the top and a clock below it changed.
             Assert.Equal(StitchStep.Unchanged, s.Add(Animated(Framed(0), unchecked((int)0xFF222222)), out _));
             for (int top = 80; top <= 400; top += 80)
@@ -108,11 +110,11 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(700, result.Height);
             for (int y = 0; y < 600; y++)
             {
-                if (y == caretRow || y == clockRow) continue;   // the first frame keeps its own caret and clock
+                if (y == caretRow) continue;   // the first frame keeps its own caret
                 Assert.True(result.Row(y).SequenceEqual(page.Row(y).ToArray()), "body row " + y);
             }
             for (int i = 0; i < 100; i++)
-                Assert.True(result.Row(600 + i).SequenceEqual(footerRows.Row(i).ToArray()), "footer row " + i);
+                Assert.True(result.Row(600 + i).SequenceEqual(i == clockRow - 200 ? Framed(0).Row(clockRow).ToArray() : footerRows.Row(i).ToArray()), "footer row " + i);
         }
 
         [Fact]

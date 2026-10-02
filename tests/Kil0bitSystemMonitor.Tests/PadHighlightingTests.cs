@@ -60,6 +60,18 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains(highlighter.HighlightLine(2).Sections, s => s.Offset == lineStart && s.Length == 4 && s.Color.Name == "KeyName");
         });
 
+        /// <summary>A yes/no/on/true word is Bool only as a whole value, never in the middle of text or a script block.</summary>
+        [Theory]
+        [InlineData("message: no data on disk")]
+        [InlineData("  echo true && exit 0")]
+        [InlineData("run: yes please")]
+        [InlineData("- off we go")]
+        public void Yaml_bool_words_inside_text_are_not_bool(string line) => UiThread.Run(() =>
+        {
+            var highlighter = new DocumentHighlighter(new TextDocument(line), PadHighlighting.For(PadLanguages.ById("yaml")!)!);
+            Assert.DoesNotContain(highlighter.HighlightLine(1).Sections, s => s.Color.Name == "Bool");
+        });
+
         [Fact]
         public void Yaml_quoted_value_is_a_string() => UiThread.Run(() =>
         {
@@ -104,6 +116,9 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("yaml", "name: MicaPad # note", "name", "KeyName")]
         [InlineData("yaml", "name: MicaPad # note", "# note", "Comment")]
         [InlineData("yaml", "enabled: true", "true", "Bool")]
+        [InlineData("yaml", "enabled: true # note", "true", "Bool")]
+        [InlineData("yaml", "- yes", "yes", "Bool")]
+        [InlineData("yaml", "value: ~", "~", "Bool")]
         [InlineData("yaml", "count: 42", "42", "Number")]
         [InlineData("batch", "@echo off", "echo", "Keywords")]
         [InlineData("batch", "rem cleanup", "rem cleanup", "Comment")]

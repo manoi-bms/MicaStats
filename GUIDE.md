@@ -263,10 +263,18 @@ the switch says where text goes, and **AI provider settings…** opens **Setting
 sent while you type, when a note opens or in the background — only when you run an action.
 
 * **On a selection**: right-click → **AI** → **Improve writing**, **Fix spelling and grammar**,
-  **Make shorter**, **Translate to English**, **Translate to Thai**, **Summarize**, **Explain** or
-  **Ask AI…** (type your own instruction). **Ctrl+Shift+A** opens the pane on **Ask AI…**. Summarize,
-  Explain and Ask AI use the whole note when nothing is selected; the rewrites need a selection.
-  While AI is off, the menu holds one item, **Set up AI…**.
+  **Make shorter**, **Translate to English**, **Translate to Thai**, **Summarize**, **Explain**,
+  **Draw as diagram** or **Ask AI…** (type your own instruction). **Ctrl+Shift+A** opens the pane on
+  **Ask AI…**. Summarize, Explain and Ask AI use the whole note when nothing is selected; the
+  rewrites need a selection. While AI is off, the menu holds one item, **Set up AI…**.
+* **Draw as diagram** sends the selected text and asks for a Mermaid diagram of it. **Insert
+  below** puts the Mermaid block under your text, and MicaPad draws it as a picture there (with
+  Diagrams on in **Settings → MicaPad**).
+* **Fix with AI** appears on the error box of a diagram or math block that fails with an error
+  about its source (not for "too large", a missing runtime, or a server that cannot be reached).
+  The menu has **Fix diagram** for the same job. It sends that block's source and the renderer's
+  message, and **Replace selection** replaces only that source, not the fences or any other block.
+  With AI off it sends nothing.
 * **The AI pane** opens on the right, where History and Search notes open. It shows the text it
   runs on and where that goes ("Selection, 412 characters · to api.anthropic.com", or "· to this
   PC" for a server on this PC) and the result as it arrives. **Stop**, beside the close button, ends
@@ -727,6 +735,45 @@ If the port is taken, **Settings → AI** says so and the diagnostics log record
 
 Setting MCP to **Off** stops the pipe and the HTTP server; an AI app that still calls MicaStats is
 told "MCP is turned off in MicaStats Settings".
+
+### Notes in Ask MicaStats and MCP
+
+Besides its nine lookups about this PC, Ask MicaStats and MCP can search and read your MicaPad
+notes through two **read-only** tools. Each surface has its own switch in **Settings → MicaPad →
+AI**, both off until you turn them on:
+
+* **Let Ask MicaStats search your notes** — Ask MicaStats can look up passages and read notes to
+  answer a question. The line under it says where they go: to the provider's host, or "stay on
+  this PC" for a local server.
+* **Let MCP clients search your notes** — programs such as Claude Code, connected through MCP, get
+  `search_notes` and `get_note`. It only matters while MCP is on in **Settings → AI**. What a
+  program does with the text is up to it.
+
+The two switches are independent of **Use AI in MicaPad** and of each other. While a switch is
+off, its tools are not offered or listed, and a call that arrives anyway is refused ("Notes
+access is off in Settings → MicaPad → AI"). Turning the Ask switch off also takes back what was
+already read: earlier note results in that conversation are not sent again.
+
+* **`search_notes`** takes `query` and `limit` (1 to 20, 8 if you leave it out) and returns the
+  best passages, each with its note id, title, heading and line numbers.
+* **`get_note`** takes `noteId`, `firstLine` and `lineCount` (up to 400 lines and 24,000
+  characters per call) and returns that part of the note. It says `truncated` when more remains,
+  so ask again from a later line.
+* **Nothing they do changes a note.**
+* **Credentials come back as `[credential]`**, in text, titles and headings, and a query is
+  cleaned the same way. Names and IP addresses in notes are not removed: the tools return the note
+  text as it is.
+* **Links are plain text.** Once Ask has read from the notes, links in its answers are shown as
+  plain text for the rest of that conversation, until **New conversation**. An answer in a
+  conversation that did not read notes keeps its links.
+* **MicaStats must be running**, but not a MicaPad window: the first call starts the notes in the
+  background, and that first call can take a moment. If MicaStats is not running, an MCP client is
+  told "MicaStats is not running".
+
+To use it from Claude Code, connect it as described in [MCP for Claude Desktop and Claude
+Code](#mcp-for-claude-desktop-and-claude-code), turn on **Let MCP clients search your notes**,
+and ask, for example, "Use MicaStats: search my notes for the VPN setup steps". The diagnostics
+log records the tool name and counts, never a query or note text.
 
 ---
 

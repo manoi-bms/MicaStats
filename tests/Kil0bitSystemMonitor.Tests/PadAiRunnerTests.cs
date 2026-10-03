@@ -174,11 +174,27 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public async Task Every_update_re_arms_the_silence_deadline()
         {
-            var client = new LengthClient { Chunks = 8, Gap = TimeSpan.FromMilliseconds(30) };
-            List<PadAiUpdate> updates = await RunAsync(Runner(client, TimeSpan.FromMilliseconds(300)));
+            var client = new LengthClient { Chunks = 10, Gap = TimeSpan.FromMilliseconds(50) };
+            List<PadAiUpdate> updates = await RunAsync(Runner(client, TimeSpan.FromMilliseconds(250)));
 
             Assert.DoesNotContain(updates, u => u.Kind == PadAiUpdateKind.Error);
-            Assert.Equal(8, updates.Count(u => u.Kind == PadAiUpdateKind.Text));
+            Assert.Equal(10, updates.Count(u => u.Kind == PadAiUpdateKind.Text));
+            Assert.Equal(PadAiUpdateKind.Done, updates[^1].Kind);
+        }
+
+        [Fact]
+        public async Task A_slow_consumer_does_not_trip_the_silence_deadline()
+        {
+            var client = new LengthClient { Chunks = 1, Gap = TimeSpan.Zero };
+            var runner = Runner(client, TimeSpan.FromMilliseconds(100));
+            var updates = new List<PadAiUpdate>();
+            await foreach (PadAiUpdate u in runner.RunAsync("hello", CancellationToken.None))
+            {
+                updates.Add(u);
+                if (u.Kind == PadAiUpdateKind.Text) await Task.Delay(300);
+            }
+
+            Assert.DoesNotContain(updates, u => u.Kind == PadAiUpdateKind.Error);
             Assert.Equal(PadAiUpdateKind.Done, updates[^1].Kind);
         }
 

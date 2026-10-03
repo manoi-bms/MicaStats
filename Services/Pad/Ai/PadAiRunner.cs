@@ -103,21 +103,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                     yield break;
                 }
 
-                var messages = new List<ChatMessage>
-                {
-                    result.IsClaude
-                        ? ClaudeCache.SystemMessage(PadAiPrompts.System)
-                        : new ChatMessage(ChatRole.System, PadAiPrompts.System),
-                    new ChatMessage(ChatRole.User, userMessage ?? ""),
-                };
-
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 deadline.CancelAfter(_silence);
                 CancellationToken token = deadline.Token;
 
                 Exception? failure = null;
                 bool cutShort = false;
-                (IAsyncEnumerator<ChatResponseUpdate>? stream, Exception? openError) = Open(client, messages, token);
+                (IAsyncEnumerator<ChatResponseUpdate>? stream, Exception? openError) = Open(client, result.IsClaude, userMessage, token);
                 if (stream == null) failure = openError;
                 else
                 {
@@ -137,7 +129,12 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                             ChatResponseUpdate update = stream.Current;
                             if (update.FinishReason == ChatFinishReason.Length) cutShort = true;
                             if (!string.IsNullOrEmpty(update.Text))
+                            {
+                                // The clock covers the model's silence, not a slow consumer.
+                                deadline.CancelAfter(Timeout.InfiniteTimeSpan);
                                 yield return new PadAiUpdate(PadAiUpdateKind.Text, update.Text);
+                                deadline.CancelAfter(_silence);
+                            }
                         }
                     }
                     finally
@@ -175,10 +172,17 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         }
 
         private static (IAsyncEnumerator<ChatResponseUpdate>? Stream, Exception? Error) Open(
-            IChatClient client, List<ChatMessage> messages, CancellationToken token)
+            IChatClient client, bool isClaude, string? userMessage, CancellationToken token)
         {
             try
             {
+                var messages = new List<ChatMessage>
+                {
+                    isClaude
+                        ? ClaudeCache.SystemMessage(PadAiPrompts.System)
+                        : new ChatMessage(ChatRole.System, PadAiPrompts.System),
+                    new ChatMessage(ChatRole.User, userMessage ?? ""),
+                };
                 return (client.GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = MaxOutputTokens }, token)
                               .GetAsyncEnumerator(token), null);
             }

@@ -1696,6 +1696,187 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(after, h.Editor.Document.Text);
         });
 
+        // ---- storing a credential takes its plain value out of what AI holds ------------------------------
+
+        /// <summary>Stores the selected text as a credential, as the editor menu's Store as credential and its card do.</summary>
+        private static string Store(Harness h, MicaPadWindow window, string value)
+        {
+            string text = window.Editor.Document.Text;
+            window.Editor.Select(text.IndexOf(value, StringComparison.Ordinal), value.Length);
+            window.StoreSelection();
+            Click(window.VaultCard.PrimaryButton);
+            return Assert.Single(h.Env.Vault.Credentials).Id;
+        }
+
+        private static void NewVault(Harness h)
+        {
+            h.Env.Vault.Load();
+            h.Env.Vault.Create("246810");
+        }
+
+        [Fact]
+        public Task Storing_a_credential_closes_the_AI_pane_of_that_note_and_leaves_no_session() => OnUiAsync(async h =>
+        {
+            NewVault(h);
+            const string text = "the login is hunter2 today";
+            Write(h, text, text);
+            h.Model.Reply("Today the login is hunter2.");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            h.Pane.ChangesToggle.IsChecked = true;                // the Changes view holds the value twice
+            Assert.NotEmpty(h.Pane.ChangesList.Items);
+
+            string id = Store(h, h.Window, "hunter2");
+
+            Assert.Equal("the login is " + SecretTokens.Format(id) + " today", h.Editor.Document.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal("", h.Pane.ResultBox.Shown);             // nothing of the request is left in the pane
+            Assert.Empty(h.Pane.ChangesList.Items);
+            Click(h.Pane.InsertButton);                           // forced clicks: there is nothing to put back
+            Click(h.Pane.ReplaceButton);
+            Click(h.Pane.CopyButton);
+            Assert.DoesNotContain("hunter2", h.Editor.Document.Text, StringComparison.Ordinal);
+            Assert.Empty(h.Copied);
+        });
+
+        [Fact]
+        public Task Storing_a_credential_while_the_reply_streams_cancels_the_request() => OnUiAsync(async h =>
+        {
+            NewVault(h);
+            const string text = "the login is hunter2 today";
+            Write(h, text, text);
+            var model = new GatedModel("Today the login is hunter2", ".");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            Store(h, h.Window, "hunter2");
+            await run;
+
+            Assert.True(model.Cancelled);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal("", h.Pane.ResultBox.Shown);             // and its end drew nothing back
+        });
+
+        [Fact]
+        public Task Storing_a_credential_in_another_note_leaves_the_AI_pane_alone() => OnUiAsync(async h =>
+        {
+            NewVault(h);
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            AiSession done = h.Window.AiSessionNow!;
+
+            h.Window.NewTab();
+            Write(h, "the login is hunter2 today");
+            Store(h, h.Window, "hunter2");
+
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Same(done, h.Window.AiSessionNow);
+            Assert.Equal("Good text", h.Pane.ResultBox.Shown);
+        });
+
+        /// <summary>
+        /// Runs a test over the harness's window and a second window of the same workspace, which
+        /// has one note of its own and the same fakes. Neither is ever shown.
+        /// </summary>
+        private static Task OnUiWithTwoWindows(Func<Harness, MicaPadWindow, Task> test) => OnUiAsync(async h =>
+        {
+            PadWindowState state = h.Env.Workspace.NewWindow(h.Window.WindowId);
+            h.Env.Workspace.NewNote(state.Id);
+            var second = new MicaPadWindow(h.Env.Workspace, new AppConfig(), state.Id)
+            {
+                AiEnabled = () => h.AiOn,
+                AiRunnerFactory = h.Window.AiRunnerFactory,
+                AiCopy = h.Copied.Add,
+                AiLog = h.Log.Add,
+            };
+            try
+            {
+                second.LoadSession();
+                await test(h, second);
+            }
+            finally
+            {
+                foreach (MicaPadWindow open in MicaPadWindow.WindowsOf(h.Env.Workspace).Where(w => !ReferenceEquals(w, h.Window)).ToList())
+                    open.CloseForExit();
+                second.CloseForExit();
+            }
+        });
+
+        /// <summary>
+        /// Moves a tab to another window, which would bring that window to the front: showing is
+        /// replaced for the move alone (the UI tests of other classes share this thread and the static).
+        /// </summary>
+        private static void Move(MicaPadWindow from, OpenNote note, MicaPadWindow to)
+        {
+            Action<MicaPadWindow> show = MicaPadWindow.ShowWindow;
+            MicaPadWindow.ShowWindow = _ => { };
+            try
+            {
+                from.MoveToWindow(note, to);
+            }
+            finally
+            {
+                MicaPadWindow.ShowWindow = show;
+            }
+        }
+
+        [Fact]
+        public Task Storing_a_credential_closes_the_AI_pane_of_the_window_the_note_was_moved_from() => OnUiWithTwoWindows(async (h, second) =>
+        {
+            NewVault(h);
+            const string text = "the login is hunter2 today";
+            Write(h, text, text);
+            OpenNote source = h.Env.Workspace.ActiveIn(h.Window.WindowId)!;
+            h.Model.Reply("Today the login is hunter2.");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            h.Window.NewTab();                                    // the window keeps a tab when the source leaves
+            h.Window.SelectTab(0);
+            Assert.Same(source, h.Env.Workspace.ActiveIn(h.Window.WindowId));
+
+            Move(h.Window, source, second);                       // the pane stays in the first window, with its result
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal("Today the login is hunter2.", h.Pane.ResultBox.Shown);
+
+            Store(h, second, "hunter2");                          // stored where the note is now
+
+            Assert.DoesNotContain("hunter2", source.TextProvider(), StringComparison.Ordinal);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal("", h.Pane.ResultBox.Shown);
+        });
+
+        [Theory]
+        [InlineData(false)]   // the answer is on screen
+        [InlineData(true)]    // it still streams in
+        public Task Storing_a_credential_clears_an_answer_from_notes(bool streaming) => OnUiWithSearch(async (h, search) =>
+        {
+            NewVault(h);
+            await Index(h, search, "# Bank\nthe vpn login is hunter2 today");
+            var model = new GatedModel("The login is hunter2", " [1].");
+            if (!streaming) model.Gate.SetResult();
+            h.Client = model;
+            Task ask = AskNotes(h, search, "vpn");
+            if (streaming) await Reached(model);
+            else await ask;
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.StartsWith("The login is hunter2", pane.AnswerBox.Shown, StringComparison.Ordinal);
+            Assert.StartsWith("Words · Answer", pane.StatusText.Text, StringComparison.Ordinal);
+
+            Store(h, h.Window, "hunter2");
+            await ask;
+
+            Assert.Equal(streaming, model.Cancelled);
+            Assert.Equal(Visibility.Collapsed, pane.AnswerPanel.Visibility);
+            Assert.Equal("", pane.AnswerBox.Shown);
+            Assert.Equal("", pane.AnswerNote.Text);               // no "Stopped" either: the answer is gone, not ended
+            Assert.Equal("Words", pane.StatusText.Text);          // nor a status that says there is one
+            Click(pane.AnswerCopy);                               // even a forced click copies nothing
+            Assert.Empty(h.Copied);
+        });
+
         // ---- ask your notes: the Search pane's Ask (spec 4) ----------------------------------------
 
         /// <summary>A note of two sections; only the first is about the vpn.</summary>

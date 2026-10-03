@@ -74,6 +74,12 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly StringBuilder _answer = new();
         private CancellationTokenSource? _running;
 
+        /// <summary>The question being searched for or answered right now (its own <see cref="_running"/>), or null.</summary>
+        private CancellationTokenSource? _asking;
+
+        /// <summary>The status line as the last search or question left it, without what an answer adds.</summary>
+        private string _found = "";
+
         /// <summary>Builds the pane hidden; <see cref="Open"/> reveals it.</summary>
         public SearchPane()
         {
@@ -174,28 +180,53 @@ namespace Kil0bitSystemMonitor.Pad
             CancelRunning();
             var mine = _running = new CancellationTokenSource();
             ClearAnswer();
-
-            AskStart start;
+            _asking = mine;
             try
             {
-                start = await ask(query, mine.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                return;   // a newer search or question took over, or the pane closed
-            }
-            catch (Exception ex)
-            {
-                Report("Asking the notes", ex);
-                if (ReferenceEquals(mine, _running)) ShowInstead(AskFailedText);
-                return;
-            }
-            // Overtaken or closed while it searched: the rows on screen belong to someone else now.
-            if (!ReferenceEquals(mine, _running) || mine.IsCancellationRequested) return;
+                AskStart start;
+                try
+                {
+                    start = await ask(query, mine.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;   // a newer search or question took over, or the pane closed
+                }
+                catch (Exception ex)
+                {
+                    Report("Asking the notes", ex);
+                    if (ReferenceEquals(mine, _running)) ShowInstead(AskFailedText);
+                    return;
+                }
+                // Overtaken or closed while it searched: the rows on screen belong to someone else now.
+                if (!ReferenceEquals(mine, _running) || mine.IsCancellationRequested) return;
 
-            ShowFound(start.Rows, start.Status);
-            if (start.Instead != null) ShowInstead(start.Instead);
-            else if (start.Answer != null) await StreamAnswerAsync(start, start.Answer, mine);
+                ShowFound(start.Rows, start.Status);
+                if (start.Instead != null) ShowInstead(start.Instead);
+                else if (start.Answer != null) await StreamAnswerAsync(start, start.Answer, mine);
+            }
+            finally
+            {
+                if (ReferenceEquals(_asking, mine)) _asking = null;
+            }
+        }
+
+        /// <summary>
+        /// Takes the answer off the pane, for text that must not stay on it: the window calls
+        /// this when a credential was stored, since an answer may quote its plain value. An
+        /// answer on screen is cleared; a question still searching or streaming is cancelled and
+        /// shows nothing more (its answer, if not yet read, is never read, so nothing is sent).
+        /// The rows and the search status stay, and a plain search goes on. Never throws.
+        /// </summary>
+        internal void DropAnswer()
+        {
+            if (_asking != null && ReferenceEquals(_asking, _running))
+            {
+                CancelRunning();
+                _running = null;   // whatever it still yields is no longer this pane's to draw
+            }
+            ClearAnswer();
+            StatusText.Text = _found;
         }
 
         /// <summary>
@@ -271,7 +302,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             Rows = rows;
             Results.ItemsSource = rows;
-            StatusText.Text = status;
+            StatusText.Text = _found = status;
         }
 
         /// <summary>Lists what a query found; with nothing found, the status says so.</summary>

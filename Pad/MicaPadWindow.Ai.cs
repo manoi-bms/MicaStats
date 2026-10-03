@@ -603,6 +603,30 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Stop: the request ends, and what came so far stays in the pane as a stopped reply.</summary>
         private void StopAi() => CancelAi(_ai);
 
+        /// <summary>
+        /// A credential was just stored from <paramref name="note"/>: its plain value is out of
+        /// the note, so it must not stay in what AI holds of it. The AI pane's request for that
+        /// note is closed (its original, its result and its Changes view may hold the value, and
+        /// Insert below would put it back), and an answer from notes, which may quote it, is
+        /// cleared. In every window of the workspace: a tab may have moved since its request.
+        /// </summary>
+        private void DropAiTextAfterStore(OpenNote note)
+        {
+            foreach (MicaPadWindow window in WindowsOf(_workspace).Append(this).Distinct())
+            {
+                window.GuardAi("Closing the AI pane after a credential was stored", () => window.DropAiOf(note));
+                window.GuardAi("Clearing an answer after a credential was stored", window.SearchPanel.DropAnswer);
+            }
+        }
+
+        /// <summary>Closes the pane and empties it when its request ran on <paramref name="note"/>; a running request is cancelled.</summary>
+        private void DropAiOf(OpenNote note)
+        {
+            if (_ai is not { } run || !ReferenceEquals(run.Note, note)) return;
+            CloseAi(focusEditor: false);
+            AiPanel.Clear();
+        }
+
         /// <summary>A tab is closing (the workspace's event): the pane goes with its source note. Guarded: a tab always closes.</summary>
         private void OnAiNoteClosing(OpenNote note)
         {

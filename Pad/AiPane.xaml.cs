@@ -115,6 +115,31 @@ namespace Kil0bitSystemMonitor.Pad
             else DrawNow();
         }
 
+        /// <summary>
+        /// Empties the pane: nothing of the last request stays in it, shown or not (its result,
+        /// its Changes view, a typed instruction), and a redraw still waiting is dropped. For
+        /// text that must not be kept: a credential was stored from the note it came from. The
+        /// next view draws as usual.
+        /// </summary>
+        public void Clear()
+        {
+            _redraw.Stop();
+            _view = null;
+            _drawn = false;
+            _comparedOriginal = null;
+            _comparedResult = null;
+            ChangesToggle.IsChecked = false;
+            ChangesToggle.Visibility = Visibility.Collapsed;
+            ChangesList.ItemsSource = null;
+            ChangesSummary.Text = "";
+            InstructionBox.Clear();
+            TitleText.Text = "";
+            SourceText.Text = "";
+            StatusText.Text = "";
+            StatusText.Visibility = Visibility.Collapsed;
+            ResultBox.ShowPlain("");
+        }
+
         /// <summary>Puts the keyboard in the instruction box, with what it holds selected.</summary>
         public void FocusInstruction()
         {

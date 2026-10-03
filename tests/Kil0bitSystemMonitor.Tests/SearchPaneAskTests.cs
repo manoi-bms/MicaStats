@@ -770,6 +770,77 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Empty(f.Pane.Rows);                            // nothing of it is shown
         });
 
+        // ---- an answer that must not stay (a credential was stored) ---------------------------------
+
+        [Fact]
+        public Task DropAnswer_takes_a_finished_answer_and_its_status_off_the_pane_and_keeps_the_rows() => OnUi(async f =>
+        {
+            Task ask = Ask(f);
+            f.Feed(Text("The login is hunter2 [1]."));
+            f.End();
+            await ask;
+            Assert.Equal("Words · Answered from 2 passages", f.Pane.StatusText.Text);
+
+            f.Pane.DropAnswer();
+
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerPanel.Visibility);
+            Assert.Equal("", f.Pane.AnswerBox.Shown);
+            Assert.Equal("Words", f.Pane.StatusText.Text);
+            Assert.Equal(f.Found, f.Pane.Rows);
+            Click(f.Pane.AnswerCopy);
+            Assert.Empty(f.Copied);
+        });
+
+        [Fact]
+        public Task DropAnswer_cancels_an_answer_that_streams_in_and_its_end_draws_nothing() => OnUi(async f =>
+        {
+            Task ask = Ask(f);
+            f.Feed(Text("The login is"));
+            await Handled(f, 1);
+
+            f.Pane.DropAnswer();
+            await ask;
+
+            Assert.True(f.Tokens[0].IsCancellationRequested);
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerPanel.Visibility);
+            Assert.Equal("", f.Pane.AnswerBox.Shown);
+            Assert.Equal("", f.Pane.AnswerNote.Text);             // not "Stopped": nothing of it is left to stop
+            Assert.Equal("Words", f.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task DropAnswer_while_the_question_still_searches_means_its_answer_is_never_read() => OnUi(async f =>
+        {
+            var slow = new TaskCompletionSource<AskStart>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var answer = new NeverRead();
+            f.Pane.Ask = (_, _) => slow.Task;
+            Task ask = Ask(f);
+
+            f.Pane.DropAnswer();
+            slow.SetResult(new AskStart(new[] { Row("Late", 1) }, "Late", answer, null, "Late · Answering", "Late · Answered"));
+            await ask;
+
+            Assert.Equal(0, answer.Reads);                        // so the passages found before the store are never sent
+            Assert.Empty(f.Pane.Rows);
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerPanel.Visibility);
+        });
+
+        [Fact]
+        public Task DropAnswer_leaves_a_plain_search_alone() => OnUi(async f =>
+        {
+            var slow = new TaskCompletionSource<(IReadOnlyList<SearchRow> Rows, string Status)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            f.Pane.Run = (_, _) => slow.Task;
+            f.Pane.QueryBox.Text = "vpn";
+            Task search = f.Pane.SearchNow();
+
+            f.Pane.DropAnswer();                                  // there is no answer: nothing to drop
+            slow.SetResult((f.Found, "Words"));
+            await search;
+
+            Assert.Equal(f.Found, f.Pane.Rows);
+            Assert.Equal("Words", f.Pane.StatusText.Text);
+        });
+
         [Fact]
         public Task Hiding_the_pane_drops_a_search_still_waiting_for_typing_to_pause() => OnUi(async f =>
         {

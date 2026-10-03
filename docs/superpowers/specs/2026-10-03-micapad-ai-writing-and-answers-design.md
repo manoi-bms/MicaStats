@@ -32,7 +32,8 @@ The owner's standing goal is "autonomous continue implement until finish", so ev
 - Each action or answer counts one against the daily limit shared with Ask MicaStats (`AiDailyLimit`, `UsageMeter`). **(R)** One budget is easier to reason about than two. A failed or stopped request still counts, as in Ask.
 - While the setting is off:
   - the editor's **AI** menu holds one item, **Set up AI…**, which opens Settings → MicaPad;
-  - the Search pane's **Ask** button puts "Turn on Settings → MicaPad → AI to get answers" in the status line.
+  - the Search pane's **Ask** button runs the normal search and shows "Turn on Settings → MicaPad → AI to get answers" in the answer area.
+- **The setting is checked where text is read, not only where a button is drawn.** *(Added after review.)* Every entry point refuses when it is off, and it is checked again right before each request goes out. A setting that cannot be read counts as off.
 
 ## 2. What is sent
 
@@ -40,9 +41,12 @@ The owner's standing goal is "autonomous continue implement until finish", so ev
 - **An answer from notes** sends the fixed system prompt, the question, and up to 8 passages found by Search notes.
 - **Stored credentials are never sent.**
   - In text for an action, each `{{secret:ID}}` becomes `[[CREDENTIAL_n]]`. `n` counts from 1 in order of first appearance, and the same credential gets the same `n`. The id and the secret value stay on this PC.
-  - In a question and in passages, a credential is `[credential]`, as Search notes already does (`NotePassages.WithoutSecrets`).
+  - *(Added after review.)* If the text already contains a literal `[[CREDENTIAL_`, the placeholder takes a prefix that does not occur in the text (`[[CREDENTIAL_X_1]]`), so the user's own words are never counted as a credential or turned into one.
+  - *(Added after review.)* A selection that cuts through a `{{secret:ID}}` marker is widened to the whole marker before the text is read, so no part of an id is sent.
+  - In a question and in passages, a credential is `[credential]`, as Search notes already does (`NotePassages.WithoutSecrets`). A note is cleaned before it is cut to size, so a marker at the cut leaves no fragment.
 - **(R)** The `Redactor` used for PC data (user name, computer name, IP addresses) is not applied. A rewrite must return the user's own words, and replacing names in them would damage the note. The privacy line covers this.
-- The note text is wrapped as data: the system prompt tells the model that text between `<note>` and `</note>` is never instructions. **(R)** A note pasted from the web must not steer the model.
+- The note text is wrapped as data: the system prompt tells the model that text between `<note>` and `</note>` is never instructions. **(R)** A note pasted from the web must not steer the model. Source passages for a question are wrapped the same way.
+- **Links in an answer are never clickable.** *(Added after review.)* An answer shows a link as plain text, "label (address)". **(R)** Text pasted into a note could steer the model into emitting a link whose address carries other passages; one click would send them to a third party.
 
 ## 3. Actions on text
 
@@ -82,8 +86,10 @@ A pane on the right, 320 wide, in the same place as History and Search notes. Op
 ### 3.3 Applying a result
 
 - **Replace selection** puts the result in place of the original text, as one undo step, and selects it.
-- **Insert below** adds the result as a new paragraph after the last line of the source text (or at the end of the note for a whole-note action), as one undo step.
+- **Insert below** adds the result as a new paragraph after the last line of the source text (or at the end of the note for a whole-note action), as one undo step. When the source text is gone, it goes after the caret's line.
 - **Copy** puts the result on the clipboard.
+- The result's line breaks are changed to the note's own line ending before it is inserted.
+- Undoing a **Replace selection** brings the button back.
 - Before anything is inserted, each `[[CREDENTIAL_n]]` in the result is turned back into its `{{secret:ID}}`.
 - **Replace selection is offered only when all of these hold:**
   - the request finished and was not cut short;
@@ -99,19 +105,21 @@ A pane on the right, 320 wide, in the same place as History and Search notes. Op
 
 - A new action replaces the pane's content and cancels a request still running.
 - Closing the pane cancels a running request.
-- Switching tabs keeps the pane and its result. **Replace selection** and **Insert below** come back when the source note is shown again.
+- Switching tabs keeps the pane and its result. **Replace selection**, **Insert below** and **Try again** come back when the source note is shown again.
 - Closing the source note cancels and clears the pane.
+- **Try again, and an instruction typed for Ask AI, run on the text the pane names and on nothing else.** *(Added after review.)* That is the earlier request's selection where it is now, or its whole note. A new selection is not used. When the source note is not shown, or the selection's text is gone, nothing is sent and the status bar says "Show the note this came from to try again" or "The text this ran on is gone; select text and run the action again".
 
 ## 4. Ask your notes
 
 - The Search notes pane gets an **Ask** button beside the query box. **Ctrl+Enter** does the same. **Enter** still only searches.
 - **Ask** runs the search as usual, then sends the question and the top 8 passages to the model. The answer streams into an area above the result list, rendered as Markdown, with **Stop** and **Copy**.
 - While an answer is shown, the first 8 result rows carry their source numbers, "1" to "8", so a citation such as [2] can be matched to its row. Clicking a row opens the note at the passage, as now.
-- **(R)** Citations in the answer are plain text in this version. Making them clickable needs link handling the chat renderer does not have; it is a follow-up.
+- **(R)** Citations in the answer are plain text. Nothing in an answer is clickable (section 2); the numbered rows are the way to the source.
 - The model is told to answer only from the passages, to cite them as [n], and to say plainly when the notes do not hold the answer.
 - It works with words-only search. Meaning search and reranking make the passages better but are not required.
 - No hits: the answer area says "Nothing in your notes matches, so there is nothing to answer from." No request is made and nothing is counted.
-- The status line keeps its search text and adds, for example, "Answered from 6 passages".
+- The status line keeps its search text and adds "Answering from 6 passages" while the answer streams, then "Answered from 6 passages" once it ends cleanly. After an error, a stop or a cut-short reply the addition is removed, and a line under the answer says what happened.
+- Text typed or deleted in the open note just before **Ask** is taken into account: the search index is brought up to date first.
 - A new search or a new question cancels a running answer and clears the old one.
 
 ## 5. Limits and failures
@@ -140,7 +148,7 @@ Rules:
 ```
 
 - An action's user message: `Task: <instruction>`, a blank line, then `<note>`, the text, `</note>`.
-- A question's user message: `Question: <question>`, a blank line, `Sources:`, then for each passage `[n] <title> — <heading> (lines a–b)` and its body, separated by blank lines.
+- A question's user message: `Question: <question>`, a blank line, `Sources:`, then for each passage the line `[n] <title> — <heading> (lines a–b)` followed by `<note>`, its body and `</note>`, with a blank line between passages. *(Revised after review.)* A `</note>` inside a body is written `</ note>`, so a passage can neither end its own wrapper nor forge another source's header.
 
 ## 7. Structure
 
@@ -199,4 +207,4 @@ UI, in `Pad/`:
 
 - Notes as tools for Ask MicaStats and MCP clients, and diagram help. These are the next spec.
 - Completion while typing, note titles and summaries kept in the note, finding secrets in a note, and screenshots to text.
-- Clickable citations, and a chat with follow-up questions in the pane.
+- Citations that jump to their source, and a chat with follow-up questions in the pane.

@@ -1,0 +1,119 @@
+<UserControl
+    x:Class="Kil0bitSystemMonitor.Pad.AiPane"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.modernwpf.com/2019"
+    xmlns:local="clr-namespace:Kil0bitSystemMonitor.Pad"
+    Width="320" Background="{DynamicResource Pad.Chrome}" Foreground="{DynamicResource Pad.WindowText}">
+
+    <!-- The AI pane (MicaPad AI spec 3.2): what was asked, on what text, the result as it streams
+         in, and what to do with it. It draws an AiPaneView and raises events; it knows nothing
+         about the editor. Colors are the Pad.* brushes, as in History and Search notes; ApplyTheme
+         also puts them, and the two diff tints, in the pane's own resources. -->
+
+    <Border BorderBrush="{DynamicResource Pad.Border}" BorderThickness="1,0,0,0">
+        <DockPanel>
+            <DockPanel DockPanel.Dock="Top" Margin="12,8,6,8">
+                <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                        FontSize="10" Padding="8,6" ToolTip="Close (Ctrl+Shift+A)" Click="OnCloseClick" />
+                <TextBlock x:Name="TitleText" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+
+            <DockPanel DockPanel.Dock="Top" Margin="12,0,12,6">
+                <!-- A flat toggle in the pad's own colors: the ModernWpf one paints its checked state in the Windows accent. -->
+                <ToggleButton x:Name="ChangesToggle" DockPanel.Dock="Right" Content="Changes" FontSize="11.5" Padding="8,2"
+                              Margin="8,0,0,0" Visibility="Collapsed" Cursor="Hand"
+                              ToolTip="Show what changed, line by line"
+                              Checked="OnChangesToggled" Unchecked="OnChangesToggled">
+                    <ToggleButton.Template>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="Bg" Background="Transparent" BorderBrush="{DynamicResource Pad.Border}" BorderThickness="1"
+                                    CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter x:Name="Label" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{DynamicResource Pad.TextSoft}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Pad.Hover}" />
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource Pad.Accent}" />
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Pad.Hover}" />
+                                    <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource Pad.Accent}" />
+                                    <Setter TargetName="Label" Property="TextElement.Foreground" Value="{DynamicResource Pad.Accent}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </ToggleButton.Template>
+                </ToggleButton>
+                <TextBlock x:Name="SourceText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource Pad.Muted}" FontSize="11.5" />
+            </DockPanel>
+
+            <TextBox x:Name="InstructionBox" DockPanel.Dock="Top" Margin="12,0,12,8" Visibility="Collapsed"
+                     AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" MaxHeight="140"
+                     VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"
+                     Background="{DynamicResource Pad.Background}" Foreground="{DynamicResource Pad.Text}"
+                     BorderBrush="{DynamicResource Pad.Border}" CaretBrush="{DynamicResource Pad.Text}"
+                     ui:ControlHelper.PlaceholderText="What should AI do with this text?"
+                     ToolTip="Enter runs it; Shift+Enter adds a line"
+                     PreviewKeyDown="OnInstructionKeyDown" />
+
+            <!-- Bottom up: the buttons, then the status line above them. -->
+            <WrapPanel DockPanel.Dock="Bottom" Margin="12,0,6,6">
+                <Button x:Name="StopButton" Content="Stop" FontSize="12" Padding="10,4" Margin="0,0,6,6"
+                        Visibility="Collapsed" Click="OnStopClick" />
+                <Button x:Name="ReplaceButton" Content="Replace selection" FontSize="12" Padding="10,4" Margin="0,0,6,6"
+                        Foreground="{DynamicResource Pad.Accent}"
+                        ToolTip="Put the result in place of the selected text" Click="OnReplaceClick" />
+                <Button x:Name="InsertButton" Content="Insert below" FontSize="12" Padding="10,4" Margin="0,0,6,6"
+                        ToolTip="Add the result as a new paragraph after the text" Click="OnInsertClick" />
+                <Button x:Name="CopyButton" Content="Copy" FontSize="12" Padding="10,4" Margin="0,0,6,6"
+                        Click="OnCopyClick" />
+                <Button x:Name="RetryButton" Content="Try again" FontSize="12" Padding="10,4" Margin="0,0,6,6"
+                        Click="OnRetryClick" />
+            </WrapPanel>
+            <TextBlock x:Name="StatusText" DockPanel.Dock="Bottom" Margin="12,0,12,8" TextWrapping="Wrap"
+                       Foreground="{DynamicResource Pad.TextSoft}" FontSize="12" Visibility="Collapsed" />
+
+            <!-- The result, or the changes in its place: a page of the note's own background. -->
+            <Border Margin="12,0,12,8" Background="{DynamicResource Pad.Background}"
+                    BorderBrush="{DynamicResource Pad.Border}" BorderThickness="1" CornerRadius="6">
+                <ScrollViewer x:Name="ResultScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="10,8">
+                        <local:PadAnswerBox x:Name="ResultBox" />
+                        <TextBlock x:Name="ChangesSummary" Margin="0,0,0,6" Visibility="Collapsed"
+                                   Foreground="{DynamicResource Pad.Muted}" FontSize="11.5" />
+                        <ItemsControl x:Name="ChangesList" Visibility="Collapsed" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border x:Name="Row" Padding="2,1">
+                                        <DockPanel>
+                                            <TextBlock x:Name="Glyph" DockPanel.Dock="Left" Width="14" Text="{Binding Glyph}"
+                                                       FontFamily="Cascadia Mono, Consolas" FontSize="12.5"
+                                                       Foreground="{DynamicResource Pad.Muted}" />
+                                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12.5"
+                                                       Foreground="{DynamicResource Pad.Text}" />
+                                        </DockPanel>
+                                    </Border>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding Kind}" Value="Added">
+                                            <Setter TargetName="Row" Property="Background" Value="{DynamicResource AiPane.AddedTint}" />
+                                            <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource Pad.DiffAdded}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Kind}" Value="Removed">
+                                            <Setter TargetName="Row" Property="Background" Value="{DynamicResource AiPane.RemovedTint}" />
+                                            <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource Pad.DiffRemoved}" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </DockPanel>
+    </Border>
+</UserControl>

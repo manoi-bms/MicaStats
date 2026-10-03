@@ -22,21 +22,31 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly TimeSpan _debounce;
         private readonly Dictionary<string, DispatcherTimer> _timers = new(StringComparer.Ordinal);
 
-        public SearchFeeder(PadWorkspace workspace, SearchIndexer indexer, TimeSpan? debounce = null)
+        /// <param name="workspace">The open notes, and the store of the rest.</param>
+        /// <param name="indexer">Where the notes go.</param>
+        /// <param name="debounce">How long after an edit a note is sent; <see cref="DefaultDebounce"/> when null.</param>
+        /// <param name="readOnly">How the first reconcile lists the stored notes; see <see cref="ReconcileAll"/>.</param>
+        public SearchFeeder(PadWorkspace workspace, SearchIndexer indexer, TimeSpan? debounce = null, bool readOnly = false)
         {
             _workspace = workspace;
             _indexer = indexer;
             _debounce = debounce ?? DefaultDebounce;
-            ReconcileAll();   // first: when it throws, nothing is left subscribed
+            ReconcileAll(readOnly);   // first: when it throws, nothing is left subscribed
             _workspace.NoteTextChanged += OnTextChanged;
             _workspace.NoteClosing += OnClosing;
             _workspace.NoteDeleted += OnDeleted;
         }
 
-        /// <summary>Every note again: open ones from their editors, the rest from the store; vanished ones removed.</summary>
-        public void ReconcileAll()
+        /// <summary>
+        /// Every note again: open ones from their editors, the rest from the store; vanished ones removed.
+        /// <paramref name="readOnly"/> lists the stored notes without the store's repairs
+        /// (<see cref="NoteStore.PeekAllMetas"/>): for a reconcile a note tool asked for, which must
+        /// not change the store. A note whose <c>meta.json</c> is damaged is then left out until
+        /// MicaPad itself has loaded it.
+        /// </summary>
+        public void ReconcileAll(bool readOnly = false)
         {
-            var metas = _workspace.Store.LoadAllMetas();
+            var metas = readOnly ? _workspace.Store.PeekAllMetas() : _workspace.Store.LoadAllMetas();
             var open = _workspace.Open.ToDictionary(n => n.Id, StringComparer.Ordinal);
             _indexer.Reconcile(metas.Select(m => m.Id).Concat(open.Keys).Distinct().ToList());
             foreach (var note in open.Values) Send(note);

@@ -43,7 +43,10 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
             Settings = settings;
             var vectors = new VectorStore(Path.Combine(store.Root, FolderName), store.EncryptBytes, store.TryDecryptBytes, warn);
-            Indexer = new SearchIndexer(vectors, embedder, settings, store.LoadText, warn);
+            // The index only reads the notes: a stored note's text is read where it lies, and a
+            // finished write is left for the store's own load to commit. A note tool may be what
+            // started this indexing, and reading notes must never change them.
+            Indexer = new SearchIndexer(vectors, embedder, settings, store.LoadTextInPlace, warn);
             Search = new NoteSearch(Indexer, embedder, reranker, settings);
         }
 

@@ -28,22 +28,22 @@ namespace Kil0bitSystemMonitor
         private Kil0bitSystemMonitor.ViewModels.MainViewModel? m_viewModel;
         private System.Windows.Threading.DispatcherTimer? m_padMaintenanceTimer;
         private static Kil0bitSystemMonitor.Services.Pad.NoteStore? s_padStore;
-        private static Kil0bitSystemMonitor.Services.Pad.PadWorkspace? s_pad;
+
+        /// <summary>MicaPad's workspace and search, once something asked for them; see <see cref="PadHost"/>.</summary>
+        private static Kil0bitSystemMonitor.Pad.PadRuntime? s_padRuntime;
         private static Kil0bitSystemMonitor.Services.Pad.CredentialVault? s_padVault;
         private static Kil0bitSystemMonitor.Pad.VaultSession? s_vaultSession;
 
         /// <summary>Draws MicaPad's diagrams for every window (one hidden WebView2); created with the first MicaPad window, disposed at exit.</summary>
         private static Kil0bitSystemMonitor.Services.Pad.DiagramRenderer? s_diagrams;
         private static Kil0bitSystemMonitor.Services.Pad.ImageSources? s_images;
-        private static Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? s_padSearch;
-        private static Kil0bitSystemMonitor.Pad.SearchFeeder? s_padSearchFeeder;
 
         /// <summary>The config the search follows and its handler, removed at exit.</summary>
         private static Kil0bitSystemMonitor.Models.AppConfig? s_padSearchConfig;
         private static System.ComponentModel.PropertyChangedEventHandler? s_padSearchConfigChanged;
 
-        /// <summary>MicaPad's search; null until MicaPad first opens.</summary>
-        internal static Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? PadSearch => s_padSearch;
+        /// <summary>MicaPad's search; null until MicaPad first opens or a note tool first reads the notes.</summary>
+        internal static Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? PadSearch => s_padRuntime?.Search;
 
         // ---- diagnostics ----------------------------------------------------------------
 
@@ -649,6 +649,39 @@ namespace Kil0bitSystemMonitor
             s_padStore ??= new Kil0bitSystemMonitor.Services.Pad.NoteStore(Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot);
 
         /// <summary>
+        /// MicaPad's workspace and its search: one for the app, built by whichever needs them
+        /// first, the first MicaPad window (<see cref="OpenPad"/>) or the first note tool call
+        /// (App.Ai.cs), which needs no window. This is the only place a workspace is made, so both
+        /// get the same one with the same options. Making the host builds nothing and touches no
+        /// disk. UI thread.
+        /// </summary>
+        internal static Kil0bitSystemMonitor.Pad.PadRuntime PadHost
+        {
+            get
+            {
+                if (s_padRuntime != null) return s_padRuntime;
+                var dispatcher = Current.Dispatcher;
+                s_padRuntime = new Kil0bitSystemMonitor.Pad.PadRuntime(
+                    Kil0bitSystemMonitor.Services.Pad.NoteStore.DefaultRoot,
+                    () => PadStore,
+                    store => new Kil0bitSystemMonitor.Services.Pad.PadWorkspace(store,
+                        new Kil0bitSystemMonitor.Services.Pad.PadWorkspaceOptions
+                        {
+                            Post = action => dispatcher.BeginInvoke(action),
+                            Vault = PadVault,
+                        }),
+                    store => new Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService(store,
+                        () => Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.From(ConfigService!.Config, AiSecrets.Get)),
+                    OnPadSearchStarted,
+                    message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("search", message));
+                return s_padRuntime;
+            }
+        }
+
+        /// <summary>The host if anything asked for it yet; for readers on other threads, which must not make it.</summary>
+        internal static Kil0bitSystemMonitor.Pad.PadRuntime? PadHostIfStarted => s_padRuntime;
+
+        /// <summary>
         /// Shows MicaPad, creating its workspace on first use, and opens <paramref name="path"/> in a
         /// tab when given. From the overlay menu, the hotkey, <c>--pad</c> and the settings page.
         /// A file already open in a MicaPad window brings that window forward; anything else goes to
@@ -661,16 +694,8 @@ namespace Kil0bitSystemMonitor
 
             try
             {
-                if (s_pad == null)
-                {
-                    var dispatcher = Current.Dispatcher;
-                    s_pad = new Kil0bitSystemMonitor.Services.Pad.PadWorkspace(PadStore,
-                        new Kil0bitSystemMonitor.Services.Pad.PadWorkspaceOptions
-                        {
-                            Post = action => dispatcher.BeginInvoke(action),
-                            Vault = PadVault,
-                        });
-                }
+                // The workspace (restored) and the search: the same ones a note tool may have started already.
+                var workspace = PadHost.EnsureStarted();
 
                 if (s_diagrams == null)
                 {
@@ -690,9 +715,7 @@ namespace Kil0bitSystemMonitor
                     Kil0bitSystemMonitor.Pad.MicaPadWindow.ImageLoader = s_images;   // image previews (MicaPadWindow.ConfigureDiagrams)
                 }
 
-                if (s_padSearch == null) StartPadSearch(config, s_pad);
-
-                Kil0bitSystemMonitor.Pad.MicaPadWindow.Open(s_pad, config, () => ShowSettingsSection("MicaPad"), path);
+                Kil0bitSystemMonitor.Pad.MicaPadWindow.Open(workspace, config, () => ShowSettingsSection("MicaPad"), path);
             }
             catch (Exception ex)
             {
@@ -701,40 +724,27 @@ namespace Kil0bitSystemMonitor
         }
 
         /// <summary>
-        /// MicaPad's search (search spec 3.5), started with the workspace: the service, its feeder and
-        /// the config handler that passes Settings → Search changes on. Published only once all of it
-        /// exists. A failure is logged (exception type only) and MicaPad opens without search; the
-        /// next open tries again.
+        /// MicaPad's search (search spec 3.5) has started with the workspace
+        /// (<see cref="Kil0bitSystemMonitor.Pad.PadRuntime"/> builds the service and its feeder, and
+        /// logs a failure by its type; the next start tries again). What the app hangs on it: the
+        /// config handler that passes Settings → Search changes on, and the two the windows use.
         /// </summary>
-        private static void StartPadSearch(Kil0bitSystemMonitor.Models.AppConfig config, Kil0bitSystemMonitor.Services.Pad.PadWorkspace workspace)
+        private static void OnPadSearchStarted(Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService service,
+                                               Kil0bitSystemMonitor.Pad.SearchFeeder feeder)
         {
-            Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? service = null;
-            try
+            var config = ConfigService!.Config;
+            var indexer = service.Indexer;
+            System.ComponentModel.PropertyChangedEventHandler changed = (_, e) =>
             {
-                service = new Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService(PadStore,
-                    () => Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.From(config, AiSecrets.Get));
-                var feeder = new Kil0bitSystemMonitor.Pad.SearchFeeder(workspace, service.Indexer);
-                var indexer = service.Indexer;
-                System.ComponentModel.PropertyChangedEventHandler changed = (_, e) =>
-                {
-                    if (Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.IsSearchProperty(e.PropertyName))
-                        indexer.SettingsChanged();
-                };
-                config.PropertyChanged += changed;
+                if (Kil0bitSystemMonitor.Services.Pad.Search.PadSearchSettings.IsSearchProperty(e.PropertyName))
+                    indexer.SettingsChanged();
+            };
+            config.PropertyChanged += changed;
 
-                s_padSearchConfig = config;
-                s_padSearchConfigChanged = changed;
-                s_padSearchFeeder = feeder;
-                s_padSearch = service;
-                Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchService = service;   // the Search notes pane (Ctrl+Shift+F)
-                Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchFeeder = feeder;     // reconciled each time the pane opens
-            }
-            catch (Exception ex)
-            {
-                Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("search",
-                    "Search notes could not start (" + ex.GetType().Name + "); MicaPad opens without it and tries again next time.");
-                service?.Dispose();
-            }
+            s_padSearchConfig = config;
+            s_padSearchConfigChanged = changed;
+            Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchService = service;   // the Search notes pane (Ctrl+Shift+F)
+            Kil0bitSystemMonitor.Pad.MicaPadWindow.SearchFeeder = feeder;     // reconciled each time the pane opens
         }
 
         /// <summary>Opens MicaPad and shows its Change PIN card (Settings, Credentials).</summary>
@@ -769,8 +779,9 @@ namespace Kil0bitSystemMonitor
             try
             {
                 Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit();
-                s_pad?.FlushAll(TimeSpan.FromSeconds(2));
-                s_pad?.RunPendingScrubs();
+                var workspace = s_padRuntime?.Workspace;
+                workspace?.FlushAll(TimeSpan.FromSeconds(2));
+                workspace?.RunPendingScrubs();
             }
             catch (Exception ex)
             {
@@ -853,6 +864,11 @@ namespace Kil0bitSystemMonitor
         {
             try
             {
+                // First of all: no note tool starts or reads anything from here on, and the two ways
+                // in from outside (the tool pipe and local HTTP) stop before the feeder, the search
+                // and the workspace they read are disposed below.
+                BeginPadExit();
+                StopMcpServers();
                 // WPF has already closed MicaPad by now, so the window-state recording relies on Quit or
                 // SessionEnding having called PrepareForExit first. This flush is the writer-thread drain.
                 FlushPad();
@@ -864,9 +880,7 @@ namespace Kil0bitSystemMonitor
                 m_padMaintenanceTimer?.Stop();
                 if (s_padSearchConfig != null && s_padSearchConfigChanged != null)
                     s_padSearchConfig.PropertyChanged -= s_padSearchConfigChanged;
-                s_padSearchFeeder?.Dispose();
-                s_padSearch?.Dispose();
-                s_pad?.Dispose();
+                s_padRuntime?.Dispose();   // the feeder, the search, then the workspace
                 m_captureHotkeys?.Dispose();
                 // Before anything the AI tools read, and before the shared sampler: the history
                 // recorder may hold a sampler lease for its once-a-minute top process.
@@ -897,9 +911,29 @@ namespace Kil0bitSystemMonitor
         /// <summary>Records whether MicaPad is showing before shutdown closes it, then shuts the application down.</summary>
         public static void Quit()
         {
+            // Exit begins here: a note tool call must not start MicaPad's workspace behind the shutdown.
+            BeginPadExit();
             // Record whether MicaPad is showing before shutdown closes it, so it reopens at next login.
             Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit();
             Current.Shutdown();
+        }
+
+        /// <summary>
+        /// From here on no note tool starts or reads MicaPad's notes
+        /// (<see cref="Kil0bitSystemMonitor.Pad.PadRuntime.BeginExit"/>). The host is made if nothing
+        /// asked for it yet, which builds nothing, so that there is one to say no. Never throws:
+        /// it is the first step of exit, and the rest of the teardown must still run.
+        /// </summary>
+        private static void BeginPadExit()
+        {
+            try
+            {
+                PadHost.BeginExit();
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("pad", "Closing MicaPad's notes to the note tools failed", ex);
+            }
         }
     }
 }

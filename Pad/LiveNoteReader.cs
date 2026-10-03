@@ -16,9 +16,14 @@ namespace Kil0bitSystemMonitor.Pad
     /// way the Search notes pane runs it, and one note's text as it is now.
     ///
     /// <para>
-    /// It needs no MicaPad window: the workspace, the search and its feeder belong to the app and
-    /// stay after the last window hides. They are asked for at each call, because the app builds
-    /// them when MicaPad first opens. Until then there is nothing to search and no note to read.
+    /// It needs no MicaPad window, and MicaPad need not have been opened: the workspace, the
+    /// search and its feeder belong to the app, and each call first asks the app to start them
+    /// (<c>start</c>, on the UI thread; <see cref="PadRuntime.StartForNoteTools"/> in the app). Only
+    /// a real call does that: this reader is reached after the tool's permission check, never
+    /// when tools are listed or an assistant is built. When MicaPad was never used on this PC
+    /// there is nothing to search and no note to read, and nothing is created. A start that
+    /// fails is an exception, which the tools turn into an error result: an empty list would
+    /// read as "no such notes".
     /// </para>
     ///
     /// <para>
@@ -36,35 +41,46 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly Func<NoteSearchService?> _search;
         private readonly Func<SearchFeeder?> _feeder;
         private readonly Dispatcher _ui;
+        private readonly Func<bool> _start;
 
-        /// <param name="workspace">The app's workspace, or null before MicaPad first opened.</param>
-        /// <param name="search">The app's search, or null before it started.</param>
+        /// <param name="workspace">The app's workspace; null until it was started.</param>
+        /// <param name="search">The app's search; null until it was started, and when it could not start.</param>
         /// <param name="feeder">What hands the open notes to the search index, or null.</param>
-        /// <param name="ui">The thread the open notes live on.</param>
-        public LiveNoteReader(Func<PadWorkspace?> workspace, Func<NoteSearchService?> search, Func<SearchFeeder?> feeder, Dispatcher ui)
+        /// <param name="ui">The thread the open notes live on, and the one <paramref name="start"/> runs on.</param>
+        /// <param name="start">
+        /// Makes sure the workspace and the search exist. True when they do; false when there are no
+        /// notes at all (MicaPad was never used), which reads as an empty result. Throws when the
+        /// start fails or the app is closing.
+        /// </param>
+        public LiveNoteReader(Func<PadWorkspace?> workspace, Func<NoteSearchService?> search, Func<SearchFeeder?> feeder,
+                              Dispatcher ui, Func<bool> start)
         {
             _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
             _search = search ?? throw new ArgumentNullException(nameof(search));
             _feeder = feeder ?? throw new ArgumentNullException(nameof(feeder));
             _ui = ui ?? throw new ArgumentNullException(nameof(ui));
+            _start = start ?? throw new ArgumentNullException(nameof(start));
         }
 
         /// <summary>
         /// The passages the Search notes pane would find, words and (when set up) meaning. The
         /// notes are searched as they are now: an edit reaches the index two seconds after it, so
         /// the feeder is flushed and the index waited for first, as Ask your notes does. This
-        /// waits for the notes' words only, never for the embedding server.
+        /// waits for the notes' words only, never for the embedding server. Cancelling stops the
+        /// waiting, not the index: once started it is built to the end whoever asked.
         /// </summary>
         public async Task<NoteSearchResult> SearchAsync(string query, CancellationToken ct)
         {
-            NoteSearchService? service = _search();
-            if (service == null) return Nothing;
-
-            await OnUiAsync(() =>
+            bool started = await OnUiAsync(() =>
             {
+                if (!_start()) return false;
                 _feeder()?.FlushPending();
                 return true;
             }, ct).ConfigureAwait(false);
+            if (!started) return Nothing;
+
+            // Started, and still no search: it could not start. Not an empty list: that would say the notes hold nothing.
+            NoteSearchService service = _search() ?? throw new InvalidOperationException("Search notes is not running");
             await service.Indexer.WhenApplied().WaitAsync(ct).ConfigureAwait(false);
 
             // Off the UI thread, as the pane does: the keyword search and the vector scan take a while over a large index.
@@ -90,10 +106,14 @@ namespace Kil0bitSystemMonitor.Pad
             // goes any further: no other letter case, no device name, no separator reaches a path.
             string id = (noteId ?? "").Trim();
             if (!NoteStore.IsNoteId(id)) return null;
-            PadWorkspace? workspace = _workspace();
-            if (workspace == null) return null;
 
-            NoteText? open = await OnUiAsync(() => ReadOpen(workspace, id), ct).ConfigureAwait(false);
+            (PadWorkspace? workspace, NoteText? open) = await OnUiAsync(() =>
+            {
+                if (!_start()) return ((PadWorkspace?)null, (NoteText?)null);
+                PadWorkspace started = _workspace() ?? throw new InvalidOperationException("MicaPad's notes are not running");
+                return (started, ReadOpen(started, id));
+            }, ct).ConfigureAwait(false);
+            if (workspace == null) return null;   // no notes at all on this PC
             if (open != null) return open;
             return await Task.Run(() => ReadStored(workspace.Store, id), ct).ConfigureAwait(false);
         }

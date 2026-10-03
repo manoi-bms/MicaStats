@@ -63,8 +63,9 @@ public partial class App
             // Live readings go through the UI dispatcher, process rankings take a short lease on the
             // shared sampler, and the alert and battery monitors are looked up on each call.
             //
-            // The note tools read MicaPad's workspace, search and feeder, which the app builds when
-            // MicaPad first opens, so each is looked up on each call too; no MicaPad window is needed.
+            // The note tools read MicaPad's workspace, search and feeder. No MicaPad window is needed,
+            // and MicaPad need not have been opened: a note tool call that passed its switch starts
+            // them itself (PadHost, on the UI thread), the same ones a MicaPad window would get.
             // Each surface has its own switch, read at every call: off by default, and either one
             // can be turned off while a question or an MCP client is in the middle of its work.
             AppConfig settings = config.Config;
@@ -75,7 +76,9 @@ public partial class App
             {
                 Notes = new Services.Ai.Tools.NoteAccess(
                     new Services.Pad.Ai.NoteTools(
-                        new Kil0bitSystemMonitor.Pad.LiveNoteReader(() => s_pad, () => s_padSearch, () => s_padSearchFeeder, ui)),
+                        new Kil0bitSystemMonitor.Pad.LiveNoteReader(
+                            () => PadHostIfStarted?.Workspace, () => PadHostIfStarted?.Search, () => PadHostIfStarted?.Feeder,
+                            ui, start: () => PadHost.StartForNoteTools())),
                     () => settings.AiNotesInAsk,
                     () => settings.AiNotesInMcp),
                 // The tool, the surface and counts: never a query, a title or note text.
@@ -125,27 +128,7 @@ public partial class App
     /// </summary>
     internal static void StopAi()
     {
-        // Guarded here because this runs before StopAi's own try: a throw would skip the rest
-        // of App.OnExit's teardown, including the config flush.
-        try
-        {
-            s_toolPipe?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping the tool pipe failed", ex);
-        }
-        s_toolPipe = null;
-        // Guarded for the same reason as the tool pipe above: StopAi must never throw.
-        try
-        {
-            s_mcpHttp?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping local HTTP MCP failed", ex);
-        }
-        s_mcpHttp = null;
+        StopMcpServers();
         // AI anchor: stop
         try
         {
@@ -160,6 +143,35 @@ public partial class App
         {
             DiagnosticsLog.Error("ai", "Stopping the history failed", ex);
         }
+    }
+
+    /// <summary>
+    /// Stops the two ways in from outside, the tool pipe and local HTTP. On exit this comes first,
+    /// before MicaPad's search and workspace are disposed, so no note call from an MCP client runs
+    /// against what is being taken down; <see cref="StopAi"/> calls it again, which does nothing
+    /// more. Never throws: a throw here would skip the rest of App.OnExit's teardown, including
+    /// the config flush.
+    /// </summary>
+    internal static void StopMcpServers()
+    {
+        try
+        {
+            s_toolPipe?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping the tool pipe failed", ex);
+        }
+        s_toolPipe = null;
+        try
+        {
+            s_mcpHttp?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping local HTTP MCP failed", ex);
+        }
+        s_mcpHttp = null;
     }
 
     private static HistoryStore CreateHistoryStore() =>

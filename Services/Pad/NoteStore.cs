@@ -62,8 +62,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>The root folder where all notes are stored.</summary>
         public string Root { get; }
 
+        private const string NotesFolder = "notes";
+
         /// <summary>The <c>notes</c> subfolder containing all note folders.</summary>
-        public string NotesDir => Path.Combine(Root, "notes");
+        public string NotesDir => Path.Combine(Root, NotesFolder);
 
         /// <summary>Path to <c>session.json</c>, the window and tab state.</summary>
         public string SessionPath => Path.Combine(Root, "session.json");
@@ -112,14 +114,20 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// is not rebuilt, a finished write is read where it lies, and no folder is made. Null when
         /// there is no such note: an id <see cref="IsNoteId"/> refuses, no <c>meta.json</c>, one
         /// that does not decode, or one that names another id. A file that is there but cannot be
-        /// read right now throws, as <see cref="ReadStoreText"/> does.
+        /// read right now throws, as <see cref="ReadStoreText"/> does. Read under the note's lock,
+        /// so a save in progress is waited for; a note with no folder gets no lock.
         /// </summary>
         public NoteMeta? PeekMeta(string id)
         {
             if (!IsNoteId(id)) return null;
             try
             {
-                string? json = ReadStoreTextInPlace(MetaPath(id));
+                if (!Directory.Exists(NoteDir(id))) return null;
+                string? json;
+                lock (LockFor(id))
+                {
+                    json = ReadStoreTextInPlace(MetaPath(id));
+                }
                 if (json == null) return null;
                 var meta = JsonSerializer.Deserialize<NoteMeta>(json, Json);
                 return meta != null && string.Equals(meta.Id, id, StringComparison.Ordinal) ? meta : null;
@@ -135,6 +143,43 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         /// <summary>
+        /// Every stored note <see cref="PeekMeta"/> can read, for a reader that must never change
+        /// the store: <see cref="LoadAllMetas"/> without its repairs. A folder whose name is not a
+        /// note id, or whose <c>meta.json</c> is missing, damaged or unreadable right now, is left
+        /// out. Nothing is rebuilt.
+        /// </summary>
+        public IReadOnlyList<NoteMeta> PeekAllMetas()
+        {
+            var metas = new List<NoteMeta>();
+            try
+            {
+                if (!Directory.Exists(NotesDir)) return metas;
+                foreach (string folder in Directory.EnumerateDirectories(NotesDir))
+                {
+                    try
+                    {
+                        if (PeekMeta(Path.GetFileName(folder)) is { } meta) metas.Add(meta);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        // This note cannot be read right now; the others still can.
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _warn("Could not list the notes in " + NotesDir + ": " + ex.Message);
+            }
+            return metas;
+        }
+
+        /// <summary>
+        /// Whether a store was ever made under <paramref name="root"/>, asked without making one:
+        /// the constructor creates the folder and the notes key.
+        /// </summary>
+        public static bool ExistsAt(string root) => Directory.Exists(Path.Combine(root, NotesFolder));
+
+        /// <summary>
         /// The note's text for a reader that must never change the store: <see cref="TryLoadText"/>
         /// without committing a finished write. <c>current.txt</c> is read where it lies, then the
         /// newest snapshot. True with the text, or with null when the note has none (or the id is
@@ -145,15 +190,40 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
             text = null;
             if (!IsNoteId(id)) return true;
+            return TryReadTextInPlace(id, out text);
+        }
+
+        /// <summary>
+        /// The note's text as <see cref="LoadText"/> finds it, read where it lies: no finished
+        /// write is committed and no lock is taken. For the search index, which reads every stored
+        /// note on its own thread and must not change one. Null when there is no text or it cannot
+        /// be read right now. Unlike <see cref="TryPeekText"/> it takes any folder name the store
+        /// itself listed, so it is not for an id that comes from outside the app.
+        /// </summary>
+        internal string? LoadTextInPlace(string id) => TryReadTextInPlace(id, out string? text) ? text : null;
+
+        /// <summary>
+        /// Reads only: <c>current.txt</c> or a finished write waiting beside it, else the newest
+        /// version. Under the note's lock, so a save in progress is waited for rather than met
+        /// half-way; a note with no folder gets no lock (asking for ids that do not exist leaves
+        /// nothing behind, in memory either).
+        /// </summary>
+        private bool TryReadTextInPlace(string id, out string? text)
+        {
+            text = null;
             try
             {
-                text = ReadStoreTextInPlace(CurrentPath(id));
-                if (text != null) return true;
+                if (!Directory.Exists(NoteDir(id))) return true;
+                lock (LockFor(id))
+                {
+                    text = ReadStoreTextInPlace(CurrentPath(id));
+                    if (text != null) return true;
 
-                var newest = ListSnapshots(id).FirstOrDefault();
-                if (newest == null) return true;
-                text = ReadStoreTextInPlace(newest.FilePath);
-                return text != null;
+                    var newest = ListSnapshots(id).FirstOrDefault();
+                    if (newest == null) return true;
+                    text = ReadStoreTextInPlace(newest.FilePath);
+                    return text != null;
+                }
             }
             catch (DirectoryNotFoundException)
             {

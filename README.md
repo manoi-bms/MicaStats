@@ -166,7 +166,7 @@ A **Hardware** button on the stats panel opens a CPU-Z-style inspector with six 
 * The region picker **freezes the screen** before you select, so menus and tooltips stay open instead of closing when the picker takes focus, and the selection stays pixel-exact across monitors running different scaling
 * Windows and screens are highlighted for **one-click capture**; selection edges **snap** to their borders
 * A **magnifier** follows the pointer with a pixel grid, crosshair and the **hex colour** under the cursor — it doubles as an eyedropper
-* **Annotation editor**: arrow, rectangle, ellipse, line, pen, highlighter, text and numbered step badges, with **zoom** from 1% to 800% (**Ctrl+wheel**, **Ctrl + +/−**, **Ctrl+0**, **Fit**) where 100% is the capture's real screen pixels
+* **Annotation editor**: arrow, rectangle, ellipse, line, pen, highlighter, text and numbered step badges, with **zoom** from 1% to 800% (**Ctrl+wheel**, **Ctrl + +/−**, **Ctrl+0**, **Fit**) where 100% is the capture's real screen pixels; the steps stop at 100%, pixels are shown crisp from 200%, and a very tall capture opens fitted to its width
 * **Select tool** to move, resize, nudge or delete any mark after drawing it — each drag is a single undo step
 * **Redaction** (pixelate, blur or solid) baked into real pixels, so content hidden on screen is hidden in the saved file
 * Crop, undo/redo, copy as PNG **and** DIB so it pastes anywhere, save to PNG/JPEG, or **pin** a capture on top of every window
@@ -873,7 +873,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * ตัวเลือกพื้นที่จะ **หยุดภาพหน้าจอไว้ก่อน** แล้วให้เลือกบนภาพนิ่งนั้น เมนูและทูลทิปจึงยังค้างอยู่ ไม่หายไปตอนที่ตัวเลือกได้โฟกัส และพื้นที่ที่เลือกแม่นยำระดับพิกเซลแม้จอแต่ละตัวจะตั้งสเกลไม่เท่ากัน
 * ไฮไลต์หน้าต่างและหน้าจอให้ **จับภาพได้ด้วยคลิกเดียว** พร้อมการ **สแนป** ขอบให้ตรงกับกรอบหน้าต่าง
 * **แว่นขยาย** ติดตามเมาส์ แสดงตารางพิกเซล เส้นเล็ง และ **ค่าสีแบบ hex** ใต้เคอร์เซอร์ ใช้เป็นเครื่องมือดูดสีได้ในตัว
-* **เครื่องมือมาร์กอัป**: ลูกศร, สี่เหลี่ยม, วงรี, เส้นตรง, ปากกา, ปากกาเน้นข้อความ, ข้อความ และป้ายหมายเลขลำดับขั้น พร้อม **ซูม** ตั้งแต่ 1% ถึง 800% (**Ctrl+ล้อเมาส์**, **Ctrl + +/−**, **Ctrl+0**, **Fit**) โดย 100% คือพิกเซลจริงบนหน้าจอของภาพที่จับ
+* **เครื่องมือมาร์กอัป**: ลูกศร, สี่เหลี่ยม, วงรี, เส้นตรง, ปากกา, ปากกาเน้นข้อความ, ข้อความ และป้ายหมายเลขลำดับขั้น พร้อม **ซูม** ตั้งแต่ 1% ถึง 800% (**Ctrl+ล้อเมาส์**, **Ctrl + +/−**, **Ctrl+0**, **Fit**) โดย 100% คือพิกเซลจริงบนหน้าจอของภาพที่จับ ขั้นการซูมจะหยุดที่ 100% ก่อน ตั้งแต่ 200% ขึ้นไปพิกเซลจะแสดงคมชัด และภาพที่ยาวมากจะเปิดแบบพอดีกับความกว้าง
 * **เครื่องมือเลือก (Select)** สำหรับย้าย ปรับขนาด เลื่อนทีละพิกเซล หรือลบมาร์กที่วาดไปแล้ว โดยการลากหนึ่งครั้งนับเป็นการย้อนกลับหนึ่งขั้น
 * **การปิดบังข้อมูล** (โมเสก, เบลอ หรือทึบ) ถูกฝังลงในพิกเซลจริง สิ่งที่ถูกปิดบังบนจอจึงถูกปิดบังในไฟล์ที่บันทึกด้วย
 * ตัดภาพ (crop), ย้อนกลับ/ทำซ้ำ, คัดลอกเป็นทั้ง PNG **และ** DIB เพื่อให้วางได้ทุกโปรแกรม, บันทึกเป็น PNG/JPEG หรือ **ปักหมุด** ภาพให้ลอยอยู่เหนือทุกหน้าต่าง

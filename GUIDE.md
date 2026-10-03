@@ -173,9 +173,11 @@ Unless you turn it off, each capture opens in an annotation editor:
 - **Crop**, full **undo/redo** (Ctrl+Z / Ctrl+Y), colour swatches and stroke size
 - **Zoom** from 1% to 800%: **Ctrl+wheel** zooms around the pointer, and **Ctrl + =** / **+**
   and **Ctrl + −** (the numpad keys too) zoom around the centre of the view, as do the **−** and
-  **+** buttons in the bottom bar. **Ctrl+0**, or a click on the percent, shows the capture at
-  its actual size — 100% is real screen pixels, whatever the display scaling — and **Fit** fits
-  it to the window
+  **+** buttons in the bottom bar; these steps stop at 100% on the way past it. **Ctrl+0**, or a
+  click on the percent, shows the capture at its actual size — 100% is real screen pixels,
+  whatever the display scaling — and **Fit** fits it to the window. From 200% the pixels are
+  shown crisp, not smoothed. A capture opens fitted to the window, except a very tall one such
+  as a scrolling capture, which opens fitted to its width, at the top
 - **Copy** (Ctrl+C), **Save** (Ctrl+S), **Save as…**, or **Pin** the capture on top of every
   window — drag it, scale it with the wheel, Esc to dismiss
 

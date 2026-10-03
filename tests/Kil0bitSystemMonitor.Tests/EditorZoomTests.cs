@@ -78,6 +78,21 @@ namespace Kil0bitSystemMonitor.Tests
             }
         }
 
+        [Theory]
+        [InlineData(0.996, 1, 1.0)]                      // a fit that already shows as 100%
+        [InlineData(1.004, -1, 1.0)]
+        [InlineData(0.996 / 1.5, 1, 1.5)]
+        public void A_step_from_a_zoom_that_already_shows_100_percent_leaves_it(double zoom, int steps, double dpiScale)
+        {
+            Assert.Equal(100, EditorZoom.Percent(zoom, dpiScale));
+
+            // Stopping on exact actual size would leave the label at 100%: a click that looks dead.
+            double next = EditorZoom.Stepped(zoom, steps, dpiScale);
+
+            Assert.Equal(steps > 0 ? zoom * 1.25 : zoom / 1.25, next, 9);
+            Assert.NotEqual(100, EditorZoom.Percent(next, dpiScale));
+        }
+
         [Fact]
         public void The_wheel_does_not_stop_at_actual_size()
         {

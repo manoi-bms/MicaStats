@@ -386,6 +386,9 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData(ModifierKeys.None, Key.NumPad0)]
         [InlineData(ModifierKeys.Shift, Key.OemPlus)]
         [InlineData(ModifierKeys.Alt, Key.Add)]
+        [InlineData(ModifierKeys.Control | ModifierKeys.Alt, Key.OemPlus)]     // AltGr reports as Ctrl+Alt
+        [InlineData(ModifierKeys.Control | ModifierKeys.Alt, Key.OemMinus)]
+        [InlineData(ModifierKeys.Control | ModifierKeys.Alt, Key.D0)]
         [InlineData(ModifierKeys.Control, Key.Z)]          // another Ctrl shortcut: not a zoom key
         [InlineData(ModifierKeys.Control, Key.D1)]
         public void A_key_that_is_not_a_zoom_shortcut_is_not_handled(ModifierKeys modifiers, Key key) => WithEditor(200, 100, window =>
@@ -459,6 +462,21 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2.44140625 / 1.5, window.Canvas.Zoom, 9);
             Assert.Equal("244%", window.ZoomText.Text);
             Assert.Equal(BitmapScalingMode.NearestNeighbor, RenderOptions.GetBitmapScalingMode(window.Canvas));
+        }, dpiScale: 1.5);
+
+        [Fact]
+        public void A_display_change_while_text_is_being_typed_commits_the_text_first() => WithEditor(2000, 1500, window =>
+        {
+            int marks = window.Canvas.Document!.Items.Count;
+            window.TextEntry.Text = "note";
+            window.TextEntry.Visibility = Visibility.Visible;
+
+            // The box was placed once, over the canvas as it was; rescaling moves the image under it.
+            window.DpiScaleOverride = 1.0;
+            window.OnDpiScaleChanged(1.5, 1.0);
+
+            Assert.Equal(Visibility.Collapsed, window.TextEntry.Visibility);
+            Assert.Equal(marks + 1, window.Canvas.Document!.Items.Count);
         }, dpiScale: 1.5);
 
         // ----- Crisp pixels ----------------------------------------------------------------------

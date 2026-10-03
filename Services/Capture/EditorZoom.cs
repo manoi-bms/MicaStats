@@ -41,9 +41,6 @@ namespace Kil0bitSystemMonitor.Services.Capture
         /// </summary>
         private const double WholeAtLeast = 0.5;
 
-        /// <summary>How close to actual size counts as being on it, as a share of it: rounding left over from earlier steps.</summary>
-        private const double OnActualSize = 1e-9;
-
         private static double Scale(double dpiScale)
             => double.IsFinite(dpiScale) && dpiScale > 0 ? dpiScale : 1;
 
@@ -60,8 +57,9 @@ namespace Kil0bitSystemMonitor.Services.Capture
         /// <para>
         /// A step that would pass actual size stops on it. 100% is the one zoom at which a
         /// capture is exactly as sharp as the screen it was taken from, and steps of 1.25 from an
-        /// arbitrary fit (94% to 118%) would otherwise never reach it. From actual size itself a
-        /// step leaves as usual.
+        /// arbitrary fit (94% to 118%) would otherwise never reach it. From a zoom that already
+        /// shows as 100% a step leaves as usual: stopping on actual size from 99.6% would change
+        /// nothing the user can see, and the click would look dead.
         /// </para>
         /// </summary>
         public static double Stepped(double zoom, int steps, double dpiScale)
@@ -74,7 +72,7 @@ namespace Kil0bitSystemMonitor.Services.Capture
             for (long left = Math.Abs((long)steps); left > 0; left--)
             {
                 double next = zoom * factor;
-                bool onActual = Math.Abs(zoom - actual) <= actual * OnActualSize;
+                bool onActual = Percent(zoom, dpiScale) == 100;
                 if (!onActual && (zoom < actual) != (next < actual)) next = actual;
 
                 next = Clamp(next, dpiScale);

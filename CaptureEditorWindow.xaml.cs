@@ -343,6 +343,10 @@ namespace Kil0bitSystemMonitor
         /// </summary>
         internal void OnDpiScaleChanged(double oldScale, double newScale)
         {
+            // A text annotation being typed sits in a box placed once, over the canvas as it was.
+            // Rescaling moves the image under it, so the text is committed where it was started.
+            CommitTextEntry();
+
             CanvasZoom.ZoomAt(Scroller, Canvas, EditorZoom.Rescaled(Canvas.Zoom, oldScale, newScale),
                 CanvasZoom.ViewportCentre(Scroller));
             ShowZoom(newScale);
@@ -374,11 +378,12 @@ namespace Kil0bitSystemMonitor
         /// The zoom shortcuts, around the middle of the view: Ctrl with "+" or "=" and the numpad
         /// "+" steps in, Ctrl with "-" steps out, Ctrl+0 shows actual size. Shift is not looked
         /// at, so Ctrl and "+" (Shift and "=" on a US layout) zooms in like Ctrl and "=" does.
-        /// Returns whether the key was one of them.
+        /// With Alt held it is not a zoom shortcut: AltGr reports as Ctrl+Alt, and AltGr with
+        /// "=" or "-" types a character on some layouts. Returns whether the key was one of them.
         /// </summary>
         internal bool KeyZoom(ModifierKeys modifiers, Key key)
         {
-            if ((modifiers & ModifierKeys.Control) == 0) return false;
+            if ((modifiers & ModifierKeys.Control) == 0 || (modifiers & ModifierKeys.Alt) != 0) return false;
 
             switch (key)
             {

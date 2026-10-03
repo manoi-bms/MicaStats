@@ -194,6 +194,19 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.DoesNotContain("{{secret:", s.UserMessage);
         }
 
+        [Theory]
+        [InlineData("explain {{secret:K7Q2", "explain [credential]")]
+        [InlineData("what is M9XD}} for", "what is [credential] for")]
+        public void A_typed_instruction_with_part_of_a_credential_sends_no_id_character(string typed, string sent)
+        {
+            var s = new AiSession(PadAiAction.Ask, "text", true, typed);
+
+            Assert.Equal(sent, s.Instruction);
+            Assert.StartsWith("Task: " + sent + "\n", s.UserMessage, System.StringComparison.Ordinal);
+            foreach (string part in new[] { "K7Q2", "M9XD", "{{secret", "}}" })
+                Assert.DoesNotContain(part, s.UserMessage, System.StringComparison.Ordinal);
+        }
+
         [Fact]
         public void A_too_long_rewrite_is_refused()
         {

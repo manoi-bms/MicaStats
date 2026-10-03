@@ -1857,6 +1857,58 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.DoesNotContain(part, sent, StringComparison.Ordinal);   // no part of the id, in the header either
         });
 
+        /// <summary>A reranker that keeps the order it is given and records every query it is sent.</summary>
+        private sealed class RecordingReranker : IReranker
+        {
+            public List<string> Queries { get; } = new();
+
+            public Task<RerankResult> RerankAsync(SearchServer server, string query, IReadOnlyList<string> documents, int topN,
+                                                  TimeSpan timeout, CancellationToken cancel)
+            {
+                lock (Queries) Queries.Add(query);
+                var ranked = Enumerable.Range(0, documents.Count).Select(index => new RerankScore(index, 1.0 / (index + 1))).ToList();
+                return Task.FromResult(new RerankResult(ranked, SearchFailure.None, 200));
+            }
+        }
+
+        [Theory]
+        [InlineData("vpn login {{secret:K7Q2")]     // ends inside the reference
+        [InlineData("M9XD}} works on the vpn")]     // starts inside it
+        public Task A_selection_that_cuts_a_credential_becomes_a_query_that_reaches_every_server_as_credential(string picked) => OnUiAsync(async h =>
+        {
+            var embedder = new SearchIndexerTests.FakeEmbedder();
+            var reranker = new RecordingReranker();
+            var settings = new SearchSettings(true, new SearchServer("http://gpu/v1", "m", null), true, new SearchServer("http://gpu/v1", "r", null));
+            using var search = new NoteSearchService(h.Env.Store, () => settings, embedder, reranker, warn: _ => { });
+            const string text = "the vpn login {{secret:K7Q2M9XD}} works on the vpn";
+            await Index(h, search, text);
+            h.Editor.Select(text.IndexOf(picked, StringComparison.Ordinal), picked.Length);
+            h.Model.Reply("It is stored [1].");
+
+            // Ctrl+Shift+F makes the one-line selection the query; Ask then answers it.
+            await WithSearch(search, () =>
+            {
+                h.Window.ToggleSearch();
+                return h.Window.SearchPanel.AskNowAsync();
+            });
+
+            string query = h.Window.SearchPanel.QueryBox.Text;
+            Assert.Contains("{{secret:K7Q2M9XD}}", query, StringComparison.Ordinal);   // widened to the whole reference: half of one is never the query
+            string cleaned = NotePassages.WithoutSecrets(query);
+            Assert.Contains("[credential]", cleaned, StringComparison.Ordinal);
+
+            string question = Assert.Single(h.Model.Requests).Messages[1].Text;
+            Assert.StartsWith("Question: " + cleaned + "\n", question, StringComparison.Ordinal);
+            List<string> embedded;
+            lock (embedder.Batches) embedded = embedder.Batches.SelectMany(batch => batch).ToList();
+            Assert.Contains(cleaned, embedded);
+            Assert.NotEmpty(reranker.Queries);
+            Assert.All(reranker.Queries, q => Assert.Equal(cleaned, q));
+            foreach (string sent in embedded.Concat(reranker.Queries).Append(question))
+                foreach (string part in new[] { "K7Q2", "M9XD", "{{secret", "}}" })
+                    Assert.DoesNotContain(part, sent, StringComparison.Ordinal);       // no part of the id reaches a server
+        });
+
         [Fact]
         public Task With_no_hits_Ask_says_there_is_nothing_to_answer_from_and_makes_no_request() => OnUiWithSearch(async (h, search) =>
         {

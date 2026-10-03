@@ -21,8 +21,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>Characters in an id.</summary>
         public const int IdLength = 8;
 
+        /// <summary>One character of an id, as a regular expression class: the alphabet, written once for every pattern.</summary>
+        public const string IdClass = "[0-9A-HJKMNP-TV-Z]";
+
         /// <summary>A reference; group 1 is the id.</summary>
-        public const string Pattern = @"\{\{secret:([0-9A-HJKMNP-TV-Z]{8})\}\}";
+        public const string Pattern = @"\{\{secret:(" + IdClass + @"{8})\}\}";
 
         private static readonly Regex Reference = new(Pattern, RegexOptions.CultureInvariant);
 

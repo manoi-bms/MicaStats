@@ -1871,8 +1871,23 @@ namespace Kil0bitSystemMonitor.Pad
             SearchFeeder?.FlushPending();
             SearchFeeder?.ReconcileAll();
             // A selection of one line becomes the query, as Ctrl+F does.
-            string selected = Editor.SelectedText;
+            string selected = SelectionForQuery();
             SearchPanel.Open(selected.Length > 0 && !selected.Contains('\n') ? selected.Trim() : null);
+        }
+
+        /// <summary>
+        /// The selected text, for the query box. A selection that starts or ends inside a
+        /// credential reference takes that reference whole, as an AI action's source does: half a
+        /// reference is not a reference, and a query goes to the search servers and into a question.
+        /// </summary>
+        private string SelectionForQuery()
+        {
+            string selected = Editor.SelectedText;
+            int start = Editor.SelectionStart, length = Editor.SelectionLength;
+            // Only one run of the note's text can be widened; the lines of a rectangle are left as they are.
+            if (length == 0 || !string.Equals(Editor.Document.GetText(start, length), selected, StringComparison.Ordinal)) return selected;
+            (start, length) = WholeMarkers(Editor.Document, start, length);
+            return Editor.Document.GetText(start, length);
         }
 
         private void CloseSearch()

@@ -44,7 +44,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             _mask = SecretMask.Of(Original);
             AwaitingInstruction = ReferenceEquals(action, PadAiAction.Ask) && string.IsNullOrWhiteSpace(instruction);
             Instruction = ReferenceEquals(action, PadAiAction.Ask)
-                ? NotePassages.WithoutSecrets((instruction ?? "").Trim())
+                ? NotePassages.WithoutSecretParts((instruction ?? "").Trim())   // typed or pasted: part of a reference is cleaned too
                 : action.Instruction;
             Refusal = action.TooLong(Original.Length);
             UserMessage = PadAiPrompts.ForAction(Instruction, _mask.Text);

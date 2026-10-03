@@ -39,6 +39,18 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Message_cleans_a_credential_cut_at_either_end_in_the_question()
+        {
+            var sources = new List<Passage> { P(1) };
+
+            string msg = NotesQuestion.Message("vpn M9XD}} and {{secret:K7Q2", sources);
+
+            Assert.Equal(PadAiPrompts.ForQuestion("vpn [credential] and [credential]", sources), msg);
+            foreach (string part in new[] { "K7Q2", "M9XD", "{{secret", "}}" })
+                Assert.DoesNotContain(part, msg, System.StringComparison.Ordinal);   // no character of the id leaves the PC
+        }
+
+        [Fact]
         public void Status_is_singular_for_one() => Assert.Equal("Answered from 1 passage", NotesQuestion.Status(1));
 
         [Fact]

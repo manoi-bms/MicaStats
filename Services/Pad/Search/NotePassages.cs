@@ -25,24 +25,52 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         public const int MaxHeadingChars = 200;
 
         private const string HeadingSeparator = " › ";
+        private const string Cleaned = "[credential]";
         private static readonly Regex Secret = new(SecretTokens.Pattern, RegexOptions.CultureInvariant);
+
+        /// <summary>The start of a reference that is not whole: <c>{{secret:</c> and as much of the id as there is.</summary>
+        private const string Opening = @"\{\{secret:" + SecretTokens.IdClass + "{0,8}";
 
         /// <summary>
         /// A reference cut short at the end of a text: <c>{{secret:</c> and as much of the id as
         /// was left. An automatic title is the first 30 characters of a note's first line
         /// (<see cref="NoteTitle.FromText"/>), which can end inside a reference.
         /// </summary>
-        private static readonly Regex CutSecret = new(@"\{\{secret:[0-9A-HJKMNP-TV-Z]{0,8}\}?\z", RegexOptions.CultureInvariant);
+        private static readonly Regex CutSecret = new(Opening + @"\}?\z", RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// A reference cut at its end, anywhere in a text: <c>{{secret:</c>, as much of the id as
+        /// there is, and what is there of the closing braces. Whole references are gone before
+        /// this is used, so it never meets one.
+        /// </summary>
+        private static readonly Regex CutAtEnd = new(Opening + @"\}{0,2}", RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// A reference cut at its start: the last 1 to 8 characters of an id and the closing
+        /// braces, at the start of a text or after a character no id has.
+        /// </summary>
+        private static readonly Regex CutAtStart = new(
+            "(?<!" + SecretTokens.IdClass + ")" + SecretTokens.IdClass + @"{1,8}\}\}", RegexOptions.CultureInvariant);
 
         /// <summary>Credential references replaced by <c>[credential]</c>; the vault is never read.</summary>
-        public static string WithoutSecrets(string text) => Secret.Replace(text, "[credential]");
+        public static string WithoutSecrets(string text) => Secret.Replace(text, Cleaned);
 
         /// <summary>
         /// A title with its credential references replaced by <c>[credential]</c>, a reference
         /// cut short at its end too: half a reference is not a reference, so it would not be
         /// cleaned, and part of the credential's id would be indexed and sent.
         /// </summary>
-        public static string TitleWithoutSecrets(string title) => CutSecret.Replace(WithoutSecrets(title), "[credential]");
+        public static string TitleWithoutSecrets(string title) => CutSecret.Replace(WithoutSecrets(title), Cleaned);
+
+        /// <summary>
+        /// Text a user typed or selected (a question, an instruction, a search query) with its
+        /// credential references replaced by <c>[credential]</c>, and every part of one too: a
+        /// reference cut at its end (<c>{{secret:K7Q2</c>) or at its start (<c>M9XD}}</c>), as a
+        /// selection that ran through one leaves it. No character of an id is left to be sent.
+        /// Text that holds no part of a reference comes back as it is.
+        /// </summary>
+        public static string WithoutSecretParts(string text) =>
+            CutAtStart.Replace(CutAtEnd.Replace(WithoutSecrets(text), Cleaned), Cleaned);
 
         /// <summary>Lowercase hex SHA-256 of the UTF-8 text.</summary>
         public static string HashOf(string sentText) =>

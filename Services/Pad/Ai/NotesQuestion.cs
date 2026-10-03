@@ -15,9 +15,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// <summary>The first <see cref="MaxSources"/> hits, in order.</summary>
         public static IReadOnlyList<Passage> Sources(IReadOnlyList<Passage> hits) => hits.Take(MaxSources).ToList();
 
-        /// <summary>The user message: the question with any credential reference taken out, then the numbered sources.</summary>
+        /// <summary>The user message: the question with any credential reference, whole or cut, taken out, then the numbered sources.</summary>
         public static string Message(string question, IReadOnlyList<Passage> sources) =>
-            PadAiPrompts.ForQuestion(NotePassages.WithoutSecrets(question ?? ""), sources);
+            PadAiPrompts.ForQuestion(NotePassages.WithoutSecretParts(question ?? ""), sources);
 
         /// <summary>The status once an answer ended cleanly: "Answered from 6 passages".</summary>
         public static string Status(int sources) => "Answered from " + Passages(sources);

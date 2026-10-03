@@ -180,6 +180,44 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("a {{secret:K7Q2 and more", NotePassages.TitleWithoutSecrets("a {{secret:K7Q2 and more"));   // typed by hand, not cut: as any text
         }
 
+        [Theory]
+        [InlineData("explain {{secret:K7Q2", "explain [credential]")]                        // cut at its end
+        [InlineData("vpn M9XD}} and {{secret:K7Q2", "vpn [credential] and [credential]")]    // cut at its start, and another at its end
+        [InlineData("M9XD}} now", "[credential] now")]                                        // at the very start of the text
+        [InlineData("a {{secret: b", "a [credential] b")]                                     // no id character yet
+        [InlineData("a {{secret:K7Q2M9XD b", "a [credential] b")]                             // the whole id, no closing braces
+        [InlineData("a {{secret:K7Q2M9XD} b", "a [credential] b")]                            // one closing brace short
+        [InlineData("a {{secret:K7Q2}} b", "a [credential] b")]                               // too few characters to be a reference
+        [InlineData("t:K7Q2M9XD}} b", "t:[credential] b")]                                    // cut inside its opening
+        [InlineData("a {{secret:K7Q2M9XD}} b", "a [credential] b")]                           // a whole one, as WithoutSecrets
+        public void A_reference_cut_at_either_end_becomes_credential(string text, string cleaned)
+        {
+            string result = NotePassages.WithoutSecretParts(text);
+
+            Assert.Equal(cleaned, result);
+            foreach (string part in new[] { "K7Q2", "M9XD", "{{secret" })
+                Assert.DoesNotContain(part, result, StringComparison.Ordinal);   // no part of an id
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("plain words, nothing to hide")]
+        [InlineData("if (a) { b(); }}")]            // merely contains }}
+        [InlineData("{{name}} and }} alone")]
+        [InlineData("a {{secret")]                  // not the start of a reference yet
+        [InlineData("braces {{ and {")]
+        [InlineData("ABCDEFGHJK}}")]                // more characters than an id has
+        public void Text_with_no_part_of_a_reference_is_unchanged(string text) =>
+            Assert.Equal(text, NotePassages.WithoutSecretParts(text));
+
+        [Fact]
+        public void A_title_is_still_cleaned_only_at_its_end()
+        {
+            // The automatic title is a prefix of the first line: it can be cut at its end and nowhere else.
+            Assert.Equal("db [credential]", NotePassages.TitleWithoutSecrets("db {{secret:K7Q2"));
+            Assert.Equal("db [credential]", NotePassages.TitleWithoutSecrets("db {{secret:K7Q2M9XD}"));
+        }
+
         [Fact]
         public void A_credential_reference_in_the_title_is_never_indexed()
         {

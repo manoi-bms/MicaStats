@@ -65,6 +65,18 @@ namespace Kil0bitSystemMonitor.Tests
             foreach (char c in "ILOU") Assert.DoesNotContain(c, SecretTokens.Alphabet);
         }
 
+        [Fact]
+        public void The_id_class_matches_the_characters_of_the_alphabet_and_no_other()
+        {
+            var one = new System.Text.RegularExpressions.Regex("^" + SecretTokens.IdClass + "$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            for (int c = 0; c < 128; c++)
+            {
+                string text = ((char)c).ToString();
+                Assert.Equal(SecretTokens.Alphabet.Contains(text, System.StringComparison.Ordinal), one.IsMatch(text));
+            }
+            Assert.Contains(SecretTokens.IdClass + "{8}", SecretTokens.Pattern, System.StringComparison.Ordinal);   // one class, not two
+        }
+
         [Theory]
         [InlineData("K7Q2M9XD", true)]
         [InlineData("k7q2m9xd", false)]

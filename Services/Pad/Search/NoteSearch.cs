@@ -27,7 +27,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
     /// (5 s, the last 20 cached) and the top 50 passages by cosine join by Reciprocal Rank Fusion;
     /// with reranking, the top 40 are reordered by the reranker (8 s); then 3 per note, 20 in all.
     /// A step that fails is skipped and named in the outcome. Cancelling throws. Credential
-    /// references in the query become <c>[credential]</c> before anything (spec 3.1), and Settings
+    /// references in the query, whole or cut at either end (a query can be a selection that ran
+    /// through one), become <c>[credential]</c> before anything (spec 3.1), and Settings
     /// are read again after the query embedding, so what the owner switched off meanwhile is not used.
     /// </summary>
     public sealed class NoteSearch
@@ -58,7 +59,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         public async Task<SearchOutcome> SearchAsync(string query, CancellationToken cancel)
         {
-            query = NotePassages.WithoutSecrets(query.Trim());
+            query = NotePassages.WithoutSecretParts(query.Trim());
             var progress = _indexer.Progress;
             if (query.Length == 0) return SearchOutcome.Empty(query, progress);
 

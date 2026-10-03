@@ -391,19 +391,21 @@ namespace Kil0bitSystemMonitor.Pad
         /// </para>
         /// </summary>
         internal Task FixDiagramAsync(int openLine, int closeLine, string kind, string message) =>
-            RunAiAsync(PadAiAction.FixDiagram(kind, message), null, null, fix => SelectDiagramSource(fix, openLine, closeLine));
+            RunAiAsync(PadAiAction.FixDiagram(kind, message), null, null, _ => SelectDiagramSource(openLine, closeLine, kind, message));
 
         /// <summary>
         /// Selects the source of the block between the two fence lines, so the user sees what will
         /// be sent and replaced: the lines strictly between the fences (after the type line, in the
         /// kroki form), never a fence. A fold that hides any of it is opened first. The lines are
         /// read again here, as the note is now: they came from a click, and the note may have been
-        /// edited since. Gives back <paramref name="fix"/> with the fence its block opens with, as
-        /// that line reads now. Null, with the reason in the status bar and the selection and the
-        /// folds left alone, when there is nothing to run on: the lines no longer hold a diagram's
-        /// fence pair, the block is empty, or the note is read-only.
+        /// edited since. Gives back the fix as it runs, built from what the note says now: the
+        /// fence its block opens with, and the ids of the credentials in its source, none of
+        /// which may leave in the renderer's <paramref name="message"/> however it quotes them.
+        /// Null, with the reason in the status bar and the selection and the folds left alone,
+        /// when there is nothing to run on: the lines no longer hold a diagram's fence pair, the
+        /// block is empty, or the note is read-only.
         /// </summary>
-        private PadAiAction? SelectDiagramSource(PadAiAction fix, int openLine, int closeLine)
+        private PadAiAction? SelectDiagramSource(int openLine, int closeLine, string kind, string message)
         {
             if (_shown == null) return null;
             if (AiReadOnly)
@@ -427,7 +429,8 @@ namespace Kil0bitSystemMonitor.Pad
                 start = document.GetLineByNumber(source.First).Offset;
                 end = document.GetLineByNumber(source.Last).EndOffset;   // without the last line's break
             }
-            if (string.IsNullOrWhiteSpace(document.GetText(start, end - start)))
+            string sourceText = document.GetText(start, end - start);
+            if (string.IsNullOrWhiteSpace(sourceText))
             {
                 ShowStatus(AiNoTextText);
                 return null;
@@ -435,10 +438,9 @@ namespace Kil0bitSystemMonitor.Pad
 
             ShowFolded(document.GetLineByNumber(closeLine), start, end);
             Editor.Select(start, end - start);
-            // SourceLines found the pair, so the opening line is a fence; its own default is three backticks.
-            return FenceTracker.DelimiterOf(lines[openLine - 1]) is { } fence
-                ? fix with { BlockFence = new string(fence.Char, fence.Length) }
-                : fix;
+            // SourceLines found the pair, so the opening line is a fence; the action's own default is three backticks.
+            string blockFence = FenceTracker.DelimiterOf(lines[openLine - 1]) is { } fence ? new string(fence.Char, fence.Length) : "```";
+            return PadAiAction.FixDiagram(kind, message, blockFence, SecretTokens.Find(sourceText).Select(pill => pill.Id).Distinct());
         }
 
         /// <summary>

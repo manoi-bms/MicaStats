@@ -264,6 +264,29 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("vpn M9XD}} typed by hand", NotePassages.WithoutSecretParts("vpn M9XD}} typed by hand"));
         }
 
+        // ---- what a note tool gives out: a reference cut at its end, wherever it stands -------------
+
+        [Theory]
+        [InlineData("Login {{secret:K7Q2M9 prod", "Login [credential] prod")]                 // in the middle, its end gone
+        [InlineData("a {{secret:K7Q2M9XD}} b {{secret:K7Q2", "a [credential] b [credential]")]
+        [InlineData("a {{secret: b", "a [credential] b")]                                     // no id character yet
+        [InlineData("a {{secret:K7Q2M9XD} b", "a [credential] b")]                            // one closing brace short
+        [InlineData("vpn M9XD}} typed by hand", "vpn M9XD}} typed by hand")]                  // a cut start is not looked for: nothing here is a selection
+        [InlineData("Dear {{NAME}}, x^{2^{3}} and a {{secret", "Dear {{NAME}}, x^{2^{3}} and a {{secret")]   // the literal {{secret: is what it takes
+        public void What_a_note_tool_gives_out_loses_whole_references_and_ones_cut_at_their_end_anywhere(string text, string cleaned) =>
+            Assert.Equal(cleaned, NotePassages.WithoutSecretsAndCutEnds(text));
+
+        [Fact]
+        public void What_the_index_stores_of_a_reference_cut_in_the_middle_of_a_text_is_as_it_was()
+        {
+            // The rule for the note tools is theirs alone: the index, and so every hash, did not change.
+            var p = Assert.Single(NotePassages.Cut("n1", "Login {{secret:K7Q2M9 prod", "Login {{secret:K7Q2M9 prod"));
+
+            Assert.Equal("Login {{secret:K7Q2M9 prod", p.Body);
+            Assert.Equal("Login {{secret:K7Q2M9 prod", p.Title);
+            Assert.Equal(NotePassages.HashOf("Login {{secret:K7Q2M9 prod\n\nLogin {{secret:K7Q2M9 prod"), p.Hash);
+        }
+
         [Fact]
         public void A_title_is_still_cleaned_only_at_its_end()
         {

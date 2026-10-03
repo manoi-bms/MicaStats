@@ -63,12 +63,14 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                     results.Add(new JsonObject
                     {
                         ["noteId"] = hit.NoteId,
-                        ["title"] = NotePassages.TitleWithoutSecrets(hit.Title),
-                        ["heading"] = NotePassages.TitleWithoutSecrets(hit.Heading),
+                        // Cleaned again here, of a reference cut at its end anywhere too: the index
+                        // cleans whole references only, and an open note's title is not from the index.
+                        ["title"] = NotePassages.WithoutSecretsAndCutEnds(hit.Title),
+                        ["heading"] = NotePassages.WithoutSecretsAndCutEnds(hit.Heading),
                         ["firstLine"] = hit.FirstLine,
                         ["lastLine"] = hit.LastLine,
                         ["open"] = hit.Open,
-                        ["text"] = NotePassages.WithoutSecrets(hit.Text),
+                        ["text"] = NotePassages.WithoutSecretsAndCutEnds(hit.Text),
                     });
                 }
                 return new JsonObject
@@ -108,7 +110,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 int length = 0;
                 for (int i = first - 1; i < wanted; i++)
                 {
-                    string line = NotePassages.WithoutSecrets(lines[i]);
+                    string line = NotePassages.WithoutSecretsAndCutEnds(lines[i]);
                     int next = length + (kept.Count > 0 ? 1 : 0) + line.Length;
                     if (kept.Count > 0 && next > MaxChars) break;
                     kept.Add(line);
@@ -129,7 +131,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 var result = new JsonObject
                 {
                     ["noteId"] = id,
-                    ["title"] = NotePassages.TitleWithoutSecrets(note.Title),
+                    ["title"] = NotePassages.WithoutSecretsAndCutEnds(note.Title),
                     ["lines"] = lines.Length,
                     ["firstLine"] = first,
                     ["lastLine"] = last,

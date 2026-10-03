@@ -3356,6 +3356,37 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains("...[credential] A- B", h.Sent(), StringComparison.Ordinal);
         });
 
+        /// <summary>
+        /// A renderer that reads the source token by token quotes a pill its own way: one brace,
+        /// none, the id alone. The window knows the ids of the block's own pills, and none of them
+        /// leaves in the message, whatever stands around it.
+        /// </summary>
+        [Theory]
+        [InlineData("Parse error on line 2: got '{secret:K7Q2M9XD}'")]
+        [InlineData("Parse error on line 2: got 'secret:K7Q2M9XD}'")]
+        [InlineData("Lexical error on line 2: {secret:K7Q2M9XD} ok")]
+        [InlineData("syntax error in line 2 near K7Q2M9XD")]
+        public Task An_id_of_the_blocks_own_credential_never_leaves_however_the_renderer_quotes_it(string message) => OnUiAsync(async h =>
+        {
+            Write(h, "```mermaid\nflowchart LR\n  x --> {{secret:K7Q2M9XD}}  A->B\n```");
+            h.Model.Reply("flowchart LR\n  x --> [[CREDENTIAL_1]]\n  A --> B");
+
+            await h.Window.FixDiagramAsync(1, 4, "mermaid", message);
+
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            string everything = string.Join("\n", request.Messages.Select(m => m.Text).Concat(h.Log));
+            Assert.DoesNotContain("K7Q2M9XD", everything, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("[credential]", h.Sent().Substring(0, h.Sent().IndexOf("<note>", StringComparison.Ordinal)), StringComparison.Ordinal);
+            Assert.Equal("flowchart LR\n  x --> [[CREDENTIAL_1]]  A->B", NoteBody(h.Sent()));   // the source itself is masked, as before
+
+            // Try again sends the same cleaned instruction.
+            AiSession first = h.Window.AiSessionNow!;
+            h.Model.Reply("flowchart LR\n  x --> [[CREDENTIAL_1]]\n  A --> B");
+            Click(h.Pane.RetryButton);
+            await Finished(h, after: first);
+            Assert.Equal(h.Sent(0), h.Sent(1));
+        });
+
         [Fact]
         public Task A_fix_that_comes_back_in_a_code_fence_is_unwrapped_and_Replace_changes_only_the_source_lines() => OnUiAsync(async h =>
         {

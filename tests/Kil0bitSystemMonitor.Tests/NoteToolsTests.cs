@@ -188,6 +188,39 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.DoesNotContain("K7Q2", (string)hit["heading"]!, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// A reference that lost its end (the user deleted part of it, or pasted half of one)
+        /// is not a reference any more, so the rule for whole ones does not clean it. What is
+        /// left of the id must not leave all the same, wherever it stands.
+        /// </summary>
+        [Fact]
+        public async Task A_marker_cut_at_its_end_in_the_middle_of_a_title_heading_or_text_loses_its_id_part()
+        {
+            const string cut = "Login {{secret:K7Q2M9 prod";
+            const string text = "first\n" + cut + "\nlast {{secret:K7Q2M9XD}} and {{secret:K7";
+            var r = new FakeReader
+            {
+                Hits = new List<NoteHit> { new("n1", cut, cut, 1, 3, false, text) },
+                Note = new NoteText("n1", cut, text),
+            };
+
+            var found = await Search(r, new JsonObject { ["query"] = "q" });
+            var read = await Get(r, new JsonObject { ["noteId"] = "n1" });
+
+            var hit = (JsonObject)((JsonArray)found["results"]!)[0]!;
+            Assert.Equal("Login [credential] prod", (string?)hit["title"]);
+            Assert.Equal("Login [credential] prod", (string?)hit["heading"]);
+            Assert.Equal("first\nLogin [credential] prod\nlast [credential] and [credential]", (string?)hit["text"]);
+            Assert.Equal("Login [credential] prod", (string?)read["title"]);
+            Assert.Equal("first\nLogin [credential] prod\nlast [credential] and [credential]", (string?)read["text"]);
+            foreach (string sent in new[] { found.ToJsonString(), read.ToJsonString() })
+            {
+                Assert.DoesNotContain("K7Q2M9", sent, StringComparison.Ordinal);
+                Assert.DoesNotContain("K7", sent, StringComparison.Ordinal);
+                Assert.DoesNotContain("{{secret", sent, StringComparison.Ordinal);
+            }
+        }
+
         [Fact]
         public async Task Search_null_hits_is_an_error_result_not_a_throw()
         {

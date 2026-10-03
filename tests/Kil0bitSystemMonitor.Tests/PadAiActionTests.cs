@@ -179,6 +179,42 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.DoesNotContain(part, instruction, StringComparison.Ordinal);
         }
 
+        // ---- an id the renderer quotes in its own way (final review, B1) --------------------------
+
+        [Theory]
+        [InlineData("got '{secret:K7Q2M9XD}'", "got '{secret:[credential]}'")]                // one brace
+        [InlineData("got 'secret:K7Q2M9XD}'", "got 'secret:[credential]}'")]                  // none before it
+        [InlineData("{secret:K7Q2M9XD} ok", "{secret:[credential]} ok")]
+        [InlineData("syntax error near K7Q2M9XD", "syntax error near [credential]")]          // the bare id, as a tokenizer names it
+        [InlineData("near k7q2m9xd and K7Q2M9XD", "near [credential] and [credential]")]      // in whatever case it is quoted
+        public void Fix_diagram_cleans_the_ids_of_its_blocks_credentials_however_the_renderer_quotes_them(string message, string cleaned)
+        {
+            // Why the ids are needed: none of these is a reference or a cut one, so the patterns let them through.
+            Assert.Contains("K7Q2M9XD", PadAiAction.FixDiagram("mermaid", message).Instruction, StringComparison.OrdinalIgnoreCase);
+
+            string instruction = PadAiAction.FixDiagram("mermaid", message, "```", new[] { "K7Q2M9XD" }).Instruction;
+
+            Assert.Equal(FixStart + cleaned + FixEnd, instruction);
+            Assert.DoesNotContain("K7Q2M9XD", instruction, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void Fix_diagram_cleans_an_id_before_the_cut_and_still_cleans_references_by_their_form()
+        {
+            // Across the 300 limit: cut first, half of the id would be left.
+            string across = PadAiAction.FixDiagram("mermaid", new string('x', 296) + "K7Q2M9XD tail", "```", new[] { "K7Q2M9XD" }).Instruction;
+            Assert.Equal(FixStart + new string('x', 296) + "[cre" + FixEnd, across);
+
+            // The reference of a credential that is not among the ids, whole or cut, goes by its form as before.
+            string byForm = PadAiAction.FixDiagram("mermaid", "near {{secret:ABCD1234}} and ...et:WXYZ5678}} and K7Q2M9XD",
+                                                   "```", new[] { "K7Q2M9XD" }).Instruction;
+            Assert.Equal(FixStart + "near [credential] and ...[credential] and [credential]" + FixEnd, byForm);
+
+            // Only an id is looked for: a word of the message handed in as one changes nothing.
+            string notIds = PadAiAction.FixDiagram("mermaid", "Parse error on line 2", "```", new[] { "", "error", "Parse", null! }).Instruction;
+            Assert.Equal(FixStart + "Parse error on line 2" + FixEnd, notIds);
+        }
+
         [Theory]
         [InlineData(0xD83D)]                                  // half a character
         [InlineData(0x0A)]                                    // a line break

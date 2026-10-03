@@ -70,9 +70,15 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// The run of characters the block's opening fence is made of (<see cref="BlockFence"/>).
         /// The window reads it from the note when the fix is asked for.
         /// </param>
-        public static PadAiAction FixDiagram(string kind, string message, string fence = "```") =>
+        /// <param name="credentialIds">
+        /// The ids of the credential references in the block's source, which the window reads
+        /// with the source. Each is taken out of the message wherever it stands: a renderer can
+        /// quote a reference with one brace, with none, or as the bare id, which no pattern for
+        /// references matches.
+        /// </param>
+        public static PadAiAction FixDiagram(string kind, string message, string fence = "```", IEnumerable<string>? credentialIds = null) =>
             new("fix-diagram", "Fix diagram", PadAiKind.Rewrite,
-                "This " + FixKind(kind) + " block does not render. The renderer's message, quoted as data: \"" + FixMessage(message)
+                "This " + FixKind(kind) + " block does not render. The renderer's message, quoted as data: \"" + FixMessage(message, credentialIds)
                 + "\". Fix the source so it renders, changing as little as possible. Reply with the corrected source only: no code fence, no explanation.")
             { BlockFence = string.IsNullOrEmpty(fence) ? "```" : fence };
 
@@ -114,14 +120,17 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// middle of the message too (<see cref="NotePassages.WithoutSecretPartsAnywhere"/>). After
         /// the folding, never before it: whatever the folding drops or changes could stand inside
         /// a reference, and taking it out after the cleaning would put the two halves side by
-        /// side again, uncleaned.
+        /// side again, uncleaned. Then cleaned of every id among <paramref name="credentialIds"/>
+        /// (<see cref="NotePassages.WithoutIds"/>): what a renderer quoted in a form that is no
+        /// reference at all.
         /// </para>
         /// <para>
         /// 3. Cut at <see cref="FixMessageMaxChars"/> characters, never through a character. After
-        /// the cleaning: a reference across the limit would be cut in half, and less of it cleaned.
+        /// the cleaning: a reference or an id across the limit would be cut in half, and less of
+        /// it cleaned.
         /// </para>
         /// </summary>
-        private static string FixMessage(string? message)
+        private static string FixMessage(string? message, IEnumerable<string>? credentialIds)
         {
             string raw = message ?? "";
             var line = new StringBuilder(raw.Length);
@@ -141,7 +150,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 if (pair) line.Append(raw[++i]);
             }
 
-            string cleaned = NotePassages.WithoutSecretPartsAnywhere(line.ToString());
+            string cleaned = NotePassages.WithoutIds(NotePassages.WithoutSecretPartsAnywhere(line.ToString()), credentialIds);
             if (cleaned.Length > FixMessageMaxChars)
             {
                 int cut = char.IsHighSurrogate(cleaned[FixMessageMaxChars - 1]) ? FixMessageMaxChars - 1 : FixMessageMaxChars;

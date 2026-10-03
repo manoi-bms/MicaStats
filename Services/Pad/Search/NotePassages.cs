@@ -75,6 +75,32 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         public static string TitleWithoutSecrets(string title) => CutSecret.Replace(WithoutSecrets(title), Cleaned);
 
         /// <summary>
+        /// Text of a note as a note tool gives it out (a title, a heading, a line, a passage): its
+        /// credential references replaced by <c>[credential]</c>, and a reference cut at its end
+        /// too, wherever it stands (<c>Login {{secret:K7Q2M9 prod</c>). A reference that lost its
+        /// end is not a reference any more, so <see cref="WithoutSecrets"/> leaves what remains of
+        /// its id. The rule needs the literal <c>{{secret:</c>, so it cannot touch ordinary text.
+        /// Not what the search index stores: that, and so every passage's hash, is as it was.
+        /// </summary>
+        public static string WithoutSecretsAndCutEnds(string text) => CutAtEnd.Replace(WithoutSecrets(text), Cleaned);
+
+        /// <summary>
+        /// <paramref name="text"/> with every occurrence of each of <paramref name="ids"/>
+        /// replaced by <c>[credential]</c>, in whatever letter case it stands. For text a program
+        /// quoted from a note whose references are known (a diagram renderer's message about a
+        /// block): a renderer that reads the source token by token names a reference its own
+        /// way, with one brace, none, or as the bare id, and no pattern for references matches
+        /// that. Anything among <paramref name="ids"/> that is not an id is skipped.
+        /// </summary>
+        public static string WithoutIds(string text, IEnumerable<string>? ids)
+        {
+            if (ids == null) return text;
+            foreach (string id in ids)
+                if (SecretTokens.IsId(id)) text = text.Replace(id, Cleaned, StringComparison.OrdinalIgnoreCase);
+            return text;
+        }
+
+        /// <summary>
         /// Text a user typed or selected (a question, an instruction, a search query) with its
         /// credential references replaced by <c>[credential]</c>, and a reference cut by a
         /// selection too: cut at its end (<c>{{secret:K7Q2</c>, anywhere in the text) or at its

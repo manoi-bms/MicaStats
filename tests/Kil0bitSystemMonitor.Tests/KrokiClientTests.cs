@@ -241,6 +241,37 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(renderer.TryGetCached(request.Key, out _));
         }
 
+        /// <summary>A Kroki block's source leaves the PC: no part of a stored credential's marker goes with it.</summary>
+        [Fact]
+        public void A_kroki_blocks_credential_markers_are_not_posted()
+        {
+            var page = new FakePage { Answer = _ => DiagramFakes.Drawn(80, 40) };
+            var handler = new FakeKrokiHandler();
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page), kroki: new KrokiClient(handler));
+            const string source = "@startuml\nA -> B : {{secret:K7Q2M9XD}}\nB -> C : {{secret:ABCD1234}} twice\n@enduml";
+            var request = DiagramFakes.Request("puml", source, PadThemes.Dark, "https://kroki.io");
+
+            Assert.True(Wait(renderer.RenderAsync(request, new object())).IsPicture);
+
+            string posted = Assert.Single(handler.Requests).Body;
+            Assert.Equal("@startuml\nA -> B : [credential]\nB -> C : [credential] twice\n@enduml", posted);
+            Assert.DoesNotContain("{{secret:", posted, StringComparison.Ordinal);
+            Assert.DoesNotContain("K7Q2M9XD", posted, StringComparison.Ordinal);
+            Assert.True(renderer.TryGetCached(request.Key, out _));   // cached under the block as it is written
+        }
+
+        [Fact]
+        public void A_block_drawn_on_this_PC_gets_its_source_as_it_is_written()
+        {
+            var page = new FakePage { Answer = _ => DiagramFakes.Drawn() };
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
+            const string source = "flowchart LR\n  a --> {{secret:K7Q2M9XD}}";
+
+            Wait(renderer.RenderAsync(DiagramFakes.Request("mermaid", source), new object()));
+
+            Assert.Equal(source, Assert.Single(page.Requests).Source);   // nothing leaves: the local renderers are as they were
+        }
+
         [Fact]
         public void An_unreachable_server_is_not_cached_and_the_page_is_not_asked()
         {

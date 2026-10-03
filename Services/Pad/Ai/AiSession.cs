@@ -74,6 +74,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         public void Complete(bool stopped) { _stopped = stopped; Running = false; Finished = true; }
         public void MarkApplied(string what) => _applied = what;
 
+        /// <summary>The edit was undone and the source text is back as it was sent: Replace selection may be offered again.</summary>
+        public void ClearApplied() => _applied = null;
+
         private string CleanRaw => SelectionEdit.Clean(_raw.ToString());
 
         /// <summary>The cleaned result with each credential placeholder turned back into its pill.</summary>
@@ -117,7 +120,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 CanReplace: canReplace,
                 CanInsert: canInsert,
                 CanCopy: hasText,
-                CanRetry: !Running && !AwaitingInstruction && Refusal == null,
+                // Only on the note it came from: on another note, that note's text would be sent in its place.
+                CanRetry: !Running && !AwaitingInstruction && Refusal == null && facts.SourceShown,
                 CanShowChanges: Action.Kind == PadAiKind.Rewrite && Refusal == null && Finished && hasText && !failed,
                 Original: Original);
         }

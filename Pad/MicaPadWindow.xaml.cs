@@ -367,7 +367,7 @@ namespace Kil0bitSystemMonitor.Pad
             _hidden = true;
             if (_state != null) _state.Open = false;
             StopAi();                              // no request runs behind a hidden window
-            SearchPanel.StopAnswer();              // nor an answer from notes
+            StopNotesAnswer();                     // nor an answer from notes
             _workspace.FlushPending();
             _workspace.SaveSession();
             if (IsVisible) Hide();
@@ -808,7 +808,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (_infoNote != null && !ReferenceEquals(_infoNote, note)) HideInfo();
             CheckDisk(note);
             if (HistoryPanel.Visibility == Visibility.Visible) ShowHistory();
-            RefreshAi();   // Replace selection and Insert below are offered only on the note the result came from
+            RedrawAi();    // Replace selection and Insert below are offered only on the note the result came from
         }
 
         private void CloseActiveTab()

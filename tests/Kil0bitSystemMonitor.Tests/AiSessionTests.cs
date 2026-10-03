@@ -40,7 +40,27 @@ namespace Kil0bitSystemMonitor.Tests
             var v = Done(PadAiAction.Improve, "a", "b").View(new AiSourceFacts(false, true, false));
             Assert.False(v.CanReplace);
             Assert.False(v.CanInsert);
+            Assert.False(v.CanRetry);
             Assert.Equal("Show the note this came from to apply it", v.Status);
+        }
+
+        [Fact]
+        public void Try_again_is_offered_only_while_the_source_note_is_shown()
+        {
+            var elsewhere = new AiSourceFacts(false, false, true);
+
+            var summary = Done(PadAiAction.Summarize, "text", "- point", false);
+            Assert.True(summary.View(Ok).CanRetry);
+            Assert.False(summary.View(elsewhere).CanRetry);   // another note's text must not be sent in its place
+            Assert.True(summary.View(elsewhere).CanCopy);
+
+            var failed = new AiSession(PadAiAction.Improve, "a", true);
+            failed.Start(); failed.Fail("No key");
+            Assert.True(failed.View(Ok).CanRetry);
+            Assert.False(failed.View(elsewhere).CanRetry);
+
+            // A read-only or changed source can still be tried again: only another note cannot.
+            Assert.True(summary.View(new AiSourceFacts(true, true, false)).CanRetry);
         }
 
         [Fact]
@@ -223,6 +243,22 @@ namespace Kil0bitSystemMonitor.Tests
             var v = s.View(Ok);
             Assert.False(v.CanReplace);
             Assert.Equal("Replaced the selection", v.Status);
+        }
+
+        [Fact]
+        public void ClearApplied_offers_replace_again_and_drops_the_applied_status()
+        {
+            var s = Done(PadAiAction.Improve, "a", "b");
+            s.MarkApplied("Replaced the selection");
+
+            s.ClearApplied();   // the Replace was undone
+
+            var v = s.View(Ok);
+            Assert.True(v.CanReplace);
+            Assert.Equal("", v.Status);
+
+            s.ClearApplied();   // nothing applied: nothing to clear
+            Assert.True(s.View(Ok).CanReplace);
         }
 
         [Fact]

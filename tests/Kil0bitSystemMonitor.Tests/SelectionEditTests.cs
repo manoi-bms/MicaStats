@@ -19,6 +19,31 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("", SelectionEdit.Clean(" \n\n  "));
 
         [Fact]
+        public void Normalize_turns_every_line_break_into_the_notes_own()
+        {
+            Assert.Equal("a\r\nb\r\nc\r\nd", SelectionEdit.Normalize("a\nb\r\nc\rd", "\r\n"));
+            Assert.Equal("a\nb\nc\nd", SelectionEdit.Normalize("a\nb\r\nc\rd", "\n"));
+            Assert.Equal("a\rb\rc\rd", SelectionEdit.Normalize("a\nb\r\nc\rd", "\r"));
+        }
+
+        [Fact]
+        public void Normalize_keeps_blank_lines_and_never_splits_or_doubles_a_CRLF()
+        {
+            Assert.Equal("a\r\n\r\nb\r\n", SelectionEdit.Normalize("a\n\nb\n", "\r\n"));
+            Assert.Equal("a\r\nb", SelectionEdit.Normalize("a\r\nb", "\r\n"));        // already the note's own
+            Assert.Equal("\r\n\r\n", SelectionEdit.Normalize("\r\r\n", "\r\n"));      // a lone CR, then a CRLF
+            Assert.Equal("\n\n", SelectionEdit.Normalize("\n\r", "\n"));              // an LF, then a lone CR
+        }
+
+        [Fact]
+        public void Normalize_leaves_text_without_a_line_break_as_it_is()
+        {
+            Assert.Equal("plain text", SelectionEdit.Normalize("plain text", "\r\n"));
+            Assert.Equal("", SelectionEdit.Normalize("", "\n"));
+            Assert.Equal("", SelectionEdit.Normalize(null!, "\n"));
+        }
+
+        [Fact]
         public void Replace_swaps_the_range_and_selects_the_result()
         {
             var e = SelectionEdit.Replace(5, 3, "xyz!");

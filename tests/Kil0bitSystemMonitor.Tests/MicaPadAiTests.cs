@@ -126,6 +126,9 @@ namespace Kil0bitSystemMonitor.Tests
             /// <summary>The reply ends at the output cap.</summary>
             public bool CutShort { get; init; }
 
+            /// <summary>A callback on the request's token throws, so cancelling the request throws at the caller.</summary>
+            public bool ThrowOnCancel { get; init; }
+
             /// <summary>True once the request was cancelled while it waited.</summary>
             public bool Cancelled { get; private set; }
 
@@ -146,6 +149,9 @@ namespace Kil0bitSystemMonitor.Tests
             {
                 await Task.Yield();
                 yield return new ChatResponseUpdate(ChatRole.Assistant, _first);
+                using CancellationTokenRegistration thrower = ThrowOnCancel
+                    ? ct.Register(() => throw new InvalidOperationException("a cancel callback threw"))
+                    : default;
                 Reached.TrySetResult();
                 try
                 {
@@ -380,7 +386,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(h.Pane.ReplaceButton.IsEnabled);
             Assert.False(h.Pane.InsertButton.IsEnabled);
             Assert.False(h.Pane.RetryButton.IsEnabled);
-            Assert.Equal(new[] { "AI improve: 0 chars sent, 0 chars back, refused" }, h.Log);
+            Assert.Equal(new[] { "AI improve: 0 chars in the request, 0 chars back, refused" }, h.Log);
         });
 
         [Fact]
@@ -486,7 +492,7 @@ namespace Kil0bitSystemMonitor.Tests
             await h.Window.RunAiAsync(PadAiAction.Improve);
 
             int sent = PadAiPrompts.ForAction(PadAiAction.Improve.Instruction, Picked).Length;
-            Assert.Equal(new[] { "AI improve: " + Count(sent) + " chars sent, 9 chars back, ok" }, h.Log);
+            Assert.Equal(new[] { "AI improve: " + Count(sent) + " chars in the request, 9 chars back, ok" }, h.Log);
         });
 
         // ---- review focus 1: a credential in the selection -------------------------------------
@@ -707,6 +713,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Good text", h.Pane.ResultBox.Shown);
             Assert.False(h.Pane.ReplaceButton.IsEnabled);
             Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.False(h.Pane.RetryButton.IsEnabled);           // nor is this note's text sent in its place
             Assert.Equal(NotShown, h.Pane.StatusText.Text);
             Click(h.Pane.ReplaceButton);                          // even forced clicks edit nothing
             Click(h.Pane.InsertButton);
@@ -940,7 +947,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(AiOff, h.Pane.StatusText.Text);
             Assert.False(h.Window.AiSessionNow!.Running);
             Assert.False(h.Pane.ReplaceButton.IsEnabled);
-            Assert.Equal(new[] { "AI improve: 0 chars sent, 0 chars back, failed" }, h.Log);
+            Assert.Equal(new[] { "AI improve: 0 chars in the request, 0 chars back, failed" }, h.Log);
         });
 
         [Fact]
@@ -1020,7 +1027,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("AI is not available yet", h.Pane.StatusText.Text);
             Assert.False(h.Pane.ReplaceButton.IsEnabled);
             Assert.True(h.Pane.RetryButton.IsEnabled);
-            Assert.Equal(new[] { "AI improve: 0 chars sent, 0 chars back, failed" }, h.Log);
+            Assert.Equal(new[] { "AI improve: 0 chars in the request, 0 chars back, failed" }, h.Log);
         });
 
         [Fact]
@@ -1276,6 +1283,376 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(h.Pane));
             Assert.Equal(PadThemeApplier.ToColor(PadPalette.Light.Chrome), ((System.Windows.Media.SolidColorBrush)h.Pane.Background).Color);
+        });
+
+        // ---- Try again and an entered instruction send only the text the pane names -------------------
+
+        private const string ShowSource = "Show the note this came from to try again";
+        private const string SourceGone = "The text this ran on is gone; select text and run the action again";
+
+        [Fact]
+        public Task Try_again_while_another_note_is_shown_sends_nothing_of_that_note() => OnUiAsync(async h =>
+        {
+            Write(h, Note);
+            h.Model.Reply("- a summary").Reply("- another summary");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);          // the whole of note A
+            AiSession done = h.Window.AiSessionNow!;
+            Assert.Equal(1, h.Usage.UsedToday);
+
+            h.Window.NewTab();
+            Write(h, "note B holds something private");
+            Assert.False(h.Pane.RetryButton.IsEnabled);                 // not offered while note B is shown
+            Click(h.Pane.RetryButton);                                  // and a forced click sends nothing
+            h.Editor.Select(0, 6);                                      // nor with a selection in note B
+            Click(h.Pane.RetryButton);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            Assert.Single(h.Model.Requests);
+            Assert.Equal(1, h.Usage.UsedToday);
+            Assert.Equal(1, h.RunnersBuilt);
+            Assert.Same(done, h.Window.AiSessionNow);
+            Assert.Equal(ShowSource, h.Window.StatusMessage.Text);
+            Assert.Equal(Visibility.Visible, h.Window.StatusMessage.Visibility);
+
+            h.Window.SelectTab(0);                                      // back on note A it runs again, on note A
+            Assert.True(h.Pane.RetryButton.IsEnabled);
+            Click(h.Pane.RetryButton);
+            await Finished(h, after: done);
+
+            Assert.Equal(h.Sent(0), h.Sent(1));
+            Assert.All(h.Model.Requests, r => Assert.DoesNotContain("note B", r.Messages[1].Text, StringComparison.Ordinal));
+        });
+
+        [Fact]
+        public Task An_instruction_entered_while_another_note_is_shown_sends_nothing_of_that_note() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("ok");
+            h.Window.ToggleAi();                                        // Ask AI on 13 characters of note A
+            AiSession waiting = h.Window.AiSessionNow!;
+            Assert.Equal("Selection, 13 characters", h.Pane.SourceText.Text);
+
+            h.Window.NewTab();
+            Write(h, "note B holds something private");
+            h.Pane.InstructionBox.Text = "summarize";
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Same(waiting, h.Window.AiSessionNow);
+            Assert.Equal(ShowSource, h.Window.StatusMessage.Text);
+
+            h.Window.SelectTab(0);                                      // on note A it runs, on the 13 characters
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Finished(h);
+
+            Assert.Equal(PadAiPrompts.ForAction("summarize", Picked), Assert.Single(h.Model.Requests).Messages[1].Text);
+        });
+
+        [Fact]
+        public Task Try_again_after_the_source_text_was_deleted_sends_nothing_instead_of_the_whole_note() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("- bad text");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);          // a read action on a selection
+            AiSession done = h.Window.AiSessionNow!;
+
+            h.Editor.Document.Remove(Note.IndexOf(Picked, StringComparison.Ordinal), Picked.Length);
+            h.Editor.Select(0, 0);
+            Click(h.Pane.RetryButton);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            Assert.Single(h.Model.Requests);                            // not "Intro\n\nOutro", the whole note
+            Assert.Equal(1, h.Usage.UsedToday);
+            Assert.Same(done, h.Window.AiSessionNow);
+            Assert.Equal(SourceGone, h.Window.StatusMessage.Text);
+        });
+
+        [Fact]
+        public Task An_instruction_entered_after_the_source_text_was_deleted_sends_nothing() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Window.ToggleAi();
+            AiSession waiting = h.Window.AiSessionNow!;
+
+            h.Editor.Document.Remove(Note.IndexOf(Picked, StringComparison.Ordinal), Picked.Length);
+            h.Pane.InstructionBox.Text = "what is this?";
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Same(waiting, h.Window.AiSessionNow);
+            Assert.Equal(SourceGone, h.Window.StatusMessage.Text);
+        });
+
+        [Fact]
+        public Task Try_again_takes_the_text_the_pane_names_whatever_is_selected_now() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("- one").Reply("- two").Reply("- three").Reply("- four");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            AiSession first = h.Window.AiSessionNow!;
+
+            h.Editor.Select(0, 5);                                      // "Intro" is selected now
+            Click(h.Pane.RetryButton);
+            await Finished(h, after: first);
+
+            Assert.Equal(h.Sent(0), h.Sent(1));                         // still the 13 characters the pane names
+            Assert.Equal("Selection, 13 characters", h.Pane.SourceText.Text);
+
+            h.Editor.Select(0, 0);
+            await h.Window.RunAiAsync(PadAiAction.Summarize);          // the whole note, from the menu
+            AiSession whole = h.Window.AiSessionNow!;
+            h.Editor.Select(0, 5);
+            Click(h.Pane.RetryButton);
+            await Finished(h, after: whole);
+
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Summarize.Instruction, Note), h.Sent(3));
+            Assert.Equal("Whole note, 25 characters", h.Pane.SourceText.Text);
+        });
+
+        [Theory]
+        [InlineData(false)]   // a whole note: the whole of the other note would go out
+        [InlineData(true)]    // a selection: the same offsets of the other note would
+        public Task A_rerun_whose_note_is_switched_away_before_its_text_is_read_sends_nothing(bool selection) => OnUiAsync(async h =>
+        {
+            Write(h, Note, selection ? Picked : null);
+            h.Model.Reply("- a summary");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            AiSession done = h.Window.AiSessionNow!;
+            h.Window.NewTab();
+            Write(h, "note B holds something private");
+            h.Window.SelectTab(0);                                      // note A is shown at the click
+
+            // Between the check at the click and the reading of the text the setting is asked
+            // once more; this one shows note B when it is. The text is read behind a second check.
+            int asked = 0;
+            h.Window.AiEnabled = () =>
+            {
+                if (++asked == 2) h.Window.SelectTab(1);
+                return true;
+            };
+            Click(h.Pane.RetryButton);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            Assert.True(asked >= 2, "the setting was asked " + asked + " times");
+            Assert.Single(h.Model.Requests);
+            Assert.Equal(1, h.Usage.UsedToday);
+            Assert.Equal(1, h.RunnersBuilt);
+            Assert.Same(done, h.Window.AiSessionNow);
+            Assert.Equal(ShowSource, h.Window.StatusMessage.Text);
+        });
+
+        // ---- line endings ------------------------------------------------------------------------------
+
+        [Fact]
+        public Task A_reply_takes_the_notes_line_endings_when_it_replaces_the_selection() => OnUiAsync(async h =>
+        {
+            const string note = "one\r\ntwo\r\nthree\r\nfour";
+            Write(h, note, "two\r\nthree");
+            h.Model.Reply("a\nb\nc\nd\ne");                             // a model writes LF
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("one\r\na\r\nb\r\nc\r\nd\r\ne\r\nfour", h.Editor.Document.Text);   // no lone LF
+            Assert.Equal("a\r\nb\r\nc\r\nd\r\ne", h.Editor.SelectedText);                  // exactly the inserted text
+
+            Click(h.Pane.InsertButton);                                 // the anchors hold all of it, carriage returns too
+            Assert.Equal("one\r\na\r\nb\r\nc\r\nd\r\ne\r\n\r\na\r\nb\r\nc\r\nd\r\ne\r\nfour", h.Editor.Document.Text);
+
+            h.Editor.Undo();
+            h.Editor.Undo();
+            Assert.Equal(note, h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task A_reply_takes_the_notes_line_endings_when_it_is_inserted_below() => OnUiAsync(async h =>
+        {
+            Write(h, "one\r\ntwo\r\nthree", "two");
+            h.Model.Reply("- a\n- b\r- c");                             // LF, and a lone CR
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+
+            Click(h.Pane.InsertButton);
+
+            Assert.Equal("one\r\ntwo\r\n\r\n- a\r\n- b\r\n- c\r\nthree", h.Editor.Document.Text);
+            Assert.Equal("- a\r\n- b\r\n- c", h.Editor.SelectedText);
+        });
+
+        [Fact]
+        public Task A_CRLF_reply_into_an_LF_note_becomes_LF() => OnUiAsync(async h =>
+        {
+            Write(h, "one\ntwo\nthree", "two");
+            h.Model.Reply("A\r\nB");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("one\nA\nB\nthree", h.Editor.Document.Text);
+            Assert.Equal("A\nB", h.Editor.SelectedText);
+        });
+
+        // ---- Insert below once the source's place is gone ---------------------------------------------
+
+        [Fact]
+        public Task After_the_note_was_replaced_whole_Insert_below_goes_to_the_carets_line_not_under_line_one() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            h.Window.ReplaceShownText("alpha\nbeta\ngamma");            // a reload, a restored version: the anchors collapse
+            h.Editor.CaretOffset = "alpha\nbe".Length;                  // the caret is in "beta"
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+
+            Click(h.Pane.InsertButton);
+
+            Assert.Equal("alpha\nbeta\n\nGood text\ngamma", h.Editor.Document.Text);
+            Assert.Equal("Good text", h.Editor.SelectedText);
+        });
+
+        // ---- undo of a Replace ---------------------------------------------------------------------------
+
+        [Theory]
+        [InlineData("Intro\nbad text here\nOutro", "bad text here", "Better text here.")]
+        [InlineData("Do X. Then do Y. Also Z.\nnext", "Do X. Then do Y. Also Z.", "Do X. Then do Y.")]   // the end of its line was cut
+        [InlineData("one\ntwo\nand more\nthree", "two\nand more", "two")]                                  // only its last line was cut: the undo types at its end
+        [InlineData("one\nintro\ntwo\nthree", "intro\ntwo", "two")]                                        // only its first line was cut: the undo types at its start
+        [InlineData("one\r\ntwo\r\nthree\r\nfour", "two\r\nthree", "TWO")]                                 // fewer lines
+        [InlineData("one\ntwo\nthree", "two", "two\nand more")]                                            // the original and more
+        public Task Undoing_a_Replace_offers_Replace_again(string note, string picked, string reply) => OnUiAsync(async h =>
+        {
+            Write(h, note, picked);
+            h.Model.Reply(reply);
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            Click(h.Pane.ReplaceButton);
+            string replaced = h.Editor.Document.Text;
+            Assert.NotEqual(note, replaced);
+            Assert.Equal("Replaced the selection", h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+
+            h.Editor.Undo();                                            // Ctrl+Z
+
+            Assert.Equal(note, h.Editor.Document.Text);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal("", h.Pane.StatusText.Text);
+
+            Click(h.Pane.ReplaceButton);                                // and it replaces the same text again
+            Assert.Equal(replaced, h.Editor.Document.Text);
+            Assert.Equal("Replaced the selection", h.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task Text_typed_next_to_a_replaced_selection_does_not_look_like_an_undo() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Better text here.");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            Click(h.Pane.ReplaceButton);
+
+            h.Editor.Document.Insert(0, "A new first line\n");          // an edit elsewhere
+
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal("Replaced the selection", h.Pane.StatusText.Text);
+        });
+
+        // ---- nothing thrown into typing or closing -------------------------------------------------------
+
+        [Fact]
+        public Task A_failure_while_drawing_the_pane_never_escapes_into_typing_or_switching_tabs() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+            h.Window.AiDraw = _ => throw new InvalidOperationException("the pane broke");
+
+            h.Editor.Document.Insert(Note.IndexOf("text", StringComparison.Ordinal), "x");   // typing in the source redraws the pane
+            int afterTyping = warned.Count;
+            h.Window.PreviewPanel.Visibility = Visibility.Visible;                            // so does the history preview
+            h.Window.PreviewPanel.Visibility = Visibility.Collapsed;
+            int afterPreview = warned.Count;
+            h.Window.NewTab();                                                                // and another tab shown
+            h.Window.SelectTab(0);
+
+            Assert.Equal("Intro\nbad xtext here\nOutro", h.Editor.Document.Text);
+            Assert.True(afterTyping >= 1, "typing");
+            Assert.True(afterPreview >= afterTyping + 2, "the preview");
+            Assert.True(warned.Count >= afterPreview + 2, "switching tabs");
+            Assert.All(warned, line =>
+            {
+                Assert.Contains("InvalidOperationException", line, StringComparison.Ordinal);
+                Assert.DoesNotContain("the pane broke", line, StringComparison.Ordinal);   // the type only
+            });
+        });
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public Task A_cancel_that_throws_never_escapes_from_hiding_or_closing_the_window(bool hide) => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good ", "text") { ThrowOnCancel = true };
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+
+            if (hide) h.Window.CloseByUser();                           // the last window hides: the OnClosing path
+            else h.Window.CloseForExit();
+            await run;
+
+            Assert.True(model.Cancelled);
+            Assert.Contains("AggregateException", Assert.Single(warned), StringComparison.Ordinal);
+        });
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public Task A_cancel_that_throws_in_an_answer_from_notes_never_escapes_from_hiding_or_closing_the_window(bool hide) => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wifi") { ThrowOnCancel = true };
+            h.Client = model;
+            Task ask = AskNotes(h, search, "vpn");
+            await Reached(model);
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+
+            if (hide) h.Window.CloseByUser();
+            else h.Window.CloseForExit();
+            await ask;
+
+            Assert.True(model.Cancelled);
+            Assert.Contains(warned, line => line.Contains("AggregateException", StringComparison.Ordinal));
+        });
+
+        // ---- a selection that cuts a credential marker -----------------------------------------------------
+
+        [Theory]
+        [InlineData("M9XD}} now", "[[CREDENTIAL_1]] now", "login ok {{secret:K7Q2M9XD}}")]              // starts inside a marker
+        [InlineData("login {{secret:K7Q2", "login [[CREDENTIAL_1]]", "ok {{secret:K7Q2M9XD}} now")]    // ends inside one
+        [InlineData("ret:K7Q2M9", "[[CREDENTIAL_1]]", "login ok {{secret:K7Q2M9XD}} now")]             // lies inside one
+        public Task A_selection_that_cuts_a_credential_marker_takes_the_whole_marker(string picked, string sent, string after) => OnUiAsync(async h =>
+        {
+            Write(h, "login {{secret:K7Q2M9XD}} now", picked);
+            h.Model.Reply("ok [[CREDENTIAL_1]]");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            string message = Assert.Single(h.Model.Requests).Messages[1].Text;
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Improve.Instruction, sent), message);
+            foreach (string part in new[] { "K7Q2", "M9XD", "secret:", "{{", "}}" })
+                Assert.DoesNotContain(part, message, StringComparison.Ordinal);      // no part of the id
+
+            Click(h.Pane.ReplaceButton);                                // the marker is replaced whole and comes back whole
+            Assert.Equal(after, h.Editor.Document.Text);
         });
 
         // ---- ask your notes: the Search pane's Ask (spec 4) ----------------------------------------

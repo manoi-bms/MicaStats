@@ -38,6 +38,8 @@ namespace Kil0bitSystemMonitor.Pad
         private const string AiReadOnlyText = "This note is read-only";
         private const string AiNoTextText = "There is no text to work on";
         private const string AiNotReadyText = "AI is not available yet";
+        private const string AiShowSourceText = "Show the note this came from to try again";
+        private const string AiSourceGoneText = "The text this ran on is gone; select text and run the action again";
 
         /// <summary>Tells when the history preview opens or closes: it makes the note read-only for the pane.</summary>
         private static readonly DependencyPropertyDescriptor s_previewVisibility =
@@ -71,6 +73,12 @@ namespace Kil0bitSystemMonitor.Pad
 
             public TextAnchor? End { get; set; }
 
+            /// <summary>
+            /// After Replace selection: the place the result went to, with whatever is typed right
+            /// at its edges. An undo makes it read as the original again; null when nothing was replaced.
+            /// </summary>
+            public (TextAnchor Start, TextAnchor End)? Replaced { get; set; }
+
             public CancellationTokenSource Cancel { get; } = new();
 
             /// <summary>The facts the pane was last drawn with.</summary>
@@ -96,11 +104,14 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Opens Settings on the MicaPad section (Set up AI…). Tests replace it.</summary>
         internal Action OpenPadSettings { get; set; } = () => App.ShowSettingsSection("MicaPad");
 
-        /// <summary>Where the one line per action is logged: its id, the character counts and the outcome. Tests replace it.</summary>
+        /// <summary>Where the one line per action is logged: its id, the characters in the request and in the reply, and the outcome. Tests replace it.</summary>
         internal Action<string> AiLog { get; set; } = message => DiagnosticsLog.Log("pad", message);
 
         /// <summary>Whether the keyboard is in the AI pane. Tests set it: a window that is never shown has no keyboard focus.</summary>
         internal Func<bool>? AiPaneHasFocus { get; set; }
+
+        /// <summary>Draws a view in the AI pane. Tests replace it, to see that a failure while drawing never escapes into typing.</summary>
+        internal Action<AiPaneView>? AiDraw { get; set; }
 
         /// <summary>The request the AI pane shows, or null while the pane is closed.</summary>
         internal AiSession? AiSessionNow => _ai?.Session;
@@ -114,7 +125,7 @@ namespace Kil0bitSystemMonitor.Pad
             AiPanel.StopRequested += () => GuardAi("Stopping an AI request", StopAi);
             AiPanel.RetryRequested += () => GuardAi("Trying an AI action again", RetryAi);
             AiPanel.CloseRequested += () => GuardAi("Closing the AI pane", () => CloseAi(focusEditor: true));
-            AiPanel.InstructionEntered += instruction => GuardAi("Asking AI", () => RerunAi(PadAiAction.Ask, instruction));
+            AiPanel.InstructionEntered += instruction => GuardAi("Asking AI", () => EnterAiInstruction(instruction));
             SearchPanel.Ask = AskNotesAsync;
             SearchPanel.CopyAnswer = answer => GuardAi("Copying an answer", () => CopyNotesAnswer(answer));
             _workspace.NoteClosing += OnAiNoteClosing;
@@ -159,9 +170,32 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace.NoteClosing -= OnAiNoteClosing;
             _workspace.NoteTextChanged -= OnAiNoteTextChanged;
             s_previewVisibility.RemoveValueChanged(PreviewPanel, OnAiPreviewChanged);
-            _ai?.Cancel.Cancel();
+            CancelAi(_ai);
             _ai = null;
-            SearchPanel.StopAnswer();   // an answer from notes ends with the window too
+            StopNotesAnswer();   // an answer from notes ends with the window too
+        }
+
+        /// <summary>
+        /// Stops an answer from notes as the window hides or closes. Guarded for the same reason
+        /// as <see cref="CancelAi"/>: a cancel that throws must not come out of closing.
+        /// </summary>
+        private void StopNotesAnswer() => GuardAi("Stopping an answer from notes", SearchPanel.StopAnswer);
+
+        /// <summary>
+        /// Cancels a request. A callback on its token that throws is logged here, never thrown
+        /// into a click, a key or the window closing.
+        /// </summary>
+        private void CancelAi(AiRun? run)
+        {
+            if (run == null) return;
+            try
+            {
+                run.Cancel.Cancel();
+            }
+            catch (Exception ex)
+            {
+                WarnAi("Cancelling an AI request", ex);
+            }
         }
 
         // ---- the menu and the shortcut ---------------------------------------------------------
@@ -226,7 +260,11 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         internal Task RunAiAsync(PadAiAction action, string? instruction = null) => RunAiAsync(action, instruction, null);
 
-        private async Task RunAiAsync(PadAiAction action, string? instruction, (int Start, int Length)? range)
+        /// <summary>
+        /// With <paramref name="again"/>, the earlier request whose text this one takes: its
+        /// selection where it is now, or its whole note. Never what is selected or shown at the click.
+        /// </summary>
+        private async Task RunAiAsync(PadAiAction action, string? instruction, AiRun? again)
         {
             // The consent gate. Every way in ends here (the menu, Ctrl+Shift+A, an instruction
             // entered in the pane, Try again, a direct call), so it does not rest on any caller:
@@ -238,31 +276,70 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             AiRun? run = null;
-            if (!GuardAi("Starting an AI action", () => run = BeginAi(action, instruction, range))) return;
+            if (!GuardAi("Starting an AI action", () => run = BeginAi(action, instruction, again))) return;
             if (run != null) await StreamAiAsync(run);
         }
 
+        /// <summary>Enter in the pane's instruction box: Ask AI runs on the text the pane names.</summary>
+        private void EnterAiInstruction(string instruction)
+        {
+            if (_ai is { Session.AwaitingInstruction: true }) RerunAi(PadAiAction.Ask, instruction);
+        }
+
         /// <summary>
-        /// Try again, and an instruction entered in the pane: the current selection when there is
-        /// one; with nothing selected, the text the pane's request came from, where it is now. So
-        /// a click in the note on the way to the pane does not turn "Selection, 412 characters"
-        /// into the whole note.
+        /// Try again, and the instruction entered for Ask AI: the request goes out again on the
+        /// text the pane names and on nothing else. That is the earlier request's selection where
+        /// it is now, or its whole note; what is selected or shown at the click does not count. So
+        /// it runs only while the source note is shown and, for a selection, while its text is
+        /// still there. Otherwise nothing is sent and the status bar says why: another note's
+        /// text, or a whole note in place of a selection, never goes out under the pane's
+        /// "Selection, 412 characters".
         /// </summary>
         private void RerunAi(PadAiAction action, string? instruction)
         {
-            (int Start, int Length)? range = Editor.SelectionLength == 0 && _ai is { } run ? SourceRange(run) : null;
-            _ = RunAiAsync(action, instruction, range);
+            if (_ai is not { } run) return;
+            if (AiIsOff())
+            {
+                ShowStatus(AiOffText);
+                return;
+            }
+            if (!AiSourceShown(run))
+            {
+                ShowStatus(AiShowSourceText);
+                return;
+            }
+            if (run.Session.FromSelection && SourceRange(run) == null)
+            {
+                ShowStatus(AiSourceGoneText);
+                return;
+            }
+            _ = RunAiAsync(action, instruction, run);   // BeginAi asks both again where it reads the text
         }
 
         /// <summary>
         /// Everything before the request: the refusals, the source text, the session, its anchors
         /// and the pane. Returns the run to stream, or null when there is nothing to send: a
-        /// refusal, or Ask AI still waiting for its instruction.
+        /// refusal, or Ask AI still waiting for its instruction. Without <paramref name="again"/>
+        /// the source is the selection, or the whole note when nothing is selected and the action
+        /// allows it.
+        ///
+        /// <para>
+        /// With <paramref name="again"/> (Try again, an entered instruction) the source is that
+        /// earlier request's, and it is worked out here, where the text is read, not taken from
+        /// the caller: the note must be the one shown, in the document the anchors live in, and
+        /// a selection's range must still be there. So no caller, and nothing that happens
+        /// between a click and this point, can have another note's text read under it.
+        /// </para>
         /// </summary>
-        private AiRun? BeginAi(PadAiAction action, string? instruction, (int Start, int Length)? range)
+        private AiRun? BeginAi(PadAiAction action, string? instruction, AiRun? again)
         {
             if (_shown is not { } note) return null;
-            if (Editor.TextArea.Selection is RectangleSelection)
+            if (again != null && !AiSourceShown(again))
+            {
+                ShowStatus(AiShowSourceText);
+                return null;
+            }
+            if (again == null && Editor.TextArea.Selection is RectangleSelection)
             {
                 ShowStatus(RectangleRefused);
                 return null;
@@ -274,11 +351,27 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             TextDocument document = Editor.Document;
-            bool selected = Editor.SelectionLength > 0;
-            bool fromSelection = selected || range != null;
-            int start = selected ? Editor.SelectionStart : range?.Start ?? 0;
-            int length = selected ? Editor.SelectionLength
-                : range?.Length ?? (action.NeedsSelection ? 0 : document.TextLength);
+            bool fromSelection;
+            int start = 0, length;
+            if (again != null)
+            {
+                fromSelection = again.Session.FromSelection;
+                if (!fromSelection) length = document.TextLength;
+                else if (SourceRange(again) is { } range) (start, length) = range;
+                else
+                {
+                    ShowStatus(AiSourceGoneText);
+                    return null;
+                }
+            }
+            else
+            {
+                fromSelection = Editor.SelectionLength > 0;
+                if (fromSelection) (start, length) = (Editor.SelectionStart, Editor.SelectionLength);
+                else length = action.NeedsSelection ? 0 : document.TextLength;
+            }
+            if (fromSelection) (start, length) = WholeMarkers(document, start, length);
+
             string source = document.GetText(start, length);
             if (string.IsNullOrWhiteSpace(source))
             {
@@ -286,7 +379,7 @@ namespace Kil0bitSystemMonitor.Pad
                 return null;
             }
 
-            _ai?.Cancel.Cancel();   // a new action ends the one still running
+            CancelAi(_ai);   // a new action ends the one still running
             var session = new AiSession(action, source, fromSelection, instruction);
             var run = new AiRun(session, note, document, instruction);
             if (fromSelection)
@@ -312,7 +405,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             AiSession session = run.Session;
             CancellationToken token = run.Cancel.Token;
-            int sent = 0, back = 0;
+            int request = 0, back = 0;
             bool failed = false, cutShort = false;
             try
             {
@@ -332,7 +425,7 @@ namespace Kil0bitSystemMonitor.Pad
                 else
                 {
                     session.Start();
-                    sent = session.UserMessage.Length;
+                    request = session.UserMessage.Length;
                     ShowAi(run);
                     // The runner never throws and ends with Done, after a cancel too.
                     await foreach (PadAiUpdate update in runner.RunAsync(session.UserMessage, token))
@@ -365,23 +458,24 @@ namespace Kil0bitSystemMonitor.Pad
                 // The request path never throws into the window: the pane says what went wrong.
                 failed = true;
                 WarnAi("An AI action", ex);
-                GuardAi("Ending a failed AI action", () =>
-                {
-                    run.Cancel.Cancel();
-                    session.Fail(AiErrorText.Describe(ex));
-                });
+                CancelAi(run);
+                GuardAi("Ending a failed AI action", () => session.Fail(AiErrorText.Describe(ex)));
             }
 
             GuardAi("Showing an AI result", () => ShowAi(run));
-            LogAi(session, sent, back, failed ? "failed" : token.IsCancellationRequested ? "stopped" : cutShort ? "cut short" : "ok");
+            LogAi(session, request, back, failed ? "failed" : token.IsCancellationRequested ? "stopped" : cutShort ? "cut short" : "ok");
         }
 
-        /// <summary>The action's id, how many characters went out and came back, and how it ended. Never the text.</summary>
-        private void LogAi(AiSession session, int sent, int back, string outcome)
+        /// <summary>
+        /// The action's id, how many characters its request held and how many came back, and how
+        /// it ended. Never the text. "In the request", not "sent": the runner may refuse a request
+        /// handed to it (no key, the daily limit) without sending anything.
+        /// </summary>
+        private void LogAi(AiSession session, int request, int back, string outcome)
         {
             try
             {
-                AiLog("AI " + session.Action.Id + ": " + sent.ToString(CultureInfo.InvariantCulture) + " chars sent, "
+                AiLog("AI " + session.Action.Id + ": " + request.ToString(CultureInfo.InvariantCulture) + " chars in the request, "
                       + back.ToString(CultureInfo.InvariantCulture) + " chars back, " + outcome);
             }
             catch (Exception)
@@ -396,6 +490,33 @@ namespace Kil0bitSystemMonitor.Pad
             anchor.MovementType = movement;
             anchor.SurviveDeletion = true;
             return anchor;
+        }
+
+        /// <summary>
+        /// A range that starts or ends inside a credential marker grows to take that marker
+        /// whole. Half a marker is not a marker, so it would not be masked, and part of the
+        /// credential's id would be sent.
+        /// </summary>
+        private static (int Start, int Length) WholeMarkers(TextDocument document, int start, int length)
+        {
+            int end = start + length;
+            if (MarkerAcross(document, start) is { } first) start = first.Start;
+            if (MarkerAcross(document, end) is { } last) end = last.End;
+            return (start, end - start);
+        }
+
+        /// <summary>The credential marker that <paramref name="offset"/> lies inside (not at an edge of), or null.</summary>
+        private static (int Start, int End)? MarkerAcross(TextDocument document, int offset)
+        {
+            // A marker around the offset begins and ends within one marker's length of it.
+            int from = Math.Max(0, offset - ReferenceLength);
+            int to = Math.Min(document.TextLength, offset + ReferenceLength);
+            foreach (SecretReference marker in SecretTokens.Find(document.GetText(from, to - from)))
+            {
+                int start = from + marker.Offset, end = start + marker.Length;
+                if (start < offset && offset < end) return (start, end);
+            }
+            return null;
         }
 
         // ---- the facts and the pane ------------------------------------------------------------
@@ -437,8 +558,14 @@ namespace Kil0bitSystemMonitor.Pad
             if (_ai is not { } run) return;
             AiSourceFacts facts = AiFacts(run);
             run.Drawn = facts;
-            AiPanel.Show(run.Session.View(facts));
+            (AiDraw ?? AiPanel.Show)(run.Session.View(facts));
         }
+
+        /// <summary>
+        /// <see cref="RefreshAi"/> for callers outside an AI action (a tab shown, the history
+        /// preview): a failure while drawing the pane is logged, never thrown into them.
+        /// </summary>
+        private void RedrawAi() => GuardAi("Drawing the AI pane", RefreshAi);
 
         /// <summary>Draws <paramref name="run"/>, unless a newer request or a close took the pane from it.</summary>
         private void ShowAi(AiRun run)
@@ -465,7 +592,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         private void CloseAi(bool focusEditor)
         {
-            _ai?.Cancel.Cancel();
+            CancelAi(_ai);
             _ai = null;
             if (AiPanel.Visibility != Visibility.Visible) return;
             AiPanel.Visibility = Visibility.Collapsed;
@@ -473,28 +600,63 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>Stop: the request ends, and what came so far stays in the pane as a stopped reply.</summary>
-        private void StopAi() => _ai?.Cancel.Cancel();
+        private void StopAi() => CancelAi(_ai);
 
+        /// <summary>A tab is closing (the workspace's event): the pane goes with its source note. Guarded: a tab always closes.</summary>
         private void OnAiNoteClosing(OpenNote note)
         {
-            if (_ai is { } run && ReferenceEquals(run.Note, note)) CloseAi(focusEditor: false);
+            if (_ai is not { } run || !ReferenceEquals(run.Note, note)) return;
+            GuardAi("Closing the AI pane with its note", () => CloseAi(focusEditor: false));
         }
 
         /// <summary>
-        /// The source note was edited: the pane says at once whether the result can still replace
-        /// the selection. Typing that changes none of the facts draws nothing.
+        /// The source note was edited. Raised inside the edit itself, so it is guarded: a failure
+        /// while drawing the pane must never escape into typing.
         /// </summary>
         private void OnAiNoteTextChanged(OpenNote note)
         {
             if (_ai is not { } run || !ReferenceEquals(run.Note, note)) return;
-            if (AiFacts(run) != run.Drawn) RefreshAi();
+            GuardAi("Following an edit of the AI source text", () => FollowSourceEdit(run));
         }
 
-        private void OnAiPreviewChanged(object? sender, EventArgs e) => RefreshAi();
+        /// <summary>
+        /// The pane says at once whether the result can still replace the selection, and offers
+        /// Replace again when a Replace was undone. Typing that changes none of this draws nothing.
+        /// </summary>
+        private void FollowSourceEdit(AiRun run)
+        {
+            bool undone = ReplaceWasUndone(run);
+            if (undone || AiFacts(run) != run.Drawn) RefreshAi();
+        }
+
+        /// <summary>
+        /// After Replace selection, tells its undo: the place the result went to reads as the
+        /// original text again. The anchors go back around that text and the session forgets it
+        /// was applied, so Replace selection is offered again.
+        /// </summary>
+        private static bool ReplaceWasUndone(AiRun run)
+        {
+            if (run.Replaced is not { } place || place.Start.IsDeleted || place.End.IsDeleted) return false;
+            string original = run.Session.Original;
+            int start = place.Start.Offset, length = place.End.Offset - start;
+            if (length != original.Length
+                || !string.Equals(run.Document.GetText(start, length), original, StringComparison.Ordinal)) return false;
+
+            run.Replaced = null;
+            run.Start = Anchor(run.Document, start, AnchorMovementType.AfterInsertion);
+            run.End = Anchor(run.Document, start + length, AnchorMovementType.BeforeInsertion);
+            run.Session.ClearApplied();
+            return true;
+        }
+
+        private void OnAiPreviewChanged(object? sender, EventArgs e) => RedrawAi();
 
         // ---- applying a result -----------------------------------------------------------------
 
-        /// <summary>Replace selection: the result takes the place of the source text, as one undo step, and is selected.</summary>
+        /// <summary>
+        /// Replace selection: the result takes the place of the source text, as one undo step, and
+        /// is selected. Its line breaks are written as the note's own.
+        /// </summary>
         private void ReplaceWithAiResult()
         {
             if (_ai is not { } run) return;
@@ -506,18 +668,34 @@ namespace Kil0bitSystemMonitor.Pad
                 return;
             }
 
-            string result = run.Session.ResultForNote;
+            TextDocument document = run.Document;   // the editor's own: CanReplace says the source is shown
+            string result = SelectionEdit.Normalize(run.Session.ResultForNote, TextLines.NewlineOf(document.Text));
             int offset = start.Offset;
+            bool changes = !string.Equals(run.Session.Original, result, StringComparison.Ordinal);   // CanReplace: the range still holds the original
             ApplyEdit(Editor, SelectionEdit.Replace(offset, end.Offset - offset, result));
+
+            // Every offset below comes from the text as it was written, carriage returns and all.
+            int after = offset + result.Length;
             // The anchors now hold the new text, so Insert below lands under it.
-            run.Start = Anchor(run.Document, offset, AnchorMovementType.AfterInsertion);
-            run.End = Anchor(run.Document, offset + result.Length, AnchorMovementType.BeforeInsertion);
+            run.Start = Anchor(document, offset, AnchorMovementType.AfterInsertion);
+            run.End = Anchor(document, after, AnchorMovementType.BeforeInsertion);
+            // And a second pair that also takes what an undo puts back right at its edges; a
+            // result equal to the source changed nothing, so there is no undo to tell.
+            run.Replaced = changes
+                ? (Anchor(document, offset, AnchorMovementType.BeforeInsertion), Anchor(document, after, AnchorMovementType.AfterInsertion))
+                : null;
             run.Session.MarkApplied("Replaced the selection");
             RefreshAi();
             Editor.Focus();   // so Ctrl+Z takes it back
         }
 
-        /// <summary>Insert below: the result becomes a new paragraph after the source's last line (the end of the note for a whole note), as one undo step.</summary>
+        /// <summary>
+        /// Insert below: the result becomes a new paragraph, as one undo step, with its line
+        /// breaks written as the note's own. It goes after the source's last line; for a whole
+        /// note, at the end of the note. When a selection's place is gone (the note was reloaded
+        /// or replaced whole, or the text was deleted), it goes after the caret's line: the
+        /// collapsed anchors would put it under line one.
+        /// </summary>
         private void InsertAiResult()
         {
             if (_ai is not { } run) return;
@@ -528,8 +706,11 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             string text = Editor.Document.Text;   // the source's own document: CanInsert says it is shown
-            int end = run.End is { IsDeleted: false } anchor ? anchor.Offset : text.Length;
-            ApplyEdit(Editor, SelectionEdit.InsertBelow(text, end, run.Session.ResultForNote, TextLines.NewlineOf(text)));
+            string newline = TextLines.NewlineOf(text);
+            int end = !run.Session.FromSelection ? text.Length
+                : SourceRange(run) is { } range ? range.Start + range.Length
+                : TextLines.LineEnd(text, Editor.CaretOffset);
+            ApplyEdit(Editor, SelectionEdit.InsertBelow(text, end, SelectionEdit.Normalize(run.Session.ResultForNote, newline), newline));
             run.Session.MarkApplied("Inserted below");
             RefreshAi();
             Editor.Focus();
@@ -553,11 +734,17 @@ namespace Kil0bitSystemMonitor.Pad
             ShowStatus("Copied");
         }
 
-        /// <summary>Try again: the same action and instruction in a new session (a session runs once).</summary>
+        /// <summary>
+        /// Try again: the same action and instruction on the same text, in a new session (a
+        /// session runs once). <see cref="RerunAi"/> refuses, and says why, when that text is not
+        /// there to send.
+        /// </summary>
         private void RetryAi()
         {
-            if (_ai is not { } run || !run.Session.View(AiFacts(run)).CanRetry) return;
-            RerunAi(run.Session.Action, run.Instruction);
+            if (_ai is not { } run) return;
+            AiSession session = run.Session;
+            if (session.Running || session.AwaitingInstruction || session.Refusal != null) return;   // nothing to try again
+            RerunAi(session.Action, run.Instruction);
         }
 
         // ---- ask your notes (MicaPad AI spec 4) ------------------------------------------------

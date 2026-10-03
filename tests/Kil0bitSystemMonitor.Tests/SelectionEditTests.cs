@@ -80,6 +80,60 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(1, e.SelectionLength);
         }
 
+        [Fact]
+        public void InsertBelow_walks_back_over_several_trailing_line_breaks()
+        {
+            string doc = "two\n\nnext";
+            var e = SelectionEdit.InsertBelow(doc, 5, "R", "\n");
+            Assert.Equal("two\n\nR\n\nnext", Apply(doc, e));
+            Assert.Equal("R", Apply(doc, e).Substring(e.SelectionStart, e.SelectionLength));
+        }
+
+        [Fact]
+        public void InsertBelow_walks_back_over_several_CRLF_line_breaks()
+        {
+            string doc = "two\r\n\r\nnext";
+            var e = SelectionEdit.InsertBelow(doc, 7, "R", "\r\n");
+            Assert.Equal("two\r\n\r\nR\r\n\r\nnext", Apply(doc, e));
+            Assert.Equal("R", Apply(doc, e).Substring(e.SelectionStart, e.SelectionLength));
+        }
+
+        [Fact]
+        public void InsertBelow_whole_note_ending_in_blank_lines()
+        {
+            string doc = "text\n\n";
+            var e = SelectionEdit.InsertBelow(doc, doc.Length, "R", "\n");
+            Assert.Equal("text\n\nR\n\n", Apply(doc, e));
+            string crlf = "text\r\n\r\n";
+            var f = SelectionEdit.InsertBelow(crlf, crlf.Length, "R", "\r\n");
+            Assert.Equal("text\r\n\r\nR\r\n\r\n", Apply(crlf, f));
+        }
+
+        [Fact]
+        public void InsertBelow_a_source_of_only_line_breaks_inserts_at_the_first_line_end()
+        {
+            string doc = "\n\nnext";
+            var e = SelectionEdit.InsertBelow(doc, 2, "R", "\n");
+            Assert.Equal(0, e.Offset);
+            Assert.Equal("\n\nR\n\nnext", Apply(doc, e));
+        }
+
+        [Fact]
+        public void InsertBelow_at_offset_zero_goes_after_the_first_line()
+        {
+            string doc = "one\ntwo";
+            var e = SelectionEdit.InsertBelow(doc, 0, "R", "\n");
+            Assert.Equal("one\n\nR\ntwo", Apply(doc, e));
+        }
+
+        [Fact]
+        public void InsertBelow_a_document_ending_with_one_line_break()
+        {
+            string doc = "one\ntwo\n";
+            var e = SelectionEdit.InsertBelow(doc, doc.Length, "R", "\n");
+            Assert.Equal("one\ntwo\n\nR\n", Apply(doc, e));
+        }
+
         private static string Apply(string doc, TextEdit e) =>
             doc.Substring(0, e.Offset) + e.Text + doc.Substring(e.Offset + e.Length);
     }

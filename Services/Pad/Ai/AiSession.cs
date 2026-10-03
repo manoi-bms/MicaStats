@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using System.Text;
 using Kil0bitSystemMonitor.Services.Pad.Search;
@@ -24,6 +25,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     /// <summary>
     /// The state of one AI request and the rules for which buttons the pane offers
     /// (MicaPad AI spec 3.2 to 3.4). No WPF; the window feeds it the stream and the facts.
+    /// A session runs once: Try again builds a new <see cref="AiSession"/>.
     /// </summary>
     public sealed class AiSession
     {
@@ -58,10 +60,17 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         public bool Running { get; private set; }
         public bool Finished { get; private set; }
 
-        public void Start() { Running = true; Finished = false; }
-        public void Append(string piece) => _raw.Append(piece);
-        public void Fail(string message) { _failure = message; Running = false; Finished = true; }
-        public void MarkCutShort() => _cutShort = true;
+        public void Start()
+        {
+            if (Running || Finished) throw new InvalidOperationException("An AI session runs once");
+            if (Refusal != null) throw new InvalidOperationException("This request is refused and cannot start");
+            if (AwaitingInstruction) throw new InvalidOperationException("This request still needs an instruction");
+            Running = true;
+        }
+
+        public void Append(string piece) { if (!Finished) _raw.Append(piece); }
+        public void Fail(string message) { if (Finished) return; _failure = message; Running = false; Finished = true; }
+        public void MarkCutShort() { if (!Finished) _cutShort = true; }
         public void Complete(bool stopped) { _stopped = stopped; Running = false; Finished = true; }
         public void MarkApplied(string what) => _applied = what;
 

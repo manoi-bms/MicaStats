@@ -226,6 +226,75 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Start_twice_throws()
+        {
+            var s = new AiSession(PadAiAction.Improve, "a", true);
+            s.Start();
+            Assert.Throws<System.InvalidOperationException>(() => s.Start());
+        }
+
+        [Fact]
+        public void Start_after_Complete_throws()
+        {
+            var s = Done(PadAiAction.Improve, "a", "b");
+            var ex = Assert.Throws<System.InvalidOperationException>(() => s.Start());
+            Assert.Equal("An AI session runs once", ex.Message);
+        }
+
+        [Fact]
+        public void Start_on_a_refused_session_throws()
+        {
+            var s = new AiSession(PadAiAction.Improve, new string('x', 8001), true);
+            Assert.Throws<System.InvalidOperationException>(() => s.Start());
+        }
+
+        [Fact]
+        public void Start_while_awaiting_an_instruction_throws()
+        {
+            var s = new AiSession(PadAiAction.Ask, "a", true);
+            Assert.Throws<System.InvalidOperationException>(() => s.Start());
+        }
+
+        [Fact]
+        public void Append_after_Complete_is_ignored()
+        {
+            var s = Done(PadAiAction.Improve, "a", "b");
+            s.Append(" more");
+            Assert.Equal("b", s.View(Ok).Result);
+        }
+
+        [Fact]
+        public void Fail_and_MarkCutShort_after_Complete_are_ignored()
+        {
+            var s = Done(PadAiAction.Improve, "a", "b");
+            s.Fail("late");
+            s.MarkCutShort();
+            var v = s.View(Ok);
+            Assert.Equal("", v.Status);
+            Assert.True(v.CanReplace);
+        }
+
+        [Fact]
+        public void A_literal_placeholder_in_the_text_and_a_real_credential_are_told_apart()
+        {
+            string src = "see [[CREDENTIAL_1]] and {{secret:K7Q2M9XD}}";
+            var s = new AiSession(PadAiAction.Improve, src, true);
+            Assert.Contains("[[CREDENTIAL_1]]", s.UserMessage);
+            Assert.Contains("[[CREDENTIAL_X_1]]", s.UserMessage);
+            s.Start(); s.Append("look [[CREDENTIAL_1]] and [[CREDENTIAL_X_1]]"); s.Complete(false);
+            Assert.Equal("look [[CREDENTIAL_1]] and {{secret:K7Q2M9XD}}", s.ResultForNote);
+            Assert.True(s.View(Ok).CanReplace);
+        }
+
+        [Fact]
+        public void A_typed_instruction_is_trimmed_in_the_message()
+        {
+            var s = new AiSession(PadAiAction.Ask, "t", true, "   do it  ");
+            Assert.Equal("do it", s.Instruction);
+            Assert.StartsWith("Task: do it\n", s.UserMessage);
+        }
+
+        [Fact]
         public void While_running_nothing_is_offered_but_copy()
         {
             var s = new AiSession(PadAiAction.Improve, "a", true);

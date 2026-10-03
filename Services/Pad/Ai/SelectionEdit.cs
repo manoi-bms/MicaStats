@@ -38,13 +38,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         {
             documentText ??= "";
             int at = Math.Clamp(endOffset, 0, documentText.Length);
-            // A source that ends with a line break belongs to the line before it.
-            if (at > 0 && documentText[at - 1] == LF)
-            {
-                at--;
-                if (at > 0 && documentText[at - 1] == CR) at--;
-            }
-            else if (at > 0 && documentText[at - 1] == CR) at--;
+            // Trailing line breaks (any number, CRLF never split) belong to the line before them.
+            while (at > 0 && (documentText[at - 1] == LF || documentText[at - 1] == CR)) at--;
             while (at < documentText.Length && documentText[at] != CR && documentText[at] != LF) at++;
             string text = newline + newline + result;
             return new TextEdit(at, 0, text, at + 2 * newline.Length, result.Length);

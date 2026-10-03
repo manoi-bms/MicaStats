@@ -77,6 +77,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The question being searched for or answered right now (its own <see cref="_running"/>), or null.</summary>
         private CancellationTokenSource? _asking;
 
+        /// <summary>The query of <see cref="_asking"/>.</summary>
+        private string? _asked;
+
         /// <summary>The status line as the last search or question left it, without what an answer adds.</summary>
         private string _found = "";
 
@@ -165,8 +168,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// What the Ask button and Ctrl+Enter run: <see cref="Ask"/> for the query, its rows and
         /// status, then its answer streaming in above them (or the sentence given instead). An
-        /// empty query does nothing. A search or an answer still running is cancelled and the old
-        /// answer cleared first. The answer is read, which is what starts its request, only while
+        /// empty query does nothing, and so does the question already being searched for or
+        /// answered: it is not sent a second time. Otherwise a search or an answer still running
+        /// is cancelled and the old answer cleared first. The answer is read, which is what starts its request, only while
         /// this question still owns the pane: one that a newer search overtook, or whose pane
         /// closed while it searched, is never read. The task completes when the answer ends, and
         /// never faults.
@@ -175,12 +179,14 @@ namespace Kil0bitSystemMonitor.Pad
         {
             string query = QueryBox.Text;
             if (query.Trim().Length == 0 || Ask is not { } ask) return;
+            if (IsBeingAsked(query)) return;
 
             _typing.Stop();
             CancelRunning();
             var mine = _running = new CancellationTokenSource();
             ClearAnswer();
             _asking = mine;
+            _asked = query;
             try
             {
                 AskStart start;
@@ -207,9 +213,23 @@ namespace Kil0bitSystemMonitor.Pad
             }
             finally
             {
-                if (ReferenceEquals(_asking, mine)) _asking = null;
+                if (ReferenceEquals(_asking, mine))
+                {
+                    _asking = null;
+                    _asked = null;
+                }
             }
         }
+
+        /// <summary>
+        /// True while <paramref name="query"/> is the question this pane is searching for or
+        /// answering right now: asking it again (a double click on Ask, Ctrl+Enter pressed twice)
+        /// would send the same request again, and each one counts against the daily limit. A
+        /// question that was stopped, or that a search took the pane from, is not in the way.
+        /// </summary>
+        private bool IsBeingAsked(string query) =>
+            _asking is { IsCancellationRequested: false } asking && ReferenceEquals(asking, _running)
+            && string.Equals(_asked, query, StringComparison.Ordinal);
 
         /// <summary>
         /// Takes the answer off the pane, for text that must not stay on it: the window calls
@@ -263,13 +283,16 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// A key pressed in the query box. Enter searches; Ctrl+Enter asks; Down goes to the
         /// results; Esc returns to the editor. True when the key was used up.
+        /// <paramref name="repeat"/> says the key is held down and this is one of its repeats:
+        /// a held Ctrl+Enter asks once, when it goes down. Each repeat is used up and asks
+        /// nothing, since every question is a request that counts against the daily limit.
         /// </summary>
-        internal bool HandleQueryKey(Key key, ModifierKeys modifiers)
+        internal bool HandleQueryKey(Key key, ModifierKeys modifiers, bool repeat = false)
         {
             if (key == Key.Enter)
             {
-                if (modifiers == ModifierKeys.Control) _ = AskNowAsync();
-                else _ = SearchNow();
+                if (modifiers != ModifierKeys.Control) _ = SearchNow();
+                else if (!repeat) _ = AskNowAsync();
                 return true;
             }
             if (key == Key.Down && Rows.Count > 0)
@@ -449,7 +472,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnQueryKeyDown(object sender, KeyEventArgs e)
         {
-            if (HandleQueryKey(e.Key, Keyboard.Modifiers)) e.Handled = true;
+            if (HandleQueryKey(e.Key, Keyboard.Modifiers, e.IsRepeat)) e.Handled = true;
         }
 
         private void OnAskClick(object sender, RoutedEventArgs e) => _ = AskNowAsync();

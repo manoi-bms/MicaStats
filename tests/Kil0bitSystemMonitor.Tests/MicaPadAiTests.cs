@@ -2202,6 +2202,38 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public Task A_held_Ctrl_Enter_and_a_second_Ask_for_the_question_being_answered_send_one_request_and_count_one_use() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wifi [1].");
+            h.Client = model;
+            SearchPane pane = h.Window.SearchPanel;
+            h.Window.ToggleSearch();
+            pane.QueryBox.Text = "vpn";
+
+            // The window reads its search when a question starts, so each step that could start one runs with it in place.
+            Assert.True(WithSearch(search, () => pane.HandleQueryKey(Key.Enter, ModifierKeys.Control)));   // Ctrl+Enter goes down
+            await Reached(model);                                 // the request is out and its answer streams in
+            await WithSearch(search, () =>
+            {
+                for (int i = 0; i < 5; i++)
+                    Assert.True(pane.HandleQueryKey(Key.Enter, ModifierKeys.Control, repeat: true));       // the key is still held: five repeats
+                Click(pane.AskButton);                            // then a double click on Ask
+                Click(pane.AskButton);
+                return pane.AskNowAsync();
+            });
+            model.Gate.SetResult();
+            await Until(() => pane.AnswerCopy.Visibility == Visibility.Visible, "the answer to end");
+
+            Assert.Single(model.Sent);                            // one request
+            Assert.Equal(1, h.Usage.UsedToday);                   // one use of the daily limit
+            Assert.Equal(1, h.RunnersBuilt);
+            Assert.False(model.Cancelled);
+            Assert.Equal("Use the office wifi [1].", pane.AnswerBox.Shown);
+            Assert.Equal("Words · Answered from 1 passage", pane.StatusText.Text);
+        });
+
+        [Fact]
         public Task The_first_eight_rows_carry_their_source_numbers_and_the_status_ends_with_the_count() => OnUiWithSearch(async (h, search) =>
         {
             // Four notes of three passages each: twelve hits, of which the first eight are sources.

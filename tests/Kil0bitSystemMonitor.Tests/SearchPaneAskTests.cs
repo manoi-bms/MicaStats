@@ -227,6 +227,112 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { "vpn" }, f.Searched);            // Ask runs its own search: the window's, not Run
         });
 
+        // ---- one request for one question (each counts against the daily limit) ----------------------
+
+        [Fact]
+        public Task A_held_Ctrl_Enter_asks_once_however_long_it_is_held() => OnUi(async f =>
+        {
+            f.Pane.QueryBox.Text = "vpn";
+
+            Assert.True(f.Pane.HandleQueryKey(Key.Enter, ModifierKeys.Control));                    // the key goes down
+            for (int i = 0; i < 5; i++)
+                Assert.True(f.Pane.HandleQueryKey(Key.Enter, ModifierKeys.Control, repeat: true));  // and repeats: used up, asking nothing
+
+            Assert.Equal(new[] { "vpn" }, f.Asked);
+            Assert.False(f.Tokens[0].IsCancellationRequested);    // nor is the first question started over
+
+            f.Feed(Text("A quick answer."));
+            f.End();
+            await Until(() => f.Pane.AnswerCopy.Visibility == Visibility.Visible, "the answer to end");
+            Assert.True(f.Pane.HandleQueryKey(Key.Enter, ModifierKeys.Control, repeat: true));      // still held after a quick answer
+            Assert.Equal(new[] { "vpn" }, f.Asked);
+
+            Assert.True(f.Pane.HandleQueryKey(Key.Enter, ModifierKeys.Control));                    // let go and pressed again: a new question
+            Assert.Equal(new[] { "vpn", "vpn" }, f.Asked);
+        });
+
+        [Fact]
+        public Task A_held_Enter_still_searches() => OnUi(async f =>
+        {
+            f.Pane.QueryBox.Text = "vpn";
+
+            Assert.True(f.Pane.HandleQueryKey(Key.Enter, ModifierKeys.None, repeat: true));
+
+            await Until(() => f.Searched.Count == 1, "the search");   // a search sends no counted request
+            Assert.Empty(f.Asked);
+        });
+
+        [Fact]
+        public Task The_question_being_answered_is_not_asked_again_until_its_answer_ends() => OnUi(async f =>
+        {
+            Task first = Ask(f);
+            f.Feed(Text("Use the"));
+            await Handled(f, 1);
+
+            Click(f.Pane.AskButton);                              // a double click on Ask
+            Assert.True(f.Pane.HandleQueryKey(Key.Enter, ModifierKeys.Control));
+            await f.Pane.AskNowAsync();
+
+            Assert.Equal(new[] { "vpn" }, f.Asked);
+            Assert.False(f.Tokens[0].IsCancellationRequested);    // the answer under way is left alone
+            Assert.Equal("Use the", f.Pane.AnswerBox.Shown);
+            Assert.Equal(Visibility.Visible, f.Pane.AnswerStop.Visibility);
+
+            f.Feed(Text(" office wifi."));
+            f.End();
+            await first;
+            Assert.Equal("Use the office wifi.", f.Pane.AnswerBox.Shown);
+
+            Task again = Ask(f);                                  // once it has ended, it can be asked again
+            Assert.Equal(new[] { "vpn", "vpn" }, f.Asked);
+            f.End();
+            await again;
+        });
+
+        [Fact]
+        public Task The_question_still_being_searched_for_is_not_asked_again() => OnUi(async f =>
+        {
+            var slow = new TaskCompletionSource<AskStart>(TaskCreationOptions.RunContinuationsAsynchronously);
+            int asked = 0;
+            f.Pane.Ask = (_, _) =>
+            {
+                asked++;
+                return slow.Task;
+            };
+            Task first = Ask(f);
+
+            await Ask(f);                                         // again, while the first still searches
+            Click(f.Pane.AskButton);
+
+            Assert.Equal(1, asked);
+            slow.SetResult(new AskStart(f.Found, "Words", null, "a sentence"));
+            await first;
+            Assert.Equal("a sentence", f.Pane.AnswerBox.Shown);   // and the first went on to its end
+        });
+
+        [Fact]
+        public Task A_question_that_was_stopped_or_overtaken_can_be_asked_again_at_once() => OnUi(async f =>
+        {
+            Task first = Ask(f);
+            f.Feed(Text("Use the"));
+            await Handled(f, 1);
+            Click(f.Pane.AnswerStop);
+
+            Task second = Ask(f);                                 // before the stopped one has wound up
+            Assert.Equal(new[] { "vpn", "vpn" }, f.Asked);
+            await first;
+
+            await f.Pane.SearchNow();                             // a search takes the pane from the second
+            Task third = Ask(f);
+            Assert.Equal(new[] { "vpn", "vpn", "vpn" }, f.Asked);
+            await second;
+
+            f.Feed(Text("The answer."));
+            f.End();
+            await third;
+            Assert.Equal("The answer.", f.Pane.AnswerBox.Shown);
+        });
+
         [Fact]
         public void The_Ask_button_sits_beside_the_query_box_and_names_its_shortcut() => UiThread.Run(() =>
         {

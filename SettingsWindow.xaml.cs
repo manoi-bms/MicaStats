@@ -564,6 +564,8 @@ namespace Kil0bitSystemMonitor
                 PadDiagramsToggle.IsOn = cfg.PadDiagrams;
                 PadKrokiToggle.IsOn = cfg.PadKroki;
                 PadWebImagesToggle.IsOn = cfg.PadWebImages;
+                PadAiToggle.IsOn = cfg.PadAiEnabled;
+                PadAiPrivacyText.Text = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrivacy.Describe(cfg.AiProvider, cfg.AiCompatibleBaseUrl);
                 PadKrokiServerBox.Text = cfg.PadKrokiServer;
                 PadKrokiHint.Text = PadKrokiHelp;
                 PadThemeBox.SelectedIndex = cfg.PadTheme == Kil0bitSystemMonitor.Services.Pad.PadThemes.Light ? 1 : 0;
@@ -679,8 +681,11 @@ namespace Kil0bitSystemMonitor
             CommitPadKrokiServer();   // a server typed just before the click is the one Kroki starts with
             cfg.PadKroki = PadKrokiToggle.IsOn;
             cfg.PadWebImages = PadWebImagesToggle.IsOn;
+            cfg.PadAiEnabled = PadAiToggle.IsOn;
             _config.SaveConfig();
         }
+
+        private void OnPadAiProviderSettings(object sender, RoutedEventArgs e) => SelectSection("AI");
 
         private void OnPadHotkeyChanged(object sender, RoutedEventArgs e)
         {

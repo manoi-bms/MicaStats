@@ -50,71 +50,95 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             int limit = Clamp(Number(args, "limit") ?? DefaultLimit, 1, MaxLimit);
             string cleaned = NotePassages.WithoutSecretParts(query);
 
-            NoteSearchResult found;
-            try { found = await _reader.SearchAsync(cleaned, ct).ConfigureAwait(false); }
+            try
+            {
+                var found = await _reader.SearchAsync(cleaned, ct).ConfigureAwait(false);
+                var results = new JsonArray();
+                foreach (var hit in found.Hits)
+                {
+                    if (results.Count >= limit) break;
+                    results.Add(new JsonObject
+                    {
+                        ["noteId"] = hit.NoteId,
+                        ["title"] = NotePassages.TitleWithoutSecrets(hit.Title),
+                        ["heading"] = NotePassages.TitleWithoutSecrets(hit.Heading),
+                        ["firstLine"] = hit.FirstLine,
+                        ["lastLine"] = hit.LastLine,
+                        ["open"] = hit.Open,
+                        ["text"] = NotePassages.WithoutSecrets(hit.Text),
+                    });
+                }
+                return new JsonObject
+                {
+                    ["query"] = cleaned,
+                    ["searchedBy"] = found.UsedMeaning ? "words and meaning" : "words",
+                    ["results"] = results,
+                    ["about"] = About,
+                };
+            }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex) { return Failed(ex); }
-
-            var results = new JsonArray();
-            foreach (var hit in found.Hits)
-            {
-                if (results.Count >= limit) break;
-                results.Add(new JsonObject
-                {
-                    ["noteId"] = hit.NoteId,
-                    ["title"] = NotePassages.WithoutSecrets(hit.Title),
-                    ["heading"] = NotePassages.WithoutSecrets(hit.Heading),
-                    ["firstLine"] = hit.FirstLine,
-                    ["lastLine"] = hit.LastLine,
-                    ["open"] = hit.Open,
-                    ["text"] = NotePassages.WithoutSecrets(hit.Text),
-                });
-            }
-            return new JsonObject
-            {
-                ["query"] = cleaned,
-                ["searchedBy"] = found.UsedMeaning ? "words and meaning" : "words",
-                ["results"] = results,
-                ["about"] = About,
-            };
         }
 
+        /// <summary>
+        /// A range of a note's lines, whole lines only up to <see cref="MaxChars"/>. A single line
+        /// longer than the cap is cut inside the line and reported with <c>cutInLine</c>; its
+        /// remainder cannot be paged, because paging is by line.
+        /// </summary>
         public async Task<JsonNode> GetNoteAsync(JsonObject? args, CancellationToken ct)
         {
-            string? id = Text(args, "noteId");
-            if (id == null || id.Trim().Length == 0) return ToolJson.Error("noteId is required");
+            string? id = Text(args, "noteId")?.Trim();
+            if (string.IsNullOrEmpty(id)) return ToolJson.Error("noteId is required");
 
-            NoteText? note;
-            try { note = await _reader.ReadAsync(id, ct).ConfigureAwait(false); }
+            try
+            {
+                var note = await _reader.ReadAsync(id, ct).ConfigureAwait(false);
+                if (note == null) return ToolJson.Error(NoSuchNote);
+
+                string[] lines = note.Text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+                int first = Clamp(Number(args, "firstLine") ?? 1, 1, lines.Length);
+                int count = Clamp(Number(args, "lineCount") ?? DefaultLines, 1, MaxLines);
+                int wanted = Math.Min(lines.Length, first + count - 1);
+
+                // Each line is cleaned once, before the cap, so a reference is never cut in half.
+                var kept = new List<string>();
+                int length = 0;
+                for (int i = first - 1; i < wanted; i++)
+                {
+                    string line = NotePassages.WithoutSecrets(lines[i]);
+                    int next = length + (kept.Count > 0 ? 1 : 0) + line.Length;
+                    if (kept.Count > 0 && next > MaxChars) break;
+                    kept.Add(line);
+                    length = next;
+                }
+                int last = first - 1 + kept.Count;
+                string text = string.Join("\n", kept);
+
+                bool cutInLine = false;
+                if (text.Length > MaxChars)
+                {
+                    int cut = MaxChars;
+                    if (char.IsLowSurrogate(text[cut]) && char.IsHighSurrogate(text[cut - 1])) cut--;
+                    text = text.Substring(0, cut);
+                    cutInLine = true;
+                }
+
+                var result = new JsonObject
+                {
+                    ["noteId"] = id,
+                    ["title"] = NotePassages.TitleWithoutSecrets(note.Title),
+                    ["lines"] = lines.Length,
+                    ["firstLine"] = first,
+                    ["lastLine"] = last,
+                    ["truncated"] = last < lines.Length || cutInLine,
+                };
+                if (cutInLine) result["cutInLine"] = true;
+                result["text"] = text;
+                result["about"] = About;
+                return result;
+            }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex) { return Failed(ex); }
-            if (note == null) return ToolJson.Error(NoSuchNote);
-
-            string[] lines = note.Text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-            int first = Clamp(Number(args, "firstLine") ?? 1, 1, lines.Length);
-            int count = Clamp(Number(args, "lineCount") ?? DefaultLines, 1, MaxLines);
-            int last = Math.Min(lines.Length, first + count - 1);
-
-            // Cleaned before the cap, so a reference is never cut in half.
-            string text = NotePassages.WithoutSecrets(string.Join("\n", lines, first - 1, last - first + 1));
-            while (text.Length > MaxChars && last > first)
-            {
-                last--;
-                text = NotePassages.WithoutSecrets(string.Join("\n", lines, first - 1, last - first + 1));
-            }
-            if (text.Length > MaxChars) text = text.Substring(0, MaxChars);
-
-            return new JsonObject
-            {
-                ["noteId"] = note.NoteId,
-                ["title"] = NotePassages.WithoutSecrets(note.Title),
-                ["lines"] = lines.Length,
-                ["firstLine"] = first,
-                ["lastLine"] = last,
-                ["truncated"] = last < lines.Length,
-                ["text"] = text,
-                ["about"] = About,
-            };
         }
 
         private static JsonObject Failed(Exception ex) =>

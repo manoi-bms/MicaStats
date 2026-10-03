@@ -566,6 +566,10 @@ namespace Kil0bitSystemMonitor
                 PadWebImagesToggle.IsOn = cfg.PadWebImages;
                 PadAiToggle.IsOn = cfg.PadAiEnabled;
                 PadAiPrivacyText.Text = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrivacy.Describe(cfg.AiProvider, cfg.AiCompatibleBaseUrl);
+                AiNotesInAskToggle.IsOn = cfg.AiNotesInAsk;
+                AiNotesInMcpToggle.IsOn = cfg.AiNotesInMcp;
+                AiNotesInAskText.Text = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrivacy.NotesInAsk(cfg.AiProvider, cfg.AiCompatibleBaseUrl);
+                AiNotesInMcpText.Text = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrivacy.NotesInMcp;
                 PadKrokiServerBox.Text = cfg.PadKrokiServer;
                 PadKrokiHint.Text = PadKrokiHelp;
                 PadThemeBox.SelectedIndex = cfg.PadTheme == Kil0bitSystemMonitor.Services.Pad.PadThemes.Light ? 1 : 0;
@@ -682,6 +686,8 @@ namespace Kil0bitSystemMonitor
             cfg.PadKroki = PadKrokiToggle.IsOn;
             cfg.PadWebImages = PadWebImagesToggle.IsOn;
             cfg.PadAiEnabled = PadAiToggle.IsOn;
+            cfg.AiNotesInAsk = AiNotesInAskToggle.IsOn;
+            cfg.AiNotesInMcp = AiNotesInMcpToggle.IsOn;
             _config.SaveConfig();
         }
 

@@ -27,6 +27,23 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             return Sent + uri.Host + "." + Never;
         }
 
+        /// <summary>The line under "Let Ask MicaStats search your notes": where what Ask looks up goes.</summary>
+        public static string NotesInAsk(string provider, string? compatibleBaseUrl)
+        {
+            const string Lookup = "passages and notes Ask looks up ";
+            if (!IsCompatible(provider)) return "When a question needs them, " + Lookup + "go to Anthropic (" + Anthropic + ")." + Never;
+
+            if (Endpoint(compatibleBaseUrl) is not { } uri)
+                return "The base URL is not a valid http or https address, so nothing can be sent.";
+
+            if (uri.IsLoopback) return "Passages and notes Ask looks up stay on this PC (" + uri.Host + ").";
+
+            return "When a question needs them, " + Lookup + "go to " + uri.Host + "." + Never;
+        }
+
+        /// <summary>The line under "Let MCP clients search your notes".</summary>
+        public const string NotesInMcp = "Programs you connected through MCP (Settings → AI) can search and read your notes. What they do with the text is up to them. Stored credentials are never given out.";
+
         /// <summary>
         /// The destination in a word or two, for the AI pane's source line and the notes status:
         /// "api.anthropic.com" for Claude, "this PC" for a loopback address, the host of any

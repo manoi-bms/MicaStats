@@ -66,6 +66,50 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains("case \"MicaPad\": PadSection.Visibility = Visibility.Visible; LoadPadSettings(); break;", code);
         }
 
+        [Fact]
+        public void The_two_note_switches_are_cards_after_the_ai_toggle_in_order()
+        {
+            string xaml = Read("SettingsWindow.xaml");
+            int toggle = xaml.IndexOf("x:Name=\"PadAiToggle\"", StringComparison.Ordinal);
+            int ai = xaml.IndexOf("x:Name=\"AiSection\"", StringComparison.Ordinal);
+            string after = xaml.Substring(toggle, ai - toggle);
+
+            int provider = after.IndexOf("x:Name=\"PadAiProviderButton\"", StringComparison.Ordinal);
+            int askTitle = after.IndexOf("Text=\"Let Ask MicaStats search your notes\"", StringComparison.Ordinal);
+            int askHint = after.IndexOf("Text=\"Ask MicaStats can look up passages and read notes to answer a question.\"", StringComparison.Ordinal);
+            int askToggle = after.IndexOf("x:Name=\"AiNotesInAskToggle\" Toggled=\"OnPadToggled\"", StringComparison.Ordinal);
+            int askText = after.IndexOf("x:Name=\"AiNotesInAskText\"", StringComparison.Ordinal);
+            int mcpTitle = after.IndexOf("Text=\"Let MCP clients search your notes\"", StringComparison.Ordinal);
+            int mcpHint = after.IndexOf("Text=\"Programs such as Claude Code, connected through MCP, get two read-only tools: search_notes and get_note.\"", StringComparison.Ordinal);
+            int mcpToggle = after.IndexOf("x:Name=\"AiNotesInMcpToggle\" Toggled=\"OnPadToggled\"", StringComparison.Ordinal);
+            int mcpText = after.IndexOf("x:Name=\"AiNotesInMcpText\"", StringComparison.Ordinal);
+
+            Assert.True(0 < askTitle && askTitle < askHint && askHint < askToggle && askToggle < askText, "ask card");
+            Assert.True(askText < mcpTitle && mcpTitle < mcpHint && mcpHint < mcpToggle && mcpToggle < mcpText, "mcp card, after the ask card");
+            Assert.True(provider > 0, "the provider button is still there");
+        }
+
+        [Fact]
+        public void The_note_switches_are_loaded_with_their_texts_and_saved_with_the_others()
+        {
+            string code = Read("SettingsWindow.xaml.cs");
+            int load = code.IndexOf("private void LoadPadSettings", StringComparison.Ordinal);
+            int toggled = code.IndexOf("private void OnPadToggled", StringComparison.Ordinal);
+            Assert.True(load > 0 && toggled > load);
+            string loading = code.Substring(load, toggled - load);
+
+            Assert.Contains("AiNotesInAskToggle.IsOn = cfg.AiNotesInAsk;", loading);
+            Assert.Contains("AiNotesInMcpToggle.IsOn = cfg.AiNotesInMcp;", loading);
+            Assert.Contains("AiNotesInAskText.Text = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrivacy.NotesInAsk(cfg.AiProvider, cfg.AiCompatibleBaseUrl);", loading);
+            Assert.Contains("AiNotesInMcpText.Text = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrivacy.NotesInMcp;", loading);
+            Assert.True(loading.IndexOf("_loadingPad = true;", StringComparison.Ordinal) < loading.IndexOf("AiNotesInAskToggle.IsOn", StringComparison.Ordinal));
+
+            string saving = code.Substring(toggled, code.IndexOf("OnPadAiProviderSettings", toggled, StringComparison.Ordinal) - toggled);
+            Assert.Contains("cfg.AiNotesInAsk = AiNotesInAskToggle.IsOn;", saving);
+            Assert.Contains("cfg.AiNotesInMcp = AiNotesInMcpToggle.IsOn;", saving);
+            Assert.Contains("_config.SaveConfig();", saving);
+        }
+
         // ---- docs ----
 
         [Fact]
@@ -153,6 +197,51 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains("each with its note's title, heading and line numbers", english, StringComparison.Ordinal);
             Assert.DoesNotContain("หรือคำถามกับข้อความที่เกี่ยวข้อง โดยห่อไว้", thaiPart, StringComparison.Ordinal);
             Assert.Contains("ชื่อโน้ต หัวข้อ และเลขบรรทัด", thaiPart, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_guide_documents_the_note_tools_and_diagram_help()
+        {
+            string guide = Read("GUIDE.md").Replace("\r\n", "\n", StringComparison.Ordinal);
+            foreach (string needle in new[]
+            {
+                "search_notes", "get_note", "Let Ask MicaStats search your notes", "Let MCP clients search your notes",
+                "**Draw as diagram**", "**Fix with AI**", "### Notes in Ask MicaStats and MCP", "[credential]",
+                "New conversation", "MicaStats is not running", "Insert below", "Replace selection",
+            })
+                Assert.Contains(needle, guide, StringComparison.Ordinal);
+
+            string ai = GuideAiSection();
+            Assert.Contains("**Draw as diagram**", ai, StringComparison.Ordinal);
+            Assert.Contains("**Fix with AI**", ai, StringComparison.Ordinal);
+            Assert.Contains("only that source", ai, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_readme_documents_the_note_tools_and_diagram_help_in_both_languages_and_keeps_its_lists_apart()
+        {
+            string readme = Read("README.md").Replace("\r\n", "\n", StringComparison.Ordinal);
+            int thai = readme.IndexOf("## เกี่ยวกับ MicaStats", StringComparison.Ordinal);
+            foreach (string part in new[] { readme.Substring(0, thai), readme.Substring(thai) })
+            {
+                foreach (string needle in new[] { "search_notes", "get_note", "Let Ask MicaStats search your notes", "Let MCP clients search your notes", "**Draw as diagram**", "**Fix with AI**" })
+                    Assert.Contains(needle, part, StringComparison.Ordinal);
+            }
+
+            // The line after each What's New list is blank, so the next paragraph is not folded into a bullet.
+            string[] lines = readme.Split('\n');
+            foreach (string start in new[] { "**Since v1.14.0** —", "**หลัง v1.14.0** (" })
+            {
+                int i = Array.FindIndex(lines, l => l.StartsWith(start, StringComparison.Ordinal));
+                Assert.True(i >= 0);
+                Assert.Equal("", lines[i + 1]);
+                int j = i + 2;
+                while (lines[j].StartsWith("* ", StringComparison.Ordinal)) j++;
+                Assert.True(j > i + 3, "both bullets are in the block");
+                Assert.Equal("", lines[j]);
+                Assert.StartsWith("**v1.14.0** —", lines[j + 1], StringComparison.Ordinal);
+            }
+            Assert.Single(readme.Split('\n'), l => l.StartsWith("* **Markdown the way Wiki.js shows it**", StringComparison.Ordinal));
         }
 
         [Fact]

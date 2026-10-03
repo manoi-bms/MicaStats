@@ -36,6 +36,28 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("The base URL is not a valid http or https address, so nothing can be sent.",
                 PadAiPrivacy.Describe(AiProviders.OpenAiCompatible, "not a url"));
 
+        // ---- the note tools (spec 2) --------------------------------------------------------------
+
+        [Fact]
+        public void Notes_in_Ask_follow_the_provider()
+        {
+            Assert.Equal("When a question needs them, passages and notes Ask looks up go to Anthropic (api.anthropic.com). Stored credentials are never sent.",
+                PadAiPrivacy.NotesInAsk(AiProviders.Claude, null));
+            Assert.Equal("Passages and notes Ask looks up stay on this PC (localhost).",
+                PadAiPrivacy.NotesInAsk(AiProviders.OpenAiCompatible, "http://localhost:11434/v1"));
+            Assert.Equal("When a question needs them, passages and notes Ask looks up go to openrouter.ai. Stored credentials are never sent.",
+                PadAiPrivacy.NotesInAsk(AiProviders.OpenAiCompatible, "https://openrouter.ai/api/v1"));
+            Assert.Equal("The base URL is not a valid http or https address, so nothing can be sent.",
+                PadAiPrivacy.NotesInAsk(AiProviders.OpenAiCompatible, "not a url"));
+        }
+
+        [Fact]
+        public void Notes_in_Mcp_says_the_clients_decide_and_credentials_stay()
+        {
+            Assert.Equal("Programs you connected through MCP (Settings → AI) can search and read your notes. What they do with the text is up to them. Stored credentials are never given out.",
+                PadAiPrivacy.NotesInMcp);
+        }
+
         // ---- the destination, said where an action runs ------------------------------------------
 
         [Theory]

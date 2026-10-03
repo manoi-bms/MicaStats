@@ -50,7 +50,8 @@ namespace Kil0bitSystemMonitor.Tests
         private sealed class Harness
         {
             /// <param name="renderer">Draws the window's diagrams; null (most tests) means no pictures.</param>
-            public Harness(PadTestEnv env, IDiagramRenderer? renderer = null)
+            /// <param name="config">The window's settings; null (most tests) means a new config's defaults.</param>
+            public Harness(PadTestEnv env, IDiagramRenderer? renderer = null, AppConfig? config = null)
             {
                 Env = env;
                 Usage = new UsageMeter(env.FileOf("ai-usage.json"), () => new DateTime(2026, 10, 3, 12, 0, 0));
@@ -64,7 +65,7 @@ namespace Kil0bitSystemMonitor.Tests
                 MicaPadWindow.DiagramRenderer = renderer;
                 try
                 {
-                    Window = new MicaPadWindow(env.Workspace, new AppConfig());
+                    Window = new MicaPadWindow(env.Workspace, config ?? new AppConfig());
                 }
                 finally
                 {
@@ -201,13 +202,13 @@ namespace Kil0bitSystemMonitor.Tests
         /// Runs an async test on the UI thread over a loaded window; a test that hangs fails after a
         /// minute. With a <paramref name="renderer"/>, the window draws its diagrams through it.
         /// </summary>
-        private static async Task OnUiAsync(Func<Harness, Task> test, IDiagramRenderer? renderer = null)
+        private static async Task OnUiAsync(Func<Harness, Task> test, IDiagramRenderer? renderer = null, AppConfig? config = null)
         {
             Task body = UiThread.RunAsync(async () =>
             {
                 var dispatcher = Dispatcher.CurrentDispatcher;
                 using var env = new PadTestEnv(post: action => dispatcher.BeginInvoke(action));
-                var h = new Harness(env, renderer);
+                var h = new Harness(env, renderer, config);
                 try
                 {
                     h.Window.LoadSession();
@@ -3459,6 +3460,175 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(open, block.Open);                           // the block still ends on its own closing fence
             Assert.Equal("after", h.Editor.Document.GetText(h.Editor.Document.GetLineByNumber(block.Close + 1)));
         });
+
+        // ---- the block's fence is read again (final review, D1) ----------------------------------
+
+        private const string FourBackticks = "````markmap\n# Rot\n````\nafter";
+        private const string ThreeBackticks = "```markmap\n# Rot\n```\nafter";
+
+        /// <summary>A reply that is text of the block while its fence is four backticks, and closes it once the fence is three.</summary>
+        private const string HoldsThree = "# Root\n```\ncode\n```";
+
+        /// <summary>Takes one character off both fences of the block on lines 1 to 3; the source between them is not touched.</summary>
+        private static void ShortenFences(Harness h)
+        {
+            var document = h.Editor.Document;
+            document.Remove(document.GetLineByNumber(3).Offset, 1);
+            document.Remove(0, 1);
+        }
+
+        [Fact]
+        public Task A_fix_checked_against_four_backticks_cannot_replace_once_the_fences_are_shortened_to_three() => OnUiAsync(async h =>
+        {
+            Write(h, FourBackticks);
+            h.Model.Reply(HoldsThree);
+
+            await h.Window.FixDiagramAsync(1, 3, "markmap", "Parse error");
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal("", h.Pane.StatusText.Text);
+
+            ShortenFences(h);
+            Assert.Equal(ThreeBackticks, h.Editor.Document.Text);
+
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);              // said at once, as the fence is edited
+            Assert.Equal(HoldsFence, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);                               // and even a forced click leaves the block whole
+            Assert.Equal(ThreeBackticks, h.Editor.Document.Text);
+            Assert.Equal(new[] { (1, 3) }, BlocksOf(h));
+
+            // The other way round: with four backticks again, the same result is text of the block.
+            h.Editor.Document.Insert(h.Editor.Document.GetLineByNumber(3).Offset, "`");
+            h.Editor.Document.Insert(0, "`");
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal("", h.Pane.StatusText.Text);
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("````markmap\n" + HoldsThree + "\n````\nafter", h.Editor.Document.Text);
+            Assert.Equal(new[] { (1, 6) }, BlocksOf(h));               // one block still, ending on its own fence
+        });
+
+        [Fact]
+        public Task Try_again_after_a_fix_checks_the_new_reply_against_the_fence_as_it_is_now() => OnUiAsync(async h =>
+        {
+            Write(h, FourBackticks);
+            h.Model.Reply("first try").Reply(HoldsThree);
+            await h.Window.FixDiagramAsync(1, 3, "markmap", "Parse error");
+            AiSession first = h.Window.AiSessionNow!;
+            Assert.Equal("````", first.Action.BlockFence);
+            ShortenFences(h);
+
+            Click(h.Pane.RetryButton);
+            await Finished(h, after: first);
+
+            Assert.Equal("```", h.Window.AiSessionNow!.Action.BlockFence);   // read again from the note
+            Assert.Equal(h.Sent(0), h.Sent(1));                        // the same instruction on the same source
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(HoldsFence, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(ThreeBackticks, h.Editor.Document.Text);
+        });
+
+        /// <summary>Deletes both fence lines of the block on lines 1 to 4, so its source stands in no block.</summary>
+        private static void DeleteFences(Harness h)
+        {
+            var document = h.Editor.Document;
+            var closing = document.GetLineByNumber(4);
+            document.Remove(closing.Offset - 1, closing.Length + 1);   // with the line break before it
+            document.Remove(0, document.GetLineByNumber(1).TotalLength);
+        }
+
+        [Fact]
+        public Task A_fix_whose_block_lost_its_fences_cannot_put_a_fence_line_into_the_note_and_cannot_be_tried_again() => OnUiAsync(async h =>
+        {
+            Write(h, "```mermaid\nflowchart LR\n  a --> b --\n```\nafter");
+            h.Model.Reply("flowchart LR\n  a --> b\n~~~\nx\n~~~");   // tildes are text inside a backtick block
+            await h.Window.FixDiagramAsync(1, 4, "mermaid", "Parse error");
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            AiSession first = h.Window.AiSessionNow!;
+
+            DeleteFences(h);
+            const string bare = "flowchart LR\n  a --> b --\nafter";
+            Assert.Equal(bare, h.Editor.Document.Text);
+
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);              // outside a block, a fence line would open one that never closes
+            Assert.Equal(HoldsFence, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(bare, h.Editor.Document.Text);
+
+            Click(h.Pane.RetryButton);                                 // there is no diagram to fix any more
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            Assert.Same(first, h.Window.AiSessionNow);
+            Assert.Single(h.Model.Requests);
+            Assert.Equal(DiagramGone, h.Window.StatusMessage.Text);
+        });
+
+        [Fact]
+        public Task A_fix_with_no_fence_line_still_replaces_its_source_after_the_blocks_fences_are_deleted() => OnUiAsync(async h =>
+        {
+            Write(h, "```mermaid\nflowchart LR\n  a --> b --\n```\nafter");
+            h.Model.Reply("flowchart LR\n  a --> b");
+            await h.Window.FixDiagramAsync(1, 4, "mermaid", "Parse error");
+
+            DeleteFences(h);
+
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal("", h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal("flowchart LR\n  a --> b\nafter", h.Editor.Document.Text);
+        });
+
+        // ---- Draw as diagram where a diagram is drawn (final review, D2) --------------------------
+
+        private static readonly string[] WithoutDiagram =
+        {
+            "Improve writing", "Fix spelling and grammar", "Make shorter", "Translate to English", "Translate to Thai",
+            "Summarize", "Explain", "-", "Ask AI…",
+        };
+
+        [Fact]
+        public Task The_AI_menu_offers_Draw_as_diagram_only_in_a_note_shown_as_Markdown() => OnUi(h =>
+        {
+            Write(h, "login\npay\nship");
+            Assert.Same(PadLanguages.Markdown, h.Window.ShownLanguage.Effective);
+            Assert.Contains("Draw as diagram", Headers(AiMenu(h)));    // a note: Markdown
+
+            // Chosen as Plain text or as code: a fenced block is never drawn there.
+            foreach (string language in new[] { "plain", "csharp" })
+            {
+                h.Window.ChooseLanguage(h.Shown, language);
+                Assert.Equal(WithoutDiagram, Headers(AiMenu(h)));      // the other actions are as they were
+            }
+            h.Window.ChooseLanguage(h.Shown, null);
+            Assert.Contains("Draw as diagram", Headers(AiMenu(h)));
+
+            // A source file: Insert below would write a fence into the code.
+            PadLanguageWindowTests.OpenFile(h.Window, h.Env, "Program.cs", "class Program { }");
+            Assert.Equal("csharp", h.Window.ShownLanguage.Effective.Id);
+            Assert.Equal(WithoutDiagram, Headers(AiMenu(h)));
+            Assert.True(Sub(AiMenu(h), "Summarize").IsEnabled);
+
+            // A .md file is Markdown, and so is a .txt file while Markdown formatting is on.
+            PadLanguageWindowTests.OpenFile(h.Window, h.Env, "plan.md", "login\npay");
+            Assert.Contains("Draw as diagram", Headers(AiMenu(h)));
+            PadLanguageWindowTests.OpenFile(h.Window, h.Env, "plan.txt", "login\npay");
+            Assert.Same(PadLanguages.Markdown, h.Window.ShownLanguage.Effective);
+            Assert.Contains("Draw as diagram", Headers(AiMenu(h)));
+        });
+
+        [Fact]
+        public Task With_Markdown_formatting_off_a_note_and_a_txt_file_are_plain_text_and_have_no_Draw_as_diagram() => OnUiAsync(h =>
+        {
+            Write(h, "login\npay\nship");
+            Assert.Same(PadLanguages.Plain, h.Window.ShownLanguage.Effective);
+            Assert.Equal(WithoutDiagram, Headers(AiMenu(h)));
+
+            PadLanguageWindowTests.OpenFile(h.Window, h.Env, "plan.txt", "login\npay");
+            Assert.Same(PadLanguages.Plain, h.Window.ShownLanguage.Effective);
+            Assert.Equal(WithoutDiagram, Headers(AiMenu(h)));
+            return Task.CompletedTask;
+        }, config: new AppConfig { PadMarkdown = false });
 
         [Fact]
         public Task The_pane_offers_no_Insert_below_for_a_fix() => OnUiAsync(async h =>

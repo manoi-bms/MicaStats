@@ -6,7 +6,12 @@ using Kil0bitSystemMonitor.Services.Pad.Search;
 namespace Kil0bitSystemMonitor.Services.Pad.Ai
 {
     /// <summary>What the window knows about the source text right now.</summary>
-    public readonly record struct AiSourceFacts(bool SourceShown, bool ReadOnly, bool SourceUnchanged);
+    /// <param name="BlockFence">
+    /// For the fix of a diagram block: the run of characters the block around the source opens
+    /// with as the note reads now, or "" when no block stands around it any more. Null when the
+    /// window did not look (another action, a fix still running, a source that is not shown).
+    /// </param>
+    public readonly record struct AiSourceFacts(bool SourceShown, bool ReadOnly, bool SourceUnchanged, string? BlockFence = null);
 
     /// <summary>
     /// Everything the AI pane draws; immutable. <c>ShowInsert</c> is false only for the fix of a
@@ -146,6 +151,17 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             return false;
         }
 
+        /// <summary>
+        /// True when a line of <paramref name="result"/> would open a fenced block: where no block
+        /// stands around the source any more, such a line would start one that never closes.
+        /// </summary>
+        private static bool OpensBlock(string result)
+        {
+            foreach (string line in result.Split('\n', '\r'))   // a CRLF gives an empty line in between, which opens nothing
+                if (FenceTracker.DelimiterOf(line) != null) return true;
+            return false;
+        }
+
         public AiPaneView View(AiSourceFacts facts)
         {
             string result = Refusal != null ? "" : ResultForNote;
@@ -155,9 +171,12 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             bool showReplace = Action.Kind != PadAiKind.Read && FromSelection;
             string? credentialProblem = _mask.Problem(CleanRaw);
             // A fix goes inside its block: nothing in it may close the block, and Insert below, which
-            // would land under the old source inside the block, is not offered at all.
+            // would land under the old source inside the block, is not offered at all. The fence it is
+            // checked against is the one the block opens with now, when the window looked: the note
+            // may have been edited since the fix was asked for (four backticks shortened to three).
             bool fix = Action.BlockFence != null;
-            bool closesBlock = Action.BlockFence is { Length: > 0 } fence && ClosesBlock(result, fence);
+            string? fence = fix ? facts.BlockFence ?? Action.BlockFence : null;
+            bool closesBlock = fence != null && (fence.Length > 0 ? ClosesBlock(result, fence) : OpensBlock(result));
 
             bool canReplace = showReplace && Refusal == null && clean && _applied == null && hasText
                 && facts.SourceShown && !facts.ReadOnly && facts.SourceUnchanged && credentialProblem == null && !closesBlock;

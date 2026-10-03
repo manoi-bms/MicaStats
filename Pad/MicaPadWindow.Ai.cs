@@ -244,12 +244,14 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>
         /// The editor menu's AI submenu: the actions while AI is on, Set up AI… while it is off.
-        /// With the caret in a diagram or math block that shows an error, Fix diagram too.
+        /// Draw as diagram only in a note shown as Markdown, where a fenced block is drawn; there,
+        /// with the caret in a diagram or math block that shows an error, Fix diagram too.
         /// </summary>
         private System.Windows.Controls.MenuItem BuildAiMenu()
         {
             bool on = AiOnInMenus();
-            return AiMenu(Editor, on, RunAiFromMenu, () => OpenPadSettings(), on ? FixDiagramAtCaret() : null);
+            bool markdown = ReferenceEquals(_resolved.Effective, PadLanguages.Markdown);
+            return AiMenu(Editor, on, RunAiFromMenu, () => OpenPadSettings(), on && markdown ? FixDiagramAtCaret() : null, diagrams: markdown);
         }
 
         /// <summary>
@@ -492,8 +494,59 @@ namespace Kil0bitSystemMonitor.Pad
                 ShowStatus(AiSourceGoneText);
                 return;
             }
-            _ = RunAiAsync(action, instruction, run);   // BeginAi asks both again where it reads the text
+            // BeginAi asks both again where it reads the text. The fix of a diagram block also
+            // reads its block's fence again, once the gate has passed.
+            _ = RunAiAsync(action, instruction, run, action.BlockFence == null ? null : fix => FixWithFenceNow(fix, run));
         }
+
+        /// <summary>
+        /// Try again for the fix of a diagram block: the fix with the fence its block opens with
+        /// as the note reads now. The fences may have been edited since the fix was asked for
+        /// (four backticks shortened to three), and the new reply must be checked against what is
+        /// there. Null, with the reason in the status bar, when no block stands around the source
+        /// any more: there is no diagram left to fix.
+        /// </summary>
+        private PadAiAction? FixWithFenceNow(PadAiAction fix, AiRun run)
+        {
+            if (EnclosingFence(run) is { } fence) return fix with { BlockFence = fence };
+            ShowStatus(AiDiagramGoneText);
+            return null;
+        }
+
+        /// <summary>
+        /// The run of characters the fenced block around the request's source opens with, as the
+        /// note reads now (three backticks, four tildes, <c>$$</c>). Null when the source stands in
+        /// no block any more: its place is gone, a fence was typed into it, or the fences around
+        /// it were deleted. Read from the whole text, as the fences are when a fix is asked for.
+        /// </summary>
+        private static string? EnclosingFence(AiRun run)
+        {
+            if (run.Start is not { IsDeleted: false } start || run.End is not { IsDeleted: false } end || end.Offset < start.Offset) return null;
+
+            TextDocument document = run.Document;
+            var lines = new string[document.LineCount];
+            foreach (DocumentLine line in document.Lines) lines[line.LineNumber - 1] = document.GetText(line);
+            MdFence[] kinds = FenceTracker.Classify(lines);
+
+            int first = document.GetLineByOffset(start.Offset).LineNumber, last = document.GetLineByOffset(end.Offset).LineNumber;
+            for (int n = first; n <= last; n++)
+                if (kinds[n - 1] != MdFence.Inside) return null;
+
+            // Upward through the block's lines: the delimiter above them is the one that opened it.
+            int open = first - 1;
+            while (open >= 1 && kinds[open - 1] == MdFence.Inside) open--;
+            if (open < 1 || kinds[open - 1] != MdFence.Delimiter) return null;
+            return FenceTracker.DelimiterOf(lines[open - 1]) is { } fence ? new string(fence.Char, fence.Length) : null;
+        }
+
+        /// <summary>
+        /// For the fix of a diagram block whose result is in: the fence around its source as the
+        /// note reads now, "" when none stands around it any more. The session checks the result
+        /// against it, at every drawing of the pane and again at the click on Replace selection.
+        /// Null for every other request: not a fix, still running, or its source not shown.
+        /// </summary>
+        private string? FixFenceNow(AiRun run) =>
+            run.Session.Action.BlockFence == null || !run.Session.Finished || !AiSourceShown(run) ? null : EnclosingFence(run) ?? "";
 
         /// <summary>
         /// Everything before the request: the refusals, the source text, the session, its anchors
@@ -709,7 +762,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         private bool AiSourceShown(AiRun run) => ReferenceEquals(_shown, run.Note) && ReferenceEquals(Editor.Document, run.Document);
 
-        private AiSourceFacts AiFacts(AiRun run) => new(AiSourceShown(run), AiReadOnly, AiSourceUnchanged(run));
+        private AiSourceFacts AiFacts(AiRun run) => new(AiSourceShown(run), AiReadOnly, AiSourceUnchanged(run), FixFenceNow(run));
 
         /// <summary>A selection is unchanged while the text between its anchors still equals what was sent; a whole note has nothing to replace.</summary>
         private static bool AiSourceUnchanged(AiRun run)

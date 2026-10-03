@@ -225,8 +225,12 @@ namespace Kil0bitSystemMonitor.Pad
         /// can be sent from it. <paramref name="run"/> starts an action; <paramref name="setUp"/> opens the settings.
         /// With <paramref name="fixDiagram"/> (the caret is in a diagram or math block that shows an
         /// error; part 2, spec 2.2), Fix diagram follows Draw as diagram and runs it.
+        /// <paramref name="diagrams"/> is false in a note that is not shown as Markdown: Draw as
+        /// diagram is left out there, with Fix diagram. A fenced block is not drawn in such a note,
+        /// and Insert below would write one into a source file.
         /// </summary>
-        public static MenuItem AiMenu(TextEditor editor, bool enabled, Action<PadAiAction> run, Action setUp, Action? fixDiagram = null)
+        public static MenuItem AiMenu(TextEditor editor, bool enabled, Action<PadAiAction> run, Action setUp, Action? fixDiagram = null,
+                                      bool diagrams = true)
         {
             var ai = new MenuItem { Header = "AI", Icon = ((char)0xE99A).ToString() };
             if (!enabled)
@@ -245,7 +249,7 @@ namespace Kil0bitSystemMonitor.Pad
                     ai.Items.Add(new Separator());
                     ai.Items.Add(Item(action.Name + "…", "Ctrl+Shift+A", () => run(chosen)));
                 }
-                else
+                else if (diagrams || !ReferenceEquals(action, PadAiAction.Diagram))
                 {
                     ai.Items.Add(Item(action.Name, null, () => run(chosen), selected || !action.NeedsSelection));
                     // It takes the failing block's source, whatever is selected: no selection to wait for.

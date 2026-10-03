@@ -396,6 +396,55 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(reply, v.Result);
         }
 
+        // ---- the fence as the note has it now (final review, D1) -----------------------------------
+
+        /// <summary>The facts of a source that is shown and unchanged, in a block whose fence now reads <paramref name="fence"/> ("" for no block).</summary>
+        private static AiSourceFacts FenceNow(string fence) => new(true, false, true, fence);
+
+        [Fact]
+        public void A_fix_is_checked_against_the_fence_its_block_has_now_not_the_one_it_was_asked_with()
+        {
+            const string reply = "# Root\n```\ncode\n```";             // text of the block while its fence is four backticks
+            AiSession asked = Done(Fix("````"), "# Rot", reply);
+
+            Assert.True(asked.View(Ok).CanReplace);                    // the window did not look: the fence it was asked with
+            Assert.True(asked.View(FenceNow("````")).CanReplace);
+
+            AiPaneView shortened = asked.View(FenceNow("```"));        // the user shortened the fences to three
+            Assert.False(shortened.CanReplace);
+            Assert.Equal(HoldsFence, shortened.Status);
+            Assert.True(shortened.CanCopy);
+
+            // And the other way: a result refused for three backticks fits once the block has four.
+            AiSession refused = Done(Fix("```"), "# Rot", reply);
+            Assert.False(refused.View(Ok).CanReplace);
+            Assert.True(refused.View(FenceNow("````")).CanReplace);
+            Assert.Equal("", refused.View(FenceNow("````")).Status);
+        }
+
+        [Theory]
+        [InlineData("a\n~~~\nb", false)]                               // any fence line would open a block that never closes
+        [InlineData("a\n```js\nb", false)]
+        [InlineData("a\n$$\nb", false)]
+        [InlineData("flowchart LR\n  a --> b", true)]                  // no fence line: it is only text now, and it fits
+        [InlineData("a ``` b\n    ~~~", true)]                         // not lines that open a fence
+        public void A_fix_whose_source_stands_in_no_block_any_more_replaces_only_a_result_with_no_fence_line(string reply, bool fits)
+        {
+            AiPaneView v = Done(Fix("```"), "source", reply).View(FenceNow(""));
+
+            Assert.Equal(fits, v.CanReplace);
+            Assert.Equal(fits ? "" : HoldsFence, v.Status);
+        }
+
+        [Fact]
+        public void The_fence_of_the_note_counts_for_a_fix_only()
+        {
+            const string fenced = "a\n```\nb";
+
+            Assert.True(Done(PadAiAction.Improve, "a", fenced).View(FenceNow("```")).CanReplace);
+            Assert.True(Done(PadAiAction.Diagram, "a", fenced).View(FenceNow("")).CanReplace);
+        }
+
         [Fact]
         public void The_other_reasons_come_before_the_fence()
         {

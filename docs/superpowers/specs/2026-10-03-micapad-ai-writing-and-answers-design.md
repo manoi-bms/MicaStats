@@ -119,14 +119,14 @@ A pane on the right, 320 wide, in the same place as History and Search notes. Op
 - **Timeout:** the request fails after 60 seconds without any update.
 - **Errors** are worded by the existing `AiErrorText` (key rejected, timed out, unreachable, busy, or the server's own message).
 - **Stop** keeps the partial text and marks it "Stopped". A stopped or cut-short rewrite cannot replace the selection.
-- **Daily limit reached:** "Today's AI limit is used up", with the reset time, as Ask MicaStats words it.
+- **Daily limit reached:** the sentence Ask MicaStats uses: "You have asked N questions today, the daily limit set in Settings > AI. The count starts again at midnight."
 - **No key or model:** the sentence from `AiProviderFactory` ("Add an API key in Settings > AI.").
 - The request path never throws into the window: every run ends with exactly one Done.
 - The diagnostics log records, in the `pad` area, the action kind, the character counts and the outcome. It never records note text, the question or the answer.
 
 ## 6. The prompt
 
-One fixed system prompt, a constant so Claude can cache it:
+One fixed system prompt, a constant. **(R)** It is not marked for Anthropic prompt caching: it is far shorter than the smallest prefix the API caches.
 
 ```
 You are the writing assistant built into MicaPad, a notepad. You work on text from the user's own notes.

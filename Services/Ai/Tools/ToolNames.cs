@@ -22,5 +22,11 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
             GetLiveStatus, GetHistory, GetTopProcesses, ListSlowdownReports, GetSlowdownReport,
             ListAlerts, GetHardware, GetBattery, GetBootSummary,
         };
+
+        /// <summary>The two MicaPad note tools, each behind its own off-by-default switch.</summary>
+        public const string SearchNotes = "search_notes", GetNote = "get_note";
+
+        /// <summary>The two MicaPad note tools; offered only while their switch is on.</summary>
+        public static IReadOnlyList<string> Notes { get; } = new[] { SearchNotes, GetNote };
     }
 }

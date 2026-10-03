@@ -699,6 +699,8 @@ namespace Kil0bitSystemMonitor.Models
         private string _aiHotkey = "Ctrl+Alt+A";
         private int _aiDailyLimit = 100;
         private bool _aiHistoryEnabled;
+        private bool _aiNotesInAsk;
+        private bool _aiNotesInMcp;
         private string _aiMcpMode = Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Off;
         private int _aiMcpHttpPort = 47831;
 
@@ -746,6 +748,12 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>Keep 7 days of per-minute history on disk for the assistant and MCP clients.</summary>
         public bool AiHistoryEnabled { get => _aiHistoryEnabled; set { Set(ref _aiHistoryEnabled, value); } }
+
+        /// <summary>Ask MicaStats may search and read MicaPad notes (MicaPad AI spec 2, 1.1). Off by default.</summary>
+        public bool AiNotesInAsk { get => _aiNotesInAsk; set { Set(ref _aiNotesInAsk, value); } }
+
+        /// <summary>MCP clients may search and read MicaPad notes. Off by default; only matters while MCP is on.</summary>
+        public bool AiNotesInMcp { get => _aiNotesInMcp; set { Set(ref _aiNotesInMcp, value); } }
 
         /// <summary>
         /// <c>"Off"</c>, <c>"Stdio"</c> or <c>"Http"</c> (see <c>AiMcpModes</c>). Anything else is Off,

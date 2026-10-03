@@ -1,0 +1,1279 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Threading;
+using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Editing;
+using Kil0bitSystemMonitor.Models;
+using Kil0bitSystemMonitor.Pad;
+using Kil0bitSystemMonitor.Services.Ai;
+using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Pad.Ai;
+using Microsoft.Extensions.AI;
+using Xunit;
+
+using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using MenuItem = System.Windows.Controls.MenuItem;
+
+namespace Kil0bitSystemMonitor.Tests
+{
+    /// <summary>
+    /// AI actions in a MicaPad window built on the shared UI thread (never shown), over a scripted
+    /// model: the AI menu, Ctrl+Shift+A, a request and its pane, the anchors that follow the source
+    /// text while the note is edited, Replace selection, Insert below and Copy, and what ends a
+    /// request. No network, no real clipboard, no %APPDATA%.
+    /// </summary>
+    public class MicaPadAiTests
+    {
+        private const ModifierKeys CtrlShift = ModifierKeys.Control | ModifierKeys.Shift;
+
+        private const string AiOff = "Turn on Settings → MicaPad → AI to use AI here";
+        private const string TextChanged = "The text changed since the request; use Insert below or Copy";
+        private const string NotShown = "Show the note this came from to apply it";
+        private const string ReadOnly = "This note is read-only";
+        private const string NoText = "There is no text to work on";
+
+        /// <summary>A note of three lines; the tests select its middle one.</summary>
+        private const string Note = "Intro\nbad text here\nOutro";
+        private const string Picked = "bad text here";
+
+        /// <summary>A window, its fakes and what they recorded.</summary>
+        private sealed class Harness
+        {
+            public Harness(PadTestEnv env)
+            {
+                Env = env;
+                Usage = new UsageMeter(env.FileOf("ai-usage.json"), () => new DateTime(2026, 10, 3, 12, 0, 0));
+                Client = Model;
+                Window = new MicaPadWindow(env.Workspace, new AppConfig());
+                Window.AiEnabled = () => AiOn;
+                Window.AiRunnerFactory = () =>
+                {
+                    RunnersBuilt++;
+                    return new PadAiRunner(() => new AiClientResult(Client, Problem, false), Usage, () => Limit);
+                };
+                Window.AiCopy = Copied.Add;
+                Window.OpenPadSettings = () => SettingsOpened++;
+                Window.AiLog = Log.Add;
+            }
+
+            public PadTestEnv Env { get; }
+
+            public MicaPadWindow Window { get; }
+
+            public AiPane Pane => Window.AiPanel;
+
+            public TextEditor Editor => Window.Editor;
+
+            public UsageMeter Usage { get; }
+
+            /// <summary>The model every runner talks to unless <see cref="Client"/> names another.</summary>
+            public ScriptedChatClient Model { get; } = new();
+
+            public IChatClient? Client { get; set; }
+
+            /// <summary>What the provider says is wrong; with a null <see cref="Client"/>, no request can be made.</summary>
+            public string? Problem { get; set; }
+
+            public int Limit { get; set; } = 100;
+
+            public bool AiOn { get; set; } = true;
+
+            public List<string> Copied { get; } = new();
+
+            public List<string> Log { get; } = new();
+
+            public int SettingsOpened { get; set; }
+
+            /// <summary>How many times the window asked for a runner.</summary>
+            public int RunnersBuilt { get; set; }
+
+            /// <summary>The note the window shows.</summary>
+            public OpenNote Shown => Env.Workspace.Active!;
+
+            /// <summary>The user message of a request the scripted model received.</summary>
+            public string Sent(int index = 0) => Model.Requests[index].Messages[1].Text;
+        }
+
+        /// <summary>
+        /// A model that streams <c>first</c>, says it was reached, waits for <see cref="Gate"/>,
+        /// then streams the rest: the test acts while the request is in flight.
+        /// </summary>
+        private sealed class GatedModel : IChatClient
+        {
+            private readonly string _first;
+            private readonly string _rest;
+
+            public GatedModel(string first, string rest)
+            {
+                _first = first;
+                _rest = rest;
+            }
+
+            public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public TaskCompletionSource Gate { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            /// <summary>The reply ends at the output cap.</summary>
+            public bool CutShort { get; init; }
+
+            /// <summary>True once the request was cancelled while it waited.</summary>
+            public bool Cancelled { get; private set; }
+
+            public List<string> Sent { get; } = new();
+
+            public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+                                                       CancellationToken cancellationToken = default) =>
+                throw new NotSupportedException();
+
+            public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,
+                ChatOptions? options = null, CancellationToken cancellationToken = default)
+            {
+                Sent.Add(messages.Last().Text);
+                return Stream(cancellationToken);
+            }
+
+            private async IAsyncEnumerable<ChatResponseUpdate> Stream([EnumeratorCancellation] CancellationToken ct)
+            {
+                await Task.Yield();
+                yield return new ChatResponseUpdate(ChatRole.Assistant, _first);
+                Reached.TrySetResult();
+                try
+                {
+                    await Gate.Task.WaitAsync(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    Cancelled = true;
+                    throw;
+                }
+                var last = new ChatResponseUpdate(ChatRole.Assistant, _rest);
+                if (CutShort) last.FinishReason = ChatFinishReason.Length;
+                yield return last;
+            }
+
+            public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+            public void Dispose()
+            {
+            }
+        }
+
+        /// <summary>Runs an async test on the UI thread over a loaded window; a test that hangs fails after a minute.</summary>
+        private static async Task OnUiAsync(Func<Harness, Task> test)
+        {
+            Task body = UiThread.RunAsync(async () =>
+            {
+                var dispatcher = Dispatcher.CurrentDispatcher;
+                using var env = new PadTestEnv(post: action => dispatcher.BeginInvoke(action));
+                var h = new Harness(env);
+                try
+                {
+                    h.Window.LoadSession();
+                    await test(h);
+                }
+                finally
+                {
+                    h.Window.CloseForExit();
+                }
+            });
+            await body.WaitAsync(TimeSpan.FromSeconds(60));
+        }
+
+        private static Task OnUi(Action<Harness> test) => OnUiAsync(h =>
+        {
+            test(h);
+            return Task.CompletedTask;
+        });
+
+        /// <summary>Lets the dispatcher run until <paramref name="done"/>, for at most ten seconds.</summary>
+        private static async Task Until(Func<bool> done, string what)
+        {
+            var waited = Stopwatch.StartNew();
+            while (!done())
+            {
+                Assert.True(waited.Elapsed < TimeSpan.FromSeconds(10), "Timed out waiting for " + what);
+                await Task.Delay(10);
+            }
+        }
+
+        /// <summary>Waits until the gated model has streamed its first piece into the window.</summary>
+        private static Task Reached(GatedModel model) => model.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        /// <summary>Waits for a request started by a click (which nothing awaits) to end.</summary>
+        private static Task Finished(Harness h, AiSession? after = null) =>
+            Until(() => h.Window.AiSessionNow is { Finished: true } now && !ReferenceEquals(now, after), "the request to end");
+
+        /// <summary>Sets the shown note's text and selects <paramref name="select"/> in it, or nothing.</summary>
+        private static void Write(Harness h, string text, string? select = null)
+        {
+            h.Editor.Document.Text = text;
+            if (select == null) h.Editor.Select(0, 0);
+            else h.Editor.Select(text.IndexOf(select, StringComparison.Ordinal), select.Length);
+        }
+
+        private static void Click(ButtonBase button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+        /// <summary>The AI submenu of a freshly built editor menu.</summary>
+        private static MenuItem AiMenu(Harness h)
+        {
+            h.Window.RefreshEditorMenu();
+            return PadMenuTests.ItemOf(h.Window.EditorMenu, "AI");
+        }
+
+        private static string[] Headers(MenuItem item) =>
+            item.Items.Cast<object>().Select(i => i is MenuItem m ? (string)m.Header : "-").ToArray();
+
+        private static MenuItem Sub(MenuItem menu, string header) =>
+            menu.Items.OfType<MenuItem>().Single(m => (string)m.Header == header);
+
+        private static string Count(int n) => n.ToString(CultureInfo.InvariantCulture);
+
+        // ---- the menu ------------------------------------------------------------------------
+
+        [Fact]
+        public Task With_AI_off_the_AI_menu_holds_only_Set_up_AI_which_opens_the_MicaPad_settings() => OnUi(h =>
+        {
+            h.AiOn = false;
+            Write(h, Note, Picked);
+
+            h.Window.RefreshEditorMenu();
+            string[] top = PadMenuTests.Headers(h.Window.EditorMenu);
+            Assert.Equal("Tools", top[Array.IndexOf(top, "AI") - 1]);   // right after Tools
+            MenuItem ai = PadMenuTests.ItemOf(h.Window.EditorMenu, "AI");
+            Assert.Equal(new[] { "Set up AI…" }, Headers(ai));
+
+            PadMenuTests.Click(Sub(ai, "Set up AI…"));
+
+            Assert.Equal(1, h.SettingsOpened);
+            Assert.Empty(h.Model.Requests);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+        });
+
+        [Fact]
+        public Task With_AI_on_the_menu_lists_the_eight_actions_and_a_rewrite_waits_for_a_selection() => OnUi(h =>
+        {
+            Write(h, Note);
+
+            MenuItem ai = AiMenu(h);
+            Assert.Equal(new[]
+            {
+                "Improve writing", "Fix spelling and grammar", "Make shorter", "Translate to English", "Translate to Thai",
+                "Summarize", "Explain", "-", "Ask AI…",
+            }, Headers(ai));
+            Assert.Equal("Ctrl+Shift+A", Sub(ai, "Ask AI…").InputGestureText);
+            foreach (string rewrite in new[] { "Improve writing", "Fix spelling and grammar", "Make shorter", "Translate to English", "Translate to Thai" })
+                Assert.False(Sub(ai, rewrite).IsEnabled, rewrite);
+            foreach (string other in new[] { "Summarize", "Explain", "Ask AI…" })
+                Assert.True(Sub(ai, other).IsEnabled, other);
+
+            h.Editor.Select(6, Picked.Length);
+            Assert.All(AiMenu(h).Items.OfType<MenuItem>(), item => Assert.True(item.IsEnabled, (string)item.Header));
+            Assert.Equal(0, h.SettingsOpened);
+        });
+
+        [Fact]
+        public Task A_menu_item_runs_its_action() => OnUiAsync(async h =>
+        {
+            Write(h, "The cat sat.");
+            h.Model.Reply("- a cat sat");
+
+            PadMenuTests.Click(Sub(AiMenu(h), "Summarize"));
+            await Finished(h);
+
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Summarize.Instruction, "The cat sat."), h.Sent());
+            Assert.Equal("- a cat sat", h.Pane.ResultBox.Shown);
+        });
+
+        [Fact]
+        public Task Ask_AI_in_the_menu_opens_the_pane_on_its_instruction_box() => OnUi(h =>
+        {
+            Write(h, Note, Picked);
+
+            PadMenuTests.Click(Sub(AiMenu(h), "Ask AI…"));
+
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal(Visibility.Visible, h.Pane.InstructionBox.Visibility);
+            Assert.True(h.Window.AiSessionNow!.AwaitingInstruction);
+            Assert.Empty(h.Model.Requests);
+        });
+
+        // ---- a request and its result ----------------------------------------------------------
+
+        [Fact]
+        public Task Improve_on_a_selection_sends_the_prompt_shows_the_reply_and_Replace_is_one_undo_step() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Better text here.");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            Assert.Equal(PadAiPrompts.System, request.Messages[0].Text);
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Improve.Instruction, Picked), request.Messages[1].Text);
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal("Improve writing", h.Pane.TitleText.Text);
+            Assert.Equal("Selection, 13 characters", h.Pane.SourceText.Text);
+            Assert.Equal("Better text here.", h.Pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Collapsed, h.Pane.StopButton.Visibility);
+            Assert.Equal(Visibility.Visible, h.Pane.ReplaceButton.Visibility);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(Note, h.Editor.Document.Text);          // nothing changes before a click
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("Intro\nBetter text here.\nOutro", h.Editor.Document.Text);
+            Assert.Equal("Better text here.", h.Editor.SelectedText);
+            Assert.Equal("Replaced the selection", h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+
+            h.Editor.Undo();                                     // one Ctrl+Z
+            Assert.Equal(Note, h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task Summarize_with_no_selection_runs_on_the_whole_note_and_offers_Insert_and_Copy_but_not_Replace() => OnUiAsync(async h =>
+        {
+            Write(h, "alpha\nbeta\n");
+            h.Model.Reply("- sum");
+
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Summarize.Instruction, "alpha\nbeta\n"), h.Sent());
+            Assert.Equal("Summarize", h.Pane.TitleText.Text);
+            Assert.Equal("Whole note, 11 characters", h.Pane.SourceText.Text);
+            Assert.Equal("- sum", h.Pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Collapsed, h.Pane.ReplaceButton.Visibility);
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+            Assert.True(h.Pane.CopyButton.IsEnabled);
+
+            Click(h.Pane.ReplaceButton);                         // not offered: even a forced click does nothing
+            Assert.Equal("alpha\nbeta\n", h.Editor.Document.Text);
+
+            Click(h.Pane.InsertButton);                          // at the end of the note
+            Assert.Equal("alpha\nbeta\n\n- sum\n", h.Editor.Document.Text);
+            Assert.Equal("- sum", h.Editor.SelectedText);
+        });
+
+        [Fact]
+        public Task A_rewrite_that_is_too_long_shows_the_refusal_and_makes_no_request() => OnUiAsync(async h =>
+        {
+            string text = new string('x', PadAiAction.RewriteMaxChars + 1);
+            Write(h, text, text);
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal("Select less text: at most 8,000 characters for a rewrite", h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.False(h.Pane.RetryButton.IsEnabled);
+            Assert.Equal(new[] { "AI improve: 0 chars sent, 0 chars back, refused" }, h.Log);
+        });
+
+        [Fact]
+        public Task Insert_below_adds_the_result_after_the_sources_last_line_as_one_undo_step() => OnUiAsync(async h =>
+        {
+            Write(h, "one\r\ntwo\r\nthree", "two");              // the note's own line ending is used
+            h.Model.Reply("TWO");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Click(h.Pane.InsertButton);
+
+            Assert.Equal("one\r\ntwo\r\n\r\nTWO\r\nthree", h.Editor.Document.Text);
+            Assert.Equal("TWO", h.Editor.SelectedText);
+            Assert.Equal("Inserted below", h.Pane.StatusText.Text);
+
+            h.Editor.Undo();
+            Assert.Equal("one\r\ntwo\r\nthree", h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task Insert_below_after_Replace_lands_under_the_new_text() => OnUiAsync(async h =>
+        {
+            Write(h, "one\ntwo\nthree", "two");
+            h.Model.Reply("TWO\nand a half");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Click(h.Pane.ReplaceButton);
+            Click(h.Pane.InsertButton);
+
+            Assert.Equal("one\nTWO\nand a half\n\nTWO\nand a half\nthree", h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task Copy_hands_the_result_to_the_copy_action_and_says_so() => OnUiAsync(async h =>
+        {
+            Write(h, "The cat sat.");
+            h.Model.Reply("\n- a cat sat\n\n");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+
+            Click(h.Pane.CopyButton);
+
+            Assert.Equal(new[] { "- a cat sat" }, h.Copied);
+            Assert.Equal(h.Window.AiSessionNow!.ResultForNote, h.Copied[0]);
+            Assert.Equal("Copied", h.Window.StatusMessage.Text);
+            Assert.Equal(Visibility.Visible, h.Window.StatusMessage.Visibility);
+            Assert.Equal("The cat sat.", h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task Try_again_runs_the_same_action_in_a_new_session_and_without_a_selection_on_the_same_text() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("First try").Reply("Second try").Reply("Third try");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            AiSession first = h.Window.AiSessionNow!;
+
+            Click(h.Pane.RetryButton);
+            await Finished(h, after: first);
+
+            AiSession second = h.Window.AiSessionNow!;
+            Assert.NotSame(first, second);                        // a session runs once
+            Assert.Equal(2, h.Model.Requests.Count);
+            Assert.Equal(h.Sent(0), h.Sent(1));
+            Assert.Equal("Second try", h.Pane.ResultBox.Shown);
+
+            h.Editor.Select(0, 0);                                // the selection is gone; the text is where it was
+            Click(h.Pane.RetryButton);
+            await Finished(h, after: second);
+
+            Assert.Equal(h.Sent(0), h.Sent(2));
+            Assert.Equal("Selection, 13 characters", h.Pane.SourceText.Text);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal("Intro\nThird try\nOutro", h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task A_new_action_cancels_the_one_still_running() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var slow = new GatedModel("Slow", " reply");
+            h.Client = slow;
+            Task first = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(slow);
+
+            h.Client = h.Model;
+            h.Model.Reply("- summary");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            await first;
+
+            Assert.True(slow.Cancelled);
+            Assert.Equal("Summarize", h.Pane.TitleText.Text);
+            Assert.Equal("- summary", h.Pane.ResultBox.Shown);
+            Assert.Equal("", h.Pane.StatusText.Text);             // the first one's end left the pane alone
+            Assert.Equal(Visibility.Collapsed, h.Pane.StopButton.Visibility);
+        });
+
+        [Fact]
+        public Task The_log_line_has_the_action_the_counts_and_the_outcome_and_never_the_text() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            int sent = PadAiPrompts.ForAction(PadAiAction.Improve.Instruction, Picked).Length;
+            Assert.Equal(new[] { "AI improve: " + Count(sent) + " chars sent, 9 chars back, ok" }, h.Log);
+        });
+
+        // ---- review focus 1: a credential in the selection -------------------------------------
+
+        [Fact]
+        public Task A_credential_in_the_selection_is_sent_as_a_placeholder_and_comes_back_as_its_pill() => OnUiAsync(async h =>
+        {
+            h.Env.Vault.Load();
+            h.Env.Vault.Create("246810");
+            string id = h.Env.Vault.Add("hunter2", "Bank", null);
+            string pill = SecretTokens.Format(id);
+            string text = "login with " + pill + " pls";
+            Write(h, text, text);
+            h.Model.Reply("Please log in with [[CREDENTIAL_1]].");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Improve.Instruction, "login with [[CREDENTIAL_1]] pls"), request.Messages[1].Text);
+            string everything = string.Join("\n", request.Messages.Select(m => m.Text).Concat(h.Log));
+            Assert.DoesNotContain("{{secret:", everything, StringComparison.Ordinal);
+            Assert.DoesNotContain(id, everything, StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", everything, StringComparison.Ordinal);
+
+            Assert.Equal("Please log in with " + pill + ".", h.Pane.ResultBox.Shown);   // the pill is back
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal("Please log in with " + pill + ".", h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task A_reply_that_lost_the_credential_cannot_replace_the_selection() => OnUiAsync(async h =>
+        {
+            const string text = "login with {{secret:K7Q2M9XD}} pls";
+            Write(h, text, text);
+            h.Model.Reply("Please log in.");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Contains("[[CREDENTIAL_1]]", h.Sent(), StringComparison.Ordinal);
+            Assert.DoesNotContain("{{secret:", h.Sent(), StringComparison.Ordinal);
+            Assert.Equal(Visibility.Visible, h.Pane.ReplaceButton.Visibility);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(SecretMask.Lost, h.Pane.StatusText.Text);
+
+            Click(h.Pane.ReplaceButton);                          // even a forced click keeps the pill
+            Assert.Equal(text, h.Editor.Document.Text);
+        });
+
+        // ---- review focus 2: the note is edited while the answer streams -----------------------
+
+        [Fact]
+        public Task Text_typed_around_the_selection_while_the_request_runs_does_not_move_the_replacement() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            var document = h.Editor.Document;
+            document.Insert(0, "A new first line\n");                                  // far before it
+            int start = document.Text.IndexOf(Picked, StringComparison.Ordinal);
+            document.Insert(start, ">> ");                                             // right at its start
+            document.Insert(start + 3 + Picked.Length, " <<");                         // right at its end
+            document.Insert(document.TextLength, "\nA new last line");                 // after it
+            model.Gate.SetResult();
+            await run;
+
+            Assert.Equal("", h.Pane.StatusText.Text);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("A new first line\nIntro\n>> Good text <<\nOutro\nA new last line", document.Text);
+            Assert.Equal("Good text", h.Editor.SelectedText);
+        });
+
+        [Fact]
+        public Task Text_typed_inside_the_selection_refuses_Replace_and_Insert_below_still_works() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            h.Editor.Document.Insert(Note.IndexOf("text", StringComparison.Ordinal), "new ");   // "bad new text here"
+            model.Gate.SetResult();
+            await run;
+
+            Assert.Equal(Visibility.Visible, h.Pane.ReplaceButton.Visibility);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(TextChanged, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);                          // even a forced click replaces nothing
+            Assert.Equal("Intro\nbad new text here\nOutro", h.Editor.Document.Text);
+
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+            Click(h.Pane.InsertButton);
+            Assert.Equal("Intro\nbad new text here\n\nGood text\nOutro", h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task An_edit_inside_the_source_after_the_reply_turns_Replace_off_at_once_and_undoing_it_turns_it_back_on() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+
+            h.Editor.Document.Insert(Note.IndexOf("text", StringComparison.Ordinal), "x");
+
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(TextChanged, h.Pane.StatusText.Text);
+
+            h.Editor.Undo();
+
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal("", h.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task Deleting_the_source_text_refuses_Replace() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            h.Editor.Document.Remove(3, Note.Length - 6);         // from inside "Intro" to inside "Outro"
+            h.Editor.Document.Insert(3, Picked);                  // the same words typed again are not the source
+
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(TextChanged, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal("Int" + Picked + "tro", h.Editor.Document.Text);
+        });
+
+        // ---- review focus 3: stopped, failed or cut short ---------------------------------------
+
+        [Fact]
+        public Task A_stopped_request_keeps_its_text_and_cannot_replace_the_selection() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good", " text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+            Assert.Equal(Visibility.Visible, h.Pane.StopButton.Visibility);
+            Assert.True(h.Window.AiSessionNow!.Running);
+
+            Click(h.Pane.StopButton);
+            await run;
+
+            Assert.True(model.Cancelled);
+            Assert.Equal("Stopped", h.Pane.StatusText.Text);
+            Assert.Equal("Good", h.Pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Collapsed, h.Pane.StopButton.Visibility);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(Note, h.Editor.Document.Text);
+            Assert.True(h.Pane.InsertButton.IsEnabled);           // a partial reply may still be inserted below
+            Assert.True(h.Pane.RetryButton.IsEnabled);
+            Assert.EndsWith(", 4 chars back, stopped", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task A_reply_cut_short_at_the_length_limit_cannot_replace_the_selection() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good", " te") { CutShort = true };
+            model.Gate.SetResult();
+            h.Client = model;
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal("Cut short at the length limit", h.Pane.StatusText.Text);
+            Assert.Equal("Good te", h.Pane.ResultBox.Shown);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(Note, h.Editor.Document.Text);
+            Assert.EndsWith(", cut short", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task A_failed_request_shows_the_error_and_can_neither_replace_nor_insert() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var boom = new InvalidOperationException("boom");
+            h.Model.Fail(boom);
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal(AiErrorText.Describe(boom), h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.True(h.Pane.RetryButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+            Click(h.Pane.InsertButton);
+            Assert.Equal(Note, h.Editor.Document.Text);
+            Assert.EndsWith(", 0 chars back, failed", Assert.Single(h.Log), StringComparison.Ordinal);
+            Assert.DoesNotContain("boom", h.Log[0], StringComparison.Ordinal);
+        });
+
+        // ---- review focus 4: the source note is switched away from or closed --------------------
+
+        [Fact]
+        public Task On_another_tab_Replace_and_Insert_are_off_and_that_note_is_never_edited() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            OpenNote source = h.Shown;
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            h.Window.NewTab();
+            OpenNote other = h.Shown;
+            Write(h, "another note entirely, longer than the first one");
+
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);  // switching tabs keeps the pane and its result
+            Assert.Equal("Good text", h.Pane.ResultBox.Shown);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.Equal(NotShown, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);                          // even forced clicks edit nothing
+            Click(h.Pane.InsertButton);
+            Assert.Equal("another note entirely, longer than the first one", other.TextProvider());
+            Assert.Equal(Note, source.TextProvider());
+
+            h.Window.SelectTab(0);                                // back on the source note
+
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+            Assert.Equal("", h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal("Intro\nGood text\nOutro", source.TextProvider());
+            Assert.Equal("another note entirely, longer than the first one", other.TextProvider());
+        });
+
+        [Fact]
+        public Task Switching_tabs_while_the_answer_streams_keeps_the_request_and_edits_no_other_note() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            OpenNote source = h.Shown;
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            h.Window.NewTab();
+            OpenNote other = h.Shown;
+            Write(h, "the other note");
+            model.Gate.SetResult();
+            await run;
+
+            Assert.False(model.Cancelled);
+            Assert.Equal("Good text", h.Pane.ResultBox.Shown);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+            Click(h.Pane.InsertButton);
+            Assert.Equal("the other note", other.TextProvider());
+            Assert.Equal(Note, source.TextProvider());
+
+            h.Window.SelectTab(0);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+        });
+
+        [Fact]
+        public Task Closing_the_source_note_cancels_the_request_and_closes_the_pane() => OnUiAsync(async h =>
+        {
+            Write(h, "the other note");
+            OpenNote other = h.Shown;
+            h.Window.NewTab();
+            Write(h, Note, Picked);
+            OpenNote source = h.Shown;
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            h.Window.CloseTab(source);
+            await run;
+
+            Assert.True(model.Cancelled);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Same(other, h.Shown);
+            Assert.Equal("the other note", other.TextProvider());
+        });
+
+        [Fact]
+        public Task Closing_another_note_leaves_the_request_alone() => OnUiAsync(async h =>
+        {
+            Write(h, "the other note");
+            OpenNote other = h.Shown;
+            h.Window.NewTab();
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            h.Window.CloseTab(other);
+            model.Gate.SetResult();
+            await run;
+
+            Assert.False(model.Cancelled);
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+        });
+
+        [Fact]
+        public Task Closing_the_window_cancels_the_request() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            h.Window.CloseForExit();
+            await run;
+
+            Assert.True(model.Cancelled);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal(Note, h.Shown.TextProvider());
+        });
+
+        [Fact]
+        public Task Hiding_the_last_window_with_its_close_button_stops_the_request() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good", " text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            h.Window.CloseByUser();
+            await run;
+
+            Assert.True(h.Window.IsHiddenByClose);
+            Assert.True(model.Cancelled);
+            Assert.Equal("Stopped", h.Pane.StatusText.Text);      // nothing runs behind a hidden window
+        });
+
+        [Fact]
+        public Task The_close_button_of_the_pane_cancels_the_request_and_closes_the_pane() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            Click(h.Pane.CloseButton);
+            await run;
+
+            Assert.True(model.Cancelled);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal(Note, h.Editor.Document.Text);
+        });
+
+        // ---- review focus 5: AI off, no key, the daily limit -------------------------------------
+
+        [Fact]
+        public Task With_AI_off_Ctrl_Shift_A_sends_nothing_and_says_how_to_turn_it_on() => OnUi(h =>
+        {
+            h.AiOn = false;
+            Write(h, Note, Picked);
+
+            Assert.True(h.Window.HandleShortcut(Key.A, CtrlShift));
+
+            Assert.Equal(AiOff, h.Window.StatusMessage.Text);
+            Assert.Equal(Visibility.Visible, h.Window.StatusMessage.Visibility);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+        });
+
+        [Fact]
+        public Task With_AI_off_a_direct_call_builds_no_runner_counts_nothing_and_sends_nothing() => OnUiAsync(async h =>
+        {
+            h.AiOn = false;
+            Write(h, Note, Picked);
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Equal(AiOff, h.Window.StatusMessage.Text);   // the user is told why
+            Assert.Empty(h.Log);
+        });
+
+        [Fact]
+        public Task With_AI_turned_off_while_the_pane_waits_an_instruction_entered_sends_nothing() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Window.ToggleAi();
+            AiSession waiting = h.Window.AiSessionNow!;
+            Assert.True(waiting.AwaitingInstruction);
+            h.AiOn = false;
+
+            h.Pane.InstructionBox.Text = "make it positive";
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Same(waiting, h.Window.AiSessionNow);         // nothing started
+            Assert.Equal(AiOff, h.Window.StatusMessage.Text);
+            Assert.Equal(Visibility.Visible, h.Window.StatusMessage.Visibility);
+        });
+
+        [Fact]
+        public Task With_AI_turned_off_before_Try_again_nothing_is_sent() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            AiSession done = h.Window.AiSessionNow!;
+            Assert.Equal(1, h.Usage.UsedToday);
+            h.AiOn = false;
+
+            Click(h.Pane.RetryButton);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            Assert.Single(h.Model.Requests);
+            Assert.Equal(1, h.Usage.UsedToday);
+            Assert.Equal(1, h.RunnersBuilt);
+            Assert.Same(done, h.Window.AiSessionNow);
+            Assert.Equal(AiOff, h.Window.StatusMessage.Text);
+        });
+
+        [Fact]
+        public Task With_AI_turned_off_between_the_click_and_the_request_the_pane_says_so_and_nothing_is_sent() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            int asked = 0;
+            h.Window.AiEnabled = () => asked++ == 0;              // on at the click, off when the request is about to start
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal(2, asked);                               // asked again right before the request
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Equal(AiOff, h.Pane.StatusText.Text);
+            Assert.False(h.Window.AiSessionNow!.Running);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(new[] { "AI improve: 0 chars sent, 0 chars back, failed" }, h.Log);
+        });
+
+        [Fact]
+        public Task A_setting_that_cannot_be_read_counts_as_off() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+            h.Window.AiEnabled = () => throw new InvalidOperationException("no settings");
+
+            Assert.Equal(new[] { "Set up AI…" }, Headers(AiMenu(h)));
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            Assert.True(h.Window.HandleShortcut(Key.A, CtrlShift));
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal(AiOff, h.Window.StatusMessage.Text);
+            Assert.All(warned, line => Assert.DoesNotContain("no settings", line, StringComparison.Ordinal));
+        });
+
+        [Fact]
+        public Task With_AI_off_Ctrl_Shift_A_still_closes_an_open_pane() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            h.AiOn = false;
+            h.Window.AiPaneHasFocus = () => true;
+
+            Assert.True(h.Window.HandleShortcut(Key.A, CtrlShift));
+
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Single(h.Model.Requests);
+        });
+
+        [Fact]
+        public Task A_provider_without_a_key_shows_its_problem_in_the_pane_and_sends_nothing() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Client = null;
+            h.Problem = "Add an API key in Settings > AI.";
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal("Add an API key in Settings > AI.", h.Pane.StatusText.Text);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.Equal(Note, h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task At_the_daily_limit_the_pane_says_so_and_nothing_is_sent() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Limit = 1;
+            Assert.True(h.Usage.TryConsume(1));
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal(AiAssistant.LimitText(1), h.Pane.StatusText.Text);
+            Assert.Empty(h.Model.Requests);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+        });
+
+        [Fact]
+        public Task Before_the_settings_load_the_pane_says_AI_is_not_available_yet() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Window.AiRunnerFactory = () => null;
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal("AI is not available yet", h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.True(h.Pane.RetryButton.IsEnabled);
+            Assert.Equal(new[] { "AI improve: 0 chars sent, 0 chars back, failed" }, h.Log);
+        });
+
+        [Fact]
+        public Task A_runner_that_cannot_be_built_fails_in_the_pane_and_never_throws_into_the_window() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+            var broken = new InvalidOperationException("the settings are broken");
+            h.Window.AiRunnerFactory = () => throw broken;
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal(AiErrorText.Describe(broken), h.Pane.StatusText.Text);
+            Assert.False(h.Window.AiSessionNow!.Running);
+            Assert.Contains("InvalidOperationException", Assert.Single(warned), StringComparison.Ordinal);
+            Assert.DoesNotContain("broken", warned[0], StringComparison.Ordinal);   // the type only
+        });
+
+        // ---- Ask AI and Ctrl+Shift+A --------------------------------------------------------------
+
+        [Fact]
+        public Task Ctrl_Shift_A_opens_the_pane_on_Ask_AI_with_the_instruction_box_focused() => OnUi(h =>
+        {
+            Write(h, Note, Picked);
+
+            Assert.True(h.Window.HandleShortcut(Key.A, CtrlShift));
+
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal("Ask AI", h.Pane.TitleText.Text);
+            Assert.Equal("Selection, 13 characters", h.Pane.SourceText.Text);
+            Assert.Equal(Visibility.Visible, h.Pane.InstructionBox.Visibility);
+            Assert.Same(h.Pane.InstructionBox, FocusManager.GetFocusedElement(h.Window));
+            Assert.True(h.Window.AiSessionNow!.AwaitingInstruction);
+            Assert.Empty(h.Model.Requests);                       // nothing is sent until an instruction is entered
+            Assert.Empty(h.Log);
+        });
+
+        [Fact]
+        public Task Ctrl_Shift_A_again_with_the_focus_in_the_pane_closes_it() => OnUi(h =>
+        {
+            Write(h, Note, Picked);
+            bool focusInPane = false;
+            h.Window.AiPaneHasFocus = () => focusInPane;
+            h.Window.ToggleAi();
+            AiSession asked = h.Window.AiSessionNow!;
+
+            h.Window.ToggleAi();                                  // the focus is in the editor: Ask AI again
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.NotSame(asked, h.Window.AiSessionNow);
+            Assert.True(h.Window.AiSessionNow!.AwaitingInstruction);
+
+            focusInPane = true;
+            h.Window.ToggleAi();
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+        });
+
+        [Fact]
+        public Task An_instruction_entered_in_the_pane_runs_on_the_selection_and_its_result_can_replace_it() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("good text there");
+            h.Window.ToggleAi();
+
+            h.Pane.InstructionBox.Text = "  make it positive ";
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Finished(h);
+
+            Assert.Equal(PadAiPrompts.ForAction("make it positive", Picked), h.Sent());
+            Assert.Equal(Visibility.Collapsed, h.Pane.InstructionBox.Visibility);
+            Assert.Equal("good text there", h.Pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Visible, h.Pane.ReplaceButton.Visibility);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal("Intro\ngood text there\nOutro", h.Editor.Document.Text);
+            Assert.StartsWith("AI ask: ", Assert.Single(h.Log), StringComparison.Ordinal);
+            Assert.DoesNotContain("positive", h.Log[0], StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task An_instruction_entered_after_the_selection_was_dropped_still_runs_on_the_text_the_pane_named() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("good text there");
+            h.Window.ToggleAi();
+            h.Editor.Select(0, 0);                                // a click in the note on the way to the pane
+
+            h.Pane.InstructionBox.Text = "make it positive";
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Finished(h);
+
+            Assert.Equal(PadAiPrompts.ForAction("make it positive", Picked), h.Sent());   // not the whole note
+            Assert.Equal("Selection, 13 characters", h.Pane.SourceText.Text);
+        });
+
+        [Fact]
+        public Task Ask_AI_with_no_selection_takes_the_whole_note() => OnUiAsync(async h =>
+        {
+            Write(h, Note);
+            h.Model.Reply("It is a short note.");
+            h.Window.ToggleAi();
+            Assert.Equal("Whole note, 25 characters", h.Pane.SourceText.Text);
+
+            h.Pane.InstructionBox.Text = "what is this?";
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Finished(h);
+
+            Assert.Equal(PadAiPrompts.ForAction("what is this?", Note), h.Sent());
+            Assert.Equal(Visibility.Collapsed, h.Pane.ReplaceButton.Visibility);
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+        });
+
+        [Fact]
+        public Task With_nothing_to_work_on_the_status_bar_says_so_and_the_pane_stays_closed() => OnUiAsync(async h =>
+        {
+            Write(h, "");
+
+            Assert.True(h.Window.HandleShortcut(Key.A, CtrlShift));
+            Assert.Equal(NoText, h.Window.StatusMessage.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+
+            Write(h, "  \n\n ");                                  // blank is nothing too
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Empty(h.Model.Requests);
+        });
+
+        // ---- refusals in the status bar -----------------------------------------------------------
+
+        [Fact]
+        public Task A_rewrite_on_a_read_only_editor_is_refused_in_the_status_bar() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Editor.IsReadOnly = true;
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal(ReadOnly, h.Window.StatusMessage.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Empty(h.Model.Requests);
+        });
+
+        [Fact]
+        public Task A_read_action_on_a_read_only_editor_runs_and_offers_Copy_only() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Editor.IsReadOnly = true;
+            h.Model.Reply("- bad text");
+
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+
+            Assert.Equal("- bad text", h.Pane.ResultBox.Shown);
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.True(h.Pane.CopyButton.IsEnabled);
+            Click(h.Pane.InsertButton);
+            Assert.Equal(Note, h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task While_the_history_preview_covers_the_note_the_result_cannot_be_applied() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            h.Window.PreviewPanel.Visibility = Visibility.Visible;
+
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.Equal(ReadOnly, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);
+            Click(h.Pane.InsertButton);
+            Assert.Equal(Note, h.Editor.Document.Text);
+
+            h.Window.PreviewPanel.Visibility = Visibility.Collapsed;
+
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+        });
+
+        [Fact]
+        public Task A_rectangle_selection_is_refused_with_the_words_the_Tools_use() => OnUiAsync(async h =>
+        {
+            Write(h, "123456\n789012");
+            var area = h.Editor.TextArea;
+            // An unshown window has no layout, and a rectangle is measured in visual columns.
+            h.Window.Measure(new System.Windows.Size(800, 600));
+            h.Window.Arrange(new Rect(0, 0, 800, 600));
+            h.Window.UpdateLayout();
+            area.TextView.EnsureVisualLines();
+            area.Selection = new RectangleSelection(area, new TextViewPosition(1, 2), new TextViewPosition(2, 4));
+
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+
+            Assert.Equal(EditorMenus.RectangleRefused, h.Window.StatusMessage.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Empty(h.Model.Requests);
+        });
+
+        // ---- the pane among the others ------------------------------------------------------------
+
+        [Fact]
+        public Task Opening_the_AI_pane_closes_History_and_Search_and_opening_either_closes_the_AI_pane() => OnUi(h =>
+        {
+            Write(h, Note, Picked);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);   // built closed
+
+            Assert.True(h.Window.HandleShortcut(Key.H, CtrlShift));
+            Assert.Equal(Visibility.Visible, h.Window.HistoryPanel.Visibility);
+            h.Window.ToggleAi();
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal(Visibility.Collapsed, h.Window.HistoryPanel.Visibility);
+
+            h.Window.ToggleSearch();
+            Assert.Equal(Visibility.Visible, h.Window.SearchPanel.Visibility);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+
+            h.Window.ToggleAi();
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal(Visibility.Collapsed, h.Window.SearchPanel.Visibility);
+
+            Assert.True(h.Window.HandleShortcut(Key.H, CtrlShift));
+            Assert.Equal(Visibility.Visible, h.Window.HistoryPanel.Visibility);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+        });
+
+        [Fact]
+        public Task Opening_Search_while_a_request_runs_cancels_it() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            h.Window.ToggleSearch();
+            await run;
+
+            Assert.True(model.Cancelled);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+        });
+
+        [Fact]
+        public Task The_AI_pane_follows_the_pads_theme() => OnUi(h =>
+        {
+            Assert.Equal(ModernWpf.ElementTheme.Dark, ModernWpf.ThemeManager.GetRequestedTheme(h.Pane));
+
+            h.Window.ToggleTheme();
+
+            Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(h.Pane));
+            Assert.Equal(PadThemeApplier.ToColor(PadPalette.Light.Chrome), ((System.Windows.Media.SolidColorBrush)h.Pane.Background).Color);
+        });
+    }
+}

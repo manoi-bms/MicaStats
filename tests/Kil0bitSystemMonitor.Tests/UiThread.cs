@@ -16,6 +16,12 @@ namespace Kil0bitSystemMonitor.Tests
         /// <summary>Runs <paramref name="action"/> on the UI thread; its exceptions surface here.</summary>
         public static void Run(Action action) => s_dispatcher.Value.Invoke(action);
 
+        /// <summary>
+        /// Starts an async <paramref name="action"/> on the UI thread. Its awaits resume there, the
+        /// dispatcher stays free in between, and its exceptions surface in the returned task.
+        /// </summary>
+        public static Task RunAsync(Func<Task> action) => s_dispatcher.Value.InvokeAsync(action).Task.Unwrap();
+
         private static Dispatcher Start()
         {
             Dispatcher? dispatcher = null;

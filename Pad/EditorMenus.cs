@@ -7,6 +7,7 @@ using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Editing;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Pad.Ai;
 
 using Clipboard = System.Windows.Clipboard;
 
@@ -210,6 +211,38 @@ namespace Kil0bitSystemMonitor.Pad
 
             tools.Items.Add(Tool("Evaluate", TextTools.Evaluate, selected));
             return tools;
+        }
+
+        /// <summary>
+        /// AI (MicaPad AI spec 3.1): one item per action, with Ask AI… after a separator; a rewrite
+        /// waits for a selection. While AI is off the menu holds one item, Set up AI…, so nothing
+        /// can be sent from it. <paramref name="run"/> starts an action; <paramref name="setUp"/> opens the settings.
+        /// </summary>
+        public static MenuItem AiMenu(TextEditor editor, bool enabled, Action<PadAiAction> run, Action setUp)
+        {
+            var ai = new MenuItem { Header = "AI", Icon = ((char)0xE99A).ToString() };
+            if (!enabled)
+            {
+                ai.Items.Add(Item("Set up AI…", null, setUp));
+                return ai;
+            }
+
+            bool selected = editor.SelectionLength > 0;
+            foreach (PadAiAction action in PadAiAction.Menu)
+            {
+                PadAiAction chosen = action;
+                if (ReferenceEquals(action, PadAiAction.Ask))
+                {
+                    // The instruction is typed in the pane, hence the ellipsis.
+                    ai.Items.Add(new Separator());
+                    ai.Items.Add(Item(action.Name + "…", "Ctrl+Shift+A", () => run(chosen)));
+                }
+                else
+                {
+                    ai.Items.Add(Item(action.Name, null, () => run(chosen), selected || !action.NeedsSelection));
+                }
+            }
+            return ai;
         }
 
         /// <summary>Runs a tool: its edit is one undoable change; a problem is reported and the text left alone. True when it edited.</summary>

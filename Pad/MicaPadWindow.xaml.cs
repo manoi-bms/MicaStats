@@ -151,6 +151,7 @@ namespace Kil0bitSystemMonitor.Pad
             SearchPanel.ReturnRequested += () => Editor.Focus();
             SearchPanel.ResultChosen += OpenSearchResult;
             SearchPanel.Run = RunSearchAsync;
+            ConfigureAi();
             FindBar.ReplacingAll += () =>
             {
                 if (_shown != null) _workspace.SnapshotNow(_shown, SnapshotReason.BeforeReplace);
@@ -365,6 +366,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (IsFullScreen) ToggleFullScreen();  // so MicaPad comes back windowed (GUIDE; Part 4 fix wave)
             _hidden = true;
             if (_state != null) _state.Open = false;
+            StopAi();                              // no request runs behind a hidden window
             _workspace.FlushPending();
             _workspace.SaveSession();
             if (IsVisible) Hide();
@@ -502,6 +504,7 @@ namespace Kil0bitSystemMonitor.Pad
             else if (modifiers == ModifierKeys.None && key == Key.Escape && FindBar.IsOpen) FindBar.Close();
             else if (ctrlShift && key == Key.H) ToggleHistory();
             else if (ctrlShift && key == Key.F) ToggleSearch();
+            else if (ctrlShift && key == Key.A) ToggleAi();
             // Esc again, back in the editor, closes the pane (search spec 1); a text box (go to line, rename) keeps its Esc.
             else if (modifiers == ModifierKeys.None && key == Key.Escape && SearchPanel.Visibility == Visibility.Visible
                      && Keyboard.FocusedElement is not System.Windows.Controls.TextBox) CloseSearch();
@@ -633,6 +636,7 @@ namespace Kil0bitSystemMonitor.Pad
             foreach (var (document, changed) in _docHandlers) document.Changed -= changed;
             _docHandlers.Clear();
             DetachVault();
+            DetachAi();
             s_windows.Remove(this);
         }
 
@@ -803,6 +807,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (_infoNote != null && !ReferenceEquals(_infoNote, note)) HideInfo();
             CheckDisk(note);
             if (HistoryPanel.Visibility == Visibility.Visible) ShowHistory();
+            RefreshAi();   // Replace selection and Insert below are offered only on the note the result came from
         }
 
         private void CloseActiveTab()
@@ -1620,6 +1625,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void ShowHistory()
         {
             if (SearchPanel.Visibility == Visibility.Visible) SearchPanel.Visibility = Visibility.Collapsed;   // they share the column
+            CloseAi(focusEditor: false);                                                                      // and so does the AI pane
             if (_shown == null) return;
             EndPreview();
             // A pause or forced snapshot may still be queued; list what is really on disk.
@@ -1847,7 +1853,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnSearchButtonClick(object sender, RoutedEventArgs e) => ToggleSearch();
 
-        /// <summary>Ctrl+Shift+F: opens the Search notes pane (closing History), or closes it.</summary>
+        /// <summary>Ctrl+Shift+F: opens the Search notes pane (closing History and the AI pane), or closes it.</summary>
         internal void ToggleSearch()
         {
             if (SearchPanel.Visibility == Visibility.Visible)
@@ -1860,6 +1866,7 @@ namespace Kil0bitSystemMonitor.Pad
                 EndPreview();
                 HistoryPanel.Visibility = Visibility.Collapsed;
             }
+            CloseAi(focusEditor: false);
             SearchFeeder?.FlushPending();
             SearchFeeder?.ReconcileAll();
             // A selection of one line becomes the query, as Ctrl+F does.
@@ -2045,6 +2052,7 @@ namespace Kil0bitSystemMonitor.Pad
                 menu.Items.Add(FormatMenu(editor));
             menu.Items.Add(LinesMenu(editor, MoveLines));
             menu.Items.Add(ToolsMenu(editor, ShowStatus, () => Now()));
+            if (ReferenceEquals(editor, Editor)) menu.Items.Add(BuildAiMenu());
 
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));
@@ -2364,6 +2372,7 @@ namespace Kil0bitSystemMonitor.Pad
             _bookmarkMargin?.InvalidateVisual();
             PreviewEditor.TextArea.SelectionBrush = area.SelectionBrush;
             FindBar.ApplyPalette(_palette);
+            AiPanel.ApplyTheme(_palette.IsDark);
             _occurrences.Fill = PadThemeApplier.ToBrush(_palette.Occurrence);
             area.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
 

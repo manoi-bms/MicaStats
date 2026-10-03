@@ -45,7 +45,7 @@ namespace Kil0bitSystemMonitor.Tests
         {
             window.RefreshEditorMenu();
 
-            Assert.Equal(new[] { "Undo", "Redo", "-", "Cut", "Copy", "Copy as RTF", "Store as credential\u2026", "Paste", "Delete", "Select all", "-", "Format", "Lines", "Tools", "-", "Find", "Replace", "Go to line…" },
+            Assert.Equal(new[] { "Undo", "Redo", "-", "Cut", "Copy", "Copy as RTF", "Store as credential\u2026", "Paste", "Delete", "Select all", "-", "Format", "Lines", "Tools", "AI", "-", "Find", "Replace", "Go to line…" },
                          Headers(window.EditorMenu));
             Assert.Equal("Ctrl+Z", ItemOf(window.EditorMenu, "Undo").InputGestureText);
             Assert.Equal("Ctrl+G", ItemOf(window.EditorMenu, "Go to line…").InputGestureText);

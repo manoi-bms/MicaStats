@@ -32,7 +32,8 @@ public static class McpToolSet
     public const string Instructions =
         "MicaStats is a system monitor running on this Windows PC. Every tool is read-only and returns compact JSON. " +
         "A reading the PC does not provide is reported as unavailable with a reason, never as 0. Times are UTC. " +
-        "Paths under the user's profile folder are shown as %USERPROFILE%.";
+        "In what the PC tools return, paths under the user's profile folder are shown as %USERPROFILE%. " +
+        "Note text (search_notes, get_note, when the user allowed them) is returned as written, with stored credentials as [credential].";
 
     /// <summary>The MicaStats version, for <c>serverInfo</c>.</summary>
     public static string CurrentVersion => typeof(McpToolSet).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";

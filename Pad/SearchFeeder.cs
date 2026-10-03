@@ -119,12 +119,9 @@ namespace Kil0bitSystemMonitor.Pad
         private void Send(OpenNote note)
         {
             string text = note.TextProvider();
-            // The tab title is only refreshed when the note is saved (PadWorkspace.EnqueueSave); an
-            // automatic one is worked out from the text here so a search never finds the old first line.
-            string title = note.Meta.IsFileBacked || note.Meta.TitleIsCustom
-                ? note.Title
-                : NoteTitle.FromText(text, note.Meta.UntitledNumber);
-            _indexer.SetNote(note.Id, title, text, note.Meta.ModifiedUtc);
+            // The tab title is only refreshed when the note is saved (PadWorkspace.EnqueueSave):
+            // the live one, so a search never finds the old first line.
+            _indexer.SetNote(note.Id, note.LiveTitle(text), text, note.Meta.ModifiedUtc);
         }
 
         private void OnDeleted(string id)

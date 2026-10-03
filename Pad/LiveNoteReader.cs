@@ -129,16 +129,13 @@ namespace Kil0bitSystemMonitor.Pad
             return open;
         }
 
-        /// <summary>UI thread. The title is worked out as the search index does (<see cref="SearchFeeder"/>): a tab's title is only refreshed when its note is saved.</summary>
+        /// <summary>UI thread. The title is the one the search index has (<see cref="OpenNote.LiveTitle"/>): a tab's title is only refreshed when its note is saved.</summary>
         private static NoteText? ReadOpen(PadWorkspace workspace, string id)
         {
             OpenNote? note = workspace.Open.FirstOrDefault(n => string.Equals(n.Id, id, StringComparison.Ordinal));
             if (note == null) return null;
             string text = note.TextProvider();
-            string title = note.Meta.IsFileBacked || note.Meta.TitleIsCustom
-                ? note.Title
-                : NoteTitle.FromText(text, note.Meta.UntitledNumber);
-            return new NoteText(note.Id, title, text);
+            return new NoteText(note.Id, note.LiveTitle(text), text);
         }
 
         /// <summary>

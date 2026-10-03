@@ -50,7 +50,14 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     /// </summary>
     public sealed class NoteTools
     {
-        public const int DefaultLimit = 8, MaxLimit = 20, DefaultLines = 200, MaxLines = 400, MaxChars = 24000;
+        public const int DefaultLimit = 8, MaxLimit = 20, DefaultLines = 200, MaxLines = 400;
+
+        /// <summary>
+        /// Most characters of note text one <c>get_note</c> call returns. Below what Ask MicaStats
+        /// keeps of a tool result in a conversation (20,000 characters of JSON), so a full read is
+        /// kept whole: shortened there, it would be cut in the middle of its JSON.
+        /// </summary>
+        public const int MaxChars = 16000;
 
         /// <summary>The longest query a search takes; a longer one is cut here once it was cleaned.</summary>
         public const int MaxQueryChars = 500;

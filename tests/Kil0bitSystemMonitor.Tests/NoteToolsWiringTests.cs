@@ -926,6 +926,35 @@ public class NoteToolsWiringTests : IDisposable
         Assert.NotEqual(unsaved, env.DiskText(open));
     });
 
+    /// <summary>One rule for the title of an open note as it is now, for the index and for get_note alike.</summary>
+    [Fact]
+    public void The_live_title_of_an_open_note_follows_its_text_unless_it_is_a_file_or_was_renamed()
+    {
+        using var env = new PadTestEnv();
+        OpenNote scratch = env.Workspace.NewNote();
+
+        Assert.Equal("Draft plan", scratch.LiveTitle("Draft plan\nunsaved words"));
+        Assert.StartsWith("Untitled", scratch.Title, StringComparison.Ordinal);   // the tab's own title waits for a save
+        Assert.Equal(scratch.Title, scratch.LiveTitle("   \n"));
+
+        env.Workspace.Rename(scratch, "My plan");
+        Assert.Equal("My plan", scratch.LiveTitle("Draft plan\nunsaved words"));
+
+        string path = env.FileOf("servers.txt");
+        File.WriteAllText(path, "First line");
+        OpenNote file = Assert.IsType<OpenNote>(env.Workspace.OpenFile(path).Note);
+        Assert.Equal("servers.txt", file.LiveTitle("Another first line"));
+    }
+
+    [Fact]
+    public void The_server_instructions_say_note_text_comes_back_as_written_and_only_PC_data_has_its_paths_shortened()
+    {
+        Assert.Contains("In what the PC tools return, paths under the user's profile folder are shown as %USERPROFILE%.",
+            McpToolSet.Instructions, StringComparison.Ordinal);
+        Assert.Contains("Note text (search_notes, get_note, when the user allowed them) is returned as written, with stored credentials as [credential].",
+            McpToolSet.Instructions, StringComparison.Ordinal);
+    }
+
     [Fact]
     public Task The_live_reader_knows_no_note_for_an_unknown_id_or_one_that_is_not_an_id() => UiThread.RunAsync(async () =>
     {
@@ -1761,6 +1790,41 @@ public class NoteToolsWiringTests : IDisposable
         int quitBegin = app.IndexOf("BeginPadExit();", quit, StringComparison.Ordinal);
         Assert.True(quitBegin > quit && quitBegin < app.IndexOf("Current.Shutdown();", quit, StringComparison.Ordinal), "Quit refuses note tools before it shuts down");
         Assert.Contains("PadHost.BeginExit();", app, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The two switches where the app hands them to the tools: swapped, or replaced by "always
+    /// yes", every other test would still pass, because each builds its own tools. So the wiring
+    /// is read from the source, white space aside. <c>NoteAccess</c> takes the tools, then the
+    /// Ask switch, then the MCP switch.
+    /// </summary>
+    [Fact]
+    public void The_app_gives_each_surface_its_own_switch_and_the_assistant_its_destination()
+    {
+        string ai = System.Text.RegularExpressions.Regex.Replace(
+            File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "App.Ai.cs")), @"\s+", " ");
+        static int Count(string text, string part) => text.Split(part, StringSplitOptions.None).Length - 1;
+
+        // The settings are the live config, asked at each call.
+        Assert.Contains("AppConfig settings = config.Config; AiTools = new Services.Ai.Tools.MicaTools(", ai, StringComparison.Ordinal);
+        // Ask reads the Ask switch, MCP reads the MCP switch: in that order, right after the note tools.
+        Assert.Contains("ui, start: () => PadHost.StartForNoteTools())), () => settings.AiNotesInAsk, () => settings.AiNotesInMcp),",
+            ai, StringComparison.Ordinal);
+        // The list the local HTTP server gives its clients follows the MCP switch too.
+        Assert.Contains("AppConfig settings = config!; Func<bool> notesListed = () => settings.AiNotesInMcp;", ai, StringComparison.Ordinal);
+        Assert.Contains("McpToolSet.CreateOptions(invoke, version, notesListed)", ai, StringComparison.Ordinal);
+        // Nowhere else, and nothing in their place.
+        Assert.Equal(1, Count(ai, "AiNotesInAsk"));
+        Assert.Equal(2, Count(ai, "AiNotesInMcp"));
+        Assert.Equal(1, Count(ai, "new Services.Ai.Tools.NoteAccess("));
+
+        // An assistant is told where its requests go, from the settings its client is built from right after.
+        int destination = ai.IndexOf(
+            "string destination = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrivacy.Destination(config.AiProvider, config.AiCompatibleBaseUrl);",
+            StringComparison.Ordinal);
+        int client = ai.IndexOf("result = Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets);", StringComparison.Ordinal);
+        Assert.True(destination > 0 && client > destination, "the destination is read from the settings the client is built from");
+        Assert.Contains("Destination = destination,", ai, StringComparison.Ordinal);
     }
 
     [Fact]

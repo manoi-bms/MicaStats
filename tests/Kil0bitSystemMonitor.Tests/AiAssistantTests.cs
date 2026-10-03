@@ -792,6 +792,37 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(80, small.GetProperty("percent").GetInt32());
         }
 
+        /// <summary>
+        /// What one get_note call returns at most fits in what a conversation keeps of a result,
+        /// so a full read stays whole. Shortened, it would be cut in the middle of its JSON and
+        /// lose the line that says it is data.
+        /// </summary>
+        [Fact]
+        public async Task A_full_get_note_result_kept_in_the_conversation_is_still_valid_json_with_its_about_line()
+        {
+            // 400 lines of 99 characters: more than one call gives, so the result is as large as get_note makes it.
+            string text = string.Join("\n", Enumerable.Repeat(new string('a', 99), 400));
+            var reader = new FakeNoteReader { Note = new Kil0bitSystemMonitor.Services.Pad.Ai.NoteText("a1", "Long", text) };
+            NoteAccess notes = NotesForAsk(reader);
+            _model.Call(ToolNames.GetNote, new Dictionary<string, object?> { ["noteId"] = "a1", ["lineCount"] = 400 })
+                  .Reply("It is long.")
+                  .Reply("Yes.");
+
+            await AskAsync(Assistant(notes: notes), "What is in the long note?");
+            await AskAsync(Assistant(notes: notes), "Sure?");
+
+            FunctionResultContent kept = _conversation.Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single();
+            JsonElement json = Assert.IsType<JsonElement>(kept.Result);          // as the tool gave it, not shortened to text
+            Assert.Equal(Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About, json.GetProperty("about").GetString());
+            Assert.True(json.GetProperty("truncated").GetBoolean());
+            Assert.Equal(160, json.GetProperty("lastLine").GetInt32());          // 160 lines of 100 are the 16,000 one call gives
+            // And what the next question sends is that same whole result.
+            string resent = ResultText(Contents(_model.Requests[2]).OfType<FunctionResultContent>().Single());
+            using JsonDocument parsed = JsonDocument.Parse(resent);
+            Assert.Equal(Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About, parsed.RootElement.GetProperty("about").GetString());
+            Assert.True(Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.MaxChars < ToolHistory.MaxResultChars);
+        }
+
         [Fact]
         public async Task A_huge_tool_result_is_not_sent_again_in_full_with_later_questions()
         {

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Models;
@@ -185,9 +186,11 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
 
         /// <summary>
         /// Runs one note tool for one surface. The surface's switch is asked here, at every call:
-        /// off (or unreadable) refuses with <see cref="NoteTools.Off"/> before anything is read.
-        /// Like <see cref="RunAsync"/>, an exception becomes an error result and only the
-        /// caller's cancellation escapes; unlike it, the result is not redacted.
+        /// off (or unreadable) refuses with <see cref="NoteTools.Off"/> before anything is read,
+        /// and it is asked again right before the result goes back, so a switch turned off while
+        /// a long search ran gives the refusal and not the notes. Like <see cref="RunAsync"/>, an
+        /// exception becomes an error result and only the caller's cancellation escapes; unlike
+        /// it, the result is not redacted.
         /// </summary>
         private async Task<JsonNode> NoteToolAsync(string tool, bool forAsk, JsonObject? args, CancellationToken ct)
         {
@@ -200,7 +203,8 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
                 LogNote(who + "refused, MicaStats is not running");
                 return ToolJson.Error(OfflineMicaData.NotRunningMessage);
             }
-            if (!Allowed(forAsk ? access.ForAsk : access.ForMcp))
+            Func<bool> allowed = forAsk ? access.ForAsk : access.ForMcp;
+            if (!Allowed(allowed))
             {
                 LogNote(who + "refused, notes access is off");
                 return ToolJson.Error(NoteTools.Off);
@@ -224,6 +228,14 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
                 return ToolJson.Error("MicaStats could not read the notes (" + ex.GetType().Name + ")");
             }
 
+            // Asked again now that the result is in hand: what was read is not given out once the
+            // switch is off, however long the reading took.
+            if (!Allowed(allowed))
+            {
+                LogNote(who + "refused, notes access is off");
+                return ToolJson.Error(NoteTools.Off);
+            }
+
             if (result == null) return ToolJson.Error("The tool returned nothing.");
             LogNote(who + NoteCounts(result));
             return result;
@@ -242,10 +254,27 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
             }
         }
 
-        /// <summary>What a note tool result holds, as counts: never its text, a title, an id or an error's wording.</summary>
+        /// <summary>
+        /// The exception type at the end of the error <see cref="NoteTools"/> gives when its reader
+        /// threw: one word in parentheses. Its other errors (a missing argument, no such note) end
+        /// in no such thing.
+        /// </summary>
+        private static readonly Regex ReaderFailure = new(@"\((\w{1,100})\)\z", RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// What a note tool result holds, for the log: counts, never its text, a title, an id or
+        /// an error's wording. A reader that threw is named by the type of what it threw.
+        /// </summary>
         private static string NoteCounts(JsonNode result)
         {
-            if (result is not JsonObject found || found.ContainsKey("error")) return "an error result";
+            if (result is not JsonObject found) return "an error result";
+            if (found.TryGetPropertyValue("error", out JsonNode? error))
+            {
+                Match failure = error is JsonValue value && value.TryGetValue(out string? said) && said != null
+                    ? ReaderFailure.Match(said)
+                    : Match.Empty;
+                return failure.Success ? "failed (" + failure.Groups[1].Value + ")" : "an error result";
+            }
 
             if (found["results"] is JsonArray results)
             {

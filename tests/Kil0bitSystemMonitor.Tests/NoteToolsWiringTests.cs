@@ -258,8 +258,14 @@ public class NoteToolsWiringTests : IDisposable
         await tools.GetNoteForAskAsync(NoteId("a1"));
         mcp = false;
         await tools.InvokeAsync(ToolNames.GetNote, NoteId("a1"));
+        await tools.SearchNotesForAskAsync(new JsonObject());                 // no query
+        reader.AnswersNull = true;
+        await tools.GetNoteForAskAsync(NoteId("a1"));                         // no such note
+        reader.AnswersNull = false;
         reader.Throws = new InvalidOperationException("the note says hunter2");
         await tools.SearchNotesForAskAsync(Query("gateway"));
+        reader.Throws = new IOException(@"C:\Users\alice\notes\a1\current.txt is locked");
+        await tools.GetNoteForAskAsync(NoteId("a1"));
 
         Assert.Equal(new[]
         {
@@ -267,12 +273,72 @@ public class NoteToolsWiringTests : IDisposable
             "Note tool get_note (Ask): lines 2, characters 17",
             "Note tool get_note (MCP): refused, notes access is off",
             "Note tool search_notes (Ask): an error result",
+            "Note tool get_note (Ask): an error result",
+            // The reader threw: the type of the exception, and nothing its message says.
+            "Note tool search_notes (Ask): failed (InvalidOperationException)",
+            "Note tool get_note (Ask): failed (IOException)",
         }, lines);
         Assert.All(lines, line =>
         {
-            foreach (string never in new[] { "gateway", "Servers", "Production", "line one", "a1", "hunter2" })
+            foreach (string never in new[] { "gateway", "Servers", "Production", "line one", "a1", "hunter2", "alice", "locked" })
                 Assert.DoesNotContain(never, line, StringComparison.Ordinal);
         });
+    }
+
+    /// <summary>A reader that lets the test act while it is at work, as a slow search would.</summary>
+    private sealed class BusyReader : INoteReader
+    {
+        private readonly INoteReader _inner;
+        private readonly Action _meanwhile;
+
+        public BusyReader(INoteReader inner, Action meanwhile)
+        {
+            _inner = inner;
+            _meanwhile = meanwhile;
+        }
+
+        public async Task<NoteSearchResult> SearchAsync(string query, CancellationToken ct)
+        {
+            NoteSearchResult found = await _inner.SearchAsync(query, ct);
+            _meanwhile();
+            return found;
+        }
+
+        public async Task<NoteText?> ReadAsync(string noteId, CancellationToken ct)
+        {
+            NoteText? note = await _inner.ReadAsync(noteId, ct);
+            _meanwhile();
+            return note;
+        }
+    }
+
+    /// <summary>The switch is asked again right before a result goes back: a long search does not outlive it.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_switch_turned_off_while_a_note_tool_works_gives_the_refusal_and_not_the_notes(bool ask)
+    {
+        var lines = new List<string>();
+        bool allowed = true;
+        var inner = new FakeNoteReader();
+        var reader = new BusyReader(inner, meanwhile: () => allowed = false);
+        MicaTools tools = ask
+            ? Tools(reader, ask: () => allowed, mcp: () => true, log: lines.Add)
+            : Tools(reader, ask: () => true, mcp: () => allowed, log: lines.Add);
+
+        JsonNode search = await Call(tools, ask, ToolNames.SearchNotes, Query("vpn"));
+        allowed = true;
+        JsonNode get = await Call(tools, ask, ToolNames.GetNote, NoteId("a1"));
+
+        Assert.Equal(1, inner.Searches);   // the work was done, and thrown away
+        Assert.Equal(1, inner.Reads);
+        foreach (JsonNode result in new[] { search, get })
+        {
+            Assert.Equal(NoteTools.Off, (string?)result["error"]);
+            Assert.Single(result.AsObject());
+        }
+        Assert.All(lines, line => Assert.EndsWith("refused, notes access is off", line, StringComparison.Ordinal));
+        Assert.Equal(2, lines.Count);
     }
 
     /// <summary>

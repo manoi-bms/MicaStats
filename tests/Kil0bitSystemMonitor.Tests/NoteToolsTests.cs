@@ -98,6 +98,36 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.DoesNotContain("secret", r.Query!, StringComparison.Ordinal);
         }
 
+        [Fact]
+        public async Task Search_a_query_over_500_characters_is_cut_after_it_was_cleaned()
+        {
+            var r = new FakeReader();
+            // The reference lies across the cap: cut first, half of it would be left and not cleaned.
+            string query = new string('a', 495) + " " + Secret + " and a long tail";
+
+            var o = await Search(r, new JsonObject { ["query"] = query });
+
+            Assert.Equal(500, NoteTools.MaxQueryChars);
+            Assert.Equal(new string('a', 495) + " [cre", r.Query);
+            Assert.Equal(r.Query, (string?)o["query"]);
+            Assert.DoesNotContain("secret", r.Query!, StringComparison.Ordinal);
+            Assert.DoesNotContain("K7Q2", r.Query!, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Search_a_query_of_exactly_500_characters_is_kept_whole_and_the_cut_never_splits_a_character()
+        {
+            var r = new FakeReader();
+            string whole = new string('b', 500);
+            string emoji = char.ConvertFromUtf32(0x1F600);   // two UTF-16 code units
+
+            await Search(r, new JsonObject { ["query"] = whole });
+            Assert.Equal(whole, r.Query);
+
+            await Search(r, new JsonObject { ["query"] = new string('c', 499) + emoji + "tail" });
+            Assert.Equal(new string('c', 499), r.Query);   // not 499 and half an emoji
+        }
+
         [Theory]
         [InlineData(0, 1)]
         [InlineData(-5, 1)]

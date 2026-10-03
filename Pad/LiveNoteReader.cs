@@ -30,9 +30,6 @@ namespace Kil0bitSystemMonitor.Pad
     /// </summary>
     internal sealed class LiveNoteReader : INoteReader
     {
-        /// <summary>The longest text taken for a note id. Ids are 32 characters (<see cref="NoteStore.NewMeta"/>).</summary>
-        private const int MaxIdLength = 64;
-
         private static readonly NoteSearchResult Nothing = new(Array.Empty<NoteHit>(), false);
 
         private readonly Func<PadWorkspace?> _workspace;
@@ -89,26 +86,16 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         public async Task<NoteText?> ReadAsync(string noteId, CancellationToken ct)
         {
+            // An id names a folder under the store. Only the exact form the store gives its notes
+            // goes any further: no other letter case, no device name, no separator reaches a path.
             string id = (noteId ?? "").Trim();
-            if (!IsNoteId(id)) return null;
+            if (!NoteStore.IsNoteId(id)) return null;
             PadWorkspace? workspace = _workspace();
             if (workspace == null) return null;
 
             NoteText? open = await OnUiAsync(() => ReadOpen(workspace, id), ct).ConfigureAwait(false);
             if (open != null) return open;
             return await Task.Run(() => ReadStored(workspace.Store, id), ct).ConfigureAwait(false);
-        }
-
-        /// <summary>
-        /// A note id names a folder under the store, so only what an id can hold is taken:
-        /// letters and digits. No separator, dot or colon ever reaches a path.
-        /// </summary>
-        private static bool IsNoteId(string id)
-        {
-            if (id.Length == 0 || id.Length > MaxIdLength) return false;
-            foreach (char c in id)
-                if (!char.IsAsciiLetterOrDigit(c)) return false;
-            return true;
         }
 
         private HashSet<string> OpenIds()
@@ -131,13 +118,15 @@ namespace Kil0bitSystemMonitor.Pad
             return new NoteText(note.Id, title, text);
         }
 
-        /// <summary>Any thread. A note that has no folder is not looked up at all, so asking for ids that do not exist leaves nothing behind in the store.</summary>
+        /// <summary>
+        /// Any thread. Through the store's read-only reads: a tool that reads must never change a
+        /// note, so nothing here rebuilds a <c>meta.json</c>, finishes a write or makes a folder.
+        /// </summary>
         private static NoteText? ReadStored(NoteStore store, string id)
         {
-            if (!Directory.Exists(store.NoteDir(id))) return null;
-            NoteMeta? meta = store.LoadMeta(id);
+            NoteMeta? meta = store.PeekMeta(id);
             if (meta == null) return null;
-            if (!store.TryLoadText(id, out string? text))
+            if (!store.TryPeekText(id, out string? text))
                 throw new IOException("The text of a note cannot be read right now");
             return new NoteText(meta.Id, meta.Title, text ?? "");
         }

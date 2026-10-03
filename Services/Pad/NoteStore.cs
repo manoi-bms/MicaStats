@@ -92,6 +92,82 @@ namespace Kil0bitSystemMonitor.Services.Pad
         };
 
         /// <summary>
+        /// Whether <paramref name="id"/> is exactly what <see cref="NewMeta"/> gives a note: the 32
+        /// digits of a GUID, <c>0-9</c> and <c>a-f</c>. An id is a folder name, and Windows finds a
+        /// folder under another letter case, opens a device for <c>CON</c> or <c>NUL</c>, and walks
+        /// through a separator. An id that comes from outside the app (the note tools) must pass
+        /// this before it is made into a path.
+        /// </summary>
+        public static bool IsNoteId(string? id)
+        {
+            if (id == null || id.Length != 32) return false;
+            foreach (char c in id)
+                if (!(c is >= '0' and <= '9' or >= 'a' and <= 'f')) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// The note's metadata for a reader that must never change the store (the note tools).
+        /// Unlike <see cref="LoadMeta"/> it writes nothing: a missing or damaged <c>meta.json</c>
+        /// is not rebuilt, a finished write is read where it lies, and no folder is made. Null when
+        /// there is no such note: an id <see cref="IsNoteId"/> refuses, no <c>meta.json</c>, one
+        /// that does not decode, or one that names another id. A file that is there but cannot be
+        /// read right now throws, as <see cref="ReadStoreText"/> does.
+        /// </summary>
+        public NoteMeta? PeekMeta(string id)
+        {
+            if (!IsNoteId(id)) return null;
+            try
+            {
+                string? json = ReadStoreTextInPlace(MetaPath(id));
+                if (json == null) return null;
+                var meta = JsonSerializer.Deserialize<NoteMeta>(json, Json);
+                return meta != null && string.Equals(meta.Id, id, StringComparison.Ordinal) ? meta : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return null;   // the note was deleted meanwhile
+            }
+        }
+
+        /// <summary>
+        /// The note's text for a reader that must never change the store: <see cref="TryLoadText"/>
+        /// without committing a finished write. <c>current.txt</c> is read where it lies, then the
+        /// newest snapshot. True with the text, or with null when the note has none (or the id is
+        /// not one <see cref="IsNoteId"/> accepts). False when the text is there but cannot be read
+        /// right now.
+        /// </summary>
+        public bool TryPeekText(string id, out string? text)
+        {
+            text = null;
+            if (!IsNoteId(id)) return true;
+            try
+            {
+                text = ReadStoreTextInPlace(CurrentPath(id));
+                if (text != null) return true;
+
+                var newest = ListSnapshots(id).FirstOrDefault();
+                if (newest == null) return true;
+                text = ReadStoreTextInPlace(newest.FilePath);
+                return text != null;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                text = null;
+                return true;   // the note was deleted meanwhile: no text anywhere
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                text = null;
+                return false;
+            }
+        }
+
+        /// <summary>
         /// A save version, increasing across every note this store has seen. Issued by the store
         /// rather than per open tab, so a note closed and reopened keeps getting newer versions
         /// than the ones it was saved with before.

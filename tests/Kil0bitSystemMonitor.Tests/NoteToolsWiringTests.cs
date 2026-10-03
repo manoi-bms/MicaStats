@@ -33,7 +33,7 @@ public class NoteToolsWiringTests : IDisposable
 
     public void Dispose() => _env.Dispose();
 
-    private static MicaTools Tools(FakeNoteReader? reader, Func<bool>? ask = null, Func<bool>? mcp = null,
+    private static MicaTools Tools(INoteReader? reader, Func<bool>? ask = null, Func<bool>? mcp = null,
                                    Action<string>? log = null, FakeMicaData? data = null) =>
         new(data ?? new FakeMicaData(), new Redactor(@"C:\Users\alice", "alice", "DESK-7"))
         {
@@ -42,7 +42,7 @@ public class NoteToolsWiringTests : IDisposable
         };
 
     /// <summary>Tools whose switch for the surface under test is <paramref name="on"/>, and the other surface's the opposite.</summary>
-    private static MicaTools ToolsFor(bool ask, FakeNoteReader reader, Func<bool> on) =>
+    private static MicaTools ToolsFor(bool ask, INoteReader reader, Func<bool> on) =>
         ask ? Tools(reader, ask: on, mcp: () => !on()) : Tools(reader, ask: () => !on(), mcp: on);
 
     /// <summary>One call on a surface: Ask goes through the two Ask methods, MCP through InvokeAsync.</summary>
@@ -802,6 +802,135 @@ public class NoteToolsWiringTests : IDisposable
         {
             Assert.Null(await reader.ReadAsync(id, CancellationToken.None));
         }
+    });
+
+    // ---- a read tool never writes (fix round 1, Critical) --------------------------------------
+
+    /// <summary>
+    /// Everything under <paramref name="root"/> by its path inside it: every folder, and every
+    /// file with a hash of its bytes. Two of these are equal only when nothing was created,
+    /// removed, renamed or rewritten.
+    /// </summary>
+    private static Dictionary<string, string> Fingerprint(string root)
+    {
+        var all = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (string folder in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
+            all[Path.GetRelativePath(root, folder) + Path.DirectorySeparatorChar] = "folder";
+        foreach (string file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            all[Path.GetRelativePath(root, file)] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file)));
+        return all;
+    }
+
+    /// <summary>
+    /// A write of <paramref name="text"/> that finished but was not swapped in: complete, beside
+    /// the note's current text. The store's normal load would swap it in; a reader must not.
+    /// </summary>
+    private static string PendingWrite(PadTestEnv env, OpenNote note, string text)
+    {
+        string ready = env.Store.CurrentPath(note.Id) + AtomicFile.ReadySuffix;
+        File.WriteAllBytes(ready, env.Store.EncryptBytes(System.Text.Encoding.UTF8.GetBytes(text)));
+        return ready;
+    }
+
+    /// <summary>
+    /// Windows finds a note's folder under another letter case and under a device name. Only the
+    /// exact id is a note: anything else is refused before a path is made, and nothing a note
+    /// tool does, refused or answered, changes the store: not a byte, not a file name.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public Task An_id_in_another_form_is_no_note_and_no_note_tool_changes_anything_in_the_store(bool ask) => UiThread.RunAsync(async () =>
+    {
+        using var env = new PadTestEnv();
+        OpenNote closed = ClosedNote(env, "Servers\nthe vpn gateway is 10.0.0.7");
+        OpenNote pending = ClosedNote(env, "Printers\nthe old text about the walrus");
+        using var service = new NoteSearchService(env.Store, () => SearchSettings.Off, warn: _ => { });
+        using var feeder = new SearchFeeder(env.Workspace, service.Indexer, TimeSpan.FromHours(1));
+        MicaTools tools = ToolsFor(ask, Reader(env.Workspace, service, feeder), on: () => true);
+        string upper = closed.Id.ToUpperInvariant();
+        Assert.NotEqual(closed.Id, upper);
+        Assert.True(Directory.Exists(env.Store.NoteDir(upper)));   // the same folder, as Windows sees it
+        await service.Indexer.WhenIdle();
+        env.Flush();
+        string ready = PendingWrite(env, pending, "Printers\nthe new text about the walrus");
+        Dictionary<string, string> before = Fingerprint(env.Store.Root);
+
+        foreach (string id in new[] { upper, "CON", "NUL", closed.Id.Substring(1), closed.Id + "0", "con", "nul" })
+        {
+            JsonNode refused = await Call(tools, ask, ToolNames.GetNote, NoteId(id));
+
+            Assert.Equal(NoteTools.NoSuchNote, (string?)refused["error"]);
+        }
+        JsonNode read = await Call(tools, ask, ToolNames.GetNote, NoteId(closed.Id));
+        JsonNode readPending = await Call(tools, ask, ToolNames.GetNote, NoteId(pending.Id));
+        JsonNode found = await Call(tools, ask, ToolNames.SearchNotes, Query("vpn"));
+        JsonNode foundPending = await Call(tools, ask, ToolNames.SearchNotes, Query("walrus"));
+
+        Assert.Equal("Servers", (string?)read["title"]);
+        Assert.Equal("Printers\nthe new text about the walrus", (string?)readPending["text"]);   // what the store would load, read where it lies
+        Assert.Equal(closed.Id, (string?)found["results"]![0]!["noteId"]);
+        Assert.Equal(pending.Id, (string?)foundPending["results"]![0]!["noteId"]);
+        Assert.Equal(before, Fingerprint(env.Store.Root));
+        Assert.True(File.Exists(ready));
+        // Still the closed note it was: a rebuilt meta.json would have opened it again under the other id.
+        NoteMeta meta = Assert.IsType<NoteMeta>(env.Store.LoadMeta(closed.Id));
+        Assert.Equal(closed.Id, meta.Id);
+        Assert.True(meta.IsClosed);
+    });
+
+    [Fact]
+    public void A_note_id_is_exactly_what_the_store_gives_a_new_note()
+    {
+        string id = NoteStore.NewMeta(DateTime.UtcNow, 1, null).Id;
+
+        Assert.True(NoteStore.IsNoteId(id));
+        Assert.True(NoteStore.IsNoteId("0123456789abcdef0123456789abcdef"));
+        foreach (string? other in new[]
+        {
+            null, "", "0123456789ABCDEF0123456789ABCDEF", "0123456789abcdef0123456789abcdeF", id.Substring(1), id + "0",
+            "0123456789abcdef0123456789abcdeg", "0123456789abcdef-123456789abcdef", " " + id.Substring(1),
+            "CON", "NUL", "con", "..", @"..\notes\" + id, id + @"\history",
+            "0123456789abcdef0123456789abcde" + ((char)0xFF46).ToString(),   // a full-width f is not f
+        })
+        {
+            Assert.False(NoteStore.IsNoteId(other), other ?? "(null)");
+        }
+    }
+
+    [Fact]
+    public void The_store_peeks_at_a_note_without_rebuilding_or_finishing_anything() => UiThread.Run(() =>
+    {
+        using var env = new PadTestEnv();
+        OpenNote closed = ClosedNote(env, "Servers\nthe vpn gateway");
+        OpenNote bare = ClosedNote(env, "No meta\nits meta.json is gone");
+        OpenNote broken = ClosedNote(env, "Bad meta\nits meta.json is not JSON");
+        OpenNote pending = ClosedNote(env, "Old text");
+        File.Delete(env.Store.MetaPath(bare.Id));
+        File.WriteAllText(env.Store.MetaPath(broken.Id), "{ not json");
+        string ready = PendingWrite(env, pending, "New text");
+        Dictionary<string, string> before = Fingerprint(env.Store.Root);
+
+        NoteMeta? meta = env.Store.PeekMeta(closed.Id);
+        bool readable = env.Store.TryPeekText(closed.Id, out string? text);
+        bool pendingReadable = env.Store.TryPeekText(pending.Id, out string? pendingText);
+
+        Assert.Equal(closed.Id, meta?.Id);
+        Assert.Equal("Servers", meta?.Title);
+        Assert.True(meta?.IsClosed);
+        Assert.True(readable);
+        Assert.Equal("Servers\nthe vpn gateway", text);
+        Assert.True(pendingReadable);
+        Assert.Equal("New text", pendingText);   // read where it lies
+        Assert.Null(env.Store.PeekMeta(closed.Id.ToUpperInvariant()));
+        Assert.Null(env.Store.PeekMeta(bare.Id));      // LoadMeta would write a new meta.json here
+        Assert.Null(env.Store.PeekMeta(broken.Id));    // and here
+        Assert.Null(env.Store.PeekMeta(Guid.NewGuid().ToString("N")));
+        Assert.Null(env.Store.PeekMeta("CON"));
+        Assert.True(env.Store.TryPeekText(closed.Id.ToUpperInvariant(), out string? none));
+        Assert.Null(none);
+        Assert.Equal(before, Fingerprint(env.Store.Root));
+        Assert.True(File.Exists(ready));
     });
 
     [Fact]

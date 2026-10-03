@@ -35,9 +35,15 @@ namespace Kil0bitSystemMonitor.Tests
 
         private MicaTools Tools(NoteAccess? notes = null) => new(_data, new Redactor(@"C:\Users\alice", "alice", "DESK-7")) { Notes = notes };
 
-        private AiAssistant Assistant(bool isClaude = false, IChatClient? client = null, TimeSpan? silence = null, NoteAccess? notes = null) =>
+        private AiAssistant Assistant(bool isClaude = false, IChatClient? client = null, TimeSpan? silence = null, NoteAccess? notes = null,
+                                      string destination = "") =>
             new(client ?? _model, isClaude, Tools(notes), _usage,
-                new AiAssistantOptions { DailyLimit = () => _limit, InactivityTimeout = silence ?? TimeSpan.FromSeconds(60) });
+                new AiAssistantOptions
+                {
+                    DailyLimit = () => _limit,
+                    InactivityTimeout = silence ?? TimeSpan.FromSeconds(60),
+                    Destination = destination,
+                });
 
         /// <summary>The note tools over a fake reader, allowed for Ask and not for MCP.</summary>
         private static NoteAccess NotesForAsk(FakeNoteReader? reader = null) =>
@@ -371,6 +377,362 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(0, reader.Searches);
             Assert.False(_conversation.NotesRead);
+        }
+
+        // ----- what the model made of the notes (final review, A1) ---------------------------
+
+        private const string Removed = "(Removed: this answer used your notes, and notes access has changed.)";
+
+        private static Dictionary<string, object?> NoteA1 => new() { ["noteId"] = "a1" };
+
+        /// <summary>What a provider checks before it takes a request: every tool result has its call before it, and every call its result.</summary>
+        private static void AssertCallsPair(ScriptedChatClient.Request request)
+        {
+            var waiting = new List<string>();
+            foreach (AIContent content in Contents(request))
+            {
+                if (content is FunctionCallContent call) waiting.Add(call.CallId);
+                else if (content is FunctionResultContent result) Assert.True(waiting.Remove(result.CallId), "a result without its call: " + result.CallId);
+            }
+            Assert.Empty(waiting);
+        }
+
+        /// <summary>The text of each message of a request after the system prompt; a tool call and a tool result read as "".</summary>
+        private static string[] Texts(ScriptedChatClient.Request request) => request.Messages.Skip(1).Select(m => m.Text).ToArray();
+
+        [Fact]
+        public async Task Once_the_ask_switch_is_off_an_answer_that_quoted_a_note_is_not_sent_again()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            _model.Reply("Hello.")
+                  .Call(ToolNames.GetNote, NoteA1)
+                  .Reply("The handshake is purple-walrus.")
+                  .Reply("Yes, purple-walrus, on port 8443.")
+                  .Reply("The CPU is fine.")
+                  .Reply("Still fine.");
+
+            await AskAsync(Assistant(notes: notes), "Hi");
+            await AskAsync(Assistant(notes: notes), "What is the handshake?");
+            await AskAsync(Assistant(notes: notes), "Sure?");
+            allowed = false;
+            await AskAsync(Assistant(notes: notes), "And the CPU?");
+            await AskAsync(Assistant(notes: notes), "And now?");
+
+            ScriptedChatClient.Request afterOff = _model.Requests[4];
+            Assert.DoesNotContain("purple-walrus", Sent(afterOff), StringComparison.Ordinal);
+            Assert.DoesNotContain("8443", Sent(afterOff), StringComparison.Ordinal);
+            // The user's questions stay, and so does the answer given before any note was read.
+            // The two answers that used the note are replaced.
+            Assert.Equal(new[] { "Hi", "Hello.", "What is the handshake?", "", "", Removed, "Sure?", Removed, "And the CPU?" }, Texts(afterOff));
+            Assert.Equal(OffResult, ResultText(Contents(afterOff).OfType<FunctionResultContent>().Single()));
+            AssertCallsPair(afterOff);
+
+            // An answer given after the take-back used no note, so it stays for the questions after it.
+            ScriptedChatClient.Request later = _model.Requests[5];
+            Assert.Equal(new[] { "Hi", "Hello.", "What is the handshake?", "", "", Removed, "Sure?", Removed, "And the CPU?", "The CPU is fine.", "And now?" },
+                Texts(later));
+            // In place: the conversation no longer holds the text, so nothing later can send it either.
+            Assert.DoesNotContain("purple-walrus", string.Join("\n", _conversation.Messages.Select(m => m.Text)), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Once_the_ask_switch_is_off_limited_mode_does_not_send_an_answer_that_quoted_a_note_either()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            _model.Call(ToolNames.GetNote, NoteA1)
+                  .Reply("The handshake is purple-walrus.")
+                  .Fail(new ClientResultException("registry.ollama.ai/library/gemma:2b does not support tools"))
+                  .Reply("From the snapshot: fine.");
+
+            await AskAsync(Assistant(notes: notes), "What is the handshake?");
+            allowed = false;
+            List<AssistantUpdate> second = await AskAsync(Assistant(notes: notes), "And the CPU?");
+
+            Assert.Equal(AssistantUpdateKind.LimitedMode, second[0].Kind);
+            ScriptedChatClient.Request refused = _model.Requests[2], limited = _model.Requests[3];
+            Assert.Empty(limited.ToolNames);
+            foreach (ScriptedChatClient.Request request in new[] { refused, limited })
+            {
+                Assert.DoesNotContain("purple-walrus", Sent(request), StringComparison.Ordinal);
+                Assert.Contains(Removed, Sent(request), StringComparison.Ordinal);
+                Assert.Contains("What is the handshake?", Sent(request), StringComparison.Ordinal);   // the user's own question stays
+            }
+        }
+
+        /// <summary>An assistant that already knows its endpoint cannot use tools sends one request, which never passes the tool loop.</summary>
+        [Fact]
+        public async Task An_assistant_already_in_limited_mode_does_not_send_an_answer_that_quoted_a_note_once_the_switch_is_off()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            _model.Call(ToolNames.GetNote, NoteA1)
+                  .Reply("The handshake is purple-walrus.")
+                  .Fail(new ClientResultException("registry.ollama.ai/library/gemma:2b does not support tools"))
+                  .Reply("From the snapshot: fine.")
+                  .Reply("Still fine.");
+            await AskAsync(Assistant(notes: notes), "What is the handshake?");
+            AiAssistant limited = Assistant(notes: notes);
+            await AskAsync(limited, "And the CPU?");   // finds out, and answers in limited mode
+            string whileOn = Sent(_model.Requests[3]);
+
+            allowed = false;
+            await AskAsync(limited, "And now?");
+
+            Assert.Contains("purple-walrus", whileOn, StringComparison.Ordinal);
+            Assert.Equal(5, _model.Requests.Count);
+            Assert.DoesNotContain("purple-walrus", Sent(_model.Requests[4]), StringComparison.Ordinal);
+            Assert.Contains(Removed, Sent(_model.Requests[4]), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Notes read through one provider do not follow the conversation to another (a local
+        /// server, then Claude), although the switch is on all the while.
+        /// </summary>
+        [Fact]
+        public async Task When_the_provider_changes_what_was_read_from_notes_and_the_answers_that_used_it_do_not_follow()
+        {
+            NoteAccess notes = NotesForAsk(HandshakeNote());
+            _model.Call(ToolNames.GetNote, NoteA1)
+                  .Reply("The handshake is purple-walrus.")
+                  .Reply("I do not have it any more.")
+                  .Call(ToolNames.GetNote, NoteA1)
+                  .Reply("It is purple-walrus.")
+                  .Reply("Yes: purple-walrus.");
+
+            await AskAsync(Assistant(notes: notes, destination: "this PC"), "What is the handshake?");
+            Assert.True(_conversation.NotesRead);
+            Assert.Equal("this PC", _conversation.NotesDestination);
+
+            await AskAsync(Assistant(notes: notes, destination: "api.anthropic.com"), "Tell me again?");
+
+            ScriptedChatClient.Request moved = _model.Requests[2];
+            Assert.DoesNotContain("purple-walrus", Sent(moved), StringComparison.Ordinal);
+            Assert.DoesNotContain("8443", Sent(moved), StringComparison.Ordinal);
+            Assert.Equal(new[] { "What is the handshake?", "", "", Removed, "Tell me again?" }, Texts(moved));
+            Assert.Equal(OffResult, ResultText(Contents(moved).OfType<FunctionResultContent>().Single()));
+            AssertCallsPair(moved);
+            // The switch is on: the tools are still offered, to read again for this provider.
+            Assert.Equal(ToolNames.ReadOnly.Concat(ToolNames.Notes).Append(ToolNames.SuggestAction), moved.ToolNames);
+            // Nothing of the notes is left in the conversation, so it counts as not having read any.
+            Assert.False(_conversation.NotesRead);
+            Assert.Null(_conversation.NotesDestination);
+
+            await AskAsync(Assistant(notes: notes, destination: "api.anthropic.com"), "Look it up again");
+            Assert.True(_conversation.NotesRead);
+            Assert.Equal("api.anthropic.com", _conversation.NotesDestination);
+
+            await AskAsync(Assistant(notes: notes, destination: "api.anthropic.com"), "Sure?");
+
+            // Read for this provider: it stays in the conversation, as before.
+            ScriptedChatClient.Request same = _model.Requests[5];
+            Assert.Contains("the handshake is purple-walrus", Sent(same), StringComparison.Ordinal);
+            Assert.Contains("It is purple-walrus.", Texts(same));
+            Assert.DoesNotContain("The handshake is purple-walrus.", Texts(same));   // what the first provider answered stays out
+        }
+
+        [Fact]
+        public async Task A_conversation_that_never_read_notes_is_untouched_by_a_switch_turned_off_and_a_new_provider()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            _model.Call(ToolNames.GetLiveStatus).Reply("The CPU is at 12%.").Reply("Still 12%.").Reply("Yes.");
+
+            await AskAsync(Assistant(notes: notes, destination: "this PC"), "How is the CPU?");
+            await AskAsync(Assistant(notes: notes, destination: "this PC"), "And now?");
+            string before = Sent(_model.Requests[2]);
+            allowed = false;
+            await AskAsync(Assistant(notes: notes, destination: "api.anthropic.com"), "Sure?");
+
+            Assert.False(_conversation.NotesRead);
+            ScriptedChatClient.Request after = _model.Requests[3];
+            Assert.StartsWith(before, Sent(after), StringComparison.Ordinal);   // everything sent before is sent again as it was
+            Assert.Equal(new[] { "How is the CPU?", "", "", "The CPU is at 12%.", "And now?", "Still 12%.", "Sure?" }, Texts(after));
+            Assert.Contains("usagePercent", Sent(after), StringComparison.Ordinal);
+            AssertCallsPair(after);
+        }
+
+        /// <summary>A note tool that gave no notes (no such note, a refusal) is no reason to take an answer out.</summary>
+        [Fact]
+        public async Task An_answer_after_a_note_tool_that_returned_no_notes_stays()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(new FakeNoteReader { AnswersNull = true }), () => allowed, () => true);
+            _model.Call(ToolNames.GetNote, new Dictionary<string, object?> { ["noteId"] = "zz" })
+                  .Reply("There is no such note.")
+                  .Reply("Fine.");
+
+            await AskAsync(Assistant(notes: notes, destination: "this PC"), "What is in note zz?");
+            allowed = false;
+            await AskAsync(Assistant(notes: notes, destination: "api.anthropic.com"), "And the CPU?");
+
+            Assert.Equal(new[] { "What is in note zz?", "", "", "There is no such note.", "And the CPU?" }, Texts(_model.Requests[2]));
+            AssertCallsPair(_model.Requests[2]);
+        }
+
+        /// <summary>
+        /// Between two rounds of one question: an assistant message can carry words and a tool call
+        /// at once. Its words go, its call stays with its result.
+        /// </summary>
+        [Fact]
+        public async Task A_switch_turned_off_in_the_middle_of_a_question_takes_out_what_the_model_said_about_the_note()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            var sent = new List<ScriptedChatClient.Request>();
+            var texts = new List<string>();
+            _model.Otherwise = request =>
+            {
+                sent.Add(request);
+                texts.Add(Sent(request));
+                switch (sent.Count)
+                {
+                    case 1:
+                        return _model.CallMessage(ToolNames.GetNote, NoteA1);
+                    case 2:
+                        allowed = false;   // turned off in Settings while the model works
+                        return new ChatMessage(ChatRole.Assistant, new List<AIContent>
+                        {
+                            new TextContent("The note says purple-walrus. Now the CPU."),
+                            _model.CallMessage(ToolNames.GetLiveStatus).Contents[0],
+                        });
+                    default:
+                        return new ChatMessage(ChatRole.Assistant, "The CPU is fine.");
+                }
+            };
+
+            await AskAsync(Assistant(notes: notes), "What is the handshake, and how is the CPU?");
+
+            Assert.Equal(3, sent.Count);
+            Assert.Contains("purple-walrus", texts[1], StringComparison.Ordinal);        // read while it was allowed
+            Assert.DoesNotContain("purple-walrus", texts[2], StringComparison.Ordinal);
+            Assert.Contains(Removed, texts[2], StringComparison.Ordinal);
+            Assert.Contains(OffResult, texts[2], StringComparison.Ordinal);
+            Assert.Contains("usagePercent", texts[2], StringComparison.Ordinal);         // the PC result is untouched
+            AssertCallsPair(sent[2]);
+        }
+
+        /// <summary>
+        /// A call the model makes after it read a note can quote the note in its arguments, and a
+        /// tool can repeat them: an error names the bad argument, and suggest_action its label.
+        /// </summary>
+        [Fact]
+        public async Task What_the_model_wrote_into_later_tool_calls_is_taken_back_with_its_answers()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            _model.Call(ToolNames.GetNote, NoteA1)
+                  .Call(ToolNames.GetHistory, new Dictionary<string, object?> { ["metric"] = "purple-walrus", ["from"] = "-1h" })
+                  .Call(ToolNames.SuggestAction, new Dictionary<string, object?>
+                  {
+                      ["kind"] = "open_diagnostics",
+                      ["reason"] = "The note says purple-walrus.",
+                      ["label"] = "purple-walrus",
+                  })
+                  .Call(ToolNames.GetLiveStatus)
+                  .Reply("The handshake is purple-walrus.")
+                  .Reply("Fine.");
+
+            await AskAsync(Assistant(notes: notes), "What is the handshake?");
+            string whileOn = string.Join("\n", _conversation.Messages.SelectMany(m => m.Contents).Select(c => c switch
+            {
+                FunctionCallContent call => ToolHistory.ArgsJson(call.Arguments),
+                FunctionResultContent result => ResultText(result),
+                _ => "",
+            }));
+            allowed = false;
+            await AskAsync(Assistant(notes: notes), "And the CPU?");
+
+            // Why it matters: the conversation kept the model's quote three times outside its answer.
+            Assert.Contains("\"metric\":\"purple-walrus\"", whileOn, StringComparison.Ordinal);
+            Assert.Contains("Unknown metric 'purple-walrus'", whileOn.Replace("\\u0027", "'", StringComparison.Ordinal), StringComparison.Ordinal);
+            Assert.Contains("labelled 'purple-walrus'", whileOn.Replace("\\u0027", "'", StringComparison.Ordinal), StringComparison.Ordinal);
+
+            ScriptedChatClient.Request afterOff = _model.Requests[5];
+            Assert.DoesNotContain("purple-walrus", Sent(afterOff), StringComparison.Ordinal);
+            AssertCallsPair(afterOff);
+            FunctionCallContent[] calls = Contents(afterOff).OfType<FunctionCallContent>().ToArray();
+            Assert.Equal(new[] { ToolNames.GetNote, ToolNames.GetHistory, ToolNames.SuggestAction, ToolNames.GetLiveStatus }, calls.Select(c => c.Name));
+            Assert.Equal("{\"noteId\":\"a1\"}", ToolHistory.ArgsJson(calls[0].Arguments));   // asked before any note was read: as it was
+            Assert.All(calls.Skip(1), call => Assert.Equal("{}", ToolHistory.ArgsJson(call.Arguments)));
+            string[] results = Contents(afterOff).OfType<FunctionResultContent>().Select(ResultText).ToArray();
+            Assert.Equal(OffResult, results[0]);
+            Assert.Contains("usagePercent", results[3], StringComparison.Ordinal);            // what the PC measured stays
+        }
+
+        // ----- a suggestion after notes were read (final review, A2) ---------------------------
+
+        private static Dictionary<string, object?> EndChrome => new()
+        {
+            ["kind"] = "end_process",
+            ["pid"] = 4242,
+            ["createTime"] = 134037504000000000L,
+            ["processName"] = "chrome.exe",
+            ["reason"] = "Your note says to end it.",
+        };
+
+        /// <summary>Pasted text in a note can steer the model: the one destructive button is not offered on its word.</summary>
+        [Fact]
+        public async Task Once_notes_were_read_a_suggestion_to_end_a_process_is_dropped_and_the_other_kinds_are_not()
+        {
+            _model.Call(ToolNames.GetNote, NoteA1)
+                  .Call(ToolNames.SuggestAction, EndChrome)
+                  .Call(ToolNames.SuggestAction, new Dictionary<string, object?> { ["kind"] = "open_diagnostics", ["reason"] = "See the reports." })
+                  .Reply("Done.")
+                  .Call(ToolNames.SuggestAction, EndChrome)
+                  .Reply("Done again.");
+            NoteAccess notes = NotesForAsk(HandshakeNote());
+
+            List<AssistantUpdate> first = await AskAsync(Assistant(notes: notes), "What does my note say to do?");
+
+            SuggestedAction kept = Assert.Single(first, u => u.Kind == AssistantUpdateKind.Suggestion).Suggestion!;
+            Assert.Equal(SuggestedActionKind.OpenDiagnostics, kept.Kind);
+            Assert.Equal(kept, Assert.Single(_conversation.Suggestions));
+            // The model is told there is no button, so it does not say there is one.
+            JsonElement dropped = (JsonElement)Contents(_model.Requests[2]).OfType<FunctionResultContent>().Last().Result!;
+            Assert.False(dropped.TryGetProperty("recorded", out _));
+            Assert.Contains("notes", dropped.GetProperty("error").GetString(), StringComparison.Ordinal);
+
+            // A later question of the same conversation: the note is still in it.
+            List<AssistantUpdate> second = await AskAsync(Assistant(notes: notes), "End it then");
+
+            Assert.DoesNotContain(second, u => u.Kind == AssistantUpdateKind.Suggestion);
+            Assert.Empty(_conversation.Suggestions);
+        }
+
+        // ----- the question itself (final review, A3) ------------------------------------------
+
+        [Fact]
+        public async Task A_credential_marker_in_the_question_reaches_the_model_as_credential()
+        {
+            _model.Reply("It is a stored credential.").Reply("Still.");
+            AiAssistant assistant = Assistant();
+
+            await AskAsync(assistant, "What is {{secret:K7Q2M9XD}} for, and {{secret:K7Q2");
+            await AskAsync(assistant, "M9XD}} and this?");
+
+            Assert.Equal("What is [credential] for, and [credential]", _model.Requests[0].Messages[^1].Text);
+            Assert.Equal("[credential] and this?", _model.Requests[1].Messages[^1].Text);
+            foreach (string sent in _model.Requests.Select(Sent).Concat(_conversation.Messages.Select(m => m.Text)))
+            {
+                Assert.DoesNotContain("secret", sent, StringComparison.Ordinal);
+                Assert.DoesNotContain("K7Q2", sent, StringComparison.Ordinal);
+                Assert.DoesNotContain("M9XD", sent, StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
+        public async Task A_credential_marker_in_the_question_is_cleaned_in_limited_mode_too()
+        {
+            _model.Fail(new ClientResultException("registry.ollama.ai/library/gemma:2b does not support tools"))
+                  .Reply("From the snapshot.");
+
+            await AskAsync(Assistant(), "Is {{secret:K7Q2M9XD}} safe?");
+
+            string limited = _model.Requests[1].Messages[^1].Text;
+            Assert.StartsWith("Is [credential] safe?", limited, StringComparison.Ordinal);
+            Assert.DoesNotContain("K7Q2M9XD", string.Join("\n", _model.Requests.Select(Sent)), StringComparison.Ordinal);
         }
 
         [Fact]

@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Services.Ai.Tools;
+using Kil0bitSystemMonitor.Services.Pad.Search;
 using Microsoft.Extensions.AI;
 
 namespace Kil0bitSystemMonitor.Services.Ai
@@ -28,6 +29,14 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// because each SDK timeout covers one attempt and retries would otherwise multiply it.
         /// </summary>
         internal TimeSpan InactivityTimeout { get; init; } = TimeSpan.FromSeconds(60);
+
+        /// <summary>
+        /// Where this assistant's requests go, as <c>PadAiPrivacy.Destination</c> names it for
+        /// the settings its client was built from ("api.anthropic.com", "this PC", a host). A
+        /// conversation remembers it when notes are read; a question that goes somewhere else
+        /// first takes back what was read.
+        /// </summary>
+        public string Destination { get; init; } = "";
     }
 
     /// <summary>
@@ -73,6 +82,15 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         private readonly bool _offerNotes;
 
+        /// <summary>Where every request of this assistant goes (<see cref="AiAssistantOptions.Destination"/>).</summary>
+        private readonly string _destination;
+
+        /// <summary>
+        /// The conversation of the question in progress, for the tool loop's client, which asks
+        /// about it before each of its requests. One question at a time.
+        /// </summary>
+        private AiConversation? _asking;
+
         private bool _toolsUnsupported;
 
         /// <summary>
@@ -88,7 +106,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
             _isClaude = isClaude;
             _readOnlyTools = AiToolFunctions.ReadOnly(tools);
             _offerNotes = NotesAllowed();
-            _toolClient = new ChatClientBuilder(new FinalAnswerChatClient(client, NotesAllowed))
+            _destination = options.Destination ?? "";
+            _toolClient = new ChatClientBuilder(new FinalAnswerChatClient(client, () => _asking is { } asked && NotesMayNotGo(asked)))
                 .UseFunctionInvocation(configure: f =>
                 {
                     f.MaximumIterationsPerRequest = Math.Max(1, options.MaxToolRounds);
@@ -108,14 +127,18 @@ namespace Kil0bitSystemMonitor.Services.Ai
         {
             ArgumentNullException.ThrowIfNull(conversation);
             conversation.Suggestions.Clear();
+            _asking = conversation;
 
-            // Before any request is built, with tools or in limited mode: while Ask MicaStats may
-            // not read notes, what the note tools returned earlier in this conversation is taken
-            // out of it, so turning the switch off also stops note text already read from being
-            // sent again with this question and every later one.
-            if (!NotesAllowed()) ToolHistory.TakeBackNoteResults(conversation.Messages);
+            // Before any request is built, with tools or in limited mode: when what was read from
+            // the notes may not go where this question goes, it is taken out of the conversation,
+            // and so are the answers that used it. So turning the switch off, or choosing another
+            // provider, also stops note text already read from being sent again with this
+            // question and every later one.
+            TakeBackNotesIfDue(conversation);
 
-            string text = (question ?? "").Trim();
+            // Text copied out of MicaPad carries the marker of a stored credential, and half of
+            // one when the selection cut it: neither leaves, as in a question asked in MicaPad.
+            string text = NotePassages.WithoutSecretParts((question ?? "").Trim());
             if (text.Length == 0)
             {
                 yield return new AssistantUpdate(AssistantUpdateKind.Error, EmptyQuestion);
@@ -232,8 +255,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
             Exception? limitedFailure = null;
             if (snapshot != null)
             {
-                // This request does not pass the tool loop's client, so the switch is asked here.
-                if (!NotesAllowed()) ToolHistory.TakeBackNoteResults(conversation.Messages);
+                // This request does not pass the tool loop's client, so it is asked here.
+                TakeBackNotesIfDue(conversation);
                 List<ChatMessage> messages = LimitedMessages(conversation.Messages, text, snapshot);
                 IAsyncEnumerator<ChatResponseUpdate> plain = _client
                     .GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = _options.MaxOutputTokens }, token)
@@ -309,16 +332,59 @@ namespace Kil0bitSystemMonitor.Services.Ai
         }
 
         /// <summary>
+        /// True when what this conversation read from the notes may not go out with a request of
+        /// this assistant: (a) Ask MicaStats may not read notes now, or (b) the notes were read to
+        /// another destination than the one this assistant's requests go to (a local server
+        /// then, Claude now).
+        /// </summary>
+        private bool NotesMayNotGo(AiConversation conversation) => !NotesAllowed() || ReadElsewhere(conversation);
+
+        private bool ReadElsewhere(AiConversation conversation) =>
+            conversation.NotesDestination is { } readTo && !string.Equals(readTo, _destination, StringComparison.Ordinal);
+
+        /// <summary>
+        /// Takes what was read from the notes, and what the model made of it, out of the
+        /// conversation when it may not go where this assistant's requests go
+        /// (<see cref="NotesMayNotGo"/>, <see cref="ToolHistory.TakeBackNotes"/>). After a
+        /// take-back for another destination nothing of the notes is left in the conversation,
+        /// so for this destination it has read none: a note tool marks it again when it reads.
+        /// </summary>
+        private void TakeBackNotesIfDue(AiConversation conversation)
+        {
+            bool elsewhere = ReadElsewhere(conversation);
+            if (!elsewhere && NotesAllowed()) return;
+            ToolHistory.TakeBackNotes(conversation.Messages);
+            if (elsewhere) conversation.ForgetNotesRead();
+        }
+
+        /// <summary>
+        /// What the model is told when it suggests ending a process in a conversation that read
+        /// notes.
+        /// </summary>
+        internal const string NoEndProcessAfterNotes =
+            "Not offered: MicaStats shows no button to end a process in a conversation that read the user's notes. Do not say there is one.";
+
+        /// <summary>
+        /// Keeps a suggestion for the answer, or says why not. Once the conversation has read
+        /// notes, a suggestion to end a process is dropped: text pasted into a note can steer
+        /// the model into asking for the one destructive button, with a reason it wrote itself.
+        /// The other kinds only open a window or save a report, and stay.
+        /// </summary>
+        private static string? Suggested(Turn turn, AiConversation conversation, SuggestedAction action) =>
+            action.Kind == SuggestedActionKind.EndProcess && conversation.NotesRead ? NoEndProcessAfterNotes : turn.Record(action);
+
+        /// <summary>
         /// The nine PC tools, then the two note tools when this assistant offers them, then
         /// <c>suggest_action</c>. The note functions are bound to this question's conversation:
-        /// each marks it when it hands notes to the model (<see cref="AiConversation.NotesRead"/>).
+        /// each marks it when it hands notes to the model (<see cref="AiConversation.NotesRead"/>),
+        /// with where this assistant's requests go.
         /// </summary>
         private ChatOptions ToolOptions(Turn turn, AiConversation conversation)
         {
             var tools = new List<AITool>(_readOnlyTools.Count + 3);
             tools.AddRange(_readOnlyTools);
-            if (_offerNotes) tools.AddRange(AiToolFunctions.Notes(_tools, conversation.MarkNotesRead));
-            tools.Add(AiToolFunctions.SuggestAction(turn.Record));
+            if (_offerNotes) tools.AddRange(AiToolFunctions.Notes(_tools, () => conversation.MarkNotesRead(_destination)));
+            tools.Add(AiToolFunctions.SuggestAction(action => Suggested(turn, conversation, action)));
             return new ChatOptions { Tools = tools, MaxOutputTokens = _options.MaxOutputTokens };
         }
 

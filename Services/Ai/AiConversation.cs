@@ -19,7 +19,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         public List<SuggestedAction> Suggestions { get; } = new();
 
-        private volatile bool _notesRead;
+        /// <summary>Where the notes went when they were read; null while none was. One field, so both properties change at once.</summary>
+        private volatile string? _notesDestination;
 
         /// <summary>
         /// True once a note tool handed note text to the model in this conversation. From then on
@@ -28,17 +29,31 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// note functions themselves, on whatever thread they run: what the tool loop reports
         /// about a call depends on the call ids a provider gives, and those can repeat.
         /// </summary>
-        public bool NotesRead => _notesRead;
+        public bool NotesRead => _notesDestination != null;
 
-        /// <summary>A note tool returned notes; see <see cref="NotesRead"/>.</summary>
-        internal void MarkNotesRead() => _notesRead = true;
+        /// <summary>
+        /// Where the notes went when they were read (<c>PadAiPrivacy.Destination</c>:
+        /// "api.anthropic.com", "this PC", a host), or null while <see cref="NotesRead"/> is
+        /// false. A question that goes somewhere else must not carry them along.
+        /// </summary>
+        public string? NotesDestination => _notesDestination;
+
+        /// <summary>A note tool returned notes to a model at <paramref name="destination"/>; see <see cref="NotesRead"/>.</summary>
+        internal void MarkNotesRead(string destination) => _notesDestination = destination ?? "";
+
+        /// <summary>
+        /// What was read was taken out of <see cref="Messages"/> because the next question goes to
+        /// another destination: for that one the conversation has read no notes, until a note
+        /// tool marks it again.
+        /// </summary>
+        internal void ForgetNotesRead() => _notesDestination = null;
 
         /// <summary>Starts over: forgets every message and suggestion.</summary>
         public void Clear()
         {
             Messages.Clear();
             Suggestions.Clear();
-            _notesRead = false;
+            _notesDestination = null;
         }
     }
 

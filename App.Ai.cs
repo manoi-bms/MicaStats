@@ -424,6 +424,10 @@ public partial class App
         Kil0bitSystemMonitor.Services.Ai.AiClientResult? result = null;
         try
         {
+            // Where this question goes, from the same settings the client is built from right after
+            // (both on the UI thread, with nothing in between). A conversation that read notes
+            // remembers it, and a question that goes somewhere else first takes back what was read.
+            string destination = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrivacy.Destination(config.AiProvider, config.AiCompatibleBaseUrl);
             result = Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets);
             if (result.Client == null)
                 return new Kil0bitSystemMonitor.Ai.AskSetup(null,
@@ -431,7 +435,11 @@ public partial class App
 
             var assistant = new Kil0bitSystemMonitor.Services.Ai.AiAssistant(
                 result.Client, result.IsClaude, tools, AiUsage,
-                new Kil0bitSystemMonitor.Services.Ai.AiAssistantOptions { DailyLimit = () => config.AiDailyLimit });
+                new Kil0bitSystemMonitor.Services.Ai.AiAssistantOptions
+                {
+                    DailyLimit = () => config.AiDailyLimit,
+                    Destination = destination,
+                });
             return new Kil0bitSystemMonitor.Ai.AskSetup(assistant.AskAsync, null, result.Client);
         }
         catch (Exception ex)

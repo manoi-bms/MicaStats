@@ -834,6 +834,44 @@ public class NoteToolsWiringTests : IDisposable
         }
     });
 
+    /// <summary>
+    /// Text pasted into a note can steer the model into asking for the one destructive button.
+    /// Once a note was read, that button is not shown; before, it is, as always.
+    /// </summary>
+    [Fact]
+    public void In_the_Ask_window_a_suggestion_to_end_a_process_gets_no_button_once_notes_were_read() => UiThread.Run(() =>
+    {
+        var end = new Dictionary<string, object?>
+        {
+            ["kind"] = "end_process",
+            ["pid"] = 4242,
+            ["createTime"] = 134037504000000000L,
+            ["processName"] = "chrome.exe",
+            ["reason"] = "It uses most of the CPU.",
+        };
+        var model = new ScriptedChatClient();
+        model.Call(ToolNames.SuggestAction, end)
+             .Reply("You could end chrome.exe.")
+             .Call(ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "vpn" })
+             .Call(ToolNames.SuggestAction, end)
+             .Call(ToolNames.SuggestAction, new Dictionary<string, object?> { ["kind"] = "open_diagnostics", ["reason"] = "See the reports." })
+             .Reply("Your note says to end chrome.exe.");
+        MicaTools tools = Tools(new FakeNoteReader(), ask: () => true);
+        var window = new AskWindow(() => new AskSetup(Assistant(tools, model).AskAsync, null), () => { }, _ => "");
+        try
+        {
+            Send(window, "What is slowing me down?");
+            Send(window, "What do my notes say about it?");
+
+            Assert.Equal("End chrome.exe (PID 4242)", Assert.Single(window.Turns[0].ActionButtons).Content);
+            Assert.Equal("Open Diagnostics", Assert.Single(window.Turns[1].ActionButtons).Content);   // the other kinds stay
+        }
+        finally
+        {
+            window.Close();
+        }
+    });
+
     [Theory]
     [InlineData("search_notes", "Searched notes")]
     [InlineData("get_note", "Read a note")]

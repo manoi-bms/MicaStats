@@ -549,6 +549,7 @@ namespace Kil0bitSystemMonitor.Models
         private bool _padReadingFont = true;
         private bool _padWebImages;
         private bool _padSemanticSearch;
+        private bool _padAiEnabled;
         private string _padEmbeddingServer = "";
         private string _padEmbeddingModel = "";
         private bool _padRerank;
@@ -643,6 +644,12 @@ namespace Kil0bitSystemMonitor.Models
         /// nothing leaves the PC until it is on. Turning it off deletes the stored vectors.
         /// </summary>
         public bool PadSemanticSearch { get => _padSemanticSearch; set { Set(ref _padSemanticSearch, value); } }
+
+        /// <summary>
+        /// AI actions in MicaPad (MicaPad AI spec 1). Off by default: nothing goes to the AI provider
+        /// until the user turns this on and runs an action.
+        /// </summary>
+        public bool PadAiEnabled { get => _padAiEnabled; set { Set(ref _padAiEnabled, value); } }
 
         /// <summary>The embedding server's base address (MicaPad adds <c>/embeddings</c>), normalized like the Kroki server; anything else reads as empty.</summary>
         public string PadEmbeddingServer

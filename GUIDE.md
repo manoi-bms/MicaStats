@@ -286,7 +286,7 @@ sent while you type, when a note opens or in the background — only when you ru
   still only searches). The best 8 passages go to the model and the answer streams above the
   results; the status line says "Answering from 6 passages", then "Answered from 6 passages". A
   citation such as [2] is a number matching result row 2, not a link, and the first 8 rows carry
-  their numbers. A new search, editing the query or closing the pane clears the answer. With no
+  their numbers. A new search, a new question or closing the pane clears the answer. With no
   match, nothing is sent. With AI off, **Ask** runs the normal search and the answer area says
   "Turn on Settings → MicaPad → AI to get answers".
 * **Links in an answer are never clickable.** They show as text, "label (address)", so text pasted

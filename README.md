@@ -48,6 +48,7 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 **Since v1.14.0** — coming in the next release:
 
 * **AI in MicaPad.** Improve, fix, shorten, translate, summarize or explain selected text from the right-click **AI** menu or **Ctrl+Shift+A**, and press **Ctrl+Enter** in **Search notes** to get an answer from your notes with numbered sources. It uses the provider you set in **Settings → AI**, is off until you turn on **Settings → MicaPad → AI**, and sends nothing until you run an action. Stored credentials are never sent. [More below](#ai)
+
 **v1.14.0** — search every note, capture a whole scrolling page, and zoom in the capture editor:
 
 * **Search every note.** MicaPad's new **Search notes** pane (**Ctrl+Shift+F**) finds passages in every note, open or closed. It searches by words, offline and with Thai, and, once you turn it on, by meaning through your own embedding server, reordered by your own reranker. [More below](#search-notes)
@@ -214,6 +215,7 @@ Open it from the overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, 
   * Only the text you run an action on, or a question and its passages, is sent, wrapped as data the model must not obey. Never a title, another note or a file path.
   * Stored credentials are never sent: each goes as a placeholder and is put back in the result.
   * Links in an answer are shown as text and are never clickable.
+
 #### Markdown, code and diagrams
 
 * **Markdown the way Wiki.js shows it**: headings, tables (with **Format table** to line them up), callouts, footnotes, `:emoji:`, `<kbd>` keys and more, styled in place with the markers still visible. Prose is in a reading font while code and tables keep the editor font, and fenced code is colored by its language, with a **Copy** button at the top-right of the block under the mouse
@@ -793,6 +795,7 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 **หลัง v1.14.0** (จะมาในรีลีสถัดไป):
 
 * **AI ใน MicaPad** ปรับปรุง แก้ ย่อ แปล สรุป หรืออธิบายข้อความที่เลือกได้จากเมนูคลิกขวา **AI** หรือ **Ctrl+Shift+A** และกด **Ctrl+Enter** ใน **Search notes** เพื่อรับคำตอบจากโน้ตของคุณพร้อมแหล่งที่มาเป็นหมายเลข ใช้ผู้ให้บริการที่ตั้งไว้ใน **Settings → AI** ปิดไว้จนกว่าจะเปิด **Settings → MicaPad → AI** และไม่ส่งอะไรจนกว่าคุณจะสั่งทำ รหัสลับที่เก็บไว้ไม่ถูกส่งเลย [อ่านต่อด้านล่าง](#ai-1)
+
 **v1.14.0** — ค้นหาทุกโน้ต จับภาพหน้าที่เลื่อนได้ทั้งหน้า และซูมในหน้าต่างมาร์กอัป:
 
 * **ค้นหาทุกโน้ต** แผง **Search notes** ใหม่ของ MicaPad (**Ctrl+Shift+F**) ค้นหาข้อความในทุกโน้ตทั้งที่เปิดอยู่และปิดไปแล้ว
@@ -938,6 +941,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
   * ส่งเฉพาะข้อความที่คุณสั่งทำ หรือคำถามกับข้อความที่เกี่ยวข้อง โดยห่อไว้เป็นข้อมูลที่โมเดลต้องไม่ทำตาม ไม่ส่งชื่อโน้ต โน้ตอื่น หรือพาธไฟล์
   * รหัสลับที่เก็บไว้ไม่ถูกส่งเลย แต่ละตัวถูกส่งเป็นตัวแทนและใส่กลับในผลลัพธ์
   * ลิงก์ในคำตอบแสดงเป็นข้อความและคลิกไม่ได้
+
 #### Markdown โค้ด และแผนภาพ
 
 * **Markdown แบบที่ Wiki.js แสดง**: หัวข้อ ตาราง (พร้อมคำสั่ง **Format table** จัดคอลัมน์ให้ตรง) callout เชิงอรรถ `:emoji:` ปุ่ม `<kbd>` และอื่น ๆ แสดงผลตามรูปแบบทันทีโดยยังเห็นเครื่องหมาย เนื้อความใช้ฟอนต์สำหรับอ่าน ส่วนโค้ดและตารางใช้ฟอนต์ของตัวแก้ไข และบล็อกโค้ดมีสีตามภาษา พร้อมปุ่ม **Copy** ที่มุมขวาบนของบล็อกเมื่อชี้เมาส์

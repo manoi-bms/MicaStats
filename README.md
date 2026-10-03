@@ -214,7 +214,7 @@ Open it from the overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, 
 * **Private**:
   * An action sends only the text it runs on, wrapped as data the model must not obey: never a title, another note or a file path.
   * A question sends the question and up to 8 passages from your notes, each with its note's title, heading and line numbers.
-  * The AI pane and the status line name where the text goes ("· to api.anthropic.com", or "· to this PC").
+  * The AI pane and the Search notes status name where the text goes ("· to api.anthropic.com" in the pane, "· api.anthropic.com" in the status, or "this PC" for a local server).
   * Stored credentials are never sent: each goes as a placeholder and is put back in the result.
   * Links in an answer are shown as text and are never clickable.
 
@@ -942,7 +942,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **เป็นส่วนตัว**:
   * การสั่งทำกับข้อความส่งเฉพาะข้อความนั้น โดยห่อไว้เป็นข้อมูลที่โมเดลต้องไม่ทำตาม ไม่ส่งชื่อโน้ต โน้ตอื่น หรือพาธไฟล์
   * คำถามส่งคำถามกับข้อความจากโน้ตของคุณไม่เกิน 8 ช่วง แต่ละช่วงมีชื่อโน้ต หัวข้อ และเลขบรรทัดกำกับ
-  * แผง AI และบรรทัดสถานะบอกว่าข้อความถูกส่งไปที่ไหน ("· to api.anthropic.com" หรือ "· to this PC")
+  * แผง AI และบรรทัดสถานะของ Search notes บอกว่าข้อความถูกส่งไปที่ไหน ("· to api.anthropic.com" ในแผง, "· api.anthropic.com" ในบรรทัดสถานะ หรือ "this PC" สำหรับเซิร์ฟเวอร์ในเครื่อง)
   * รหัสลับที่เก็บไว้ไม่ถูกส่งเลย แต่ละตัวถูกส่งเป็นตัวแทนและใส่กลับในผลลัพธ์
   * ลิงก์ในคำตอบแสดงเป็นข้อความและคลิกไม่ได้
 

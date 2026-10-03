@@ -304,8 +304,9 @@ sent while you type, when a note opens or in the background — only when you ru
   must not obey.
 * **Stored credentials are never sent**: in text for an action each one goes as `[[CREDENTIAL_1]]`
   and is put back in the result; in a question and passages it goes as `[credential]`. A selection
-  that cuts through a credential takes the whole credential. Your own words are not otherwise
-  altered, so a rewrite does not rename anything in them. Storing selected text as a credential
+  that cuts through a credential takes the whole credential, and a half-typed credential marker in
+  a question, an instruction or a search goes as `[credential]` too. Your own words are not
+  otherwise altered, so a rewrite does not rename anything in them. Storing selected text as a credential
   closes the AI pane for that note and clears an answer from notes, since both could still hold
   the value.
 * **The daily limit** is the one from **Settings → AI**, shared with Ask MicaStats: each action or

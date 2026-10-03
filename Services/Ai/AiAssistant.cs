@@ -78,7 +78,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             _usage = usage ?? throw new ArgumentNullException(nameof(usage));
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _isClaude = isClaude;
-            _readOnlyTools = AiToolFunctions.ReadOnly(tools);
+            _readOnlyTools = ReadOnlyTools(tools);
             _toolClient = new ChatClientBuilder(new FinalAnswerChatClient(client))
                 .UseFunctionInvocation(configure: f =>
                 {
@@ -273,6 +273,31 @@ namespace Kil0bitSystemMonitor.Services.Ai
             var messages = new List<ChatMessage>(conversation.Count + 1) { SystemMessage() };
             messages.AddRange(conversation);
             return messages;
+        }
+
+        /// <summary>
+        /// The nine PC tools, then the two note tools when the user lets Ask MicaStats read notes.
+        /// Asked once, here: the app builds an assistant for each question. A switch that cannot be
+        /// read counts as off, and a call that arrives after it was turned off is refused by the
+        /// tools themselves (<see cref="MicaTools.SearchNotesForAskAsync"/>).
+        /// </summary>
+        private static IReadOnlyList<AIFunction> ReadOnlyTools(MicaTools tools)
+        {
+            IReadOnlyList<AIFunction> pc = AiToolFunctions.ReadOnly(tools);
+            bool notes;
+            try
+            {
+                notes = tools.Notes?.ForAsk() == true;
+            }
+            catch (Exception)
+            {
+                notes = false;
+            }
+            if (!notes) return pc;
+
+            var all = new List<AIFunction>(pc);
+            all.AddRange(AiToolFunctions.Notes(tools));
+            return all;
         }
 
         private ChatOptions ToolOptions(Turn turn)

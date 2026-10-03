@@ -62,10 +62,25 @@ public partial class App
         {
             // Live readings go through the UI dispatcher, process rankings take a short lease on the
             // shared sampler, and the alert and battery monitors are looked up on each call.
+            //
+            // The note tools read MicaPad's workspace, search and feeder, which the app builds when
+            // MicaPad first opens, so each is looked up on each call too; no MicaPad window is needed.
+            // Each surface has its own switch, read at every call: off by default, and either one
+            // can be turned off while a question or an MCP client is in the middle of its work.
+            AppConfig settings = config.Config;
             AiTools = new Services.Ai.Tools.MicaTools(
                 new Services.Ai.Tools.LiveMicaData(history, ui, SharedProcessSampler, History,
                     () => AlertMonitorForAi, () => Battery, () => DateTime.UtcNow),
-                Services.Ai.Tools.Redactor.ForCurrentUser());
+                Services.Ai.Tools.Redactor.ForCurrentUser())
+            {
+                Notes = new Services.Ai.Tools.NoteAccess(
+                    new Services.Pad.Ai.NoteTools(
+                        new Kil0bitSystemMonitor.Pad.LiveNoteReader(() => s_pad, () => s_padSearch, () => s_padSearchFeeder, ui)),
+                    () => settings.AiNotesInAsk,
+                    () => settings.AiNotesInMcp),
+                // The tool, the surface and counts: never a query, a title or note text.
+                NoteLog = line => DiagnosticsLog.Log("ai", line),
+            };
         }
         catch (Exception ex)
         {
@@ -267,10 +282,14 @@ public partial class App
             EnsureMcpHttpToken();
             string version = Kil0bitSystemMonitor.Services.Ai.Mcp.McpToolSet.CurrentVersion;
             Kil0bitSystemMonitor.Services.Ai.Mcp.ToolInvoker invoke = tools.InvokeAsync;
+            // The note tools are listed while the user lets MCP clients read notes; asked at each
+            // list request. A call is checked again by the tools themselves (tools.Notes.ForMcp).
+            AppConfig settings = config!;
+            Func<bool> notesListed = () => settings.AiNotesInMcp;
             var host = new Kil0bitSystemMonitor.Services.Ai.Mcp.McpHttpHost(
                 port,
                 ReadMcpHttpToken,
-                () => Kil0bitSystemMonitor.Services.Ai.Mcp.McpToolSet.CreateOptions(invoke, version),
+                () => Kil0bitSystemMonitor.Services.Ai.Mcp.McpToolSet.CreateOptions(invoke, version, notesListed),
                 message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("mcp", message));
             if (host.TryStart(out string? problem))
             {

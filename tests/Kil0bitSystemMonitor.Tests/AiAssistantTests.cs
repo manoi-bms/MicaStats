@@ -33,11 +33,15 @@ namespace Kil0bitSystemMonitor.Tests
 
         public void Dispose() => _env.Dispose();
 
-        private MicaTools Tools() => new(_data, new Redactor(@"C:\Users\alice", "alice", "DESK-7"));
+        private MicaTools Tools(NoteAccess? notes = null) => new(_data, new Redactor(@"C:\Users\alice", "alice", "DESK-7")) { Notes = notes };
 
-        private AiAssistant Assistant(bool isClaude = false, IChatClient? client = null, TimeSpan? silence = null) =>
-            new(client ?? _model, isClaude, Tools(), _usage,
+        private AiAssistant Assistant(bool isClaude = false, IChatClient? client = null, TimeSpan? silence = null, NoteAccess? notes = null) =>
+            new(client ?? _model, isClaude, Tools(notes), _usage,
                 new AiAssistantOptions { DailyLimit = () => _limit, InactivityTimeout = silence ?? TimeSpan.FromSeconds(60) });
+
+        /// <summary>The note tools over a fake reader, allowed for Ask and not for MCP.</summary>
+        private static NoteAccess NotesForAsk(FakeNoteReader? reader = null) =>
+            new(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(reader ?? new FakeNoteReader()), () => true, () => false);
 
         private async Task<List<AssistantUpdate>> AskAsync(AiAssistant assistant, string question, CancellationToken ct = default)
         {
@@ -103,6 +107,19 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public async Task With_notes_allowed_every_request_carries_the_same_prompt_and_the_two_note_tools_before_suggest_action()
+        {
+            _model.Reply("Hello.");
+
+            await AskAsync(Assistant(notes: NotesForAsk()), "Hi");
+
+            ScriptedChatClient.Request request = Assert.Single(_model.Requests);
+            Assert.Equal(AiPrompts.System, request.Messages[0].Text);   // one constant either way: Claude caches it
+            Assert.Equal(ToolNames.ReadOnly.Concat(ToolNames.Notes).Append(ToolNames.SuggestAction), request.ToolNames);
+            Assert.Equal(2000, request.Options!.MaxOutputTokens);
+        }
+
+        [Fact]
         public async Task The_previous_exchange_is_sent_with_the_next_question()
         {
             _model.Reply("First.").Reply("Second.");
@@ -135,6 +152,25 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(8, updates.Count(u => u.Kind == AssistantUpdateKind.ToolUsed));
             Assert.Equal("Final answer.", TextOf(updates));
             Assert.Equal(1, _usage.UsedToday);
+        }
+
+        [Fact]
+        public async Task With_notes_allowed_the_eight_rounds_hold_for_the_note_tools_too_and_count_as_one_question()
+        {
+            var reader = new FakeNoteReader();
+            _model.Otherwise = request => request.ToolNames.Count > 0
+                ? _model.CallMessage(ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "vpn" })
+                : new ChatMessage(ChatRole.Assistant, "Final answer.");
+
+            List<AssistantUpdate> updates = await AskAsync(Assistant(notes: NotesForAsk(reader)), "Read everything");
+
+            Assert.Equal(9, _model.Requests.Count);
+            Assert.All(_model.Requests.Take(8), r => Assert.Equal(12, r.ToolNames.Count));
+            Assert.Empty(_model.Requests[8].ToolNames);
+            Assert.Equal(8, reader.Searches);
+            Assert.Equal(8, updates.Count(u => u.Kind == AssistantUpdateKind.ToolUsed));
+            Assert.Equal("Final answer.", TextOf(updates));
+            Assert.Equal(1, _usage.UsedToday);   // a note tool call does not count against the daily limit
         }
 
         [Fact]
@@ -503,6 +539,33 @@ namespace Kil0bitSystemMonitor.Tests
                 .First(c => c!["type"]!.GetValue<string>() == "tool_result")!;
             JsonNode sentResult = JsonNode.Parse(toolResult["content"]!.GetValue<string>())!;
             Assert.Equal(12.3, sentResult["cpu"]!["usagePercent"]!.GetValue<double>());
+        }
+
+        [Fact]
+        public async Task With_notes_allowed_Claude_is_offered_the_note_tools_with_their_arguments()
+        {
+            var handler = new ScriptedHttpHandler(sent => (HttpStatusCode.OK, "text/event-stream",
+                sent.Body.Contains("tool_result", StringComparison.Ordinal)
+                    ? ScriptedHttpHandler.ClaudeStreamText
+                    : ScriptedHttpHandler.ClaudeStreamToolUse));
+            var secrets = new SecretStore(_env.PathOf("secrets.bin"), _ => { });
+            secrets.Set(SecretNames.ClaudeKey, "sk-ant-test");
+            AiClientResult claude = AiProviderFactory.Create(new AppConfig(), secrets, handler);
+
+            List<AssistantUpdate> updates = await AskAsync(
+                Assistant(isClaude: true, client: claude.Client, notes: NotesForAsk()), "How is my CPU?");
+
+            Assert.Equal("Streamed ok", TextOf(updates));
+            JsonNode first = JsonNode.Parse(handler.Requests[0].Body)!;
+            JsonArray tools = first["tools"]!.AsArray();
+            Assert.Equal(ToolNames.ReadOnly.Concat(ToolNames.Notes).Append(ToolNames.SuggestAction),
+                tools.Select(t => t!["name"]!.GetValue<string>()));
+            Assert.Equal(AiPrompts.System, first["system"]![0]!["text"]!.GetValue<string>());
+            JsonNode search = tools.Single(t => t!["name"]!.GetValue<string>() == ToolNames.SearchNotes)!;
+            Assert.Equal(new[] { "query" }, search["input_schema"]!["required"]!.AsArray().Select(r => r!.GetValue<string>()));
+            Assert.NotNull(search["input_schema"]!["properties"]!["limit"]);
+            JsonNode get = tools.Single(t => t!["name"]!.GetValue<string>() == ToolNames.GetNote)!;
+            Assert.Equal(new[] { "noteId" }, get["input_schema"]!["required"]!.AsArray().Select(r => r!.GetValue<string>()));
         }
 
         [Fact]

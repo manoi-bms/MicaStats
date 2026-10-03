@@ -7,10 +7,20 @@ using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services.History;
+using Kil0bitSystemMonitor.Services.Pad.Ai;
 using Kil0bitSystemMonitor.Services.Sensors;
 
 namespace Kil0bitSystemMonitor.Services.Ai.Tools
 {
+    /// <summary>
+    /// The note tools and who may use them. Null on <see cref="MicaTools"/> means the app is not
+    /// running (the offline bridge).
+    /// </summary>
+    /// <param name="Tools">Builds the results of <c>search_notes</c> and <c>get_note</c>.</param>
+    /// <param name="ForAsk">Whether Ask MicaStats may use them now (<c>AppConfig.AiNotesInAsk</c>); asked at each call.</param>
+    /// <param name="ForMcp">Whether MCP clients may use them now (<c>AppConfig.AiNotesInMcp</c>); asked at each call.</param>
+    public sealed record NoteAccess(NoteTools Tools, Func<bool> ForAsk, Func<bool> ForMcp);
+
     /// <summary>
     /// The read-only data tools, shared by the in-app assistant and the MCP servers.
     ///
@@ -21,6 +31,14 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
     /// one decimal, times are UTC ISO-8601 written with the invariant culture, and the whole
     /// result passes through <see cref="Redactor.RedactJson"/> before it leaves. Only
     /// cancellation escapes, so a Stop in the Ask window really stops.
+    /// </para>
+    ///
+    /// <para>
+    /// The two note tools (<see cref="ToolNames.Notes"/>) differ in two ways. Each surface has its
+    /// own switch, asked at every call: <see cref="InvokeAsync"/> is the MCP surface, and the two
+    /// <c>...ForAskAsync</c> methods are Ask MicaStats. And their results are not redacted: a
+    /// question about a note must be able to get the address written in it. Credentials are
+    /// cleaned by <see cref="NoteTools"/> instead.
     /// </para>
     /// </summary>
     public sealed partial class MicaTools
@@ -57,6 +75,27 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
         }
 
         /// <summary>
+        /// The note tools and the two switches, set by the app. Null where there is no running
+        /// app to read notes from (the offline bridge): a note tool then answers
+        /// "MicaStats is not running".
+        /// </summary>
+        public NoteAccess? Notes { get; init; }
+
+        /// <summary>
+        /// Receives one line per note tool call: the tool, the surface and counts. Never the
+        /// query, a title or note text. Null logs nothing.
+        /// </summary>
+        public Action<string>? NoteLog { get; init; }
+
+        /// <summary><c>search_notes</c> for Ask MicaStats: refused unless <see cref="NoteAccess.ForAsk"/> says yes now.</summary>
+        public Task<JsonNode> SearchNotesForAskAsync(JsonObject? args, CancellationToken ct = default) =>
+            NoteToolAsync(ToolNames.SearchNotes, forAsk: true, args, ct);
+
+        /// <summary><c>get_note</c> for Ask MicaStats: refused unless <see cref="NoteAccess.ForAsk"/> says yes now.</summary>
+        public Task<JsonNode> GetNoteForAskAsync(JsonObject? args, CancellationToken ct = default) =>
+            NoteToolAsync(ToolNames.GetNote, forAsk: true, args, ct);
+
+        /// <summary>
         /// <c>get_live_status</c>: the latest snapshot (CPU, per-core summary, temperatures, memory,
         /// GPU, disks, network, battery, sensors) plus min/avg/max over the in-memory window.
         /// </summary>
@@ -82,12 +121,15 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
         /// <summary>
         /// Runs a read-only tool by name with JSON arguments, for the tool pipe and MCP. An
         /// unknown name (including <c>suggest_action</c>, which is in-app only) is an error
-        /// result, never an exception.
+        /// result, never an exception. The two note tools are answered as the MCP surface.
         /// </summary>
         public async Task<JsonNode> InvokeAsync(string tool, JsonObject? args, CancellationToken ct = default)
         {
             switch (tool)
             {
+                case ToolNames.SearchNotes:
+                case ToolNames.GetNote:
+                    return await NoteToolAsync(tool, forAsk: false, args, ct).ConfigureAwait(false);
                 case ToolNames.GetLiveStatus:
                     return await GetLiveStatusAsync(ct).ConfigureAwait(false);
                 case ToolNames.GetHistory:
@@ -137,6 +179,101 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
                 result = ToolJson.Error("MicaStats could not read this: " + ex.Message);
             }
             return _redactor.RedactJson(result) ?? ToolJson.Error("The tool returned nothing.");
+        }
+
+        // ----- search_notes, get_note --------------------------------------------------------
+
+        /// <summary>
+        /// Runs one note tool for one surface. The surface's switch is asked here, at every call:
+        /// off (or unreadable) refuses with <see cref="NoteTools.Off"/> before anything is read.
+        /// Like <see cref="RunAsync"/>, an exception becomes an error result and only the
+        /// caller's cancellation escapes; unlike it, the result is not redacted.
+        /// </summary>
+        private async Task<JsonNode> NoteToolAsync(string tool, bool forAsk, JsonObject? args, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            string who = "Note tool " + tool + (forAsk ? " (Ask): " : " (MCP): ");
+
+            NoteAccess? access = Notes;
+            if (access == null)
+            {
+                LogNote(who + "refused, MicaStats is not running");
+                return ToolJson.Error(OfflineMicaData.NotRunningMessage);
+            }
+            if (!Allowed(forAsk ? access.ForAsk : access.ForMcp))
+            {
+                LogNote(who + "refused, notes access is off");
+                return ToolJson.Error(NoteTools.Off);
+            }
+
+            JsonNode? result;
+            try
+            {
+                result = tool == ToolNames.SearchNotes
+                    ? await access.Tools.SearchAsync(args, ct).ConfigureAwait(false)
+                    : await access.Tools.GetNoteAsync(args, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // The type only: a message could quote a note.
+                LogNote(who + "failed (" + ex.GetType().Name + ")");
+                return ToolJson.Error("MicaStats could not read the notes (" + ex.GetType().Name + ")");
+            }
+
+            if (result == null) return ToolJson.Error("The tool returned nothing.");
+            LogNote(who + NoteCounts(result));
+            return result;
+        }
+
+        /// <summary>A switch as it is now. One that cannot be read counts as off.</summary>
+        private static bool Allowed(Func<bool>? allowed)
+        {
+            try
+            {
+                return allowed != null && allowed();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>What a note tool result holds, as counts: never its text, a title, an id or an error's wording.</summary>
+        private static string NoteCounts(JsonNode result)
+        {
+            if (result is not JsonObject found || found.ContainsKey("error")) return "an error result";
+
+            if (found["results"] is JsonArray results)
+            {
+                int characters = 0;
+                foreach (JsonNode? hit in results) characters += TextLength(hit?["text"]);
+                return "results " + results.Count.ToString(CultureInfo.InvariantCulture) +
+                       ", characters " + characters.ToString(CultureInfo.InvariantCulture);
+            }
+
+            int first = ArgInt(found, "firstLine", 1), last = ArgInt(found, "lastLine", 0);
+            return "lines " + Math.Max(0, last - first + 1).ToString(CultureInfo.InvariantCulture) +
+                   ", characters " + TextLength(found["text"]).ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static int TextLength(JsonNode? node) =>
+            node is JsonValue value && value.TryGetValue(out string? text) && text != null ? text.Length : 0;
+
+        /// <summary>Logging is best effort: a log that fails must not fail the tool.</summary>
+        private void LogNote(string line)
+        {
+            try
+            {
+                NoteLog?.Invoke(line);
+            }
+            catch (Exception)
+            {
+                // Nothing to do about a log that cannot be written; the result still goes back.
+            }
         }
 
         /// <summary>A string argument; numbers and objects come back as their JSON text.</summary>

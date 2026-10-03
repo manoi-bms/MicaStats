@@ -45,6 +45,27 @@ public class McpToolSetTests
     }
 
     [Fact]
+    public async Task With_notes_allowed_the_server_lists_the_nine_and_the_two_note_tools_all_read_only()
+    {
+        var invoker = new RecordingInvoker();
+        await using McpInMemory mcp = await McpInMemory.ConnectAsync(McpToolSet.CreateOptions(invoker.Invoke, "9.8.7", () => true));
+
+        IList<McpClientTool> tools = await mcp.Client.ListToolsAsync();
+
+        Assert.Equal(ToolNames.ReadOnly.Concat(ToolNames.Notes).OrderBy(n => n, StringComparer.Ordinal),
+            tools.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
+        Assert.DoesNotContain(tools, t => t.Name == ToolNames.SuggestAction);
+        Assert.All(tools, t =>
+        {
+            Assert.True(t.ProtocolTool.Annotations?.ReadOnlyHint);
+            Assert.False(t.ProtocolTool.Annotations?.DestructiveHint);
+            Assert.False(t.ProtocolTool.Annotations?.OpenWorldHint);
+            Assert.False(string.IsNullOrWhiteSpace(t.Description));
+        });
+        Assert.Empty(invoker.Calls);   // listing asks nothing of the notes
+    }
+
+    [Fact]
     public async Task The_history_schema_requires_metric_and_from_and_hides_the_cancellation_token()
     {
         await using McpInMemory mcp = await McpInMemory.ConnectAsync(McpToolSet.CreateOptions(new RecordingInvoker().Invoke, "1.0.0"));

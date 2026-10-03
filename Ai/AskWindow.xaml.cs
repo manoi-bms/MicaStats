@@ -333,10 +333,15 @@ namespace Kil0bitSystemMonitor.Ai
             if (generation == _generation) SetStatus("Stopped. Your question is still in the box.");
         }
 
-        /// <summary>Adds a turn for <paramref name="question"/>; sending always shows the end of the transcript.</summary>
+        /// <summary>
+        /// Adds a turn for <paramref name="question"/>; sending always shows the end of the transcript.
+        /// Once a turn of this conversation used a note tool, every later turn shows its links as
+        /// text too: the conversation keeps that tool's result and sends it with each later
+        /// question, so note text can steer those answers as well. New conversation starts clean.
+        /// </summary>
         private AskTurnView AddTurn(string question)
         {
-            var turn = new AskTurnView(question);
+            var turn = new AskTurnView(question) { PlainLinks = _turns.Any(t => t.PlainLinks) };
             _turns.Add(turn);
             TranscriptPanel.Children.Add(turn.Root);
             EmptyState.Visibility = Visibility.Collapsed;

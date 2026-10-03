@@ -11,6 +11,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
+using Kil0bitSystemMonitor.Services.Ai.Tools;
 
 // UseWindowsForms puts System.Windows.Forms in scope; these names exist in both.
 using Button = System.Windows.Controls.Button;
@@ -253,6 +254,14 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>Where a render failure is reported, once per answer. Tests replace it so nothing reaches the real log.</summary>
         internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("ai", message);
 
+        /// <summary>
+        /// True once note text may have steered this answer: a note tool ran in this turn
+        /// (<see cref="AddTool"/> sets it), or in an earlier turn of the same conversation, whose
+        /// results are sent again with every later question (the window sets it). Every document
+        /// shown from then on has its links turned into text (<see cref="ChatDocument.RemoveLinks"/>).
+        /// </summary>
+        internal bool PlainLinks { get; set; }
+
         /// <summary>The shortest time between two renders of a streaming answer.</summary>
         internal TimeSpan RenderInterval { get; set; } = TimeSpan.FromMilliseconds(100);
 
@@ -270,7 +279,11 @@ namespace Kil0bitSystemMonitor.Ai
             ScheduleRender();
         }
 
-        /// <summary>Records one tool call: a chip per tool, whose tooltip lists every call of it.</summary>
+        /// <summary>
+        /// Records one tool call: a chip per tool, whose tooltip lists every call of it. A note
+        /// tool also turns the answer's links into text, in what is shown already and in
+        /// everything rendered after.
+        /// </summary>
         public void AddTool(string name, string? args)
         {
             if (!_chipsByTool.TryGetValue(name, out ToolChip? chip))
@@ -282,6 +295,12 @@ namespace Kil0bitSystemMonitor.Ai
                 Tools.Visibility = Visibility.Visible;
             }
             chip.AddCall(Describe(name, args));
+
+            if (!PlainLinks && name is ToolNames.SearchNotes or ToolNames.GetNote)
+            {
+                PlainLinks = true;
+                if (_rendered) RenderNow();   // text streamed before the tool ran may hold a link
+            }
         }
 
         /// <summary>Shows a note under the answer, replacing any earlier one.</summary>
@@ -329,7 +348,9 @@ namespace Kil0bitSystemMonitor.Ai
         /// Renders <see cref="RawText"/> now, cancelling a pending render. Never throws: it runs on
         /// a timer tick and from the window's <c>finally</c>, where an exception would take MicaStats
         /// down or leave the window busy. If the Markdown cannot be rendered, the answer is shown as
-        /// plain text and the failure is reported once.
+        /// plain text and the failure is reported once. With <see cref="PlainLinks"/> the links go
+        /// before the document is shown; a document whose links cannot be taken out is not shown
+        /// either (the plain text has none).
         /// </summary>
         internal void RenderNow()
         {
@@ -337,7 +358,9 @@ namespace Kil0bitSystemMonitor.Ai
             string raw = RawText;
             try
             {
-                Answer.Show(BuildDocument(raw));
+                FlowDocument document = BuildDocument(raw);
+                if (PlainLinks) ChatDocument.RemoveLinks(document);
+                Answer.Show(document);
             }
             catch (Exception ex)
             {
@@ -430,6 +453,8 @@ namespace Kil0bitSystemMonitor.Ai
             "get_hardware" => "Read hardware info",
             "get_battery" => "Checked the battery",
             "get_boot_summary" => "Checked startup times",
+            "search_notes" => "Searched notes",
+            "get_note" => "Read a note",
             _ => name,
         };
     }

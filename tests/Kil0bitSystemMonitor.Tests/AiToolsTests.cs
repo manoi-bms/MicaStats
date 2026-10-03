@@ -361,6 +361,26 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public async Task With_notes_allowed_invoke_still_refuses_suggest_action_and_any_tool_that_writes()
+        {
+            var reader = new FakeNoteReader();
+            var tools = new MicaTools(new FakeMicaData(), new Redactor(@"C:\Users\alice", "alice", "DESK-7"))
+            {
+                Notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(reader), () => true, () => true),
+            };
+
+            var suggest = await tools.InvokeAsync(ToolNames.SuggestAction, null);
+            var write = await tools.InvokeAsync("set_note", new JsonObject { ["noteId"] = "a1", ["text"] = "gone" });
+            var search = await tools.InvokeAsync(ToolNames.SearchNotes, new JsonObject { ["query"] = "vpn" });
+
+            Assert.StartsWith("Unknown tool 'suggest_action'", suggest["error"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.StartsWith("Unknown tool 'set_note'", write["error"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.Null(search["error"]);
+            Assert.Equal(1, reader.Searches);
+            Assert.Equal(0, reader.Reads);
+        }
+
+        [Fact]
         public void The_read_only_list_is_the_nine_tools_in_order()
         {
             Assert.Equal(new[]
@@ -369,6 +389,14 @@ namespace Kil0bitSystemMonitor.Tests
                 "list_alerts", "get_hardware", "get_battery", "get_boot_summary",
             }, ToolNames.ReadOnly);
             Assert.DoesNotContain(ToolNames.SuggestAction, ToolNames.ReadOnly);
+        }
+
+        [Fact]
+        public void The_note_tools_are_a_list_of_their_own_outside_the_nine()
+        {
+            Assert.Equal(new[] { "search_notes", "get_note" }, ToolNames.Notes);
+            Assert.Empty(ToolNames.Notes.Intersect(ToolNames.ReadOnly));
+            Assert.DoesNotContain(ToolNames.SuggestAction, ToolNames.Notes);
         }
 
         [Fact]

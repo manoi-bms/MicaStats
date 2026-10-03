@@ -15,8 +15,9 @@ namespace Kil0bitSystemMonitor.Services.Ai.Mcp;
 /// It runs in its own short-lived process that the MCP client starts and stops: no window, no
 /// single-instance mutex, no monitoring. When MicaStats is not running (or is not serving the
 /// pipe) the bridge answers from files on disk, so history and slowdown reports still work and
-/// live tools say "MicaStats is not running". The MCP setting is read from config.json on
-/// every call, so turning MCP off in Settings takes effect for a bridge already running.
+/// live tools say "MicaStats is not running". So do the two note tools: notes are read by the
+/// running app only. The MCP setting is read from config.json on every call, so turning MCP off
+/// in Settings takes effect for a bridge already running.
 /// </para>
 /// </summary>
 public static class McpBridge
@@ -75,13 +76,15 @@ public static class McpBridge
 
     /// <summary>
     /// The bridge's server options: the nine read-only tools over a forwarder that reads the mode
-    /// from <paramref name="configPath"/> on every call. Separate from <see cref="RunStdio"/> so
-    /// tests can drive the same server over in-memory streams.
+    /// from <paramref name="configPath"/> on every call, and the two note tools in the list while
+    /// that file says MCP clients may read notes (read each time a client asks for the list).
+    /// Separate from <see cref="RunStdio"/> so tests can drive the same server over in-memory streams.
     /// </summary>
     internal static McpServerOptions CreateBridgeOptions(string configPath, string pipeName, MicaTools offline, TimeSpan callTimeout) =>
         McpToolSet.CreateOptions(
             CreateForwarder(pipeName, () => ReadMcpMode(configPath), offline, callTimeout),
-            McpToolSet.CurrentVersion);
+            McpToolSet.CurrentVersion,
+            () => ReadNotesInMcp(configPath));
 
     /// <summary>
     /// <c>AiMcpMode</c> from config.json: <see cref="AiMcpModes.Stdio"/> or
@@ -89,26 +92,47 @@ public static class McpBridge
     /// including a missing, locked or unreadable file. Opened with full sharing so the app's
     /// own save is never blocked.
     /// </summary>
-    public static string ReadMcpMode(string configPath)
+    public static string ReadMcpMode(string configPath) =>
+        ReadSetting(configPath, nameof(Kil0bitSystemMonitor.Models.AppConfig.AiMcpMode), AiMcpModes.Off, value =>
+        {
+            string? mode = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+            if (string.Equals(mode, AiMcpModes.Stdio, StringComparison.Ordinal)) return AiMcpModes.Stdio;
+            if (string.Equals(mode, AiMcpModes.Http, StringComparison.Ordinal)) return AiMcpModes.Http;
+            return AiMcpModes.Off;
+        });
+
+    /// <summary>
+    /// <c>AiNotesInMcp</c> from config.json, read the way <see cref="ReadMcpMode"/> reads the
+    /// mode: true only for a JSON <c>true</c>. Anything else, and a missing, locked or unreadable
+    /// file, is off. It decides what the bridge lists; whether a call is answered is the running
+    /// app's own check.
+    /// </summary>
+    public static bool ReadNotesInMcp(string configPath) =>
+        ReadSetting(configPath, nameof(Kil0bitSystemMonitor.Models.AppConfig.AiNotesInMcp), false,
+            value => value.ValueKind == JsonValueKind.True);
+
+    /// <summary>
+    /// One top-level property of config.json through <paramref name="read"/>, or
+    /// <paramref name="off"/> when the file is missing, locked, not a JSON object or has no such
+    /// property. Opened with full sharing so the app's own save is never blocked.
+    /// </summary>
+    private static T ReadSetting<T>(string configPath, string name, T off, Func<JsonElement, T> read)
     {
         try
         {
             using var stream = new FileStream(configPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             using JsonDocument document = JsonDocument.Parse(stream);
             if (document.RootElement.ValueKind == JsonValueKind.Object &&
-                document.RootElement.TryGetProperty(nameof(Kil0bitSystemMonitor.Models.AppConfig.AiMcpMode), out JsonElement value) &&
-                value.ValueKind == JsonValueKind.String)
+                document.RootElement.TryGetProperty(name, out JsonElement value))
             {
-                string? mode = value.GetString();
-                if (string.Equals(mode, AiMcpModes.Stdio, StringComparison.Ordinal)) return AiMcpModes.Stdio;
-                if (string.Equals(mode, AiMcpModes.Http, StringComparison.Ordinal)) return AiMcpModes.Http;
+                return read(value);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or NotSupportedException)
         {
             // Unreadable counts as Off: the bridge never serves data the user may have turned off.
         }
-        return AiMcpModes.Off;
+        return off;
     }
 
     /// <summary>

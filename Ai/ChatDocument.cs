@@ -104,6 +104,70 @@ namespace Kil0bitSystemMonitor.Ai
             return document;
         }
 
+        /// <summary>
+        /// Turns every link in <paramref name="document"/> into plain text in its place: its label
+        /// as it was styled, then its address in parentheses. A label that is the address itself
+        /// (a bare address in the answer) is shown once. Whatever built the document, no
+        /// <see cref="Hyperlink"/> is left in it, so nothing can be clicked open and no address
+        /// hides behind a label.
+        ///
+        /// <para>
+        /// For answers that note text may have steered: text pasted into a note from the web can
+        /// make the model write a link that looks like a citation and carries other passages in
+        /// its address. One click would send them. MicaPad's answers always go through this; an
+        /// Ask MicaStats answer does once a note tool was used.
+        /// </para>
+        /// </summary>
+        internal static void RemoveLinks(FlowDocument document)
+        {
+            foreach (Hyperlink link in All<Hyperlink>(document))
+            {
+                // Thrown, not skipped: a link that cannot be taken out must not be shown (the caller falls back to plain text).
+                InlineCollection around = link.SiblingInlines
+                    ?? throw new InvalidOperationException("A link in an answer has no place to put its text");
+                string label = new TextRange(link.ContentStart, link.ContentEnd).Text.Trim();
+                string? address = AddressOf(link);
+
+                var inside = new List<Inline>(link.Inlines);
+                foreach (Inline inline in inside)
+                {
+                    link.Inlines.Remove(inline);
+                    around.InsertBefore(link, inline);
+                }
+                if (address != null && !SameAddress(label, address))
+                    around.InsertBefore(link, new Run(label.Length == 0 ? address : " (" + address + ")"));
+                around.Remove(link);
+            }
+        }
+
+        /// <summary>Every <typeparamref name="T"/> inside a document: its links, or its text boxes (the code blocks of a rendered answer).</summary>
+        internal static List<T> All<T>(DependencyObject root) where T : DependencyObject
+        {
+            var found = new List<T>();
+            foreach (object child in LogicalTreeHelper.GetChildren(root))
+            {
+                if (child is not DependencyObject element) continue;
+                if (element is T match) found.Add(match);
+                found.AddRange(All<T>(element));
+            }
+            return found;
+        }
+
+        /// <summary>
+        /// Where a link goes. <see cref="AddInlines"/> keeps the address in the link's tool tip and
+        /// opens it from a click handler; a link built any other way names it in <c>NavigateUri</c>.
+        /// </summary>
+        private static string? AddressOf(Hyperlink link)
+        {
+            if (link.NavigateUri is { } uri) return uri.IsAbsoluteUri ? uri.AbsoluteUri : uri.OriginalString;
+            return link.ToolTip is string { Length: > 0 } tip ? tip : null;
+        }
+
+        /// <summary>True when the label is the address: the same text, or an address that is the same once both are written out in full.</summary>
+        private static bool SameAddress(string label, string address) =>
+            string.Equals(label, address, StringComparison.Ordinal)
+            || (SafeLinks.TryCreate(label) is { } written && string.Equals(written.AbsoluteUri, address, StringComparison.Ordinal));
+
         private static FlowDocument NewDocument()
         {
             var document = new FlowDocument

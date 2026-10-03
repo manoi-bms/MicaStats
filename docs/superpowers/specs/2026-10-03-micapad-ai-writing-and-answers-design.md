@@ -126,7 +126,7 @@ A pane on the right, 320 wide, in the same place as History and Search notes. Op
 
 ## 6. The prompt
 
-One fixed system prompt, a constant. **(R)** It is not marked for Anthropic prompt caching: it is far shorter than the smallest prefix the API caches.
+One fixed system prompt, a constant. For Claude it carries the same cache mark as Ask MicaStats' prompt, so both requests have one shape. **(R)** The prompt is shorter than the smallest prefix the API caches, so the mark changes nothing today.
 
 ```
 You are the writing assistant built into MicaPad, a notepad. You work on text from the user's own notes.

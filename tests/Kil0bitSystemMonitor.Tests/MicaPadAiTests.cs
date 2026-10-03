@@ -252,6 +252,83 @@ namespace Kil0bitSystemMonitor.Tests
 
         private static string Count(int n) => n.ToString(CultureInfo.InvariantCulture);
 
+        // ---- what the app runs with: every other test here replaces these --------------------------
+
+        /// <summary>Runs a test over a window built as the app builds it, with nothing replaced.</summary>
+        private static Task OnUiWithDefaults(Func<MicaPadWindow, PadTestEnv, Task> test)
+        {
+            Task body = UiThread.RunAsync(async () =>
+            {
+                var dispatcher = Dispatcher.CurrentDispatcher;
+                using var env = new PadTestEnv(post: action => dispatcher.BeginInvoke(action));
+                var window = new MicaPadWindow(env.Workspace, new AppConfig { PadAiEnabled = true });   // not the app's config: it must not count
+                var logged = new List<string>();
+                window.AiLog = logged.Add;                        // nothing reaches the real log; no line is expected either
+                try
+                {
+                    window.LoadSession();
+                    await test(window, env);
+                    Assert.Empty(logged);
+                }
+                finally
+                {
+                    window.CloseForExit();
+                }
+            });
+            return body.WaitAsync(TimeSpan.FromSeconds(60));
+        }
+
+        [Fact]
+        public Task By_default_AI_is_read_from_the_apps_settings_and_is_off_while_there_are_none() => OnUiWithDefaults((window, env) =>
+        {
+            Assert.Null(App.ConfigService);                       // the tests never start the app: there are no settings to read
+
+            Assert.False(window.AiEnabled());                     // a setting that is not there is off, never on
+            Assert.Equal("", window.AiDestination());
+
+            // What the default reads: Settings → MicaPad → AI and nothing else.
+            Assert.False(MicaPadWindow.AiOnIn(null));
+            Assert.False(MicaPadWindow.AiOnIn(new AppConfig()));  // off until the user turns it on
+            Assert.False(MicaPadWindow.AiOnIn(new AppConfig { AiAssistantEnabled = true }));
+            Assert.True(MicaPadWindow.AiOnIn(new AppConfig { PadAiEnabled = true, AiAssistantEnabled = false }));
+            return Task.CompletedTask;
+        });
+
+        [Fact]
+        public Task By_default_the_runner_is_the_one_the_app_builds() => OnUiWithDefaults((window, env) =>
+        {
+            System.Reflection.MethodInfo? apps = typeof(App).GetMethod(nameof(App.CreatePadAiRunner),
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(apps);
+
+            Assert.Equal(apps, window.AiRunnerFactory.Method);    // the shared key, provider and daily count: not a runner of its own
+            Assert.Null(window.AiRunnerFactory());                // and before the settings load it builds none
+            return Task.CompletedTask;
+        });
+
+        [Fact]
+        public Task By_default_nothing_is_sent_from_the_menu_the_shortcut_a_direct_call_or_Ask() => OnUiWithDefaults(async (window, env) =>
+        {
+            window.Editor.Document.Text = Note;
+            window.Editor.Select(Note.IndexOf(Picked, StringComparison.Ordinal), Picked.Length);
+
+            window.RefreshEditorMenu();
+            Assert.Equal(new[] { "Set up AI…" }, Headers(PadMenuTests.ItemOf(window.EditorMenu, "AI")));
+
+            await window.RunAiAsync(PadAiAction.Improve);
+            Assert.Null(window.AiSessionNow);
+            Assert.Equal(Visibility.Collapsed, window.AiPanel.Visibility);
+            Assert.Equal(AiOff, window.StatusMessage.Text);
+
+            Assert.True(window.HandleShortcut(Key.A, CtrlShift));
+            Assert.Null(window.AiSessionNow);
+            Assert.Equal(Visibility.Collapsed, window.AiPanel.Visibility);
+
+            AskStart start = await WithSearch(null, () => window.SearchPanel.Ask!("vpn", CancellationToken.None));
+            Assert.Null(start.Answer);
+            Assert.Equal(NotesQuestion.AiOff, start.Instead);
+        });
+
         // ---- the menu ------------------------------------------------------------------------
 
         [Fact]
@@ -2010,6 +2087,59 @@ namespace Kil0bitSystemMonitor.Tests
                 MicaPadWindow.ShowWindow = show;
             }
         }
+
+        // ---- review focus 4, across windows: the source tab moves away while the reply streams -------------
+
+        [Fact]
+        public Task A_tab_moved_to_another_window_while_the_reply_streams_is_edited_nowhere_and_the_result_applies_once_it_is_back() => OnUiWithTwoWindows(async (h, second) =>
+        {
+            Write(h, Note, Picked);
+            OpenNote source = h.Env.Workspace.ActiveIn(h.Window.WindowId)!;
+            h.Window.NewTab();                                    // the first window keeps this tab when the source leaves
+            OpenNote stays = h.Env.Workspace.ActiveIn(h.Window.WindowId)!;
+            Write(h, "the note that stays, longer than the source so its offsets are all there");
+            h.Window.SelectTab(0);
+            h.Editor.Select(Note.IndexOf(Picked, StringComparison.Ordinal), Picked.Length);
+            OpenNote others = h.Env.Workspace.ActiveIn(second.WindowId)!;
+            second.Editor.Document.Text = "the second window's own note, also longer than the source text";
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            Move(h.Window, source, second);                       // mid-stream: the source is now a tab of the second window
+            Assert.Same(stays, h.Env.Workspace.ActiveIn(h.Window.WindowId));
+            model.Gate.SetResult();
+            await run;
+
+            // The request went on and its result is in the first window's pane, where nothing can be applied.
+            Assert.False(model.Cancelled);
+            Assert.Equal("Good text", h.Pane.ResultBox.Shown);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.False(h.Pane.RetryButton.IsEnabled);
+            Assert.Equal(NotShown, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);                          // even forced clicks edit no note, here or there
+            Click(h.Pane.InsertButton);
+            Click(h.Pane.RetryButton);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            Assert.Equal(Note, source.TextProvider());
+            Assert.Equal("the note that stays, longer than the source so its offsets are all there", stays.TextProvider());
+            Assert.Equal("the second window's own note, also longer than the source text", others.TextProvider());
+            Assert.Single(model.Sent);
+            Assert.Equal(Visibility.Collapsed, second.AiPanel.Visibility);   // the other window has no pane for it
+            Assert.Null(second.AiSessionNow);
+
+            Move(second, source, h.Window);                       // moved back: the source is shown where its request was made
+
+            Assert.Same(source, h.Env.Workspace.ActiveIn(h.Window.WindowId));
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal("", h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal("Intro\nGood text\nOutro", source.TextProvider());
+            Assert.Equal("the note that stays, longer than the source so its offsets are all there", stays.TextProvider());
+            Assert.Equal("the second window's own note, also longer than the source text", others.TextProvider());
+        });
 
         [Fact]
         public Task Storing_a_credential_closes_the_AI_pane_of_the_window_the_note_was_moved_from() => OnUiWithTwoWindows(async (h, second) =>

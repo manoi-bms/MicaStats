@@ -98,11 +98,23 @@ namespace Kil0bitSystemMonitor.Pad
         private AiRun? _ai;
         private Action<string>? _aiCopy;
 
-        /// <summary>Whether Settings → MicaPad → AI is on. Tests replace it.</summary>
-        internal Func<bool> AiEnabled { get; set; } = () => App.ConfigService?.Config.PadAiEnabled == true;
+        /// <summary>
+        /// Whether Settings → MicaPad → AI is on: read from the app's settings each time it is
+        /// asked, and off while there are none. Tests replace it.
+        /// </summary>
+        internal Func<bool> AiEnabled { get; set; } = () => AiOnIn(App.ConfigService?.Config);
 
-        /// <summary>The runner for one request, or null before the settings load. Tests replace it.</summary>
-        internal Func<PadAiRunner?> AiRunnerFactory { get; set; } = () => App.CreatePadAiRunner();
+        /// <summary>
+        /// True only when <paramref name="config"/> is there and its "Use AI in MicaPad" is on.
+        /// No settings means off, and no other switch counts (not the Ask MicaStats one).
+        /// </summary>
+        internal static bool AiOnIn(Models.AppConfig? config) => config?.PadAiEnabled == true;
+
+        /// <summary>
+        /// The runner for one request, or null before the settings load: the app's own, with the
+        /// provider, the key and the daily count shared with Ask MicaStats. Tests replace it.
+        /// </summary>
+        internal Func<PadAiRunner?> AiRunnerFactory { get; set; } = App.CreatePadAiRunner;
 
         /// <summary>
         /// Where the text of a request goes, in a word or two, for the pane's source line and the

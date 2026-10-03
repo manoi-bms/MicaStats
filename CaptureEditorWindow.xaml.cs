@@ -13,8 +13,11 @@ using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Capture;
 
+using BitmapScalingMode = System.Windows.Media.BitmapScalingMode;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Point = System.Windows.Point;
+using RenderOptions = System.Windows.Media.RenderOptions;
+using VisualTreeHelper = System.Windows.Media.VisualTreeHelper;
 
 namespace Kil0bitSystemMonitor
 {
@@ -60,13 +63,11 @@ namespace Kil0bitSystemMonitor
             // Fit on first layout, once the viewport actually has a size.
             ContentRendered += (s, e) =>
             {
-                ZoomFit();
+                ZoomOnOpen();
                 UpdateStatus();
             };
 
-            // The percent counts screen pixels, so it changes when the window moves to a display
-            // with another scaling even though the canvas's own zoom does not.
-            DpiChanged += (s, e) => ShowZoom(e.NewDpi.DpiScaleX);
+            DpiChanged += (s, e) => OnDpiScaleChanged(e.OldDpi.DpiScaleX, e.NewDpi.DpiScaleX);
             ShowZoom(DpiScale);
 
             PreviewKeyDown += OnWindowKey;
@@ -271,14 +272,32 @@ namespace Kil0bitSystemMonitor
         // gesture means what.
 
         /// <summary>
+        /// Stands in for the display's scaling in tests: an unshown window is on no display, and
+        /// a test must not depend on the one the machine happens to have.
+        /// </summary>
+        internal double? DpiScaleOverride { get; set; }
+
+        /// <summary>
         /// Screen pixels per device-independent unit where the canvas is shown. A capture is made
         /// of screen pixels, so this turns the canvas's zoom into the percent on the zoom bar:
         /// 100% is one image pixel per screen pixel.
         /// </summary>
-        private double DpiScale => System.Windows.Media.VisualTreeHelper.GetDpi(Canvas).DpiScaleX;
+        private double DpiScale => DpiScaleOverride ?? VisualTreeHelper.GetDpi(Canvas).DpiScaleX;
 
+        /// <summary>
+        /// Brings what depends on the zoom in line with it: the percent on the zoom bar, and how
+        /// the image is drawn. Magnified far enough to look at single pixels they are drawn as
+        /// sharp squares; below that WPF's default smoothing is kept, which is cheap (the app
+        /// draws in software, and a 20,000 px capture must stay fast). Only the screen is
+        /// affected: the export draws the image at its own size, where no scaling happens.
+        /// </summary>
         private void ShowZoom(double dpiScale)
-            => ZoomText.Text = EditorZoom.Percent(Canvas.Zoom, dpiScale).ToString(CultureInfo.InvariantCulture) + "%";
+        {
+            ZoomText.Text = EditorZoom.Percent(Canvas.Zoom, dpiScale).ToString(CultureInfo.InvariantCulture) + "%";
+            RenderOptions.SetBitmapScalingMode(Canvas, EditorZoom.Pixelated(Canvas.Zoom, dpiScale)
+                ? BitmapScalingMode.NearestNeighbor
+                : BitmapScalingMode.Unspecified);
+        }
 
         private void ZoomTo(double zoom, Point anchorInScroller)
         {
@@ -293,7 +312,7 @@ namespace Kil0bitSystemMonitor
         private void ZoomActualSize()
             => ZoomTo(EditorZoom.ActualSize(DpiScale), CanvasZoom.ViewportCentre(Scroller));
 
-        /// <summary>Fits the crop in the view with a little room around it, never past actual size.</summary>
+        /// <summary>Fits the whole crop in the view with a little room around it, never past actual size.</summary>
         private void ZoomFit()
         {
             var crop = Canvas.Document?.Crop ?? default;
@@ -303,14 +322,44 @@ namespace Kil0bitSystemMonitor
         }
 
         /// <summary>
-        /// Ctrl+wheel zooms around the pointer. Returns false when the wheel is not a zoom: with
-        /// no Ctrl it scrolls as usual, and while a text annotation is being typed its box sits
-        /// at a fixed place over the canvas, so the image must not move under it.
+        /// The zoom a capture opens at: the whole image, unless it is a tall strip that would be
+        /// too small to read, which opens fitted to its width and is read from the top. The view
+        /// is left at the top, not anchored on its middle like the other zooms.
+        /// </summary>
+        internal void ZoomOnOpen()
+        {
+            var crop = Canvas.Document?.Crop ?? default;
+            Canvas.SetZoom(EditorZoom.Open(Canvas.Zoom, crop.Width, crop.Height,
+                Scroller.ViewportWidth - 40, Scroller.ViewportHeight - 40, DpiScale));
+            Scroller.ScrollToHome();
+            ShowZoom(DpiScale);
+        }
+
+        /// <summary>
+        /// The window moved to a display with another scaling. The zoom is rescaled so the percent
+        /// stays what it was: 100% is still one image pixel per screen pixel, and still sharp.
+        /// The scales come from the event, because while it is raised the canvas has not been
+        /// given the new one yet.
+        /// </summary>
+        internal void OnDpiScaleChanged(double oldScale, double newScale)
+        {
+            CanvasZoom.ZoomAt(Scroller, Canvas, EditorZoom.Rescaled(Canvas.Zoom, oldScale, newScale),
+                CanvasZoom.ViewportCentre(Scroller));
+            ShowZoom(newScale);
+        }
+
+        /// <summary>
+        /// Ctrl+wheel zooms around the pointer. Returns whether the wheel was taken; without Ctrl
+        /// it is not, and scrolls as usual.
         /// </summary>
         internal bool WheelZoom(ModifierKeys modifiers, int delta, Point atInScroller)
         {
             if ((modifiers & ModifierKeys.Control) == 0) return false;
-            if (TextEntry.Visibility == Visibility.Visible) return false;
+
+            // While a text annotation is being typed its box sits at a fixed place over the
+            // canvas, so the image must not move under it. The wheel is taken and nothing is
+            // done: left to the scroller, Ctrl+wheel would scroll the image like a plain wheel.
+            if (TextEntry.Visibility == Visibility.Visible) return true;
 
             ZoomTo(EditorZoom.Wheel(Canvas.Zoom, delta, DpiScale), atInScroller);
             return true;
@@ -319,6 +368,28 @@ namespace Kil0bitSystemMonitor
         private void OnScrollerWheel(object sender, MouseWheelEventArgs e)
         {
             if (WheelZoom(Keyboard.Modifiers, e.Delta, e.GetPosition(Scroller))) e.Handled = true;
+        }
+
+        /// <summary>
+        /// The zoom shortcuts, around the middle of the view: Ctrl with "+" or "=" and the numpad
+        /// "+" steps in, Ctrl with "-" steps out, Ctrl+0 shows actual size. Shift is not looked
+        /// at, so Ctrl and "+" (Shift and "=" on a US layout) zooms in like Ctrl and "=" does.
+        /// Returns whether the key was one of them.
+        /// </summary>
+        internal bool KeyZoom(ModifierKeys modifiers, Key key)
+        {
+            if ((modifiers & ModifierKeys.Control) == 0) return false;
+
+            switch (key)
+            {
+                case Key.OemPlus:
+                case Key.Add: ZoomStep(+1); return true;
+                case Key.OemMinus:
+                case Key.Subtract: ZoomStep(-1); return true;
+                case Key.D0:
+                case Key.NumPad0: ZoomActualSize(); return true;
+                default: return false;
+            }
         }
 
         private void OnZoomOut(object sender, RoutedEventArgs e) => ZoomStep(-1);
@@ -342,16 +413,8 @@ namespace Kil0bitSystemMonitor
                     case Key.Y: Canvas.Redo(); e.Handled = true; return;
                     case Key.C: OnCopy(sender, e); e.Handled = true; return;
                     case Key.S: OnSave(sender, e); e.Handled = true; return;
-
-                    // Zoom, around the middle of the view. Shift is not looked at, so Ctrl and
-                    // "+" (Shift and "=" on a US layout) zooms in like Ctrl and "=" does.
-                    case Key.OemPlus:
-                    case Key.Add: ZoomStep(+1); e.Handled = true; return;
-                    case Key.OemMinus:
-                    case Key.Subtract: ZoomStep(-1); e.Handled = true; return;
-                    case Key.D0:
-                    case Key.NumPad0: ZoomActualSize(); e.Handled = true; return;
                 }
+                if (KeyZoom(Keyboard.Modifiers, e.Key)) e.Handled = true;
                 return;
             }
 

@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Kil0bitSystemMonitor.Controls;
+using Kil0bitSystemMonitor.Services.Capture;
 using Xunit;
 
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
@@ -29,6 +30,32 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var pixels = new int[width * height];
             Array.Fill(pixels, unchecked((int)0xFF336699));
+            var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
+            image.Freeze();
+            return image;
+        }
+
+        /// <summary>A one-bit image: the size of a 20,000 px scrolling capture without its 80 MB of pixels.</summary>
+        internal static BitmapSource Blank(int width, int height)
+        {
+            int stride = (width + 7) / 8;
+            var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.BlackWhite, null, new byte[stride * height], stride);
+            image.Freeze();
+            return image;
+        }
+
+        /// <summary>An image whose every pixel differs from its neighbours, so any resampling of it would show.</summary>
+        internal static BitmapSource Pattern(int width, int height)
+        {
+            var pixels = new int[width * height];
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int red = (x * 37 + y * 11) & 0xFF, green = (x * 5 + y * 29) & 0xFF, blue = ((x ^ y) * 13) & 0xFF;
+                    pixels[y * width + x] = unchecked((int)0xFF000000) | (red << 16) | (green << 8) | blue;
+                }
+            }
             var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
             image.Freeze();
             return image;
@@ -213,16 +240,47 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(16, view.Canvas.Zoom);
 
             CanvasZoom.ZoomAt(view.Scroller, view.Canvas, 0.00001, new Point(100, 100));
-            Assert.Equal(0.005, view.Canvas.Zoom);
+            Assert.Equal(0.001, view.Canvas.Zoom);
 
-            // 1% on a 150% display is below the old 5% floor, and 800% on a 100% display is the old ceiling.
-            view.Canvas.SetZoom(0.01 / 1.5);
-            Assert.Equal(0.01 / 1.5, view.Canvas.Zoom);
-            view.Canvas.SetZoom(8);
+            view.Canvas.SetZoom(8);                         // 800% on a 100% display
             Assert.Equal(8, view.Canvas.Zoom);
+        });
 
-            view.Canvas.SetZoom(double.NaN);                // not a size anything can be laid out at
-            Assert.Equal(8, view.Canvas.Zoom);
+        [Theory]
+        [InlineData(1.0)]
+        [InlineData(1.5)]
+        [InlineData(2.0)]
+        [InlineData(2.5)]
+        [InlineData(3.0)]
+        [InlineData(3.5)]
+        public void The_canvas_takes_the_whole_range_at_any_display_scaling(double dpiScale) => UiThread.Run(() =>
+        {
+            var view = Build(1.0);
+
+            // 1% on a 300% display is a third of a hundredth of a DIP per pixel.
+            double lowest = EditorZoom.Clamp(0, dpiScale);
+            CanvasZoom.ZoomAt(view.Scroller, view.Canvas, lowest, new Point(100, 100));
+            Assert.Equal(lowest, view.Canvas.Zoom);
+            Assert.Equal(1, EditorZoom.Percent(view.Canvas.Zoom, dpiScale));
+
+            double highest = EditorZoom.Clamp(1000, dpiScale);
+            CanvasZoom.ZoomAt(view.Scroller, view.Canvas, highest, new Point(100, 100));
+            Assert.Equal(highest, view.Canvas.Zoom);
+            Assert.Equal(800, EditorZoom.Percent(view.Canvas.Zoom, dpiScale));
+        });
+
+        [Fact]
+        public void The_canvas_ignores_a_zoom_that_is_not_a_number() => UiThread.Run(() =>
+        {
+            // A canvas that was never laid out, so a failure here cannot leave a broken size in the
+            // dispatcher's layout queue for the tests that follow.
+            var canvas = new AnnotationCanvas();
+            canvas.Load(Image(40, 30));
+            canvas.SetZoom(2.0);
+
+            canvas.SetZoom(double.NaN);
+
+            Assert.Equal(2.0, canvas.Zoom);
         });
 
         [Fact]

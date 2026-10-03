@@ -117,9 +117,10 @@ namespace Kil0bitSystemMonitor.Controls
         /// <summary>
         /// The widest range the canvas will draw at, in device-independent units per image pixel.
         /// A safety net only: the range the user can reach is <see cref="EditorZoom"/>'s, 1% to
-        /// 800% of screen pixels, which lies inside this one on any display scaled 50% to 200%.
+        /// 800% of screen pixels, which lies inside this one on any display scaled 50% to 1000%
+        /// (1% on a 300% display is a third of a hundredth of a unit per pixel).
         /// </summary>
-        private const double MinZoom = 0.005, MaxZoom = 16;
+        private const double MinZoom = 0.001, MaxZoom = 16;
 
         public void SetZoom(double zoom)
         {

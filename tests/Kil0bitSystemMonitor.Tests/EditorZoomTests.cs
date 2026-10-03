@@ -40,6 +40,59 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Theory]
+        [InlineData(0.94, 1, 1.0, 1.0)]                  // from 94% a step in stops on 100%
+        [InlineData(1.18, -1, 1.0, 1.0)]                 // from 118% a step out stops on 100%
+        [InlineData(1.0, 1, 1.0, 1.25)]                  // exactly at 100% a step leaves it as usual
+        [InlineData(1.0, -1, 1.0, 0.8)]
+        [InlineData(0.94, 2, 1.0, 1.25)]                 // the stop takes one step; the next carries on
+        [InlineData(1.18, -2, 1.0, 0.8)]
+        [InlineData(0.94 / 1.5, 1, 1.5, 1 / 1.5)]        // 100% on a 150% display is two thirds of a DIP per pixel
+        [InlineData(1.18 / 1.5, -1, 1.5, 1 / 1.5)]
+        [InlineData(0.94, 1, 1.5, 1.175)]                // 141% there: nowhere near 100%, an ordinary step
+        [InlineData(0.5, 1, 1.0, 0.625)]
+        public void A_step_that_would_pass_actual_size_lands_on_it(double zoom, int steps, double dpiScale, double expected)
+        {
+            Assert.Equal(expected, EditorZoom.Stepped(zoom, steps, dpiScale), 9);
+        }
+
+        [Theory]
+        [InlineData(1.0)]
+        [InlineData(1.25)]
+        [InlineData(1.5)]
+        [InlineData(1.75)]
+        [InlineData(3.0)]
+        public void Coming_back_to_actual_size_does_not_stick_there(double dpiScale)
+        {
+            double actual = EditorZoom.ActualSize(dpiScale);
+
+            // Back from a step away, the zoom may differ from actual size in its last bit;
+            // the next step must still leave it, not "land on" it again.
+            double fromAbove = EditorZoom.Stepped(EditorZoom.Stepped(actual, 1, dpiScale), -1, dpiScale);
+            double fromBelow = EditorZoom.Stepped(EditorZoom.Stepped(actual, -1, dpiScale), 1, dpiScale);
+
+            foreach (double back in new[] { fromAbove, fromBelow })
+            {
+                Assert.Equal(100, EditorZoom.Percent(back, dpiScale));
+                Assert.Equal(actual * 1.25, EditorZoom.Stepped(back, 1, dpiScale), 9);
+                Assert.Equal(actual / 1.25, EditorZoom.Stepped(back, -1, dpiScale), 9);
+            }
+        }
+
+        [Fact]
+        public void The_wheel_does_not_stop_at_actual_size()
+        {
+            Assert.Equal(0.94 * 1.25, EditorZoom.Wheel(0.94, 120, 1.0), 9);
+            Assert.Equal(1.18 / 1.25, EditorZoom.Wheel(1.18, -120, 1.0), 9);
+        }
+
+        [Fact]
+        public void Any_number_of_steps_ends_at_an_end_of_the_range()
+        {
+            Assert.Equal(8.0, EditorZoom.Stepped(0.3, int.MaxValue, 1.0), 9);
+            Assert.Equal(0.01, EditorZoom.Stepped(0.3, int.MinValue, 1.0), 9);
+        }
+
+        [Theory]
         [InlineData(120, 1.25)]              // one notch
         [InlineData(-120, 0.8)]
         [InlineData(240, 1.5625)]            // two notches in one message
@@ -150,6 +203,73 @@ namespace Kil0bitSystemMonitor.Tests
         public void The_percent_is_screen_pixels_per_image_pixel_rounded(double zoom, double dpiScale, int expected)
         {
             Assert.Equal(expected, EditorZoom.Percent(zoom, dpiScale));
+        }
+
+        [Theory]
+        [InlineData(1000, 20000, 1.0, 1.0)]                 // a scrolling capture: its width fits, so actual size
+        [InlineData(1000, 20000, 1.5, 1 / 1.5)]
+        [InlineData(1200, 20000, 1.0, 0.9)]                 // wider than the view: fitted to the width
+        [InlineData(1920, 1080, 1.0, 600.0 / 1080)]         // an ordinary screen capture: the whole image
+        [InlineData(800, 1000, 1.0, 0.6)]                   // taller than the view, but not by much: the whole image
+        [InlineData(1000, 1200, 1.0, 0.5)]                  // the whole image at exactly half the width fit: still whole
+        [InlineData(1000, 1201, 1.0, 1.0)]                  // any less than half: the width
+        [InlineData(20000, 1000, 1.0, 0.054)]               // very wide: the width is the whole
+        [InlineData(200, 100, 1.5, 1 / 1.5)]                // small: actual size, never enlarged
+        public void A_capture_opens_whole_unless_that_would_be_a_sliver(double imageWidth, double imageHeight, double dpiScale, double expected)
+        {
+            double open = EditorZoom.Open(0.3, imageWidth, imageHeight, 1080, 600, dpiScale);
+
+            Assert.Equal(expected, open, 9);
+            Assert.True(imageWidth * open <= 1080 + 1e-9, "The width always fits the view");
+        }
+
+        [Fact]
+        public void A_tall_capture_does_not_open_at_3_percent()
+        {
+            Assert.Equal(3, EditorZoom.Percent(EditorZoom.Fit(1.0, 1000, 20000, 1080, 600, 1.0), 1.0));    // the whole image
+            Assert.Equal(100, EditorZoom.Percent(EditorZoom.Open(1.0, 1000, 20000, 1080, 600, 1.0), 1.0));
+        }
+
+        [Theory]
+        [InlineData(0, 100, 800, 600)]
+        [InlineData(100, 0, 800, 600)]
+        [InlineData(100, 100, 0, 600)]
+        [InlineData(100, 100, 800, -40)]
+        [InlineData(100, double.NaN, 800, 600)]
+        public void Open_leaves_the_zoom_alone_when_a_size_is_missing(double imageWidth, double imageHeight, double viewportWidth, double viewportHeight)
+        {
+            Assert.Equal(0.37, EditorZoom.Open(0.37, imageWidth, imageHeight, viewportWidth, viewportHeight, 1.0));
+        }
+
+        [Theory]
+        [InlineData(2.0, 1.0, true)]                // 200%
+        [InlineData(8.0, 1.0, true)]
+        [InlineData(1.996, 1.0, true)]              // shown as 200%
+        [InlineData(1.994, 1.0, false)]             // shown as 199%
+        [InlineData(1.0, 1.0, false)]
+        [InlineData(0.03, 1.0, false)]
+        [InlineData(2.0 / 1.5, 1.5, true)]          // 200% on a 150% display
+        [InlineData(1.3, 1.5, false)]               // 195% there
+        [InlineData(1.0, 2.0, true)]                // one DIP per pixel on a 200% display is 200%
+        [InlineData(2.0, double.NaN, true)]         // a bad scale counts as 1
+        public void Pixels_are_shown_crisp_from_200_percent(double zoom, double dpiScale, bool expected)
+        {
+            Assert.Equal(200.0, EditorZoom.PixelatedFromPercent);
+            Assert.Equal(expected, EditorZoom.Pixelated(zoom, dpiScale));
+        }
+
+        [Theory]
+        [InlineData(1 / 1.5, 1.5, 1.0, 1.0)]        // 100% on a 150% display stays 100% on a 100% one
+        [InlineData(1.0, 1.0, 1.5, 1 / 1.5)]
+        [InlineData(0.5, 1.25, 2.0, 0.3125)]        // 62.5% stays 62.5%
+        [InlineData(0.4, 1.5, 1.5, 0.4)]            // no change of scaling, no change of zoom
+        [InlineData(0.5, double.NaN, 2.0, 0.25)]    // a bad scale counts as 1
+        public void A_change_of_scaling_keeps_the_percent(double zoom, double oldScale, double newScale, double expected)
+        {
+            double rescaled = EditorZoom.Rescaled(zoom, oldScale, newScale);
+
+            Assert.Equal(expected, rescaled, 9);
+            Assert.Equal(EditorZoom.Percent(zoom, oldScale), EditorZoom.Percent(rescaled, newScale));
         }
 
         [Theory]

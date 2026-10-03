@@ -161,6 +161,37 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Bet", Rendered(pane));
         });
 
+        /// <summary>Where a laid-out element is in the pane.</summary>
+        private static Rect BoundsIn(AiPane pane, FrameworkElement element) =>
+            new(element.TranslatePoint(new System.Windows.Point(0, 0), pane), new Size(element.ActualWidth, element.ActualHeight));
+
+        [Theory]
+        [InlineData(true)]    // a rewrite: Replace selection comes first
+        [InlineData(false)]   // a read action: Insert below does
+        public void Stop_has_a_place_of_its_own_that_no_action_button_ever_takes(bool replace) => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.Show(Streaming with { ShowReplace = replace });
+            LayOut(pane);
+            Rect stop = BoundsIn(pane, pane.StopButton);
+            Assert.True(stop.Width > 0 && stop.Height > 0, "Stop is drawn while the reply streams");
+            Assert.True(stop.Right <= 320 && stop.Bottom <= 600, "Stop is inside the pane");
+
+            pane.Show(Done with { ShowReplace = replace, CanReplace = replace });   // the stream ends: the four actions appear
+            LayOut(pane);
+
+            Assert.Equal(Visibility.Collapsed, pane.StopButton.Visibility);
+            foreach (var button in new[] { pane.ReplaceButton, pane.InsertButton, pane.CopyButton, pane.RetryButton })
+            {
+                if (button.Visibility != Visibility.Visible) continue;
+                Rect action = BoundsIn(pane, button);
+                Assert.True(action.Width > 0 && action.Height > 0, button.Content + " is drawn");
+                // A click meant for Stop, landing a moment late, must not land on a button that edits the note.
+                Assert.False(stop.IntersectsWith(action), button.Content + " at " + action + " takes the place Stop had at " + stop);
+            }
+            Assert.False(stop.IntersectsWith(BoundsIn(pane, pane.CloseButton)), "Stop is not on Close either");
+        });
+
         [Fact]
         public void A_finished_rewrite_offers_Replace_Insert_Copy_and_Try_again() => UiThread.Run(() =>
         {

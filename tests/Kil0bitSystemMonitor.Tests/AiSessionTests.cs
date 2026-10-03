@@ -220,11 +220,93 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_refusal_wins_over_waiting_for_an_instruction()
+        {
+            // Ask AI on text over the limit: an instruction box here could never run.
+            var s = new AiSession(PadAiAction.Ask, new string('x', PadAiAction.ReadMaxChars + 1), true);
+
+            Assert.Equal("Select less text: at most 24,000 characters", s.Refusal);
+            Assert.False(s.AwaitingInstruction);
+            var v = s.View(Ok);
+            Assert.False(v.AskForInstruction);
+            Assert.Equal(s.Refusal, v.Status);                    // shown at once
+            Assert.Equal("", v.Result);
+            Assert.False(v.CanRetry);
+            Assert.False(v.CanCopy);
+            Assert.Throws<System.InvalidOperationException>(() => s.Start());
+
+            // At the limit there is nothing to refuse: the box is asked for as before.
+            Assert.True(new AiSession(PadAiAction.Ask, new string('x', PadAiAction.ReadMaxChars), true).View(Ok).AskForInstruction);
+        }
+
+        [Fact]
+        public void A_read_result_on_another_tab_says_why_Insert_below_and_Try_again_are_off()
+        {
+            var elsewhere = new AiSourceFacts(false, false, true);
+            foreach (var session in new[]
+            {
+                Done(PadAiAction.Summarize, "text", "- point", fromSelection: false),
+                Done(PadAiAction.Explain, "text", "It is text.", fromSelection: true),
+                Done(PadAiAction.Ask, "text", "answer", fromSelection: false, instruction: "what is this?"),
+            })
+            {
+                var v = session.View(elsewhere);
+                Assert.False(v.CanInsert);
+                Assert.False(v.CanRetry);
+                Assert.True(v.CanCopy);
+                Assert.Equal("Show the note this came from to apply it", v.Status);
+                Assert.Equal("", session.View(Ok).Status);        // back on its note there is nothing to explain
+            }
+        }
+
+        [Fact]
+        public void A_read_result_on_a_read_only_note_says_why_Insert_below_is_off()
+        {
+            var v = Done(PadAiAction.Summarize, "text", "- point", false).View(new AiSourceFacts(true, true, true));
+            Assert.False(v.CanInsert);
+            Assert.True(v.CanRetry);
+            Assert.Equal("This note is read-only", v.Status);
+        }
+
+        [Fact]
+        public void On_another_tab_a_reply_that_did_not_end_well_keeps_saying_how_it_ended()
+        {
+            var elsewhere = new AiSourceFacts(false, false, true);
+
+            var stopped = new AiSession(PadAiAction.Summarize, "a", false);
+            stopped.Start(); stopped.Append("partial"); stopped.Complete(true);
+            Assert.Equal("Stopped", stopped.View(elsewhere).Status);
+
+            var failed = new AiSession(PadAiAction.Summarize, "a", false);
+            failed.Start(); failed.Append("partial"); failed.Fail("Broke");
+            Assert.Equal("Broke", failed.View(elsewhere).Status);
+
+            var running = new AiSession(PadAiAction.Summarize, "a", false);
+            running.Start(); running.Append("partial");
+            Assert.Equal("", running.View(elsewhere).Status);     // nothing can be applied yet: nothing to explain
+        }
+
+        [Fact]
         public void SourceLine_wording()
         {
             Assert.Equal("Selection, 412 characters", new AiSession(PadAiAction.Summarize, new string('x', 412), true).View(Ok).SourceLine);
             Assert.Equal("Whole note, 3,120 characters", new AiSession(PadAiAction.Summarize, new string('x', 3120), false).View(Ok).SourceLine);
             Assert.Equal("Selection, 1 character", new AiSession(PadAiAction.Summarize, "x", true).View(Ok).SourceLine);
+        }
+
+        [Fact]
+        public void The_source_line_ends_with_where_the_text_goes()
+        {
+            string text = new string('x', 412);
+            Assert.Equal("Selection, 412 characters · to api.anthropic.com",
+                new AiSession(PadAiAction.Summarize, text, true, destination: "api.anthropic.com").View(Ok).SourceLine);
+            Assert.Equal("Whole note, 412 characters · to this PC",
+                new AiSession(PadAiAction.Summarize, text, false, destination: "this PC").View(Ok).SourceLine);
+            Assert.Equal("Selection, 412 characters · to openrouter.ai",
+                new AiSession(PadAiAction.Ask, text, true, "explain", "openrouter.ai").View(Ok).SourceLine);
+
+            // No destination (a base URL that cannot be used, a test): the line says only what it runs on.
+            Assert.Equal("Selection, 412 characters", new AiSession(PadAiAction.Summarize, text, true, destination: "").View(Ok).SourceLine);
         }
 
         [Fact]

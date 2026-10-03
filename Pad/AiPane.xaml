@@ -16,6 +16,11 @@
             <DockPanel DockPanel.Dock="Top" Margin="12,8,6,8">
                 <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
                         FontSize="10" Padding="8,6" ToolTip="Close (Ctrl+Shift+A)" Click="OnCloseClick" />
+                <!-- Stop has this place to itself, shown or not: no button that edits the note ever appears where
+                     Stop was, so a click on Stop that lands a moment after the reply ended changes nothing. -->
+                <Button x:Name="StopButton" DockPanel.Dock="Right" Content="Stop" FontSize="12" Padding="10,4" Margin="8,0,6,0"
+                        VerticalAlignment="Center" Visibility="Collapsed" ToolTip="Stop the request and keep what came"
+                        Click="OnStopClick" />
                 <TextBlock x:Name="TitleText" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
             </DockPanel>
 
@@ -61,10 +66,8 @@
                      ToolTip="Enter runs it; Shift+Enter adds a line"
                      PreviewKeyDown="OnInstructionKeyDown" />
 
-            <!-- Bottom up: the buttons, then the status line above them. -->
+            <!-- Bottom up: the four actions on a result, then the status line above them. Stop is in the header. -->
             <WrapPanel DockPanel.Dock="Bottom" Margin="12,0,6,6">
-                <Button x:Name="StopButton" Content="Stop" FontSize="12" Padding="10,4" Margin="0,0,6,6"
-                        Visibility="Collapsed" Click="OnStopClick" />
                 <Button x:Name="ReplaceButton" Content="Replace selection" FontSize="12" Padding="10,4" Margin="0,0,6,6"
                         Foreground="{DynamicResource Pad.Accent}"
                         ToolTip="Put the result in place of the selected text" Click="OnReplaceClick" />

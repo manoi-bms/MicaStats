@@ -75,14 +75,24 @@ namespace Kil0bitSystemMonitor.Pad
 
             /// <summary>
             /// After Replace selection: the place the result went to, with whatever is typed right
-            /// at its edges. An undo makes it read as the original again; null when nothing was replaced.
+            /// at its edges. An undo makes it read as the original again, and a redo as the result
+            /// (<see cref="ReplacedWith"/>) once more; null when nothing was replaced.
             /// </summary>
             public (TextAnchor Start, TextAnchor End)? Replaced { get; set; }
+
+            /// <summary>The text Replace selection wrote, line endings and all; null when nothing was replaced.</summary>
+            public string? ReplacedWith { get; set; }
+
+            /// <summary>True while a Replace selection is undone: its place holds the original again, and a redo would bring the result back.</summary>
+            public bool Undone { get; set; }
 
             public CancellationTokenSource Cancel { get; } = new();
 
             /// <summary>The facts the pane was last drawn with.</summary>
             public AiSourceFacts? Drawn { get; set; }
+
+            /// <summary>True while the pane shows a status that holds for one drawing only ("Inserted below"): the next edit draws it again.</summary>
+            public bool Noticed { get; set; }
         }
 
         private AiRun? _ai;
@@ -93,6 +103,30 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>The runner for one request, or null before the settings load. Tests replace it.</summary>
         internal Func<PadAiRunner?> AiRunnerFactory { get; set; } = () => App.CreatePadAiRunner();
+
+        /// <summary>
+        /// Where the text of a request goes, in a word or two, for the pane's source line and the
+        /// notes status: the provider of Settings → AI as <see cref="PadAiPrivacy.Destination"/>
+        /// names it, or "" before the settings load. Tests replace it.
+        /// </summary>
+        internal Func<string> AiDestination { get; set; } = DestinationInSettings;
+
+        private static string DestinationInSettings()
+        {
+            var config = App.ConfigService?.Config;
+            return config == null ? "" : PadAiPrivacy.Destination(config.AiProvider, config.AiCompatibleBaseUrl);
+        }
+
+        /// <summary>
+        /// The destination as the settings have it now. It is only shown, never decided on: one
+        /// that cannot be read is not named, and the failure is logged.
+        /// </summary>
+        private string AiDestinationNow()
+        {
+            string destination = "";
+            GuardAi("Reading where AI text goes", () => destination = AiDestination() ?? "");
+            return destination;
+        }
 
         /// <summary>Puts a result on the clipboard: the pad's own clipboard helper unless a test replaces it.</summary>
         internal Action<string> AiCopy
@@ -381,7 +415,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             CancelAi(_ai);   // a new action ends the one still running
-            var session = new AiSession(action, source, fromSelection, instruction);
+            var session = new AiSession(action, source, fromSelection, instruction, AiDestinationNow());
             var run = new AiRun(session, note, document, instruction);
             if (fromSelection)
             {
@@ -553,20 +587,26 @@ namespace Kil0bitSystemMonitor.Pad
             return length > 0 ? (start.Offset, length) : null;
         }
 
-        /// <summary>Draws the pane for the request it shows, with the facts as they are now.</summary>
-        private void RefreshAi()
+        /// <summary>
+        /// Draws the pane for the request it shows, with the facts as they are now.
+        /// <paramref name="notice"/> is a status for this one drawing ("Inserted below"): it
+        /// changes nothing the session decides, and the next drawing shows the session's own.
+        /// </summary>
+        private void RefreshAi(string? notice = null)
         {
             if (_ai is not { } run) return;
             AiSourceFacts facts = AiFacts(run);
             run.Drawn = facts;
-            (AiDraw ?? AiPanel.Show)(run.Session.View(facts));
+            run.Noticed = notice != null;
+            AiPaneView view = run.Session.View(facts);
+            (AiDraw ?? AiPanel.Show)(notice == null ? view : view with { Status = notice });
         }
 
         /// <summary>
         /// <see cref="RefreshAi"/> for callers outside an AI action (a tab shown, the history
         /// preview): a failure while drawing the pane is logged, never thrown into them.
         /// </summary>
-        private void RedrawAi() => GuardAi("Drawing the AI pane", RefreshAi);
+        private void RedrawAi() => GuardAi("Drawing the AI pane", () => RefreshAi());
 
         /// <summary>Draws <paramref name="run"/>, unless a newer request or a close took the pane from it.</summary>
         private void ShowAi(AiRun run)
@@ -645,33 +685,54 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>
-        /// The pane says at once whether the result can still replace the selection, and offers
-        /// Replace again when a Replace was undone. Typing that changes none of this draws nothing.
+        /// The pane says at once whether the result can still replace the selection, offers
+        /// Replace again when a Replace was undone, and says "Replaced the selection" again when
+        /// it was redone. A status shown for one drawing ("Inserted below") goes with the next
+        /// edit. Typing that changes none of this draws nothing.
         /// </summary>
         private void FollowSourceEdit(AiRun run)
         {
-            bool undone = ReplaceWasUndone(run);
-            if (undone || AiFacts(run) != run.Drawn) RefreshAi();
+            bool turned = ReplaceWasUndoneOrRedone(run);
+            if (turned || run.Noticed || AiFacts(run) != run.Drawn) RefreshAi();
         }
 
         /// <summary>
-        /// After Replace selection, tells its undo: the place the result went to reads as the
-        /// original text again. The anchors go back around that text and the session forgets it
-        /// was applied, so Replace selection is offered again.
+        /// After Replace selection, tells its undo and its redo. Undone: the place the result
+        /// went to reads as the original text again, so the session forgets it was applied and
+        /// Replace selection is offered again. Redone: the place reads as the result once more,
+        /// so the session is applied again ("Replaced the selection"), not a source whose text
+        /// changed. Either way both pairs of anchors go back around the text that is there now.
         /// </summary>
-        private static bool ReplaceWasUndone(AiRun run)
+        private static bool ReplaceWasUndoneOrRedone(AiRun run)
         {
-            if (run.Replaced is not { } place || place.Start.IsDeleted || place.End.IsDeleted) return false;
-            string original = run.Session.Original;
+            if (run.Replaced is not { } place || run.ReplacedWith is not { } result) return false;
+            if (place.Start.IsDeleted || place.End.IsDeleted) return false;
+            string becomes = run.Undone ? result : run.Session.Original;   // what the place reads as once the step is taken
             int start = place.Start.Offset, length = place.End.Offset - start;
-            if (length != original.Length
-                || !string.Equals(run.Document.GetText(start, length), original, StringComparison.Ordinal)) return false;
+            if (length != becomes.Length
+                || !string.Equals(run.Document.GetText(start, length), becomes, StringComparison.Ordinal)) return false;
 
-            run.Replaced = null;
-            run.Start = Anchor(run.Document, start, AnchorMovementType.AfterInsertion);
-            run.End = Anchor(run.Document, start + length, AnchorMovementType.BeforeInsertion);
-            run.Session.ClearApplied();
+            run.Undone = !run.Undone;
+            AnchorReplaced(run, start, length);
+            if (run.Undone) run.Session.ClearApplied();
+            else run.Session.MarkApplied(AiSession.Replaced);
             return true;
+        }
+
+        /// <summary>
+        /// Puts the request's anchors around the text at <paramref name="start"/>, where a
+        /// Replace selection put the result or an undo the original. One pair holds exactly that
+        /// text (typing at its edges stays outside): the source of Replace selection, and what
+        /// Insert below goes under. The other also takes what an undo or a redo puts back right
+        /// at its edges, so the step can be told.
+        /// </summary>
+        private static void AnchorReplaced(AiRun run, int start, int length)
+        {
+            TextDocument document = run.Document;
+            run.Start = Anchor(document, start, AnchorMovementType.AfterInsertion);
+            run.End = Anchor(document, start + length, AnchorMovementType.BeforeInsertion);
+            run.Replaced = (Anchor(document, start, AnchorMovementType.BeforeInsertion),
+                            Anchor(document, start + length, AnchorMovementType.AfterInsertion));
         }
 
         private void OnAiPreviewChanged(object? sender, EventArgs e) => RedrawAi();
@@ -699,17 +760,14 @@ namespace Kil0bitSystemMonitor.Pad
             bool changes = !string.Equals(run.Session.Original, result, StringComparison.Ordinal);   // CanReplace: the range still holds the original
             ApplyEdit(Editor, SelectionEdit.Replace(offset, end.Offset - offset, result));
 
-            // Every offset below comes from the text as it was written, carriage returns and all.
-            int after = offset + result.Length;
-            // The anchors now hold the new text, so Insert below lands under it.
-            run.Start = Anchor(document, offset, AnchorMovementType.AfterInsertion);
-            run.End = Anchor(document, after, AnchorMovementType.BeforeInsertion);
-            // And a second pair that also takes what an undo puts back right at its edges; a
-            // result equal to the source changed nothing, so there is no undo to tell.
-            run.Replaced = changes
-                ? (Anchor(document, offset, AnchorMovementType.BeforeInsertion), Anchor(document, after, AnchorMovementType.AfterInsertion))
-                : null;
-            run.Session.MarkApplied("Replaced the selection");
+            // The anchors now hold the new text, so Insert below lands under it; every offset comes
+            // from the text as it was written, carriage returns and all.
+            AnchorReplaced(run, offset, result.Length);
+            // A result equal to the source changed nothing, so there is no undo or redo to tell.
+            if (!changes) run.Replaced = null;
+            run.ReplacedWith = changes ? result : null;
+            run.Undone = false;
+            run.Session.MarkApplied(AiSession.Replaced);
             RefreshAi();
             Editor.Focus();   // so Ctrl+Z takes it back
         }
@@ -736,8 +794,9 @@ namespace Kil0bitSystemMonitor.Pad
                 : SourceRange(run) is { } range ? range.Start + range.Length
                 : TextLines.LineEnd(text, Editor.CaretOffset);
             ApplyEdit(Editor, SelectionEdit.InsertBelow(text, end, SelectionEdit.Normalize(run.Session.ResultForNote, newline), newline));
-            run.Session.MarkApplied("Inserted below");
-            RefreshAi();
+            // Said once, and nothing is marked: the source text is where it was, so Replace
+            // selection stays under its usual rules, before and after an undo of this insert.
+            RefreshAi(AiSession.Inserted);
             Editor.Focus();
         }
 
@@ -843,12 +902,14 @@ namespace Kil0bitSystemMonitor.Pad
             if (runner == null) return Instead(AiNotReadyText, "not available");
 
             // The status claims an answer only once one came: "Answering" while it streams,
-            // "Answered" after a clean end, the search status alone after anything else.
+            // "Answered" after a clean end, the search status alone after anything else. Both
+            // name where the passages go.
             string message = NotesQuestion.Message(query, sources);
+            string destination = AiDestinationNow();
             return new AskStart(NoteRows(outcome.Hits, query, numbered: sources.Count), status,
                                 AnswerFromNotesAsync(runner, message, sources.Count, token), null,
-                                Answering: status + " · " + NotesQuestion.Answering(sources.Count),
-                                Answered: status + " · " + NotesQuestion.Status(sources.Count));
+                                Answering: status + " · " + NotesQuestion.Answering(sources.Count, destination),
+                                Answered: status + " · " + NotesQuestion.Status(sources.Count, destination));
         }
 
         /// <summary>A question's rows, in hit order; the first <paramref name="numbered"/> carry their source numbers, 1 up.</summary>

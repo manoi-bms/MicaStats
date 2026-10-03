@@ -64,7 +64,11 @@ namespace Kil0bitSystemMonitor.Tests
                 Window.AiCopy = Copied.Add;
                 Window.OpenPadSettings = () => SettingsOpened++;
                 Window.AiLog = Log.Add;
+                Window.AiDestination = () => Destination;
             }
+
+            /// <summary>Where the settings say the text goes; "" names nowhere, so the lines other tests read stay as they were.</summary>
+            public string Destination { get; set; } = "";
 
             public PadTestEnv Env { get; }
 
@@ -497,6 +501,66 @@ namespace Kil0bitSystemMonitor.Tests
 
             int sent = PadAiPrompts.ForAction(PadAiAction.Improve.Instruction, Picked).Length;
             Assert.Equal(new[] { "AI improve: " + Count(sent) + " chars in the request, 9 chars back, ok" }, h.Log);
+        });
+
+        // ---- where the text goes, said where the action runs ------------------------------------
+
+        [Fact]
+        public Task The_source_line_ends_with_where_the_text_goes() => OnUiAsync(async h =>
+        {
+            h.Destination = "api.anthropic.com";
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text").Reply("ok");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            Assert.Equal("Selection, 13 characters · to api.anthropic.com", h.Pane.SourceText.Text);
+
+            h.Window.ToggleAi();                                  // Ask AI: said before anything is sent
+            Assert.Equal("Selection, 13 characters · to api.anthropic.com", h.Pane.SourceText.Text);
+            Assert.Single(h.Model.Requests);
+
+            h.Destination = "this PC";                            // the provider is changed in Settings while the pane waits
+            h.Pane.InstructionBox.Text = "shorter";
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Finished(h);
+
+            Assert.Equal("Selection, 13 characters · to this PC", h.Pane.SourceText.Text);   // read again when the request goes out
+        });
+
+        [Fact]
+        public Task A_destination_that_cannot_be_read_is_not_named_and_never_stops_the_action() => OnUiAsync(async h =>
+        {
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+            h.Window.AiDestination = () => throw new InvalidOperationException("no settings at gpu.example");
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal("Selection, 13 characters", h.Pane.SourceText.Text);
+            Assert.Equal("Good text", h.Pane.ResultBox.Shown);
+            Assert.Contains("InvalidOperationException", Assert.Single(warned), StringComparison.Ordinal);
+            Assert.DoesNotContain("gpu.example", warned[0], StringComparison.Ordinal);   // the type only
+        });
+
+        [Fact]
+        public Task The_notes_status_names_where_the_passages_go() => OnUiWithSearch(async (h, search) =>
+        {
+            h.Destination = "api.anthropic.com";
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wifi [1].");
+            h.Client = model;
+            Task ask = AskNotes(h, search, "vpn");
+            await Reached(model);
+            SearchPane pane = h.Window.SearchPanel;
+
+            Assert.Equal("Words · Answering from 1 passage · api.anthropic.com", pane.StatusText.Text);
+
+            model.Gate.SetResult();
+            await ask;
+
+            Assert.Equal("Words · Answered from 1 passage · api.anthropic.com", pane.StatusText.Text);
         });
 
         // ---- review focus 1: a credential in the selection -------------------------------------
@@ -1183,6 +1247,50 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public Task Ask_AI_on_text_over_the_limit_shows_the_refusal_at_once_and_no_instruction_box() => OnUi(h =>
+        {
+            Write(h, new string('x', PadAiAction.ReadMaxChars + 1));    // the whole note, one character too long
+
+            Assert.True(h.Window.HandleShortcut(Key.A, CtrlShift));
+
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal("Ask AI", h.Pane.TitleText.Text);
+            Assert.Equal("Select less text: at most 24,000 characters", h.Pane.StatusText.Text);
+            Assert.Equal(Visibility.Visible, h.Pane.StatusText.Visibility);
+            Assert.Equal(Visibility.Collapsed, h.Pane.InstructionBox.Visibility);   // not a box that could never run
+            Assert.False(h.Window.AiSessionNow!.AwaitingInstruction);
+            Assert.False(h.Pane.RetryButton.IsEnabled);
+
+            h.Pane.InstructionBox.Text = "summarize";                   // even a forced Enter sends nothing
+            h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(new[] { "AI ask: 0 chars in the request, 0 chars back, refused" }, h.Log);
+        });
+
+        [Fact]
+        public Task A_read_result_on_another_tab_says_why_Insert_below_and_Try_again_are_off() => OnUiAsync(async h =>
+        {
+            Write(h, Note);
+            h.Model.Reply("- a summary");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Assert.Equal("", h.Pane.StatusText.Text);
+
+            h.Window.NewTab();
+
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.False(h.Pane.RetryButton.IsEnabled);
+            Assert.True(h.Pane.CopyButton.IsEnabled);
+            Assert.Equal(NotShown, h.Pane.StatusText.Text);             // not two dead buttons and no word why
+            Assert.Equal(Visibility.Visible, h.Pane.StatusText.Visibility);
+
+            h.Window.SelectTab(0);
+
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+            Assert.Equal("", h.Pane.StatusText.Text);
+        });
+
+        [Fact]
         public Task With_nothing_to_work_on_the_status_bar_says_so_and_the_pane_stays_closed() => OnUiAsync(async h =>
         {
             Write(h, "");
@@ -1585,6 +1693,86 @@ namespace Kil0bitSystemMonitor.Tests
             Click(h.Pane.ReplaceButton);                                // and it replaces the same text again
             Assert.Equal(replaced, h.Editor.Document.Text);
             Assert.Equal("Replaced the selection", h.Pane.StatusText.Text);
+        });
+
+        [Theory]
+        [InlineData("Intro\nbad text here\nOutro", "bad text here", "Better text here.")]
+        [InlineData("Do X. Then do Y. Also Z.\nnext", "Do X. Then do Y. Also Z.", "Do X. Then do Y.")]   // the end of its line was cut
+        [InlineData("one\ntwo\nand more\nthree", "two\nand more", "two")]                                  // only its last line was cut
+        [InlineData("one\nintro\ntwo\nthree", "intro\ntwo", "two")]                                        // only its first line was cut
+        [InlineData("one\r\ntwo\r\nthree\r\nfour", "two\r\nthree", "TWO")]                                 // fewer lines
+        [InlineData("one\ntwo\nthree", "two", "two\nand more")]                                            // the original and more
+        public Task Redoing_a_Replace_says_Replaced_again_and_not_that_the_text_changed(string note, string picked, string reply) => OnUiAsync(async h =>
+        {
+            Write(h, note, picked);
+            h.Model.Reply(reply);
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            Click(h.Pane.ReplaceButton);
+            string replaced = h.Editor.Document.Text;
+
+            h.Editor.Undo();                                            // Ctrl+Z
+            Assert.Equal(note, h.Editor.Document.Text);
+            h.Editor.Redo();                                            // Ctrl+Y: the result is in the note again
+
+            Assert.Equal(replaced, h.Editor.Document.Text);
+            Assert.Equal("Replaced the selection", h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);               // there is nothing left to replace
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(replaced, h.Editor.Document.Text);
+
+            h.Editor.Undo();                                            // and back once more: it is offered again
+            Assert.Equal(note, h.Editor.Document.Text);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal("", h.Pane.StatusText.Text);
+
+            h.Editor.Redo();
+            Click(h.Pane.InsertButton);                                 // after a redo, Insert below lands under the result
+            string newline = note.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+            string written = reply.Replace("\n", newline, StringComparison.Ordinal);
+            int under = replaced.IndexOf(written, StringComparison.Ordinal) + written.Length;
+            Assert.Equal(replaced.Insert(under, newline + newline + written), h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task Insert_below_never_turns_Replace_off_and_its_status_goes_with_the_next_redraw() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Click(h.Pane.InsertButton);
+
+            Assert.Equal("Intro\nbad text here\n\nGood text\nOutro", h.Editor.Document.Text);
+            Assert.Equal("Inserted below", h.Pane.StatusText.Text);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);                // the selection is still the text that was sent
+
+            h.Editor.Undo();                                            // the paragraph is taken back
+
+            Assert.Equal(Note, h.Editor.Document.Text);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);                // Replace is offered, as before the insert
+            Assert.Equal("", h.Pane.StatusText.Text);                   // and nothing says "Inserted below" any more
+
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal("Intro\nGood text\nOutro", h.Editor.Document.Text);
+            Assert.Equal("Replaced the selection", h.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task Insert_below_keeps_Replace_governed_by_the_usual_rules() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            h.Editor.Document.Insert(Note.IndexOf("text", StringComparison.Ordinal), "x");   // the source changed: Replace is off
+            Assert.Equal(TextChanged, h.Pane.StatusText.Text);
+
+            Click(h.Pane.InsertButton);
+
+            Assert.Equal("Inserted below", h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);               // and an insert does not turn it on either
+            h.Window.NewTab();                                          // any redraw: the status is the session's own again
+            h.Window.SelectTab(0);
+            Assert.Equal(TextChanged, h.Pane.StatusText.Text);
         });
 
         [Fact]

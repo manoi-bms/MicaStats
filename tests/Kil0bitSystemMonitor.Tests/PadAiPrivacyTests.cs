@@ -35,5 +35,32 @@ namespace Kil0bitSystemMonitor.Tests
         public void A_bad_url_sends_nothing() =>
             Assert.Equal("The base URL is not a valid http or https address, so nothing can be sent.",
                 PadAiPrivacy.Describe(AiProviders.OpenAiCompatible, "not a url"));
+
+        // ---- the destination, said where an action runs ------------------------------------------
+
+        [Theory]
+        [InlineData(AiProviders.Claude, null, "api.anthropic.com")]
+        [InlineData(AiProviders.Claude, "http://localhost:11434/v1", "api.anthropic.com")]        // the other provider's address does not count
+        [InlineData("SomethingElse", null, "api.anthropic.com")]                                  // an unknown provider is Claude, as the factory has it
+        [InlineData(AiProviders.OpenAiCompatible, "http://localhost:11434/v1", "this PC")]
+        [InlineData(AiProviders.OpenAiCompatible, "http://127.0.0.1:1234/v1", "this PC")]
+        [InlineData(AiProviders.OpenAiCompatible, "http://[::1]:1234/v1", "this PC")]
+        [InlineData(AiProviders.OpenAiCompatible, "https://openrouter.ai/api/v1", "openrouter.ai")]
+        [InlineData(AiProviders.OpenAiCompatible, "  https://gpu.example:8443/v1?key=abc  ", "gpu.example")]   // the host only: no port, path or query
+        [InlineData(AiProviders.OpenAiCompatible, null, "")]
+        [InlineData(AiProviders.OpenAiCompatible, "", "")]
+        [InlineData(AiProviders.OpenAiCompatible, "not a url", "")]
+        [InlineData(AiProviders.OpenAiCompatible, "ftp://files.example/v1", "")]                  // not http or https: nothing can be sent
+        public void The_destination_is_the_host_text_goes_to(string provider, string? baseUrl, string destination) =>
+            Assert.Equal(destination, PadAiPrivacy.Destination(provider, baseUrl));
+
+        [Fact]
+        public void The_destination_agrees_with_the_privacy_line()
+        {
+            Assert.Contains(PadAiPrivacy.Destination(AiProviders.Claude, null), PadAiPrivacy.Describe(AiProviders.Claude, null), System.StringComparison.Ordinal);
+            Assert.Contains(PadAiPrivacy.Destination(AiProviders.OpenAiCompatible, "https://openrouter.ai/api/v1"),
+                            PadAiPrivacy.Describe(AiProviders.OpenAiCompatible, "https://openrouter.ai/api/v1"), System.StringComparison.Ordinal);
+            Assert.StartsWith("Everything stays on this PC", PadAiPrivacy.Describe(AiProviders.OpenAiCompatible, "http://localhost:11434/v1"), System.StringComparison.Ordinal);
+        }
     }
 }

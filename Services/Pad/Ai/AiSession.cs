@@ -29,6 +29,16 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     /// </summary>
     public sealed class AiSession
     {
+        /// <summary>The status once Replace selection put the result in the note.</summary>
+        public const string Replaced = "Replaced the selection";
+
+        /// <summary>The status right after Insert below, for one drawing of the pane: an insert changes none of the rules.</summary>
+        public const string Inserted = "Inserted below";
+
+        private const string NotShownText = "Show the note this came from to apply it";
+        private const string ReadOnlyText = "This note is read-only";
+        private const string ChangedText = "The text changed since the request; use Insert below or Copy";
+
         private readonly SecretMask _mask;
         private readonly StringBuilder _raw = new();
         private string? _failure;
@@ -36,23 +46,33 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         private bool _stopped;
         private bool _cutShort;
 
-        public AiSession(PadAiAction action, string sourceText, bool fromSelection, string? instruction = null)
+        /// <param name="destination">
+        /// Where the text goes, in a word or two ("api.anthropic.com", "this PC"), for the source
+        /// line; "" names none. The window reads it from the settings (<see cref="PadAiPrivacy.Destination"/>).
+        /// </param>
+        public AiSession(PadAiAction action, string sourceText, bool fromSelection, string? instruction = null, string destination = "")
         {
             Action = action;
             Original = sourceText ?? "";
             FromSelection = fromSelection;
+            Destination = destination ?? "";
             _mask = SecretMask.Of(Original);
-            AwaitingInstruction = ReferenceEquals(action, PadAiAction.Ask) && string.IsNullOrWhiteSpace(instruction);
+            Refusal = action.TooLong(Original.Length);
+            // A refusal wins: text that cannot be sent is not asked an instruction for, which could never run.
+            AwaitingInstruction = Refusal == null && ReferenceEquals(action, PadAiAction.Ask) && string.IsNullOrWhiteSpace(instruction);
             Instruction = ReferenceEquals(action, PadAiAction.Ask)
                 ? NotePassages.WithoutSecretParts((instruction ?? "").Trim())   // typed or pasted: part of a reference is cleaned too
                 : action.Instruction;
-            Refusal = action.TooLong(Original.Length);
             UserMessage = PadAiPrompts.ForAction(Instruction, _mask.Text);
         }
 
         public PadAiAction Action { get; }
         public string Original { get; }
         public bool FromSelection { get; }
+
+        /// <summary>Where the text goes, as the source line says it; "" when none is named.</summary>
+        public string Destination { get; }
+
         public string Instruction { get; }
         public string? Refusal { get; }
         public bool AwaitingInstruction { get; }
@@ -72,6 +92,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         public void Fail(string message) { if (Finished) return; _failure = message; Running = false; Finished = true; }
         public void MarkCutShort() { if (!Finished) _cutShort = true; }
         public void Complete(bool stopped) { _stopped = stopped; Running = false; Finished = true; }
+        /// <summary>
+        /// Replace selection put the result in the note (or a redo put it back): there is nothing
+        /// left to replace, and the status says <paramref name="what"/> happened. Only a Replace
+        /// is marked: Insert below leaves the source text where it is, so it turns nothing off.
+        /// </summary>
         public void MarkApplied(string what) => _applied = what;
 
         /// <summary>The edit was undone and the source text is back as it was sent: Replace selection may be offered again.</summary>
@@ -100,17 +125,22 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             else if (_applied != null) status = _applied;
             else if (_stopped) status = "Stopped";
             else if (_cutShort) status = "Cut short at the length limit";
-            else if (showReplace && clean && hasText && !canReplace)
+            else if (clean && hasText)
             {
-                if (!facts.SourceShown) status = "Show the note this came from to apply it";
-                else if (facts.ReadOnly) status = "This note is read-only";
-                else if (!facts.SourceUnchanged) status = "The text changed since the request; use Insert below or Copy";
-                else if (credentialProblem != null) status = credentialProblem;
+                // A whole result that cannot be put into the note: the status says why its buttons are off.
+                // The first two reasons hold for every action (Insert below and Try again go with them);
+                // the others are Replace selection's own.
+                if (!facts.SourceShown) status = NotShownText;
+                else if (facts.ReadOnly) status = ReadOnlyText;
+                else if (showReplace && !facts.SourceUnchanged) status = ChangedText;
+                else if (showReplace && credentialProblem != null) status = credentialProblem;
             }
 
             return new AiPaneView(
                 Title: Action.Name,
-                SourceLine: (FromSelection ? "Selection, " : "Whole note, ") + Count(Original.Length),
+                // What it runs on, and where that goes: "Selection, 412 characters · to api.anthropic.com".
+                SourceLine: (FromSelection ? "Selection, " : "Whole note, ") + Count(Original.Length)
+                            + (Destination.Length > 0 ? " · to " + Destination : ""),
                 AskForInstruction: AwaitingInstruction,
                 Result: Refusal != null ? "" : ResultForNote,
                 Markdown: Action.RendersMarkdown,

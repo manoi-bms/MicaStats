@@ -63,6 +63,15 @@ namespace Kil0bitSystemMonitor.Tests
         public void Answering_is_plural_otherwise() => Assert.Equal("Answering from 6 passages", NotesQuestion.Answering(6));
 
         [Fact]
+        public void The_status_names_where_the_passages_go()
+        {
+            Assert.Equal("Answering from 6 passages · api.anthropic.com", NotesQuestion.Answering(6, "api.anthropic.com"));
+            Assert.Equal("Answered from 6 passages · api.anthropic.com", NotesQuestion.Status(6, "api.anthropic.com"));
+            Assert.Equal("Answering from 1 passage · this PC", NotesQuestion.Answering(1, "this PC"));
+            Assert.Equal("Answered from 1 passage", NotesQuestion.Status(1, ""));   // no destination to name
+        }
+
+        [Fact]
         public void Message_puts_each_passage_between_note_tags()
         {
             string msg = NotesQuestion.Message("where?", new List<Passage> { P(1), P(2) });

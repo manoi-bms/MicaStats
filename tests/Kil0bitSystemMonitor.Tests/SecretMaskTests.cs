@@ -41,6 +41,42 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_typed_placeholder_makes_the_mask_pick_another_prefix()
+        {
+            const string original = "a [[CREDENTIAL_1]] b {{secret:K7Q2M9XD}}";
+            var m = SecretMask.Of(original);
+            Assert.Equal("a [[CREDENTIAL_1]] b [[CREDENTIAL_X_1]]", m.Text);
+            Assert.Equal(original, m.Unmask("a [[CREDENTIAL_1]] b [[CREDENTIAL_X_1]]"));
+            Assert.Null(m.Problem("a [[CREDENTIAL_1]] b [[CREDENTIAL_X_1]]"));
+            Assert.Equal(SecretMask.Lost, m.Problem("a [[CREDENTIAL_1]] b"));
+        }
+
+        [Fact]
+        public void The_prefix_grows_until_it_is_free()
+        {
+            var m = SecretMask.Of("[[CREDENTIAL_1]] [[CREDENTIAL_X_1]] {{secret:K7Q2M9XD}}");
+            Assert.Equal("[[CREDENTIAL_1]] [[CREDENTIAL_X_1]] [[CREDENTIAL_X_X_1]]", m.Text);
+        }
+
+        [Fact]
+        public void A_repeated_placeholder_is_a_problem()
+        {
+            var m = SecretMask.Of("{{secret:K7Q2M9XD}}");
+            Assert.Equal(SecretMask.Lost, m.Problem("[[CREDENTIAL_1]] [[CREDENTIAL_1]]"));
+        }
+
+        [Fact]
+        public void Out_of_range_and_non_ascii_numbers_stay_literal()
+        {
+            var m = SecretMask.Of("{{secret:K7Q2M9XD}}");
+            foreach (string odd in new[] { "[[CREDENTIAL_0]]", "[[CREDENTIAL_12345]]", "[[CREDENTIAL_๑]]" })
+            {
+                Assert.Equal(odd, m.Unmask(odd));
+                Assert.Null(m.Problem("[[CREDENTIAL_1]] " + odd) );
+            }
+        }
+
+        [Fact]
         public void Problem_checks_each_placeholder_count()
         {
             var m = SecretMask.Of(Text);

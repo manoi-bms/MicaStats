@@ -22,6 +22,16 @@ namespace Kil0bitSystemMonitor.Tests
                 PadAiPrivacy.Describe(AiProviders.OpenAiCompatible, "https://openrouter.ai/api/v1"));
 
         [Fact]
+        public void A_null_base_url_sends_nothing() =>
+            Assert.Equal("The base URL is not a valid http or https address, so nothing can be sent.",
+                PadAiPrivacy.Describe(AiProviders.OpenAiCompatible, null));
+
+        [Fact]
+        public void A_loopback_address_stays_on_the_pc() =>
+            Assert.Equal("Everything stays on this PC (127.0.0.1).",
+                PadAiPrivacy.Describe(AiProviders.OpenAiCompatible, "http://127.0.0.1:1234/v1"));
+
+        [Fact]
         public void A_bad_url_sends_nothing() =>
             Assert.Equal("The base URL is not a valid http or https address, so nothing can be sent.",
                 PadAiPrivacy.Describe(AiProviders.OpenAiCompatible, "not a url"));

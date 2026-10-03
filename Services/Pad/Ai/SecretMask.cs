@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -16,14 +17,18 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// <summary>Why a result may not replace the selection.</summary>
         public const string Lost = "The result lost or repeated a stored credential, so it cannot replace the selection";
 
-        private static readonly Regex Placeholder = new(@"\[\[CREDENTIAL_(\d{1,4})\]\]", RegexOptions.CultureInvariant);
+        private const string BasePrefix = "CREDENTIAL_";
 
         private readonly List<string> _ids;          // _ids[n - 1] is credential n
         private readonly List<int> _uses;            // how often credential n appears in the original
 
-        private SecretMask(string text, List<string> ids, List<int> uses)
+        private readonly Regex _placeholder;
+
+        private SecretMask(string text, List<string> ids, List<int> uses, string prefix)
         {
             Text = text;
+            // The token is [[<prefix><n>]]; the prefix is absent from the original text, so a placeholder the user typed is never counted.
+            _placeholder = new Regex(@"\[\[" + Regex.Escape(prefix) + @"([0-9]{1,4})\]\]", RegexOptions.CultureInvariant);
             _ids = ids;
             _uses = uses;
         }
@@ -37,6 +42,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         public static SecretMask Of(string text)
         {
             text ??= "";
+            string prefix = BasePrefix;
+            while (text.Contains("[[" + prefix, StringComparison.Ordinal)) prefix += "X_";
             var ids = new List<string>();
             var uses = new List<int>();
             var masked = new StringBuilder(text.Length);
@@ -52,16 +59,16 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                     n = ids.Count;
                 }
                 uses[n - 1]++;
-                masked.Append(Token(n));
+                masked.Append(Token(prefix, n));
                 at = reference.Offset + reference.Length;
             }
             masked.Append(text, at, text.Length - at);
-            return new SecretMask(masked.ToString(), ids, uses);
+            return new SecretMask(masked.ToString(), ids, uses, prefix);
         }
 
         /// <summary>The model's reply with each known placeholder turned back into its pill. An invented one stays as text.</summary>
         public string Unmask(string result) =>
-            Placeholder.Replace(result ?? "", match =>
+            _placeholder.Replace(result ?? "", match =>
                 int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) && n >= 1 && n <= _ids.Count
                     ? SecretTokens.Format(_ids[n - 1])
                     : match.Value);
@@ -71,7 +78,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         {
             if (_ids.Count == 0) return null;
             var seen = new int[_ids.Count];
-            foreach (Match match in Placeholder.Matches(result ?? ""))
+            foreach (Match match in _placeholder.Matches(result ?? ""))
                 if (int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) && n >= 1 && n <= _ids.Count)
                     seen[n - 1]++;
             for (int i = 0; i < seen.Length; i++)
@@ -79,6 +86,6 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             return null;
         }
 
-        private static string Token(int n) => "[[CREDENTIAL_" + n.ToString(CultureInfo.InvariantCulture) + "]]";
+        private static string Token(string prefix, int n) => "[[" + prefix + n.ToString(CultureInfo.InvariantCulture) + "]]";
     }
 }

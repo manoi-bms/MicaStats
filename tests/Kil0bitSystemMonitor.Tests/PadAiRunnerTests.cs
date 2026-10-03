@@ -244,6 +244,174 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(client.Disposed);
         }
 
+        // ---- a reply the provider ended early (MicaPad AI spec 5) ---------------------------------
+
+        private static ChatResponseUpdate Piece(string? text, ChatFinishReason? finish = null)
+        {
+            var update = text == null ? new ChatResponseUpdate { Role = ChatRole.Assistant } : new ChatResponseUpdate(ChatRole.Assistant, text);
+            update.FinishReason = finish;
+            return update;
+        }
+
+        private static string TextOf(IEnumerable<PadAiUpdate> updates) =>
+            string.Concat(updates.Where(u => u.Kind == PadAiUpdateKind.Text).Select(u => u.Text));
+
+        [Theory]
+        [InlineData(true)]    // on the last piece of text
+        [InlineData(false)]   // on a final piece with no text
+        public async Task A_content_filter_after_partial_text_is_an_Error_and_never_a_clean_end(bool onText)
+        {
+            var client = onText
+                ? new PiecesClient(Piece("Here is "), Piece("half", ChatFinishReason.ContentFilter))
+                : new PiecesClient(Piece("Here is "), Piece("half"), Piece(null, ChatFinishReason.ContentFilter));
+
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(new[] { PadAiUpdateKind.Text, PadAiUpdateKind.Text, PadAiUpdateKind.Error, PadAiUpdateKind.Done }, updates.Select(u => u.Kind));
+            Assert.Equal("Here is half", TextOf(updates));
+            Assert.Equal("The AI provider stopped the reply (content filter).", updates[2].Text);
+            Assert.Equal(PadAiRunner.StoppedByFilter, updates[2].Text);
+        }
+
+        [Fact]
+        public async Task A_length_finish_reason_on_a_final_piece_with_no_text_gives_CutShort()
+        {
+            var client = new PiecesClient(Piece("a"), Piece("b"), Piece(null, ChatFinishReason.Length));
+
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(new[] { PadAiUpdateKind.Text, PadAiUpdateKind.Text, PadAiUpdateKind.CutShort, PadAiUpdateKind.Done }, updates.Select(u => u.Kind));
+        }
+
+        [Theory]
+        [InlineData("tool_calls")]
+        [InlineData("something_new")]   // a reason this build has never heard of
+        public async Task Any_other_finish_reason_that_is_not_stop_gives_CutShort(string reason)
+        {
+            var client = new PiecesClient(Piece("a"), Piece(null, new ChatFinishReason(reason)));
+
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(new[] { PadAiUpdateKind.Text, PadAiUpdateKind.CutShort, PadAiUpdateKind.Done }, updates.Select(u => u.Kind));
+        }
+
+        [Fact]
+        public async Task A_stop_finish_reason_is_a_clean_end()
+        {
+            var client = new PiecesClient(Piece("a"), Piece("b", ChatFinishReason.Stop), Piece(null, ChatFinishReason.Stop));
+
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(new[] { PadAiUpdateKind.Text, PadAiUpdateKind.Text, PadAiUpdateKind.Done }, updates.Select(u => u.Kind));
+        }
+
+        [Fact]
+        public async Task A_content_filter_counts_over_a_length_stop()
+        {
+            var client = new PiecesClient(Piece("a", ChatFinishReason.Length), Piece(null, ChatFinishReason.ContentFilter));
+
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(new[] { PadAiUpdateKind.Text, PadAiUpdateKind.Error, PadAiUpdateKind.Done }, updates.Select(u => u.Kind));
+        }
+
+        [Fact]
+        public async Task A_reply_that_passes_64000_characters_is_stopped_cancelled_and_cut_short()
+        {
+            Assert.Equal(64000, PadAiRunner.MaxReplyChars);
+            // A provider that ignores the output limit: 200,000 characters, a thousand at a time.
+            var client = new PiecesClient(Enumerable.Range(0, 200).Select(_ => Piece(new string('x', 1000))).ToArray());
+
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(64000, TextOf(updates).Length);                       // the pane is not flooded
+            Assert.Equal(new[] { PadAiUpdateKind.CutShort, PadAiUpdateKind.Done }, updates.Skip(updates.Count - 2).Select(u => u.Kind));
+            Assert.DoesNotContain(updates, u => u.Kind == PadAiUpdateKind.Error);   // not a timeout: the runner stopped it
+            Assert.InRange(client.Pulled, 64, 66);                             // it stopped reading
+            Assert.True(client.Cancelled);                                     // and cancelled the request
+            Assert.True(client.Disposed);
+        }
+
+        [Fact]
+        public async Task One_huge_piece_is_cut_at_the_cap()
+        {
+            // 63,999 characters, then a character of two UTF-16 units across the cap, then far too much.
+            var client = new PiecesClient(Piece(new string('x', 63999) + char.ConvertFromUtf32(0x1F600) + new string('y', 50000)), Piece("never read"));
+
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            string text = TextOf(updates);
+            Assert.Equal(63999, text.Length);                                  // not half of the pair that straddles the cap
+            Assert.DoesNotContain('y', text);
+            Assert.Equal(new[] { PadAiUpdateKind.Text, PadAiUpdateKind.CutShort, PadAiUpdateKind.Done }, updates.Select(u => u.Kind));
+        }
+
+        [Fact]
+        public async Task A_reply_of_exactly_64000_characters_that_ends_is_whole()
+        {
+            var client = new PiecesClient(Enumerable.Range(0, 64).Select(_ => Piece(new string('x', 1000))).ToArray());
+
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(64000, TextOf(updates).Length);
+            Assert.Equal(PadAiUpdateKind.Done, updates[^1].Kind);
+            Assert.DoesNotContain(updates, u => u.Kind is PadAiUpdateKind.CutShort or PadAiUpdateKind.Error);
+            Assert.False(client.Cancelled);
+        }
+
+        [Fact]
+        public async Task A_cancel_callback_that_throws_at_the_cap_never_escapes_the_runner()
+        {
+            var client = new PiecesClient(Enumerable.Range(0, 70).Select(_ => Piece(new string('x', 1000))).ToArray()) { ThrowOnCancel = true };
+
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(new[] { PadAiUpdateKind.CutShort, PadAiUpdateKind.Done }, updates.Skip(updates.Count - 2).Select(u => u.Kind));
+        }
+
+        /// <summary>A model that streams the pieces it is given, and tells how far the runner read and whether it cancelled.</summary>
+        private sealed class PiecesClient : IChatClient
+        {
+            private readonly ChatResponseUpdate[] _pieces;
+
+            public PiecesClient(params ChatResponseUpdate[] pieces) => _pieces = pieces;
+
+            /// <summary>A callback on the request's token throws when the request is cancelled.</summary>
+            public bool ThrowOnCancel { get; init; }
+
+            /// <summary>How many pieces the runner asked for.</summary>
+            public int Pulled { get; private set; }
+
+            /// <summary>True once the request's token was cancelled.</summary>
+            public bool Cancelled { get; private set; }
+
+            public bool Disposed { get; private set; }
+
+            public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+                                                       CancellationToken cancellationToken = default) =>
+                throw new NotSupportedException();
+
+            public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,
+                ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            {
+                cancellationToken.Register(() =>
+                {
+                    Cancelled = true;
+                    if (ThrowOnCancel) throw new InvalidOperationException("a cancel callback threw");
+                });
+                await Task.Yield();
+                foreach (ChatResponseUpdate piece in _pieces)
+                {
+                    Pulled++;
+                    yield return piece;
+                }
+            }
+
+            public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+            public void Dispose() => Disposed = true;
+        }
+
         private sealed class LengthClient : IChatClient
         {
             public bool Throw { get; init; }

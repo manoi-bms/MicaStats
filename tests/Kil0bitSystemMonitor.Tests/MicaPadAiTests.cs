@@ -126,6 +126,9 @@ namespace Kil0bitSystemMonitor.Tests
             /// <summary>The reply ends at the output cap.</summary>
             public bool CutShort { get; init; }
 
+            /// <summary>Why the provider says the reply ended, on its last piece; null says nothing.</summary>
+            public ChatFinishReason? Finish { get; init; }
+
             /// <summary>A callback on the request's token throws, so cancelling the request throws at the caller.</summary>
             public bool ThrowOnCancel { get; init; }
 
@@ -164,6 +167,7 @@ namespace Kil0bitSystemMonitor.Tests
                 }
                 var last = new ChatResponseUpdate(ChatRole.Assistant, _rest);
                 if (CutShort) last.FinishReason = ChatFinishReason.Length;
+                if (Finish is { } finish) last.FinishReason = finish;
                 yield return last;
             }
 
@@ -673,6 +677,43 @@ namespace Kil0bitSystemMonitor.Tests
             Click(h.Pane.ReplaceButton);
             Assert.Equal(Note, h.Editor.Document.Text);
             Assert.EndsWith(", cut short", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task A_reply_the_provider_stopped_with_its_content_filter_cannot_replace_the_selection() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good", " te") { Finish = ChatFinishReason.ContentFilter };
+            model.Gate.SetResult();
+            h.Client = model;
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal("The AI provider stopped the reply (content filter).", h.Pane.StatusText.Text);
+            Assert.Equal("Good te", h.Pane.ResultBox.Shown);      // what came stays, to read and to copy
+            Assert.True(h.Pane.CopyButton.IsEnabled);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);         // but half a reply is never put into the note
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+            Click(h.Pane.InsertButton);
+            Assert.Equal(Note, h.Editor.Document.Text);
+            Assert.EndsWith(", failed", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task A_reply_that_ended_for_a_reason_the_app_does_not_know_cannot_replace_the_selection() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good", " te") { Finish = new ChatFinishReason("recitation") };
+            model.Gate.SetResult();
+            h.Client = model;
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal("Cut short at the length limit", h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(Note, h.Editor.Document.Text);
         });
 
         [Fact]
@@ -2154,6 +2195,24 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Cut short at the length limit", pane.AnswerNote.Text);
             Assert.Equal("Words", pane.StatusText.Text);
             Assert.EndsWith(" chars in the request, cut short", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task An_answer_the_provider_stopped_with_its_content_filter_is_not_called_answered() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wi") { Finish = ChatFinishReason.ContentFilter };
+            model.Gate.SetResult();
+            h.Client = model;
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal("Use the office wi", pane.AnswerBox.Shown);
+            Assert.Equal("The AI provider stopped the reply (content filter).", pane.AnswerNote.Text);
+            Assert.Equal(Visibility.Visible, pane.AnswerNote.Visibility);
+            Assert.Equal("Words", pane.StatusText.Text);          // not "Answered"
+            Assert.EndsWith(" chars in the request, failed", Assert.Single(h.Log), StringComparison.Ordinal);
         });
 
         [Fact]

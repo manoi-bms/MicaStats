@@ -18,10 +18,20 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     /// shared daily count. <see cref="RunAsync"/> never throws for a provider failure or a
     /// cancellation: every run ends with exactly one <see cref="PadAiUpdateKind.Done"/>, after an
     /// <see cref="PadAiUpdateKind.Error"/> when it failed. A caller cancel yields no Error.
+    ///
+    /// <para>
+    /// A reply the provider ended early is never a clean end (MicaPad AI spec 5): the length
+    /// limit, or any ending it names that is not a normal stop, is
+    /// <see cref="PadAiUpdateKind.CutShort"/>; its content filter is an Error
+    /// (<see cref="StoppedByFilter"/>). A reply that passes <see cref="MaxReplyChars"/> is
+    /// stopped there, its request cancelled, and reported as cut short.
+    /// </para>
     /// </summary>
     public sealed class PadAiRunner
     {
         internal const int MaxOutputTokens = 4096;
+        internal const int MaxReplyChars = 64000;
+        internal const string StoppedByFilter = "The AI provider stopped the reply (content filter).";
 
         private static readonly PadAiUpdate Done = new(PadAiUpdateKind.Done);
 
@@ -108,7 +118,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 CancellationToken token = deadline.Token;
 
                 Exception? failure = null;
-                bool cutShort = false;
+                bool cutShort = false, filtered = false, capped = false;
+                int length = 0;
                 (IAsyncEnumerator<ChatResponseUpdate>? stream, Exception? openError) = Open(client, result.IsClaude, userMessage, token);
                 if (stream == null) failure = openError;
                 else
@@ -127,13 +138,31 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                             deadline.CancelAfter(_silence);
 
                             ChatResponseUpdate update = stream.Current;
-                            if (update.FinishReason == ChatFinishReason.Length) cutShort = true;
-                            if (!string.IsNullOrEmpty(update.Text))
+                            // On every update, with text or without: a provider may say why it stopped on a last, empty one.
+                            if (update.FinishReason is { } reason)
+                            {
+                                if (reason == ChatFinishReason.ContentFilter) filtered = true;
+                                else if (reason != ChatFinishReason.Stop) cutShort = true;   // the length limit, or anything else that is not a normal end
+                            }
+
+                            string? text = update.Text;
+                            if (string.IsNullOrEmpty(text)) continue;
+
+                            // The cap: a provider that ignores the output limit must not flood the pane.
+                            string piece = Fitting(text, MaxReplyChars - length);
+                            capped = piece.Length < text.Length;
+                            if (piece.Length > 0)
                             {
                                 // The clock covers the model's silence, not a slow consumer.
                                 deadline.CancelAfter(Timeout.InfiniteTimeSpan);
-                                yield return new PadAiUpdate(PadAiUpdateKind.Text, update.Text);
+                                yield return new PadAiUpdate(PadAiUpdateKind.Text, piece);
+                                length += piece.Length;
                                 deadline.CancelAfter(_silence);
+                            }
+                            if (capped)
+                            {
+                                CancelQuietly(deadline);   // nothing more is read: the request ends here
+                                break;
                             }
                         }
                     }
@@ -143,7 +172,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                     }
                 }
 
-                bool timedOut = !ct.IsCancellationRequested && deadline.IsCancellationRequested;
+                // At the cap the runner cancelled the request itself: that is a reply cut short, not a silent model.
+                bool timedOut = !capped && !ct.IsCancellationRequested && deadline.IsCancellationRequested;
                 if (failure != null)
                 {
                     if (!ct.IsCancellationRequested)
@@ -159,7 +189,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                     // Some enumerators stop quietly when cancelled; that is not a finished answer.
                     yield return new PadAiUpdate(PadAiUpdateKind.Error, AiErrorText.TimedOut);
                 }
-                else if (cutShort && !ct.IsCancellationRequested)
+                else if (filtered && !ct.IsCancellationRequested)
+                {
+                    // The provider took the rest of the reply away: what came is not the answer.
+                    DiagnosticsLog.Log("pad", "AI request failed: the provider stopped the reply (content filter)");
+                    yield return new PadAiUpdate(PadAiUpdateKind.Error, StoppedByFilter);
+                }
+                else if ((cutShort || capped) && !ct.IsCancellationRequested)
                 {
                     yield return new PadAiUpdate(PadAiUpdateKind.CutShort);
                 }
@@ -189,6 +225,31 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             catch (Exception ex)
             {
                 return (null, ex);
+            }
+        }
+
+        /// <summary>
+        /// As much of <paramref name="text"/> as fits in <paramref name="room"/> characters, never
+        /// ending on half of a character that takes two (a surrogate pair).
+        /// </summary>
+        private static string Fitting(string text, int room)
+        {
+            if (text.Length <= room) return text;
+            if (room <= 0) return "";
+            if (char.IsHighSurrogate(text[room - 1])) room--;
+            return text.Substring(0, room);
+        }
+
+        /// <summary>Cancels the request. A callback on its token that throws must not come out of the runner, which never throws.</summary>
+        private static void CancelQuietly(CancellationTokenSource source)
+        {
+            try
+            {
+                source.Cancel();
+            }
+            catch (Exception)
+            {
+                // The token is cancelled all the same; the reply is reported as cut short.
             }
         }
 

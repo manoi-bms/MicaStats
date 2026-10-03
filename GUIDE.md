@@ -254,6 +254,55 @@ results** then puts the most relevant first with a reranker in the Cohere/Jina `
 * When a server cannot be reached, refuses the key or times out, the status line under the query
   says so and the search falls back to words (or to the order before reranking).
 
+### AI in MicaPad
+
+MicaPad can improve, translate, summarize or explain text, and answer a question from your notes,
+through the provider you set in **Settings → AI** (Claude, or any OpenAI-compatible server such as
+Ollama). It is off at first: turn on **Settings → MicaPad → AI → Use AI in MicaPad**. The line under
+the switch says where text goes, and **AI provider settings…** opens **Settings → AI**. Nothing is
+sent while you type, when a note opens or in the background — only when you run an action.
+
+* **On a selection**: right-click → **AI** → **Improve writing**, **Fix spelling and grammar**,
+  **Make shorter**, **Translate to English**, **Translate to Thai**, **Summarize**, **Explain** or
+  **Ask AI…** (type your own instruction). **Ctrl+Shift+A** opens the pane on **Ask AI…**. Summarize,
+  Explain and Ask AI use the whole note when nothing is selected; the rewrites need a selection.
+  While AI is off, the menu holds one item, **Set up AI…**.
+* **The AI pane** opens on the right, where History and Search notes open. It shows the text it
+  runs on ("Selection, 412 characters") and the result as it arrives. **Stop** ends it and keeps what
+  came. For a rewrite, **Changes** shows a line diff of your text against the result. Size limits:
+  8,000 characters for a rewrite, 24,000 for the rest; over that, nothing is sent.
+* **Replace selection** puts the result in place of your text, **Insert below** adds it as a new
+  paragraph after the text, **Copy** copies it. Each edit is one **Ctrl+Z**, and undoing a Replace
+  brings the button back. The reply takes the note's own line ending. Your note changes only when
+  you click one of these two buttons.
+* **Replace selection** is offered only when the reply finished (not stopped or cut short), you
+  selected text, its note is the one shown and not read-only, the text is still what it was, and
+  every stored credential came back. Otherwise the status line says why; **Insert below** and
+  **Copy** still work.
+* **Try again** reruns on the text the pane names — the earlier selection, or the whole note — not
+  on whatever is selected now, and only while that note is shown. An instruction typed for
+  **Ask AI…** works the same way.
+* **Ask in Search notes**: type a question and press **Ctrl+Enter**, or click **Ask** (**Enter**
+  still only searches). The best 8 passages go to the model and the answer streams above the
+  results; the status line says "Answering from 6 passages", then "Answered from 6 passages". A
+  citation such as [2] is a number matching result row 2, not a link, and the first 8 rows carry
+  their numbers. A new search, editing the query or closing the pane clears the answer. With no
+  match, nothing is sent. With AI off, **Ask** runs the normal search and the answer area says
+  "Turn on Settings → MicaPad → AI to get answers".
+* **Links in an answer are never clickable.** They show as text, "label (address)", so text pasted
+  into a note cannot steer the model into handing you a link to click.
+* **What is sent**: a fixed instruction, the task, and the selected text (or the question and the
+  passages), wrapped as data the model must not obey. No title, no other note, no file path.
+  Stored credentials are never sent: in text for an action each one goes as `[[CREDENTIAL_1]]` and
+  is put back in the result; in a question and passages it goes as `[credential]`. A selection
+  that cuts through a credential takes the whole credential. Your own words are not otherwise
+  altered, so a rewrite does not rename anything in them.
+* **The daily limit** is the one from **Settings → AI**, shared with Ask MicaStats: each action or
+  answer counts one, even when it fails or is stopped. When it is reached, or no key is set, the
+  pane says so and nothing is sent.
+* The diagnostics log records the kind of action, character counts and the outcome, never your
+  text, question or answer.
+
 ### Real files
 
 Opening a file (Ctrl+O, or Open with) edits a *copy*: your changes are saved continuously, but the

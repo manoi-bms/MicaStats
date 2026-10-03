@@ -65,6 +65,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The line under an answer the user stopped.</summary>
         internal const string StoppedText = "Stopped";
 
+        /// <summary>The line under the answer area when the reply ended cleanly and held no text: that is not an answer.</summary>
+        internal const string NoAnswerText = "No answer came back";
+
         /// <summary>Shown in place of an answer when <see cref="Ask"/> itself failed.</summary>
         internal const string AskFailedText = "The question could not be answered";
 
@@ -246,7 +249,6 @@ namespace Kil0bitSystemMonitor.Pad
                 _running = null;   // whatever it still yields is no longer this pane's to draw
             }
             ClearAnswer();
-            StatusText.Text = _found;
         }
 
         /// <summary>
@@ -337,7 +339,11 @@ namespace Kil0bitSystemMonitor.Pad
 
         // ---- the answer ----------------------------------------------------------------------
 
-        /// <summary>Takes the answer off the pane: a new search or question starts without the old one.</summary>
+        /// <summary>
+        /// Takes the answer off the pane: a new search or question starts without the old one.
+        /// The status line goes back to the search status at once, not when the next result
+        /// arrives: "Answering from…" and "Answered from…" speak of an answer that is gone.
+        /// </summary>
         private void ClearAnswer()
         {
             _redraw.Stop();
@@ -349,6 +355,7 @@ namespace Kil0bitSystemMonitor.Pad
             AnswerNote.Text = "";
             AnswerNote.Visibility = Visibility.Collapsed;
             if (AnswerBox.Shown.Length > 0) AnswerBox.ShowPlain("");
+            StatusText.Text = _found;
         }
 
         /// <summary>Shows a sentence where the answer would be, exactly as it is: AI is off, nothing matched.</summary>
@@ -418,12 +425,15 @@ namespace Kil0bitSystemMonitor.Pad
 
             if (!ReferenceEquals(mine, _running)) return;
             DrawAnswer();   // the last text, at once
+            bool nothing = string.IsNullOrWhiteSpace(_answer.ToString());
             ending ??= mine.IsCancellationRequested ? StoppedText : null;
+            // A clean end with no text is not an answer: the status does not say "Answered".
+            if (done && ending == null && nothing) ending = NoAnswerText;
             StatusText.Text = done && ending == null ? start.Answered ?? found : found;
             AnswerNote.Text = ending ?? "";
             AnswerNote.Visibility = When(ending != null);
             AnswerStop.Visibility = Visibility.Collapsed;
-            AnswerCopy.Visibility = When(_answer.Length > 0);
+            AnswerCopy.Visibility = When(!nothing);
         }
 
         /// <summary>Draws now when the interval has passed since the last draw (or nothing was drawn yet); otherwise once, when it has.</summary>

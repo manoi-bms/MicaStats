@@ -331,6 +331,42 @@ namespace Kil0bitSystemMonitor.Tests
             }
         }
 
+        [Fact]
+        public async Task A_waiter_for_applied_work_is_released_when_the_worker_throws_while_applying()
+        {
+            // Work that fails is reported and the worker goes on; here reporting it throws too, once,
+            // so the exception leaves the pass that had already taken the waiter.
+            _settings = SearchSettings.Off;
+            int warnings = 0;
+            Task? waiter = null;
+            var queued = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var indexer = new SearchIndexer(
+                new VectorStore(Path.Combine(_dir.Root, "search"), b => b.ToArray(), (byte[] d, out byte[] p) => { p = d; return true; }),
+                new FakeEmbedder(),
+                () => _settings,
+                _ => throw new InvalidOperationException("the stored text cannot be read"),
+                warn: _ =>
+                {
+                    if (Interlocked.Increment(ref warnings) == 1) throw new InvalidOperationException("the log is broken");
+                });
+            using (indexer)
+            {
+                indexer.ProgressChanged += () =>
+                {
+                    if (waiter != null) return;
+                    // On the worker, between two passes: the next pass takes this waiter, then runs the work that throws.
+                    indexer.IndexStored("s", "t", DateTime.UtcNow);
+                    waiter = indexer.WhenApplied();
+                    queued.TrySetResult();
+                };
+                indexer.SetNote("a", "t", "some words", DateTime.UtcNow);
+                await queued.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+                await waiter!.WaitAsync(TimeSpan.FromSeconds(5));   // Ask waits on this: it must not wait for ever
+                Assert.True(Volatile.Read(ref warnings) >= 1);
+            }
+        }
+
         private static bool HasVector(SearchIndexer indexer, string noteId) =>
             indexer.Vectors.Has(indexer.Keywords.PassagesOf(noteId).Single().Hash);
 

@@ -552,6 +552,65 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Words", f.Pane.StatusText.Text);        // half an answer is not "Answered"
         });
 
+        [Theory]
+        [InlineData(null)]        // a clean end, and not one piece of text
+        [InlineData("")]
+        [InlineData(" \n\n ")]    // or nothing but white space
+        public Task A_reply_with_no_text_is_not_an_answer(string? reply) => OnUi(async f =>
+        {
+            Task ask = Ask(f);
+            if (reply != null) f.Feed(Text(reply));
+            f.End();
+            await ask;
+
+            Assert.Equal("No answer came back", f.Pane.AnswerNote.Text);
+            Assert.Equal(SearchPane.NoAnswerText, f.Pane.AnswerNote.Text);
+            Assert.Equal(Visibility.Visible, f.Pane.AnswerNote.Visibility);
+            Assert.Equal(Visibility.Visible, f.Pane.AnswerPanel.Visibility);
+            Assert.Equal("Words", f.Pane.StatusText.Text);        // nothing was answered: no "Answered from 2 passages"
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerCopy.Visibility);   // and there is nothing to copy
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerStop.Visibility);
+        });
+
+        [Fact]
+        public Task A_new_search_takes_the_Answered_status_away_at_once_not_when_its_result_arrives() => OnUi(async f =>
+        {
+            Task ask = Ask(f);
+            f.Feed(Text("An answer."));
+            f.End();
+            await ask;
+            Assert.Equal("Words · Answered from 2 passages", f.Pane.StatusText.Text);
+            var slow = new TaskCompletionSource<(IReadOnlyList<SearchRow> Rows, string Status)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            f.Pane.Run = (_, _) => slow.Task;
+
+            Task search = f.Pane.SearchNow();                     // the answer is cleared, and the search is still out
+
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerPanel.Visibility);
+            Assert.Equal("Words", f.Pane.StatusText.Text);        // the status no longer speaks of an answer that is gone
+            slow.SetResult((new[] { Row("Later", null) }, "Meaning + words"));
+            await search;
+            Assert.Equal("Meaning + words", f.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task A_new_question_takes_the_Answering_and_Answered_status_away_at_once() => OnUi(async f =>
+        {
+            Task first = Ask(f, "vpn");
+            f.Feed(Text("The old answer"));
+            await Handled(f, 1);
+            Assert.Equal("Words · Answering from 2 passages", f.Pane.StatusText.Text);
+            var slow = new TaskCompletionSource<AskStart>(TaskCreationOptions.RunContinuationsAsynchronously);
+            f.Pane.Ask = (_, _) => slow.Task;
+
+            Task second = Ask(f, "wifi");                         // its search is still out
+
+            Assert.Equal("Words", f.Pane.StatusText.Text);
+            await first;
+            Assert.Equal("Words", f.Pane.StatusText.Text);        // and the old one's end does not bring it back
+            slow.SetResult(new AskStart(f.Found, "Words", null, "a sentence"));
+            await second;
+        });
+
         [Fact]
         public Task An_answer_that_ends_without_Done_is_not_called_answered() => OnUi(async f =>
         {

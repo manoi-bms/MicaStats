@@ -279,7 +279,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         /// <summary>
         /// Runs the queued work; true when there was any. The waiters of <see cref="WhenApplied"/>
         /// are taken before the queue is drained, so the work queued ahead of each has run when it
-        /// is released; one that arrives later waits for the next pass.
+        /// is released; one that arrives later waits for the next pass. They are released whatever
+        /// happens while the work runs: a throw here (work that fails and cannot even be reported)
+        /// must not leave a question waiting for the index for ever.
         /// </summary>
         private bool ApplyQueuedWork()
         {
@@ -294,14 +296,19 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             }
 
             bool didWork = false;
-            while (_work.TryDequeue(out var work))
+            try
             {
-                RunWork(work);
-                didWork = true;
+                while (_work.TryDequeue(out var work))
+                {
+                    RunWork(work);
+                    didWork = true;
+                }
             }
-
-            if (waiters != null)
-                foreach (var waiter in waiters) waiter.TrySetResult();
+            finally
+            {
+                if (waiters != null)
+                    foreach (var waiter in waiters) waiter.TrySetResult();
+            }
             return didWork;
         }
 

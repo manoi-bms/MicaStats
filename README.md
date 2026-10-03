@@ -45,10 +45,11 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 
 ## What's New
 
-**Since v1.13.0** — coming in the next release:
+**v1.14.0** — search every note, capture a whole scrolling page, and zoom in the capture editor:
 
 * **Search every note.** MicaPad's new **Search notes** pane (**Ctrl+Shift+F**) finds passages in every note, open or closed. It searches by words, offline and with Thai, and, once you turn it on, by meaning through your own embedding server, reordered by your own reranker. [More below](#search-notes)
 * **Scrolling capture.** Drag around the part of a page, chat or document that scrolls (**Ctrl+Shift+4**) and MicaStats scrolls it from top to bottom by itself and joins the frames into one tall image in the editor. Sticky headers and footers appear once, side panels that do not scroll are left out, and **Esc** keeps what was captured so far
+* **Zoom in the capture editor.** **Ctrl+wheel** zooms around the pointer, **Ctrl + +/−** and **Ctrl+0** work from the keyboard, and a zoom bar has **Fit**. 100% is the capture's real screen pixels, so it opens sharp on a scaled display, and a very tall capture opens fitted to its width
 * **More languages for code.** TypeScript, shell, Kotlin, Go, Rust, Ruby, Pascal/Delphi and Dockerfile are colored, function names get their own color, and fenced code blocks have a **Copy** button
 * **Colors are back for INI, YAML, batch and log files**, which had shown none since v1.12
 * **The overlay survives an Explorer restart.** When `explorer.exe` restarts or crashes, the overlay attaches itself to the new taskbar within a second, stays on top of it and keeps updating, so there is no need to restart MicaStats
@@ -619,7 +620,7 @@ Place the overlay in the desired location and enable **Lock Position**.
 
 ### The overlay vanished after Explorer restarted
 
-From the next release, MicaStats attaches the overlay to the new taskbar by itself within a second, and the diagnostics log records "Explorer's taskbar came back". On v1.13.0 and earlier, quit MicaStats and start it again.
+From v1.14.0, MicaStats attaches the overlay to the new taskbar by itself within a second, and the diagnostics log records "Explorer's taskbar came back". On v1.13.0 and earlier, quit MicaStats and start it again.
 
 ### MicaPad search says "Words only"
 
@@ -774,12 +775,13 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 
 ## มีอะไรใหม่
 
-**หลัง v1.13.0** (จะมาในรีลีสถัดไป):
+**v1.14.0** — ค้นหาทุกโน้ต จับภาพหน้าที่เลื่อนได้ทั้งหน้า และซูมในหน้าต่างมาร์กอัป:
 
 * **ค้นหาทุกโน้ต** แผง **Search notes** ใหม่ของ MicaPad (**Ctrl+Shift+F**) ค้นหาข้อความในทุกโน้ตทั้งที่เปิดอยู่และปิดไปแล้ว
   * ค้นด้วยคำได้แบบออฟไลน์ และรองรับภาษาไทย
   * เมื่อเปิดใช้ ค้นตามความหมายผ่านเซิร์ฟเวอร์ embedding ของคุณเอง แล้วเรียงลำดับใหม่ด้วย reranker ของคุณเอง [อ่านต่อด้านล่าง](#ค้นหาโน้ต)
 * **จับภาพแบบเลื่อน** ลากกรอบรอบส่วนของหน้าเว็บ แชท หรือเอกสารที่เลื่อนได้ (**Ctrl+Shift+4**) แล้ว MicaStats จะเลื่อนจากบนลงล่างให้เอง และต่อเฟรมเป็นภาพยาวภาพเดียวในหน้าต่างมาร์กอัป ส่วนหัวและส่วนท้ายที่ตรึงอยู่จะปรากฏเพียงครั้งเดียว แผงด้านข้างที่ไม่เลื่อนตามจะถูกตัดออก และกด **Esc** เพื่อหยุดโดยเก็บภาพที่จับได้แล้วไว้
+* **ซูมในหน้าต่างมาร์กอัป** **Ctrl+ล้อเมาส์** ซูมโดยยึดตำแหน่งเมาส์ ใช้ **Ctrl + +/−** และ **Ctrl+0** จากคีย์บอร์ดได้ และแถบซูมมีปุ่ม **Fit** โดย 100% คือพิกเซลจริงบนหน้าจอของภาพที่จับ ภาพจึงเปิดมาคมชัดบนจอที่ปรับสเกล และภาพที่ยาวมากจะเปิดแบบพอดีกับความกว้าง
 * **รองรับภาษาโปรแกรมเพิ่มขึ้น** TypeScript, shell, Kotlin, Go, Rust, Ruby, Pascal/Delphi และ Dockerfile แสดงสีได้แล้ว ชื่อฟังก์ชันมีสีของตัวเอง และบล็อกโค้ดมีปุ่ม **Copy**
 * **ไฟล์ INI, YAML, batch และไฟล์ล็อกกลับมามีสีอีกครั้ง** หลังจากไม่มีสีมาตั้งแต่ v1.12
 * **โอเวอร์เลย์อยู่รอดเมื่อ Explorer รีสตาร์ต** เมื่อ `explorer.exe` รีสตาร์ตหรือแครช โอเวอร์เลย์จะเกาะทาสก์บาร์ใหม่เองภายในหนึ่งวินาที อยู่เหนือทาสก์บาร์และอัปเดตค่าต่อไป ไม่ต้องเปิด MicaStats ใหม่
@@ -1327,7 +1329,7 @@ MicaStats ใช้เทคโนโลยีเดสก์ท็อปขอ�
 
 ### โอเวอร์เลย์หายไปหลัง Explorer รีสตาร์ต
 
-ตั้งแต่รีลีสถัดไป MicaStats จะเกาะทาสก์บาร์ใหม่เองภายในหนึ่งวินาที และไฟล์บันทึกการทำงานจะมีบรรทัด "Explorer's taskbar came back" ส่วนใน v1.13.0 และก่อนหน้า ให้ปิด MicaStats แล้วเปิดใหม่
+ตั้งแต่ v1.14.0 MicaStats จะเกาะทาสก์บาร์ใหม่เองภายในหนึ่งวินาที และไฟล์บันทึกการทำงานจะมีบรรทัด "Explorer's taskbar came back" ส่วนใน v1.13.0 และก่อนหน้า ให้ปิด MicaStats แล้วเปิดใหม่
 
 ### การค้นหาใน MicaPad ขึ้นว่า "Words only"
 

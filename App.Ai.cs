@@ -413,5 +413,17 @@ public partial class App
         }
     }
 
+    /// <summary>
+    /// The runner for MicaPad's AI actions: the provider of Settings > AI, the shared key store
+    /// and the shared daily count. Built per request, so a settings change applies at once.
+    /// </summary>
+    internal static Kil0bitSystemMonitor.Services.Pad.Ai.PadAiRunner? CreatePadAiRunner()
+    {
+        AppConfig? config = ConfigService?.Config;
+        if (config == null) return null;
+        return new Kil0bitSystemMonitor.Services.Pad.Ai.PadAiRunner(
+            () => Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets), AiUsage, () => config.AiDailyLimit);
+    }
+
     // AI anchor: members
 }

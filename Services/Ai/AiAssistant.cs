@@ -260,7 +260,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             yield return Done;
         }
 
-        private static string LimitText(int limit) =>
+        internal static string LimitText(int limit) =>
             "You have asked " + limit.ToString(CultureInfo.InvariantCulture) +
             " questions today, the daily limit set in Settings > AI. The count starts again at midnight.";
 

@@ -61,10 +61,12 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// The two note tools for Ask MicaStats, in <see cref="ToolNames.Notes"/> order. Offered
         /// only while the user allows it (<see cref="AiAssistant"/> decides); each call asks the
         /// Ask switch again, so one arriving after it was turned off is refused.
+        /// <paramref name="read"/> runs each time one of them hands notes to the model (not for a
+        /// refusal or another error result), on the thread the function ran on.
         /// </summary>
-        public static IReadOnlyList<AIFunction> Notes(MicaTools tools)
+        public static IReadOnlyList<AIFunction> Notes(MicaTools tools, Action? read = null)
         {
-            var t = new NoteTarget(tools);
+            var t = new NoteTarget(tools, read);
             return new[]
             {
                 AIFunctionFactory.Create(t.SearchNotes, Options(ToolNames.SearchNotes,
@@ -200,14 +202,19 @@ namespace Kil0bitSystemMonitor.Services.Ai
         private sealed class NoteTarget
         {
             private readonly MicaTools _tools;
+            private readonly Action? _read;
 
-            public NoteTarget(MicaTools tools) => _tools = tools;
+            public NoteTarget(MicaTools tools, Action? read)
+            {
+                _tools = tools;
+                _read = read;
+            }
 
             public async Task<JsonElement> SearchNotes(
                 [Description("Words or a short question to look for in the notes.")] string query,
                 [Description("Most passages to return, 1-20.")] int limit = NoteTools.DefaultLimit,
                 CancellationToken cancellationToken = default) =>
-                ToElement(await _tools.SearchNotesForAskAsync(
+                Handed(await _tools.SearchNotesForAskAsync(
                     new JsonObject { ["query"] = query, ["limit"] = limit }, cancellationToken).ConfigureAwait(false));
 
             public async Task<JsonElement> GetNote(
@@ -215,9 +222,19 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 [Description("The first line to read, from 1.")] int firstLine = 1,
                 [Description("How many lines to read, 1-400.")] int lineCount = NoteTools.DefaultLines,
                 CancellationToken cancellationToken = default) =>
-                ToElement(await _tools.GetNoteForAskAsync(
+                Handed(await _tools.GetNoteForAskAsync(
                     new JsonObject { ["noteId"] = noteId, ["firstLine"] = firstLine, ["lineCount"] = lineCount },
                     cancellationToken).ConfigureAwait(false));
+
+            /// <summary>
+            /// The result as the model gets it. Anything but an error result may hold note text, so
+            /// the question is told before the model sees it.
+            /// </summary>
+            private JsonElement Handed(JsonNode result)
+            {
+                if (result is not JsonObject answer || !answer.ContainsKey("error")) _read?.Invoke();
+                return ToElement(result);
+            }
         }
 
         /// <summary>The suggest_action body, bound to one question's recorder.</summary>

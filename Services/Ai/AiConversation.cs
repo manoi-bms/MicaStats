@@ -19,11 +19,26 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         public List<SuggestedAction> Suggestions { get; } = new();
 
+        private volatile bool _notesRead;
+
+        /// <summary>
+        /// True once a note tool handed note text to the model in this conversation. From then on
+        /// note text may steer its answers, this one and every later one (the tool's result is
+        /// sent again with each question), so the Ask window shows their links as text. Set by the
+        /// note functions themselves, on whatever thread they run: what the tool loop reports
+        /// about a call depends on the call ids a provider gives, and those can repeat.
+        /// </summary>
+        public bool NotesRead => _notesRead;
+
+        /// <summary>A note tool returned notes; see <see cref="NotesRead"/>.</summary>
+        internal void MarkNotesRead() => _notesRead = true;
+
         /// <summary>Starts over: forgets every message and suggestion.</summary>
         public void Clear()
         {
             Messages.Clear();
             Suggestions.Clear();
+            _notesRead = false;
         }
     }
 

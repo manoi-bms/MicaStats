@@ -728,6 +728,46 @@ public class NoteToolsWiringTests : IDisposable
         }
     });
 
+    /// <summary>
+    /// A provider that gives two calls of one message the same id: the window is then told of one
+    /// tool name only, and it is not the note tool. The links are text all the same, because the
+    /// note function marks the conversation itself.
+    /// </summary>
+    [Fact]
+    public void Links_are_text_after_a_note_tool_even_when_the_provider_reuses_one_call_id() => UiThread.Run(() =>
+    {
+        var model = new ScriptedChatClient();
+        model.Otherwise = request => request.Messages.Any(m => m.Role == ChatRole.Tool)
+            ? new ChatMessage(ChatRole.Assistant, "Found [x](https://example.com/p).")
+            : new ChatMessage(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("same", ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "vpn" }),
+                new FunctionCallContent("same", ToolNames.GetLiveStatus, new Dictionary<string, object?>()),
+            });
+        MicaTools tools = Tools(new FakeNoteReader(), ask: () => true);
+        var window = new AskWindow(() => new AskSetup(Assistant(tools, model).AskAsync, null), () => { }, _ => "");
+        try
+        {
+            Send(window, "What is my VPN gateway?");
+            Send(window, "And again?");
+
+            Assert.DoesNotContain(window.Turns[0].ToolChips, chip => chip.Tool == ToolNames.SearchNotes);   // the name never arrived
+            Assert.Empty(Links(window.Turns[0].Answer.Document));
+            Assert.Equal("Found x (https://example.com/p).", Shown(window.Turns[0].Answer.Document));
+            Assert.Empty(Links(window.Turns[1].Answer.Document));
+
+            window.NewConversation();
+            model.Otherwise = _ => new ChatMessage(ChatRole.Assistant, "See [y](https://example.com/q).");
+            Send(window, "And now?");
+
+            Assert.Single(Links(Assert.Single(window.Turns).Answer.Document));
+        }
+        finally
+        {
+            window.Close();
+        }
+    });
+
     [Theory]
     [InlineData("search_notes", "Searched notes")]
     [InlineData("get_note", "Read a note")]

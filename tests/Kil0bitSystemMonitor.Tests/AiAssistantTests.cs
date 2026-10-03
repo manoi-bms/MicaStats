@@ -173,6 +173,206 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(1, _usage.UsedToday);   // a note tool call does not count against the daily limit
         }
 
+        // ----- note text and the Ask switch (fix round 1) -------------------------------------
+
+        /// <summary>One request as the model reads it: every text, tool call and tool result, in order.</summary>
+        private static string Sent(ScriptedChatClient.Request request) => string.Join("\n", Contents(request).Select(c => c switch
+        {
+            TextContent text => text.Text,
+            FunctionCallContent call => call.Name + " " + ToolHistory.ArgsJson(call.Arguments),
+            FunctionResultContent result => ResultText(result),
+            _ => "",
+        }));
+
+        private static FakeNoteReader HandshakeNote() => new()
+        {
+            Hits = new() { new Kil0bitSystemMonitor.Services.Pad.Ai.NoteHit("a1", "Servers", "Production", 3, 9, false, "the handshake is purple-walrus") },
+            Note = new Kil0bitSystemMonitor.Services.Pad.Ai.NoteText("a1", "Servers", "the handshake is purple-walrus\nthe port is 8443"),
+        };
+
+        private static string OffResult => "{\"error\":\"" + Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.Off + "\"}";
+
+        [Fact]
+        public async Task Once_the_ask_switch_is_off_note_text_already_read_is_not_sent_again()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            _model.Call(ToolNames.GetLiveStatus)
+                  .Call(ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "handshake" })
+                  .Call(ToolNames.GetNote, new Dictionary<string, object?> { ["noteId"] = "a1" })
+                  .Reply("It is in your Servers note.")
+                  .Reply("Still there.")
+                  .Reply("The CPU is fine.");
+
+            // The app builds an assistant for each question.
+            await AskAsync(Assistant(notes: notes), "What is the handshake?");
+            await AskAsync(Assistant(notes: notes), "Sure?");
+            string whileOn = Sent(_model.Requests[4]);   // read now: the messages it holds are changed in place below
+            allowed = false;
+            await AskAsync(Assistant(notes: notes), "And the CPU?");
+
+            // While the switch was on, the conversation carried what was read.
+            Assert.Contains("purple-walrus", whileOn, StringComparison.Ordinal);
+            // Off: the next request holds the refusal where the note text was, and the PC result as it was.
+            ScriptedChatClient.Request afterOff = _model.Requests[5];
+            Assert.DoesNotContain("purple-walrus", Sent(afterOff), StringComparison.Ordinal);
+            Assert.DoesNotContain("8443", Sent(afterOff), StringComparison.Ordinal);
+            string[] results = Contents(afterOff).OfType<FunctionResultContent>().Select(ResultText).ToArray();
+            Assert.Equal(3, results.Length);
+            Assert.Contains("usagePercent", results[0], StringComparison.Ordinal);
+            Assert.Equal(new[] { OffResult, OffResult }, results.Skip(1));
+            Assert.Equal(ToolNames.ReadOnly.Append(ToolNames.SuggestAction), afterOff.ToolNames);
+            // In place: the conversation no longer holds the text, so nothing later can send it either.
+            Assert.DoesNotContain("purple-walrus",
+                string.Concat(_conversation.Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(ResultText)),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Once_the_ask_switch_is_off_limited_mode_does_not_send_note_text_either()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            _model.Call(ToolNames.GetNote, new Dictionary<string, object?> { ["noteId"] = "a1" })
+                  .Reply("It is in your Servers note.")
+                  .Fail(new ClientResultException("registry.ollama.ai/library/gemma:2b does not support tools"))
+                  .Reply("From the snapshot: fine.");
+
+            await AskAsync(Assistant(notes: notes), "What is the handshake?");
+            allowed = false;
+            List<AssistantUpdate> second = await AskAsync(Assistant(notes: notes), "And the CPU?");
+
+            Assert.Equal(AssistantUpdateKind.LimitedMode, second[0].Kind);
+            ScriptedChatClient.Request refused = _model.Requests[2], limited = _model.Requests[3];
+            Assert.Empty(limited.ToolNames);
+            foreach (ScriptedChatClient.Request request in new[] { refused, limited })
+            {
+                Assert.DoesNotContain("purple-walrus", Sent(request), StringComparison.Ordinal);
+                Assert.Contains(Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.Off, Sent(request), StringComparison.Ordinal);
+            }
+        }
+
+        /// <summary>
+        /// An assistant that already knows its endpoint cannot use tools sends one request per
+        /// question, and it never passes the tool loop: the conversation itself must be clean.
+        /// </summary>
+        [Fact]
+        public async Task An_assistant_already_in_limited_mode_does_not_send_note_text_once_the_switch_is_off()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            _model.Call(ToolNames.GetNote, new Dictionary<string, object?> { ["noteId"] = "a1" })
+                  .Reply("It is in your Servers note.")
+                  .Fail(new ClientResultException("registry.ollama.ai/library/gemma:2b does not support tools"))
+                  .Reply("From the snapshot: fine.")
+                  .Reply("Still fine.");
+            await AskAsync(Assistant(notes: notes), "What is the handshake?");
+            AiAssistant limited = Assistant(notes: notes);
+            await AskAsync(limited, "And the CPU?");   // finds out, and answers in limited mode
+            string whileOn = Sent(_model.Requests[3]);
+
+            allowed = false;
+            await AskAsync(limited, "And now?");
+
+            Assert.Contains("purple-walrus", whileOn, StringComparison.Ordinal);
+            Assert.Equal(5, _model.Requests.Count);    // one request: no tool attempt this time
+            Assert.Empty(_model.Requests[4].ToolNames);
+            Assert.DoesNotContain("purple-walrus", Sent(_model.Requests[4]), StringComparison.Ordinal);
+            Assert.Contains(Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.Off, Sent(_model.Requests[4]), StringComparison.Ordinal);
+        }
+
+        /// <summary>The switch is asked right before every request, also between two tool rounds of one question.</summary>
+        [Fact]
+        public async Task A_switch_turned_off_in_the_middle_of_a_question_takes_the_note_text_out_of_its_next_request()
+        {
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()), () => allowed, () => true);
+            var sent = new List<string>();
+            _model.Otherwise = request =>
+            {
+                sent.Add(Sent(request));
+                switch (sent.Count)
+                {
+                    case 1:
+                        return _model.CallMessage(ToolNames.GetNote, new Dictionary<string, object?> { ["noteId"] = "a1" });
+                    case 2:
+                        allowed = false;   // turned off in Settings while the model works
+                        return _model.CallMessage(ToolNames.GetLiveStatus);
+                    default:
+                        return new ChatMessage(ChatRole.Assistant, "The CPU is fine.");
+                }
+            };
+
+            await AskAsync(Assistant(notes: notes), "What is the handshake, and how is the CPU?");
+
+            Assert.Equal(3, sent.Count);
+            Assert.Contains("purple-walrus", sent[1], StringComparison.Ordinal);        // read while it was allowed
+            Assert.DoesNotContain("purple-walrus", sent[2], StringComparison.Ordinal);
+            Assert.Contains(OffResult, sent[2], StringComparison.Ordinal);
+            Assert.Contains("usagePercent", sent[2], StringComparison.Ordinal);         // the PC result is untouched
+        }
+
+        [Fact]
+        public async Task A_switch_that_cannot_be_read_takes_the_note_text_back_too()
+        {
+            bool broken = false;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(HandshakeNote()),
+                () => broken ? throw new InvalidOperationException("the config is gone") : true, () => true);
+            _model.Call(ToolNames.GetNote, new Dictionary<string, object?> { ["noteId"] = "a1" }).Reply("In Servers.").Reply("Fine.");
+
+            await AskAsync(Assistant(notes: notes), "What is the handshake?");
+            broken = true;
+            await AskAsync(Assistant(notes: notes), "And the CPU?");
+
+            Assert.DoesNotContain("purple-walrus", Sent(_model.Requests[2]), StringComparison.Ordinal);
+            Assert.Equal(OffResult, ResultText(Contents(_model.Requests[2]).OfType<FunctionResultContent>().Single()));
+        }
+
+        /// <summary>
+        /// A provider may give two calls of one message the same id. What the tool loop reports
+        /// then names only one of them, so the conversation is marked by the note function itself.
+        /// </summary>
+        [Fact]
+        public async Task A_note_tool_that_returned_notes_marks_the_conversation_whatever_call_ids_the_provider_reports()
+        {
+            var reader = new FakeNoteReader();
+            _model.Otherwise = request => request.Messages.Any(m => m.Role == ChatRole.Tool)
+                ? new ChatMessage(ChatRole.Assistant, "The gateway is in Servers.")
+                : new ChatMessage(ChatRole.Assistant, new List<AIContent>
+                {
+                    new FunctionCallContent("same", ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "vpn" }),
+                    new FunctionCallContent("same", ToolNames.GetLiveStatus, new Dictionary<string, object?>()),
+                });
+            Assert.False(_conversation.NotesRead);
+
+            List<AssistantUpdate> updates = await AskAsync(Assistant(notes: NotesForAsk(reader)), "What is my VPN gateway?");
+
+            Assert.Equal(1, reader.Searches);
+            Assert.True(_conversation.NotesRead);
+            // Why the tool names cannot be what decides: the note tool is not among them.
+            Assert.DoesNotContain(updates, u => u.Kind == AssistantUpdateKind.ToolUsed && u.ToolName == ToolNames.SearchNotes);
+            _conversation.Clear();
+            Assert.False(_conversation.NotesRead);
+        }
+
+        [Fact]
+        public async Task A_conversation_is_not_marked_when_no_note_text_came_back()
+        {
+            var reader = new FakeNoteReader();
+            bool allowed = true;
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(reader), () => allowed, () => true);
+            _model.Call(ToolNames.GetLiveStatus).Reply("Fine.")
+                  .Call(ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "vpn" }).Reply("I could not look.");
+
+            await AskAsync(Assistant(notes: notes), "How is the CPU?");
+            AiAssistant built = Assistant(notes: notes);   // offered the note tools while the switch was on
+            allowed = false;
+            await AskAsync(built, "What is my VPN gateway?");
+
+            Assert.Equal(0, reader.Searches);
+            Assert.False(_conversation.NotesRead);
+        }
+
         [Fact]
         public async Task A_model_that_never_stops_asking_for_tools_still_ends_with_an_answer()
         {

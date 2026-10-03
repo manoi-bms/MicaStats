@@ -255,10 +255,11 @@ namespace Kil0bitSystemMonitor.Ai
         internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("ai", message);
 
         /// <summary>
-        /// True once note text may have steered this answer: a note tool ran in this turn
-        /// (<see cref="AddTool"/> sets it), or in an earlier turn of the same conversation, whose
-        /// results are sent again with every later question (the window sets it). Every document
-        /// shown from then on has its links turned into text (<see cref="ChatDocument.RemoveLinks"/>).
+        /// True once note text may have steered this answer: a note tool ran in this turn, or in
+        /// an earlier turn of the same conversation, whose results are sent again with every later
+        /// question (<see cref="ShowLinksAsText"/>; the window also sets it for a new turn). Every
+        /// document shown from then on has its links turned into text
+        /// (<see cref="ChatDocument.RemoveLinks"/>).
         /// </summary>
         internal bool PlainLinks { get; set; }
 
@@ -296,11 +297,21 @@ namespace Kil0bitSystemMonitor.Ai
             }
             chip.AddCall(Describe(name, args));
 
-            if (!PlainLinks && name is ToolNames.SearchNotes or ToolNames.GetNote)
-            {
-                PlainLinks = true;
-                if (_rendered) RenderNow();   // text streamed before the tool ran may hold a link
-            }
+            if (name is ToolNames.SearchNotes or ToolNames.GetNote) ShowLinksAsText();
+        }
+
+        /// <summary>
+        /// Note text may steer this answer from now on: its links are text, in what is shown
+        /// already (text streamed before the tool ran may hold a link) and in everything rendered
+        /// after. Called for a note tool's chip, and by the window once the conversation says a
+        /// note tool handed notes to the model (<see cref="AiConversation.NotesRead"/>), which does
+        /// not depend on the tool names a provider's call ids let through.
+        /// </summary>
+        internal void ShowLinksAsText()
+        {
+            if (PlainLinks) return;
+            PlainLinks = true;
+            if (_rendered) RenderNow();
         }
 
         /// <summary>Shows a note under the answer, replacing any earlier one.</summary>

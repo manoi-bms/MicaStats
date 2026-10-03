@@ -262,6 +262,10 @@ namespace Kil0bitSystemMonitor.Ai
             {
                 await foreach (AssistantUpdate update in ask(conversation, question, cts.Token))
                 {
+                    // A note tool handed notes to the model: said by the tool itself, before its
+                    // result reaches the model, so every answer text after it is shown this way.
+                    if (conversation.NotesRead) turn.ShowLinksAsText();
+
                     switch (update.Kind)
                     {
                         case AssistantUpdateKind.Text:
@@ -314,6 +318,7 @@ namespace Kil0bitSystemMonitor.Ai
                 _cts = null;
                 cts.Dispose();
                 setup.Resource?.Dispose();
+                if (conversation.NotesRead) turn.ShowLinksAsText();
                 turn.Complete(DateTime.Now);
                 UpdateButtons();
             }
@@ -335,13 +340,15 @@ namespace Kil0bitSystemMonitor.Ai
 
         /// <summary>
         /// Adds a turn for <paramref name="question"/>; sending always shows the end of the transcript.
-        /// Once a turn of this conversation used a note tool, every later turn shows its links as
+        /// Once a note tool was used in this conversation, every later turn shows its links as
         /// text too: the conversation keeps that tool's result and sends it with each later
-        /// question, so note text can steer those answers as well. New conversation starts clean.
+        /// question, so note text can steer those answers as well. The conversation says so itself
+        /// (<see cref="AiConversation.NotesRead"/>); a turn that saw a note tool's chip counts too.
+        /// New conversation starts clean.
         /// </summary>
         private AskTurnView AddTurn(string question)
         {
-            var turn = new AskTurnView(question) { PlainLinks = _turns.Any(t => t.PlainLinks) };
+            var turn = new AskTurnView(question) { PlainLinks = _conversation.NotesRead || _turns.Any(t => t.PlainLinks) };
             _turns.Add(turn);
             TranscriptPanel.Children.Add(turn.Root);
             EmptyState.Visibility = Visibility.Collapsed;

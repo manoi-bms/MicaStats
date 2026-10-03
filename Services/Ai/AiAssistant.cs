@@ -65,6 +65,14 @@ namespace Kil0bitSystemMonitor.Services.Ai
         private readonly UsageMeter _usage;
         private readonly AiAssistantOptions _options;
         private readonly IReadOnlyList<AIFunction> _readOnlyTools;
+
+        /// <summary>
+        /// Whether this assistant offers the two note tools: the Ask switch as it was when the
+        /// assistant was built. The app builds an assistant for each question. A call that arrives
+        /// after the switch was turned off is refused by the tools themselves.
+        /// </summary>
+        private readonly bool _offerNotes;
+
         private bool _toolsUnsupported;
 
         /// <summary>
@@ -78,8 +86,9 @@ namespace Kil0bitSystemMonitor.Services.Ai
             _usage = usage ?? throw new ArgumentNullException(nameof(usage));
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _isClaude = isClaude;
-            _readOnlyTools = ReadOnlyTools(tools);
-            _toolClient = new ChatClientBuilder(new FinalAnswerChatClient(client))
+            _readOnlyTools = AiToolFunctions.ReadOnly(tools);
+            _offerNotes = NotesAllowed();
+            _toolClient = new ChatClientBuilder(new FinalAnswerChatClient(client, NotesAllowed))
                 .UseFunctionInvocation(configure: f =>
                 {
                     f.MaximumIterationsPerRequest = Math.Max(1, options.MaxToolRounds);
@@ -99,6 +108,12 @@ namespace Kil0bitSystemMonitor.Services.Ai
         {
             ArgumentNullException.ThrowIfNull(conversation);
             conversation.Suggestions.Clear();
+
+            // Before any request is built, with tools or in limited mode: while Ask MicaStats may
+            // not read notes, what the note tools returned earlier in this conversation is taken
+            // out of it, so turning the switch off also stops note text already read from being
+            // sent again with this question and every later one.
+            if (!NotesAllowed()) ToolHistory.TakeBackNoteResults(conversation.Messages);
 
             string text = (question ?? "").Trim();
             if (text.Length == 0)
@@ -134,7 +149,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 Exception? failure = null;
 
                 IAsyncEnumerator<ChatResponseUpdate> stream = _toolClient
-                    .GetStreamingResponseAsync(WithSystem(conversation.Messages), ToolOptions(turn), token)
+                    .GetStreamingResponseAsync(WithSystem(conversation.Messages), ToolOptions(turn, conversation), token)
                     .GetAsyncEnumerator(token);
                 try
                 {
@@ -217,6 +232,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
             Exception? limitedFailure = null;
             if (snapshot != null)
             {
+                // This request does not pass the tool loop's client, so the switch is asked here.
+                if (!NotesAllowed()) ToolHistory.TakeBackNoteResults(conversation.Messages);
                 List<ChatMessage> messages = LimitedMessages(conversation.Messages, text, snapshot);
                 IAsyncEnumerator<ChatResponseUpdate> plain = _client
                     .GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = _options.MaxOutputTokens }, token)
@@ -276,34 +293,31 @@ namespace Kil0bitSystemMonitor.Services.Ai
         }
 
         /// <summary>
-        /// The nine PC tools, then the two note tools when the user lets Ask MicaStats read notes.
-        /// Asked once, here: the app builds an assistant for each question. A switch that cannot be
-        /// read counts as off, and a call that arrives after it was turned off is refused by the
-        /// tools themselves (<see cref="MicaTools.SearchNotesForAskAsync"/>).
+        /// Whether the user lets Ask MicaStats read notes, as the switch is now. One that cannot
+        /// be read counts as off.
         /// </summary>
-        private static IReadOnlyList<AIFunction> ReadOnlyTools(MicaTools tools)
+        private bool NotesAllowed()
         {
-            IReadOnlyList<AIFunction> pc = AiToolFunctions.ReadOnly(tools);
-            bool notes;
             try
             {
-                notes = tools.Notes?.ForAsk() == true;
+                return _tools.Notes?.ForAsk() == true;
             }
             catch (Exception)
             {
-                notes = false;
+                return false;
             }
-            if (!notes) return pc;
-
-            var all = new List<AIFunction>(pc);
-            all.AddRange(AiToolFunctions.Notes(tools));
-            return all;
         }
 
-        private ChatOptions ToolOptions(Turn turn)
+        /// <summary>
+        /// The nine PC tools, then the two note tools when this assistant offers them, then
+        /// <c>suggest_action</c>. The note functions are bound to this question's conversation:
+        /// each marks it when it hands notes to the model (<see cref="AiConversation.NotesRead"/>).
+        /// </summary>
+        private ChatOptions ToolOptions(Turn turn, AiConversation conversation)
         {
-            var tools = new List<AITool>(_readOnlyTools.Count + 1);
+            var tools = new List<AITool>(_readOnlyTools.Count + 3);
             tools.AddRange(_readOnlyTools);
+            if (_offerNotes) tools.AddRange(AiToolFunctions.Notes(_tools, conversation.MarkNotesRead));
             tools.Add(AiToolFunctions.SuggestAction(turn.Record));
             return new ChatOptions { Tools = tools, MaxOutputTokens = _options.MaxOutputTokens };
         }

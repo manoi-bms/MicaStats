@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -5,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Services.Ai.Tools;
+using Kil0bitSystemMonitor.Services.Pad.Ai;
 using Microsoft.Extensions.AI;
 
 namespace Kil0bitSystemMonitor.Services.Ai
@@ -15,10 +17,22 @@ namespace Kil0bitSystemMonitor.Services.Ai
     /// tools; the history then still holds tool calls and results, which some APIs reject
     /// without a tool list. This rewrites them as plain text and asks the model to answer now.
     /// Requests that offer tools pass through untouched.
+    ///
+    /// <para>
+    /// Every request of the tool loop passes here, so this is also where the notes switch is
+    /// asked right before a request: while Ask MicaStats may not read notes, what the note tools
+    /// returned earlier is taken out of the messages before they go
+    /// (<see cref="ToolHistory.TakeBackNoteResults"/>). That covers a switch turned off between
+    /// two rounds of one question.
+    /// </para>
     /// </summary>
     internal sealed class FinalAnswerChatClient : DelegatingChatClient
     {
-        public FinalAnswerChatClient(IChatClient inner) : base(inner) { }
+        private readonly Func<bool>? _notesAllowed;
+
+        /// <param name="inner">The provider's client.</param>
+        /// <param name="notesAllowed">Whether Ask MicaStats may read notes now; null never takes anything out.</param>
+        public FinalAnswerChatClient(IChatClient inner, Func<bool>? notesAllowed = null) : base(inner) => _notesAllowed = notesAllowed;
 
         public override Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
                                                             CancellationToken cancellationToken = default) =>
@@ -28,8 +42,14 @@ namespace Kil0bitSystemMonitor.Services.Ai
             ChatOptions? options = null, CancellationToken cancellationToken = default) =>
             base.GetStreamingResponseAsync(Prepare(messages, options), options, cancellationToken);
 
-        private static IEnumerable<ChatMessage> Prepare(IEnumerable<ChatMessage> messages, ChatOptions? options)
+        private IEnumerable<ChatMessage> Prepare(IEnumerable<ChatMessage> messages, ChatOptions? options)
         {
+            if (_notesAllowed != null && !_notesAllowed())
+            {
+                if (messages is not ICollection<ChatMessage>) messages = messages.ToList();   // read twice: here and by the request
+                ToolHistory.TakeBackNoteResults(messages);
+            }
+
             if (options?.Tools is { Count: > 0 }) return messages;
             List<ChatMessage> flat = ToolHistory.Flatten(messages);
             flat.Add(new ChatMessage(ChatRole.User, AiPrompts.ToolLimitReached));
@@ -91,6 +111,49 @@ namespace Kil0bitSystemMonitor.Services.Ai
             int keep = MaxResultChars - note.Length;
             if (char.IsHighSurrogate(text[keep - 1])) keep--;   // never split a character in two
             return text[..keep] + note;
+        }
+
+        /// <summary>
+        /// Takes back what the note tools returned: every result of <c>search_notes</c> and
+        /// <c>get_note</c> in <paramref name="messages"/> is replaced, in place, by the refusal a
+        /// call gets while notes access is off (<see cref="NoteTools.Off"/>). For when Ask MicaStats
+        /// may no longer read notes: results are sent again with every later request, and this is
+        /// what keeps note text already read from going out again. The calls stay, with their
+        /// arguments: those are the model's own words.
+        ///
+        /// <para>
+        /// A provider may give two calls the same id, so a result is matched to the latest call
+        /// of its id, message by message; when two calls of one message share an id and either is
+        /// a note tool, both results count as note results.
+        /// </para>
+        /// </summary>
+        /// <returns>How many results were replaced.</returns>
+        internal static int TakeBackNoteResults(IEnumerable<ChatMessage> messages)
+        {
+            var isNote = new Dictionary<string, bool>(StringComparer.Ordinal);
+            int replaced = 0;
+            foreach (ChatMessage message in messages)
+            {
+                Dictionary<string, bool>? here = null;
+                foreach (AIContent content in message.Contents)
+                {
+                    if (content is not FunctionCallContent call) continue;
+                    here ??= new Dictionary<string, bool>(StringComparer.Ordinal);
+                    bool note = call.Name is ToolNames.SearchNotes or ToolNames.GetNote;
+                    here[call.CallId] = note || (here.TryGetValue(call.CallId, out bool already) && already);
+                }
+                if (here != null)
+                    foreach (KeyValuePair<string, bool> pair in here) isNote[pair.Key] = pair.Value;
+
+                for (int i = 0; i < message.Contents.Count; i++)
+                {
+                    if (message.Contents[i] is not FunctionResultContent result) continue;
+                    if (!isNote.TryGetValue(result.CallId, out bool fromNotes) || !fromNotes) continue;
+                    message.Contents[i] = new FunctionResultContent(result.CallId, AiToolFunctions.ToElement(ToolJson.Error(NoteTools.Off)));
+                    replaced++;
+                }
+            }
+            return replaced;
         }
 
         /// <summary>

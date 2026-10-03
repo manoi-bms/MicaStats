@@ -70,8 +70,33 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
             try
             {
-                int limit = Math.Max(1, _dailyLimit());
-                if (!_usage.TryConsume(limit))
+                // Checked before the count, so a request already cancelled spends no use.
+                if (ct.IsCancellationRequested)
+                {
+                    yield return Done;
+                    yield break;
+                }
+
+                int limit = 1;
+                bool allowed = false;
+                Exception? gateFailure = null;
+                try
+                {
+                    limit = Math.Max(1, _dailyLimit());
+                    allowed = _usage.TryConsume(limit);
+                }
+                catch (Exception ex)
+                {
+                    gateFailure = ex;
+                }
+                if (gateFailure != null)
+                {
+                    DiagnosticsLog.Log("pad", "AI request failed: " + gateFailure.GetType().Name);
+                    yield return new PadAiUpdate(PadAiUpdateKind.Error, AiErrorText.Describe(gateFailure));
+                    yield return Done;
+                    yield break;
+                }
+                if (!allowed)
                 {
                     yield return new PadAiUpdate(PadAiUpdateKind.Error, AiAssistant.LimitText(limit));
                     yield return Done;
@@ -92,42 +117,50 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
                 Exception? failure = null;
                 bool cutShort = false;
-                IAsyncEnumerator<ChatResponseUpdate> stream = client
-                    .GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = MaxOutputTokens }, token)
-                    .GetAsyncEnumerator(token);
-                try
+                (IAsyncEnumerator<ChatResponseUpdate>? stream, Exception? openError) = Open(client, messages, token);
+                if (stream == null) failure = openError;
+                else
                 {
-                    while (true)
+                    try
                     {
-                        (bool moved, Exception? error) = await MoveAsync(stream);
-                        if (error != null)
+                        while (true)
                         {
-                            failure = error;
-                            break;
-                        }
-                        if (!moved) break;
-                        deadline.CancelAfter(_silence);
+                            (bool moved, Exception? error) = await MoveAsync(stream);
+                            if (error != null)
+                            {
+                                failure = error;
+                                break;
+                            }
+                            if (!moved) break;
+                            deadline.CancelAfter(_silence);
 
-                        ChatResponseUpdate update = stream.Current;
-                        if (update.FinishReason == ChatFinishReason.Length) cutShort = true;
-                        if (!string.IsNullOrEmpty(update.Text))
-                            yield return new PadAiUpdate(PadAiUpdateKind.Text, update.Text);
+                            ChatResponseUpdate update = stream.Current;
+                            if (update.FinishReason == ChatFinishReason.Length) cutShort = true;
+                            if (!string.IsNullOrEmpty(update.Text))
+                                yield return new PadAiUpdate(PadAiUpdateKind.Text, update.Text);
+                        }
+                    }
+                    finally
+                    {
+                        await DisposeQuietly(stream);
                     }
                 }
-                finally
-                {
-                    await DisposeQuietly(stream);
-                }
 
+                bool timedOut = !ct.IsCancellationRequested && deadline.IsCancellationRequested;
                 if (failure != null)
                 {
                     if (!ct.IsCancellationRequested)
                     {
-                        if (!deadline.IsCancellationRequested)
+                        if (!timedOut)
                             DiagnosticsLog.Log("pad", "AI request failed: " + failure.GetType().Name);
                         yield return new PadAiUpdate(PadAiUpdateKind.Error,
-                            deadline.IsCancellationRequested ? AiErrorText.TimedOut : AiErrorText.Describe(failure));
+                            timedOut ? AiErrorText.TimedOut : AiErrorText.Describe(failure));
                     }
+                }
+                else if (timedOut)
+                {
+                    // Some enumerators stop quietly when cancelled; that is not a finished answer.
+                    yield return new PadAiUpdate(PadAiUpdateKind.Error, AiErrorText.TimedOut);
                 }
                 else if (cutShort && !ct.IsCancellationRequested)
                 {
@@ -138,6 +171,20 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             finally
             {
                 try { client.Dispose(); } catch (Exception) { }
+            }
+        }
+
+        private static (IAsyncEnumerator<ChatResponseUpdate>? Stream, Exception? Error) Open(
+            IChatClient client, List<ChatMessage> messages, CancellationToken token)
+        {
+            try
+            {
+                return (client.GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = MaxOutputTokens }, token)
+                              .GetAsyncEnumerator(token), null);
+            }
+            catch (Exception ex)
+            {
+                return (null, ex);
             }
         }
 

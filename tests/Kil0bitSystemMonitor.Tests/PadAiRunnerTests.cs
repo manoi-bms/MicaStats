@@ -114,10 +114,98 @@ namespace Kil0bitSystemMonitor.Tests
             _model.Hang();
             using var cts = new CancellationTokenSource();
             cts.CancelAfter(50);
-            List<PadAiUpdate> updates = await RunAsync(Runner(), ct: cts.Token);
+            List<PadAiUpdate> updates = await RunAsync(Runner(silence: TimeSpan.FromSeconds(5)), ct: cts.Token);
 
             PadAiUpdate only = Assert.Single(updates);
             Assert.Equal(PadAiUpdateKind.Done, only.Kind);
+            Assert.DoesNotContain(updates, u => u.Kind == PadAiUpdateKind.Error);
+        }
+
+        [Fact]
+        public async Task A_synchronous_throw_from_the_client_is_an_Error_then_Done()
+        {
+            var client = new LengthClient { ThrowSync = true };
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(2, updates.Count);
+            Assert.Equal(PadAiUpdateKind.Error, updates[0].Kind);
+            Assert.Equal(AiErrorText.Describe(new InvalidOperationException("sync")), updates[0].Text);
+            Assert.Equal(PadAiUpdateKind.Done, updates[1].Kind);
+            Assert.True(client.Disposed);
+        }
+
+        [Fact]
+        public async Task A_throwing_daily_limit_is_an_Error_then_Done_and_the_client_is_disposed()
+        {
+            var client = new LengthClient();
+            var runner = new PadAiRunner(() => new AiClientResult(client, null, false), _usage,
+                                         () => throw new InvalidOperationException("limit"));
+            List<PadAiUpdate> updates = await RunAsync(runner);
+
+            Assert.Equal(new[] { PadAiUpdateKind.Error, PadAiUpdateKind.Done }, updates.Select(u => u.Kind));
+            Assert.True(client.Disposed);
+        }
+
+        [Fact]
+        public async Task An_already_cancelled_token_spends_nothing_and_makes_no_request()
+        {
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+            var client = new LengthClient();
+            List<PadAiUpdate> updates = await RunAsync(Runner(client), ct: cts.Token);
+
+            PadAiUpdate only = Assert.Single(updates);
+            Assert.Equal(PadAiUpdateKind.Done, only.Kind);
+            Assert.Equal(0, _usage.UsedToday);
+            Assert.False(client.Streamed);
+            Assert.True(client.Disposed);
+        }
+
+        [Fact]
+        public async Task A_stream_that_ends_quietly_after_the_deadline_is_a_timeout()
+        {
+            var client = new LengthClient { QuietEnd = true };
+            List<PadAiUpdate> updates = await RunAsync(Runner(client, TimeSpan.FromMilliseconds(50)));
+
+            Assert.Equal(new[] { PadAiUpdateKind.Error, PadAiUpdateKind.Done }, updates.Select(u => u.Kind));
+            Assert.Equal(AiErrorText.TimedOut, updates[0].Text);
+        }
+
+        [Fact]
+        public async Task Every_update_re_arms_the_silence_deadline()
+        {
+            var client = new LengthClient { Chunks = 8, Gap = TimeSpan.FromMilliseconds(30) };
+            List<PadAiUpdate> updates = await RunAsync(Runner(client, TimeSpan.FromMilliseconds(300)));
+
+            Assert.DoesNotContain(updates, u => u.Kind == PadAiUpdateKind.Error);
+            Assert.Equal(8, updates.Count(u => u.Kind == PadAiUpdateKind.Text));
+            Assert.Equal(PadAiUpdateKind.Done, updates[^1].Kind);
+        }
+
+        [Fact]
+        public async Task The_client_is_disposed_when_the_daily_limit_stops_the_run()
+        {
+            _limit = 1;
+            _usage.TryConsume(1);
+            var client = new LengthClient();
+            List<PadAiUpdate> updates = await RunAsync(Runner(client));
+
+            Assert.Equal(PadAiUpdateKind.Error, updates[0].Kind);
+            Assert.True(client.Disposed);
+            Assert.False(client.Streamed);
+        }
+
+        [Fact]
+        public async Task A_Claude_client_still_gets_two_messages_with_the_system_text()
+        {
+            _model.Reply("hi there");
+            var runner = new PadAiRunner(() => new AiClientResult(_model, null, true), _usage, () => _limit);
+            await RunAsync(runner, "question");
+
+            ScriptedChatClient.Request request = Assert.Single(_model.Requests);
+            Assert.Equal(2, request.Messages.Count);
+            Assert.Equal(PadAiPrompts.System, request.Messages[0].Text);
+            Assert.Equal("question", request.Messages[1].Text);
         }
 
         [Fact]
@@ -143,17 +231,40 @@ namespace Kil0bitSystemMonitor.Tests
         private sealed class LengthClient : IChatClient
         {
             public bool Throw { get; init; }
+            public bool ThrowSync { get; init; }
+            public bool QuietEnd { get; init; }
+            public int Chunks { get; init; }
+            public TimeSpan Gap { get; init; }
             public bool Disposed { get; private set; }
+            public bool Streamed { get; private set; }
 
             public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
                                                        CancellationToken cancellationToken = default) =>
                 throw new NotSupportedException();
 
-            public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,
-                ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,
+                ChatOptions? options = null, CancellationToken cancellationToken = default)
+            {
+                Streamed = true;
+                if (ThrowSync) throw new InvalidOperationException("sync");
+                return Stream(cancellationToken);
+            }
+
+            private async IAsyncEnumerable<ChatResponseUpdate> Stream([EnumeratorCancellation] CancellationToken ct)
             {
                 await Task.Yield();
                 if (Throw) throw new InvalidOperationException("fail");
+                if (QuietEnd)
+                {
+                    try { await Task.Delay(Timeout.Infinite, ct); } catch (OperationCanceledException) { }
+                    yield break;
+                }
+                for (int i = 0; i < Chunks; i++)
+                {
+                    await Task.Delay(Gap, ct);
+                    yield return new ChatResponseUpdate(ChatRole.Assistant, "x");
+                }
+                if (Chunks > 0) yield break;
                 yield return new ChatResponseUpdate(ChatRole.Assistant, "a");
                 yield return new ChatResponseUpdate(ChatRole.Assistant, "b") { FinishReason = ChatFinishReason.Length };
             }

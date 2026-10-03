@@ -367,6 +367,7 @@ namespace Kil0bitSystemMonitor.Pad
             _hidden = true;
             if (_state != null) _state.Open = false;
             StopAi();                              // no request runs behind a hidden window
+            SearchPanel.StopAnswer();              // nor an answer from notes
             _workspace.FlushPending();
             _workspace.SaveSession();
             if (IsVisible) Hide();
@@ -2373,6 +2374,7 @@ namespace Kil0bitSystemMonitor.Pad
             PreviewEditor.TextArea.SelectionBrush = area.SelectionBrush;
             FindBar.ApplyPalette(_palette);
             AiPanel.ApplyTheme(_palette.IsDark);
+            SearchPanel.ApplyTheme(_palette.IsDark);
             _occurrences.Fill = PadThemeApplier.ToBrush(_palette.Occurrence);
             area.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
 

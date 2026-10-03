@@ -16,10 +16,12 @@ using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
+using Kil0bitSystemMonitor.Services.Pad.Search;
 using Microsoft.Extensions.AI;
 using Xunit;
 
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using ListBoxItem = System.Windows.Controls.ListBoxItem;
 using MenuItem = System.Windows.Controls.MenuItem;
 
 namespace Kil0bitSystemMonitor.Tests
@@ -1274,6 +1276,489 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(h.Pane));
             Assert.Equal(PadThemeApplier.ToColor(PadPalette.Light.Chrome), ((System.Windows.Media.SolidColorBrush)h.Pane.Background).Color);
+        });
+
+        // ---- ask your notes: the Search pane's Ask (spec 4) ----------------------------------------
+
+        /// <summary>A note of two sections; only the first is about the vpn.</summary>
+        private const string VpnNote = "# Net\nthe vpn needs the office wifi\n\n# Food\nlunch is noodles";
+
+        /// <summary>Runs a test over a window and a words-only search of its store.</summary>
+        private static Task OnUiWithSearch(Func<Harness, NoteSearchService, Task> test) => OnUiAsync(async h =>
+        {
+            using var search = new NoteSearchService(h.Env.Store, () => SearchSettings.Off, warn: _ => { });
+            await test(h, search);
+        });
+
+        /// <summary>Writes the shown note and indexes it, as the feeder does after an edit.</summary>
+        private static async Task Index(Harness h, NoteSearchService search, string text)
+        {
+            Write(h, text);
+            OpenNote note = h.Shown;
+            search.Indexer.SetNote(note.Id, note.Title, text, DateTime.UtcNow);
+            await search.Indexer.WhenIdle();
+        }
+
+        /// <summary>
+        /// Runs <paramref name="call"/> with <paramref name="search"/> as MicaPad's search. The
+        /// window reads that static before its first await, so it is swapped in for the call only:
+        /// the UI tests of other classes share this thread and the static.
+        /// </summary>
+        private static T WithSearch<T>(NoteSearchService? search, Func<T> call)
+        {
+            NoteSearchService? original = MicaPadWindow.SearchService;
+            MicaPadWindow.SearchService = search;
+            try
+            {
+                return call();
+            }
+            finally
+            {
+                MicaPadWindow.SearchService = original;
+            }
+        }
+
+        /// <summary>Opens Search notes, types the question and asks, as Ctrl+Enter does. The task ends when the answer does.</summary>
+        private static Task AskNotes(Harness h, NoteSearchService search, string question) => WithSearch(search, () =>
+        {
+            SearchPane pane = h.Window.SearchPanel;
+            if (pane.Visibility != Visibility.Visible) h.Window.ToggleSearch();
+            pane.QueryBox.Text = question;
+            return pane.AskNowAsync();
+        });
+
+        /// <summary>The passages a question is answered from: what the search finds, at most eight.</summary>
+        private static async Task<IReadOnlyList<Passage>> SourcesOf(NoteSearchService search, string question) =>
+            NotesQuestion.Sources((await search.Search.SearchAsync(question, CancellationToken.None)).Hits);
+
+        [Fact]
+        public Task With_AI_off_Ask_searches_as_usual_says_how_to_turn_AI_on_and_sends_nothing() => OnUiWithSearch(async (h, search) =>
+        {
+            h.AiOn = false;
+            await Index(h, search, VpnNote);
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Null(Assert.Single(pane.Rows).Source);         // the normal search ran
+            Assert.Equal("Words", pane.StatusText.Text);
+            Assert.Equal(Visibility.Visible, pane.AnswerPanel.Visibility);
+            Assert.Equal(NotesQuestion.AiOff, pane.AnswerBox.Shown);   // the user is told why
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Empty(h.Log);
+        });
+
+        [Fact]
+        public Task With_AI_turned_off_between_the_search_and_the_request_Ask_says_so_and_sends_nothing() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            int asked = 0;
+            h.Window.AiEnabled = () => asked++ == 0;              // on at the click, off once the search is back
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(2, asked);                               // asked again before the request
+            Assert.Equal(NotesQuestion.AiOff, pane.AnswerBox.Shown);
+            Assert.Null(Assert.Single(pane.Rows).Source);         // no answer, so no source numbers
+            Assert.Equal("Words", pane.StatusText.Text);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars sent, AI off" }, h.Log);
+        });
+
+        [Fact]
+        public Task With_AI_turned_off_before_the_answer_is_read_the_request_is_never_made() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            AskStart start = await WithSearch(search, () => h.Window.SearchPanel.Ask!("vpn", CancellationToken.None));
+            Assert.NotNull(start.Answer);                         // AI was on up to here: nothing is sent before the answer is read
+            Assert.Null(start.Instead);
+            Assert.Empty(h.Model.Requests);
+
+            h.AiOn = false;
+            var updates = new List<PadAiUpdate>();
+            await foreach (PadAiUpdate update in start.Answer!) updates.Add(update);
+
+            Assert.Equal(new[] { new PadAiUpdate(PadAiUpdateKind.Error, NotesQuestion.AiOff), new PadAiUpdate(PadAiUpdateKind.Done) }, updates);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars sent, AI off" }, h.Log);
+        });
+
+        [Fact]
+        public Task A_setting_that_cannot_be_read_counts_as_off_for_Ask_too() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+            h.Window.AiEnabled = () => throw new InvalidOperationException("no settings");
+
+            await AskNotes(h, search, "vpn");
+
+            Assert.Equal(NotesQuestion.AiOff, h.Window.SearchPanel.AnswerBox.Shown);
+            Assert.Single(h.Window.SearchPanel.Rows);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.All(warned, line => Assert.DoesNotContain("no settings", line, StringComparison.Ordinal));
+        });
+
+        [Fact]
+        public Task Ask_sends_the_question_and_the_numbered_passages_and_shows_the_answer() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            h.Model.Reply("Use the **office wifi** [1].");
+
+            await AskNotes(h, search, "vpn");
+
+            IReadOnlyList<Passage> sources = await SourcesOf(search, "vpn");
+            Assert.Single(sources);
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            Assert.Equal(PadAiPrompts.System, request.Messages[0].Text);
+            Assert.Equal(NotesQuestion.Message("vpn", sources), request.Messages[1].Text);
+            Assert.Contains("[1]", request.Messages[1].Text, StringComparison.Ordinal);
+            Assert.Contains("the vpn needs the office wifi", request.Messages[1].Text, StringComparison.Ordinal);
+            Assert.DoesNotContain("noodles", request.Messages[1].Text, StringComparison.Ordinal);   // only what the search found
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(Visibility.Visible, pane.AnswerPanel.Visibility);
+            Assert.Equal("Use the **office wifi** [1].", pane.AnswerBox.Shown);
+            Assert.Equal(Visibility.Collapsed, pane.AnswerStop.Visibility);
+            Assert.Equal(Visibility.Collapsed, pane.AnswerNote.Visibility);
+            Assert.Equal(1, Assert.Single(pane.Rows).Source);
+            Assert.Equal("Words · Answered from 1 passage", pane.StatusText.Text);
+            Assert.Equal(1, h.Usage.UsedToday);                   // one answer counts one against the daily limit
+            Assert.Equal(VpnNote, h.Editor.Document.Text);        // an answer never touches a note
+        });
+
+        [Fact]
+        public Task A_credential_in_a_note_and_in_the_question_reaches_the_model_as_credential() => OnUiWithSearch(async (h, search) =>
+        {
+            h.Env.Vault.Load();
+            h.Env.Vault.Create("246810");
+            string id = h.Env.Vault.Add("hunter2", "Bank", null);
+            string pill = SecretTokens.Format(id);
+            await Index(h, search, "# Bank\nthe bank login is " + pill + " on the vpn");
+            h.Model.Reply("It is a stored credential [1].");
+
+            await AskNotes(h, search, "what is the bank login " + pill);
+
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            string sent = request.Messages[1].Text;
+            Assert.StartsWith("Question: what is the bank login [credential]\n", sent, StringComparison.Ordinal);
+            Assert.Contains("the bank login is [credential] on the vpn", sent, StringComparison.Ordinal);
+            string everything = string.Join("\n", request.Messages.Select(m => m.Text).Concat(h.Log));
+            Assert.DoesNotContain("{{secret:", everything, StringComparison.Ordinal);
+            Assert.DoesNotContain(id, everything, StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", everything, StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task With_no_hits_Ask_says_there_is_nothing_to_answer_from_and_makes_no_request() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+
+            await AskNotes(h, search, "zebra");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Empty(pane.Rows);
+            Assert.Equal(NotesQuestion.NoSources, pane.AnswerBox.Shown);
+            Assert.Equal("Words · No notes found", pane.StatusText.Text);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);                   // nothing is counted
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Equal(new[] { "AI ask-notes: 0 sources, 0 chars sent, no sources" }, h.Log);
+        });
+
+        [Fact]
+        public Task While_search_is_not_ready_Ask_says_so_and_makes_no_request() => OnUiAsync(async h =>
+        {
+            Write(h, VpnNote);
+
+            AskStart start = await WithSearch(null, () => h.Window.SearchPanel.Ask!("vpn", CancellationToken.None));
+
+            Assert.Empty(start.Rows);
+            Assert.Equal("Search is not ready yet.", start.Status);
+            Assert.Null(start.Answer);
+            Assert.Equal(NotesQuestion.NoSources, start.Instead);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Empty(h.Model.Requests);
+        });
+
+        [Fact]
+        public Task The_first_eight_rows_carry_their_source_numbers_and_the_status_ends_with_the_count() => OnUiWithSearch(async (h, search) =>
+        {
+            // Four notes of three passages each: twelve hits, of which the first eight are sources.
+            for (int n = 1; n <= 4; n++)
+            {
+                if (n > 1) h.Window.NewTab();
+                await Index(h, search, string.Join("\n\n", Enumerable.Range(1, 3).Select(p => "# Part " + Count(n) + "." + Count(p) + "\nthe vpn fact " + Count(n) + "." + Count(p))));
+            }
+            h.Model.Reply("See [1] and [8].");
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(new int?[] { 1, 2, 3, 4, 5, 6, 7, 8, null, null, null, null }, pane.Rows.Select(r => r.Source).ToArray());
+            Assert.Equal("Words · Answered from 8 passages", pane.StatusText.Text);
+            Assert.EndsWith(NotesQuestion.Status(8), pane.StatusText.Text, StringComparison.Ordinal);
+
+            IReadOnlyList<Passage> sources = await SourcesOf(search, "vpn");
+            Assert.Equal(8, sources.Count);
+            Assert.Equal(NotesQuestion.Message("vpn", sources), h.Sent());
+            Assert.Contains("\n\n[8] ", h.Sent(), StringComparison.Ordinal);
+            Assert.DoesNotContain("\n\n[9] ", h.Sent(), StringComparison.Ordinal);
+            // Row i is source i + 1: the citation [n] in the answer is the row numbered n.
+            Assert.Equal(sources.Select(s => (s.NoteId, s.FirstLine)).ToArray(), pane.Rows.Take(8).Select(r => (r.NoteId, r.FirstLine)).ToArray());
+        });
+
+        [Fact]
+        public Task A_click_on_a_numbered_row_still_opens_the_note_at_its_passage() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, "one\ntwo\n\n# Part\nneedle in here\nafter");
+            OpenNote source = h.Shown;
+            h.Window.NewTab();                                    // another note is shown when the row is clicked
+            Write(h, "elsewhere");
+            h.Model.Reply("It is in the part [1].");
+            await AskNotes(h, search, "needle");
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(1, Assert.Single(pane.Rows).Source);
+
+            // An unshown window lays nothing out, and a click lands on a row's container: the pane is laid out by hand.
+            pane.Measure(new System.Windows.Size(300, 600));
+            pane.Arrange(new Rect(0, 0, 300, 600));
+            pane.UpdateLayout();
+            var item = Assert.IsType<ListBoxItem>(pane.Results.ItemContainerGenerator.ContainerFromIndex(0));
+            // The bubbling MouseUp: WPF turns it into MouseLeftButtonUp on each element it passes, the list among them.
+            item.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = Mouse.MouseUpEvent });
+
+            Assert.Same(source, h.Shown);
+            Assert.Equal("# Part\nneedle in here\nafter", h.Editor.SelectedText.Replace("\r\n", "\n", StringComparison.Ordinal));
+            Assert.Equal(Visibility.Visible, pane.AnswerPanel.Visibility);   // the answer stays while its sources are read
+            Assert.Equal("It is in the part [1].", pane.AnswerBox.Shown);
+        });
+
+        [Fact]
+        public Task Before_the_settings_load_Ask_says_AI_is_not_available_yet() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            h.Window.AiRunnerFactory = () => null;
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal("AI is not available yet", pane.AnswerBox.Shown);
+            Assert.Null(Assert.Single(pane.Rows).Source);
+            Assert.Equal("Words", pane.StatusText.Text);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars sent, not available" }, h.Log);
+        });
+
+        [Fact]
+        public Task A_runner_that_cannot_be_built_is_told_in_the_answer_area_and_never_thrown_into_the_window() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+            var broken = new InvalidOperationException("the settings are broken");
+            h.Window.AiRunnerFactory = () => throw broken;
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(AiErrorText.Describe(broken), pane.AnswerBox.Shown);
+            Assert.Null(Assert.Single(pane.Rows).Source);
+            Assert.Contains("InvalidOperationException", Assert.Single(warned), StringComparison.Ordinal);
+            Assert.DoesNotContain("broken", warned[0], StringComparison.Ordinal);   // the type only
+            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars sent, failed" }, h.Log);
+        });
+
+        [Fact]
+        public Task At_the_daily_limit_Ask_says_so_and_sends_nothing() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            h.Limit = 1;
+            Assert.True(h.Usage.TryConsume(1));
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(AiAssistant.LimitText(1), pane.AnswerNote.Text);
+            Assert.Equal(Visibility.Visible, pane.AnswerNote.Visibility);
+            Assert.Equal("", pane.AnswerBox.Shown);
+            Assert.Empty(h.Model.Requests);
+            Assert.EndsWith(" chars sent, failed", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task Without_a_key_Ask_shows_the_providers_problem_and_sends_nothing() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            h.Client = null;
+            h.Problem = "Add an API key in Settings > AI.";
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal("Add an API key in Settings > AI.", pane.AnswerNote.Text);
+            Assert.Equal(Visibility.Collapsed, pane.AnswerStop.Visibility);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+        });
+
+        [Fact]
+        public Task The_Ask_log_line_has_the_sources_the_characters_sent_and_the_outcome_and_never_the_question_or_the_answer() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            h.Model.Reply("Use the office wifi [1].");
+
+            await AskNotes(h, search, "vpn password");
+
+            int sent = NotesQuestion.Message("vpn password", await SourcesOf(search, "vpn password")).Length;
+            string line = Assert.Single(h.Log);
+            Assert.Equal("AI ask-notes: 1 sources, " + Count(sent) + " chars sent, ok", line);
+            Assert.DoesNotContain("password", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("wifi", line, StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task Stop_in_the_answer_area_cancels_the_request_and_keeps_the_partial_answer() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wifi");
+            h.Client = model;
+            Task ask = AskNotes(h, search, "vpn");
+            await Reached(model);
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(Visibility.Visible, pane.AnswerStop.Visibility);
+            Assert.Equal("Use the", pane.AnswerBox.Shown);
+
+            Click(pane.AnswerStop);
+            await ask;
+
+            Assert.True(model.Cancelled);
+            Assert.Equal("Use the", pane.AnswerBox.Shown);
+            Assert.Equal("Stopped", pane.AnswerNote.Text);
+            Assert.Equal(Visibility.Collapsed, pane.AnswerStop.Visibility);
+            Assert.EndsWith(" chars sent, stopped", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task An_answer_cut_short_at_the_length_limit_says_so() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wi") { CutShort = true };
+            model.Gate.SetResult();
+            h.Client = model;
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal("Use the office wi", pane.AnswerBox.Shown);
+            Assert.Equal("Cut short at the length limit", pane.AnswerNote.Text);
+            Assert.EndsWith(" chars sent, cut short", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task Closing_Search_notes_stops_a_running_answer() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wifi");
+            h.Client = model;
+            Task ask = AskNotes(h, search, "vpn");
+            await Reached(model);
+
+            h.Window.ToggleSearch();                              // Ctrl+Shift+F closes the pane
+            await ask;
+
+            Assert.True(model.Cancelled);                         // nothing runs where nobody sees it
+            Assert.Equal(Visibility.Collapsed, h.Window.SearchPanel.Visibility);
+        });
+
+        [Fact]
+        public Task Opening_the_AI_pane_stops_a_running_answer() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wifi");
+            h.Client = model;
+            Task ask = AskNotes(h, search, "vpn");
+            await Reached(model);
+
+            h.Window.ToggleAi();                                  // the AI pane takes the column
+            await ask;
+
+            Assert.True(model.Cancelled);
+            Assert.Equal(Visibility.Collapsed, h.Window.SearchPanel.Visibility);
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+        });
+
+        [Fact]
+        public Task Hiding_the_last_window_with_its_close_button_stops_a_running_answer() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wifi");
+            h.Client = model;
+            Task ask = AskNotes(h, search, "vpn");
+            await Reached(model);
+
+            h.Window.CloseByUser();
+            await ask;
+
+            Assert.True(h.Window.IsHiddenByClose);
+            Assert.True(model.Cancelled);                         // nothing runs behind a hidden window
+            Assert.Equal("Stopped", h.Window.SearchPanel.AnswerNote.Text);
+        });
+
+        [Fact]
+        public Task Closing_the_window_cancels_a_running_answer() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wifi");
+            h.Client = model;
+            Task ask = AskNotes(h, search, "vpn");
+            await Reached(model);
+
+            h.Window.CloseForExit();
+            await ask;
+
+            Assert.True(model.Cancelled);
+        });
+
+        [Fact]
+        public Task Copy_in_the_answer_area_hands_the_raw_answer_to_the_copy_action_and_says_so() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            h.Model.Reply("Use the **office wifi** [1].");
+            await AskNotes(h, search, "vpn");
+
+            Click(h.Window.SearchPanel.AnswerCopy);
+
+            Assert.Equal(new[] { "Use the **office wifi** [1]." }, h.Copied);
+            Assert.Equal("Copied", h.Window.StatusMessage.Text);
+            Assert.Equal(Visibility.Visible, h.Window.StatusMessage.Visibility);
+        });
+
+        [Fact]
+        public Task The_window_leaves_Ctrl_Enter_to_the_Search_pane() => OnUi(h =>
+        {
+            h.Window.ToggleSearch();
+
+            Assert.False(h.Window.HandleShortcut(Key.Enter, ModifierKeys.Control));   // not a window shortcut: the query box gets it
+            Assert.Equal("Answer from your notes (Ctrl+Enter)", h.Window.SearchPanel.AskButton.ToolTip);
+        });
+
+        [Fact]
+        public Task The_answer_area_follows_the_pads_theme() => OnUi(h =>
+        {
+            PadAnswerBox box = h.Window.SearchPanel.AnswerBox;
+            Assert.Equal(PadThemeApplier.ToColor(AskPalette.Dark.Ink), ((System.Windows.Media.SolidColorBrush)box.Foreground).Color);
+
+            h.Window.ToggleTheme();
+
+            Assert.Equal(PadThemeApplier.ToColor(AskPalette.Light.Ink), ((System.Windows.Media.SolidColorBrush)box.Foreground).Color);
         });
     }
 }

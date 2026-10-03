@@ -23,7 +23,9 @@ namespace Kil0bitSystemMonitor.Pad
     /// when tools are listed or an assistant is built. When MicaPad was never used on this PC
     /// there is nothing to search and no note to read, and nothing is created. A start that
     /// fails is an exception, which the tools turn into an error result: an empty list would
-    /// read as "no such notes".
+    /// read as "no such notes". So is a start that may not go ahead because the saved session
+    /// does not load as it is (<see cref="NotesNotReadyException"/>, which the tools answer with
+    /// <see cref="NoteTools.NotReady"/>): nothing is started then, and nothing is written.
     /// </para>
     ///
     /// <para>
@@ -50,7 +52,8 @@ namespace Kil0bitSystemMonitor.Pad
         /// <param name="start">
         /// Makes sure the workspace and the search exist. True when they do; false when there are no
         /// notes at all (MicaPad was never used), which reads as an empty result. Throws when the
-        /// start fails or the app is closing.
+        /// start fails, when it may not go ahead (<see cref="NotesNotReadyException"/>) or when
+        /// the app is closing.
         /// </param>
         public LiveNoteReader(Func<PadWorkspace?> workspace, Func<NoteSearchService?> search, Func<SearchFeeder?> feeder,
                               Dispatcher ui, Func<bool> start)

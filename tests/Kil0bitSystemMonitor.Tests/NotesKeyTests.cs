@@ -202,6 +202,42 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(NotesKey.IsKeyFile(_dir.PathOf("session.json")));
         }
 
+        /// <summary>For a reader that must not change the store: Load without anything it writes.</summary>
+        [Fact]
+        public void Peek_reads_the_key_and_makes_repairs_and_finishes_nothing()
+        {
+            Assert.Null(NotesKey.Peek(_dir.Root));                                  // there is none, and none is made
+            Assert.Empty(Directory.EnumerateFileSystemEntries(_dir.Root));
+
+            NotesKey.Load(_dir.Root, () => false, out byte[]? key);
+            Assert.Equal(key, NotesKey.Peek(_dir.Root));
+
+            // Only the second copy is left: it is read, and key.bin is not rewritten from it.
+            byte[] sealedKey = File.ReadAllBytes(KeyPath);
+            File.Delete(KeyPath);
+            Assert.Equal(key, NotesKey.Peek(_dir.Root));
+            Assert.False(File.Exists(KeyPath));
+
+            // A finished write waiting beside key.bin is read where it lies.
+            File.Delete(BackupPath);
+            File.WriteAllBytes(KeyPath + AtomicFile.ReadySuffix, sealedKey);
+            Assert.Equal(key, NotesKey.Peek(_dir.Root));
+            Assert.True(File.Exists(KeyPath + AtomicFile.ReadySuffix));
+            Assert.False(File.Exists(KeyPath));
+            Assert.False(File.Exists(BackupPath));
+
+            // A file that is no key gives none, and stays as it is.
+            File.Delete(KeyPath + AtomicFile.ReadySuffix);
+            File.WriteAllBytes(KeyPath, new byte[] { 1, 2, 3 });
+            Assert.Null(NotesKey.Peek(_dir.Root));
+            Assert.Equal(new byte[] { 1, 2, 3 }, File.ReadAllBytes(KeyPath));
+
+            // One that cannot be read right now is not "no key".
+            File.WriteAllBytes(KeyPath, sealedKey);
+            using (new FileStream(KeyPath, FileMode.Open, FileAccess.Read, FileShare.None))
+                Assert.ThrowsAny<IOException>(() => NotesKey.Peek(_dir.Root));
+        }
+
         [Fact]
         public void ReadBytes_returns_null_for_a_missing_file_and_the_bytes_otherwise()
         {

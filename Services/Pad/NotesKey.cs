@@ -104,6 +104,36 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return NotesKeyStatus.Created;
         }
 
+        /// <summary>
+        /// The store's key for a reader that must never change the store: <see cref="Load"/>
+        /// without anything it writes. Each copy is read where it lies, a finished write beside it
+        /// first; no key is made, no copy is repaired from the other, no finished write is swapped
+        /// in. Null when no copy can be used (there is none, or DPAPI refuses them). The caller
+        /// wipes the key.
+        /// </summary>
+        /// <exception cref="IOException">A key file exists but cannot be read right now.</exception>
+        public static byte[]? Peek(string root)
+        {
+            foreach (string name in new[] { FileName, BackupFileName })
+            {
+                string path = Path.Combine(root, name);
+                foreach (string file in new[] { path + AtomicFile.ReadySuffix, path })
+                {
+                    byte[]? sealedKey;
+                    try
+                    {
+                        sealedKey = File.Exists(file) ? File.ReadAllBytes(file) : null;
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        sealedKey = null;   // gone between the two calls
+                    }
+                    if (sealedKey != null && Unseal(sealedKey) is { } key) return key;
+                }
+            }
+            return null;
+        }
+
         /// <summary>The key sealed in <paramref name="sealedBytes"/>, or null when DPAPI refuses it or it is not 32 bytes.</summary>
         private static byte[]? Unseal(byte[] sealedBytes)
         {

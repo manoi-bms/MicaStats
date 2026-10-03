@@ -65,7 +65,9 @@ public partial class App
             //
             // The note tools read MicaPad's workspace, search and feeder. No MicaPad window is needed,
             // and MicaPad need not have been opened: a note tool call that passed its switch starts
-            // them itself (PadHost, on the UI thread), the same ones a MicaPad window would get.
+            // them itself (PadHost, on the UI thread), the same ones a MicaPad window would get. That
+            // first start goes ahead only when the saved session loads as it is: otherwise the call
+            // answers that the notes are not ready, and nothing is started or written.
             // Each surface has its own switch, read at every call: off by default, and either one
             // can be turned off while a question or an MCP client is in the middle of its work.
             AppConfig settings = config.Config;

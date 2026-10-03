@@ -1386,8 +1386,7 @@ public class NoteToolsWiringTests : IDisposable
         using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
         PadWorkspace workspace = run.Host.EnsureStarted();   // MicaPad opened first; its feeder read every note then
         await run.Host.Search!.Indexer.WhenIdle();
-        // Deaf from here on, so that only a reconcile can tell the index what was stored since
-        // (a file opened in a tab, which the feeder does not hear of, is the everyday case).
+        // Deaf from here on, so that only a reconcile can tell the index what was stored since.
         run.Host.Feeder!.Dispose();
         OpenNote Stored(string text)
         {
@@ -1407,6 +1406,329 @@ public class NoteToolsWiringTests : IDisposable
         Assert.Equal(later.Id, (string?)first["results"]![0]!["noteId"]);
         Assert.Empty(second["results"]!.AsArray());   // once per run, not on every call
         Assert.Equal(1, run.WorkspacesMade);
+    });
+
+    // ---- a start for a note tool needs the saved session as it is (final review, C1) ------------
+
+    private const string NotReady = "Notes are not ready: open MicaPad once";
+
+    /// <summary>
+    /// With no session to load, the store's normal start would rebuild one from the notes: every
+    /// note's record is read and repaired on the way, and when the session was only locked, the
+    /// rebuilt one-window session would replace the saved layout at exit. A tool call does none
+    /// of that: it says the notes are not ready, and starts and writes nothing.
+    /// </summary>
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("locked")]
+    [InlineData("damaged")]
+    [InlineData("not a session")]
+    public Task Without_a_saved_session_that_loads_a_note_tool_says_the_notes_are_not_ready_and_starts_and_writes_nothing(string session) => UiThread.RunAsync(async () =>
+    {
+        using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
+        string path = run.Env.Store.SessionPath;
+        switch (session)
+        {
+            case "missing":
+                File.Delete(path);
+                break;
+            case "damaged":
+                byte[] bytes = File.ReadAllBytes(path);
+                bytes[^1] ^= 0xFF;                               // still encrypted, and it no longer decrypts
+                File.WriteAllBytes(path, bytes);
+                break;
+            case "not a session":
+                File.WriteAllText(path, "null");                 // readable, and no session in it
+                break;
+        }
+        Dictionary<string, string> before = Fingerprint(run.Env.Store.Root);
+
+        JsonNode found, read, foundOverMcp;
+        using (session == "locked" ? new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None) : null)
+        {
+            found = await run.Tools.SearchNotesForAskAsync(Query("vpn"));
+            read = await run.Tools.GetNoteForAskAsync(NoteId(run.Closed.Id));
+            foundOverMcp = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+        }
+
+        foreach (JsonNode result in new[] { found, read, foundOverMcp })
+        {
+            Assert.Equal(NotReady, (string?)result["error"]);
+            Assert.Single(result.AsObject());                    // an error, not an empty list that reads as "no such notes"
+        }
+        Assert.Equal(3, run.Starts);
+        Assert.Null(run.Host.Workspace);
+        Assert.Null(run.Host.Search);
+        Assert.Null(run.Host.Feeder);
+        Assert.Equal(0, run.WorkspacesMade);
+        Assert.Equal(0, run.StoresMade);                         // not even the store was asked for
+        Assert.Equal(before, Fingerprint(run.Env.Store.Root));   // every file as it was, byte for byte
+        Assert.True(File.Exists(run.Ready));
+        Assert.False(File.Exists(run.Env.Store.MetaPath(run.Bare.Id)));
+    });
+
+    [Fact]
+    public Task A_session_that_was_only_locked_is_restored_as_it_was_saved_once_it_can_be_read() => UiThread.RunAsync(async () =>
+    {
+        using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
+        string session = run.SessionText;
+        using (new FileStream(run.Env.Store.SessionPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Equal(NotReady, (string?)(await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn")))["error"]);
+        }
+
+        JsonNode found = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+
+        Assert.Equal(run.Closed.Id, (string?)found["results"]![0]!["noteId"]);
+        PadWorkspace workspace = Assert.IsType<PadWorkspace>(run.Host.Workspace);
+        Assert.Equal(new[] { run.Tab.Id }, workspace.Open.Select(n => n.Id));   // the saved tab, not a session rebuilt from the notes
+        Assert.Equal(1, run.WorkspacesMade);
+        Assert.True(workspace.FlushAll(TimeSpan.FromSeconds(5)));               // what exit does: the saved layout goes back
+        Assert.Equal(session, run.SessionText);
+    });
+
+    /// <summary>"Open MicaPad once" is the cure: a window's start rebuilds the session and repairs, as it always did.</summary>
+    [Fact]
+    public Task Opening_MicaPad_still_rebuilds_a_missing_session_and_the_note_tools_work_after_it() => UiThread.RunAsync(async () =>
+    {
+        using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
+        File.Delete(run.Env.Store.SessionPath);
+        Assert.Equal(NotReady, (string?)(await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn")))["error"]);
+
+        PadWorkspace workspace = run.Host.EnsureStarted();   // what App.OpenPad does
+
+        // Rebuilt from the notes that are not closed: the tab, and the note whose record had to be rebuilt.
+        Assert.Contains(run.Tab.Id, workspace.Open.Select(n => n.Id));
+        Assert.True(File.Exists(run.Env.Store.MetaPath(run.Bare.Id)));          // repaired, as opening MicaPad does
+        JsonNode found = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+        Assert.Equal(run.Closed.Id, (string?)found["results"]![0]!["noteId"]);
+        Assert.Equal(1, run.WorkspacesMade);
+    });
+
+    /// <summary>A session whose last save finished but was not swapped in is the saved session: read where it lies.</summary>
+    [Fact]
+    public Task A_session_waiting_as_a_finished_write_is_restored_from_where_it_lies() => UiThread.RunAsync(async () =>
+    {
+        using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
+        string path = run.Env.Store.SessionPath;
+        File.Move(path, path + AtomicFile.ReadySuffix);
+        Dictionary<string, string> before = Fingerprint(run.Env.Store.Root);
+
+        JsonNode tab = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("printer"));
+        await run.Host.Search!.Indexer.WhenIdle();
+
+        Assert.Equal(run.Tab.Id, (string?)tab["results"]![0]!["noteId"]);
+        Assert.True((bool)tab["results"]![0]!["open"]!);                         // restored from the session
+        Assert.Equal(before, Fingerprint(run.Env.Store.Root));                   // and the finished write was not swapped in
+    });
+
+    [Fact]
+    public Task A_MicaPad_folder_with_no_session_and_no_note_in_it_has_nothing_to_find_and_nothing_is_started() => UiThread.RunAsync(async () =>
+    {
+        string root = _env.PathOf("opened-never");
+        Directory.CreateDirectory(Path.Combine(root, "notes"));
+        int made = 0;
+        using var host = new PadRuntime(root,
+            () =>
+            {
+                made++;
+                return new NoteStore(root, warn: _ => { });
+            },
+            store => new PadWorkspace(store),
+            store => new NoteSearchService(store, () => SearchSettings.Off, warn: _ => { }));
+        var reader = new LiveNoteReader(() => host.Workspace, () => host.Search, () => host.Feeder,
+            Dispatcher.CurrentDispatcher, host.StartForNoteTools);
+        MicaTools tools = Tools(reader, ask: () => true, mcp: () => true);
+
+        JsonNode found = await tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+
+        Assert.Empty(found["results"]!.AsArray());
+        Assert.Null(found["error"]);
+        Assert.Equal(0, made);
+        Assert.Null(host.Workspace);
+        Assert.Equal(new[] { "notes" }, Directory.EnumerateFileSystemEntries(root).Select(Path.GetFileName));
+    });
+
+    // ---- the index when the store cannot be read just now (final review, C2) --------------------
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security,
+                                                                                 uint disposition, uint flags, IntPtr template);
+
+    /// <summary>
+    /// Holds a folder open without sharing it, as a backup tool or a scanner does for a moment:
+    /// until it is let go, the folder is there but nobody else can list it.
+    /// </summary>
+    private static IDisposable HoldFolder(string path)
+    {
+        const uint genericRead = 0x80000000, openExisting = 3, backupSemantics = 0x02000000;
+        var handle = CreateFileW(path, genericRead, 0, IntPtr.Zero, openExisting, backupSemantics, IntPtr.Zero);
+        Assert.False(handle.IsInvalid, "the folder could not be held");
+        return handle;
+    }
+
+    /// <summary>A note typed, saved and closed in a workspace whose feeder does not hear of it: only a reconcile tells the index.</summary>
+    private static OpenNote StoredUnheard(NoWindowYet run, PadWorkspace workspace, string text)
+    {
+        OpenNote note = workspace.NewNote();
+        PadTestEnv.Type(workspace, note, text);
+        workspace.FlushAll(TimeSpan.FromSeconds(5));
+        workspace.Close(note);
+        run.Env.Flush();
+        return note;
+    }
+
+    [Fact]
+    public Task When_the_notes_cannot_be_listed_the_index_stays_as_it_was_and_the_next_call_tries_again() => UiThread.RunAsync(async () =>
+    {
+        using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
+        PadWorkspace workspace = run.Host.EnsureStarted();   // MicaPad opened first; its feeder read every note then
+        await run.Host.Search!.Indexer.WhenIdle();
+        run.Host.Feeder!.Dispose();                          // deaf from here on, so only a reconcile tells the index of a new note
+        OpenNote later = StoredUnheard(run, workspace, "Later\nthe gazebo plan");
+
+        JsonNode failed;
+        using (HoldFolder(run.Env.Store.NotesDir))
+        {
+            failed = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+        }
+        await run.Host.Search.Indexer.WhenIdle();
+
+        // Not a partial list taken for the whole store: nothing was forgotten.
+        Assert.Equal("Could not read the notes (IOException)", (string?)failed["error"]);
+        Assert.NotEmpty(run.Host.Search.Indexer.Keywords.Search("vpn", 10));
+        Assert.NotEmpty(run.Host.Search.Indexer.Keywords.Search("printer", 10));
+
+        // The once-per-run reconcile was not spent on the failure: the next call runs it.
+        JsonNode found = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+        JsonNode gazebo = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("gazebo"));
+        Assert.Equal(run.Closed.Id, (string?)found["results"]![0]!["noteId"]);
+        Assert.Equal(later.Id, (string?)gazebo["results"]![0]!["noteId"]);
+    });
+
+    [Fact]
+    public Task A_note_whose_record_cannot_be_read_just_now_keeps_its_passages_in_the_index() => UiThread.RunAsync(async () =>
+    {
+        using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
+        PadWorkspace workspace = run.Host.EnsureStarted();
+        await run.Host.Search!.Indexer.WhenIdle();
+        run.Host.Feeder!.Dispose();
+        OpenNote later = StoredUnheard(run, workspace, "Later\nthe gazebo plan");
+
+        JsonNode found, gazebo;
+        using (new FileStream(run.Env.Store.MetaPath(run.Closed.Id), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            // The first call reconciles the index with the store, while one note's meta.json is locked.
+            found = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+            gazebo = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("gazebo"));
+        }
+
+        // Unknown is not absent: what the index had for that note is still there.
+        Assert.Equal(run.Closed.Id, (string?)Assert.Single(found["results"]!.AsArray())!["noteId"]);
+        // And the reconcile did its work for the notes it could read.
+        Assert.Equal(later.Id, (string?)gazebo["results"]![0]!["noteId"]);
+    });
+
+    [Fact]
+    public Task A_note_that_is_gone_from_the_store_still_leaves_the_index_at_the_reconcile() => UiThread.RunAsync(async () =>
+    {
+        using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
+        run.Host.EnsureStarted();
+        await run.Host.Search!.Indexer.WhenIdle();
+        run.Host.Feeder!.Dispose();
+        Directory.Delete(run.Env.Store.NoteDir(run.Closed.Id), recursive: true);   // deleted behind the feeder's back
+
+        JsonNode found = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+
+        Assert.Empty(found["results"]!.AsArray());   // absent is absent: keeping the unknown did not keep this one
+    });
+
+    // ---- a file opened after the first lookup (final review, C3) --------------------------------
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public Task A_file_opened_in_a_tab_after_the_first_lookup_is_found_by_the_next_one(bool micaPadFirst) => UiThread.RunAsync(async () =>
+    {
+        using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
+        if (micaPadFirst) run.Host.EnsureStarted();
+        string path = run.Env.FileOf("plan.txt");
+        File.WriteAllText(path, "Garden\nthe gazebo plan is on the shelf");
+
+        JsonNode first = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("gazebo"));   // the once-per-run reconcile is spent here
+        OpenFileResult opened = run.Host.Workspace!.OpenFile(path);
+        JsonNode second = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("gazebo"));   // no edit, no Search pane in between
+
+        Assert.Empty(first["results"]!.AsArray());
+        Assert.Equal(OpenFileStatus.Opened, opened.Status);
+        JsonNode hit = Assert.Single(second["results"]!.AsArray())!;
+        Assert.Equal(opened.Note!.Id, (string?)hit["noteId"]);
+        Assert.Equal("plan.txt", (string?)hit["title"]);
+        Assert.True((bool)hit["open"]!);
+    });
+
+    [Fact]
+    public Task A_closed_note_reopened_after_the_first_lookup_is_found_as_an_open_note_with_what_it_holds_now() => UiThread.RunAsync(async () =>
+    {
+        using var run = new NoWindowYet(Dispatcher.CurrentDispatcher);
+        JsonNode first = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+        Assert.False((bool)first["results"]![0]!["open"]!);
+        await run.Host.Search!.Indexer.WhenIdle();
+        // The index loses the note behind the feeder's back, so only hearing of the reopened tab can bring it back.
+        run.Host.Search.Indexer.RemoveNote(run.Closed.Id);
+
+        OpenNote? reopened = run.Host.Workspace!.Reopen(run.Closed.Id);
+        JsonNode second = await run.Tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+
+        Assert.NotNull(reopened);
+        JsonNode hit = Assert.Single(second["results"]!.AsArray())!;
+        Assert.Equal(run.Closed.Id, (string?)hit["noteId"]);
+        Assert.True((bool)hit["open"]!);
+    });
+
+    // ---- a search that cannot start (final review, C4) -------------------------------------------
+
+    [Fact]
+    public Task A_search_that_cannot_start_is_not_built_again_at_every_call_and_is_logged_once() => UiThread.RunAsync(async () =>
+    {
+        using var env = new PadTestEnv();
+        OpenNote closed = ClosedNote(env, "Servers\nthe vpn gateway");
+        bool broken = true;
+        int built = 0;
+        var warnings = new List<string>();
+        using var host = new PadRuntime(env.Store.Root, () => env.Store,
+            store => env.NewWorkspace(),
+            store =>
+            {
+                built++;
+                return broken ? throw new IOException("the index says hunter2") : new NoteSearchService(store, () => SearchSettings.Off, warn: _ => { });
+            },
+            warn: warnings.Add);
+        var reader = new LiveNoteReader(() => host.Workspace, () => host.Search, () => host.Feeder,
+            Dispatcher.CurrentDispatcher, host.StartForNoteTools);
+        MicaTools tools = Tools(reader, mcp: () => true);
+
+        JsonNode first = await tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+        JsonNode second = await tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+        JsonNode third = await tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+        JsonNode read = await tools.InvokeAsync(ToolNames.GetNote, NoteId(closed.Id));
+
+        foreach (JsonNode failed in new[] { first, second, third })
+            Assert.Equal("Could not read the notes (InvalidOperationException)", (string?)failed["error"]);
+        Assert.Equal(1, built);                                   // remembered for the run
+        string warned = Assert.Single(warnings);                  // and said once
+        Assert.Contains("IOException", warned, StringComparison.Ordinal);
+        Assert.DoesNotContain("hunter2", warned, StringComparison.Ordinal);
+        Assert.Equal("Servers\nthe vpn gateway", (string?)read["text"]);   // a note can still be read
+
+        // Opening MicaPad tries again, as it always did; once that works the tools search too.
+        broken = false;
+        host.EnsureStarted();
+        JsonNode found = await tools.InvokeAsync(ToolNames.SearchNotes, Query("vpn"));
+
+        Assert.Equal(2, built);
+        Assert.Equal(closed.Id, (string?)found["results"]![0]!["noteId"]);
+        Assert.Single(warnings);
     });
 
     /// <summary>

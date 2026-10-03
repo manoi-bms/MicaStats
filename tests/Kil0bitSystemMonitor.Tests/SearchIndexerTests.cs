@@ -237,6 +237,30 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { "s" }, indexer.Keywords.NoteIds().ToArray());
         }
 
+        /// <summary>
+        /// A note whose record cannot be read right now is unknown, not absent: a reconcile keeps
+        /// what the index has for it. And nothing is expected for it, so the vectors of notes
+        /// that really are gone are still dropped.
+        /// </summary>
+        [Fact]
+        public async Task A_reconcile_keeps_what_it_has_for_a_note_named_unknown_and_expects_nothing_for_it()
+        {
+            using var indexer = NewIndexer(new FakeEmbedder());
+            indexer.SetNote("known", "t", "alpha words", DateTime.UtcNow);
+            indexer.SetNote("locked", "t", "beta words here", DateTime.UtcNow);
+            indexer.SetNote("gone", "t", "gamma words there now", DateTime.UtcNow);
+            await indexer.WhenIdle();
+            Assert.Equal(3, indexer.Vectors.Count);
+
+            indexer.Reconcile(new[] { "known" }, new[] { "locked", "never-indexed" });
+            await indexer.WhenIdle();
+
+            Assert.Equal(new[] { "known", "locked" }, indexer.Keywords.NoteIds().OrderBy(id => id, StringComparer.Ordinal));
+            Assert.Single(indexer.Keywords.Search("beta", 10));
+            Assert.Empty(indexer.Keywords.Search("gamma", 10));
+            Assert.Equal(2, indexer.Vectors.Count);          // the gone note's vector went: no unknown note holds the eviction up
+        }
+
         [Fact]
         public async Task WhenIdle_never_completes_before_the_work_queued_ahead_of_it()
         {

@@ -154,12 +154,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// A note whose text cannot be read (a locked <c>current.txt</c>, say) is skipped and its
         /// folder left untouched; it stays in the session, so it returns at the next launch.
         /// </summary>
-        public IReadOnlyList<OpenNote> Restore()
+        /// <param name="saved">
+        /// The saved session when the caller has read it already
+        /// (<see cref="NoteStore.PeekSessionAt"/>: a start for a note tool, which reads it without
+        /// writing and starts nothing when it does not load). Null loads it here, rebuilt from
+        /// the notes when it is missing or unreadable, as a MicaPad window's start always did.
+        /// </param>
+        public IReadOnlyList<OpenNote> Restore(SessionState? saved = null)
         {
             if (_restored) return Open.ToList();
             _restored = true;
 
-            Session = _store.LoadSession();   // always at least one window (SessionWindows.Normalize)
+            Session = saved ?? _store.LoadSession();   // always at least one window (SessionWindows.Normalize)
 
             // Notes opened before the restore (only tests do that) join the first window.
             _active.Clear();

@@ -147,12 +147,18 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         /// are expected next: until each has been indexed or removed, saves keep every stored vector,
         /// since those notes' vectors are still in the store with no passage to claim them.
         /// </summary>
-        public void Reconcile(IReadOnlyCollection<string> existingIds)
+        /// <param name="unknownIds">
+        /// Notes of which the caller cannot say right now whether they exist (a record that is
+        /// locked). Unknown is not absent: what the index has for them stays, and nothing is
+        /// expected for them.
+        /// </param>
+        public void Reconcile(IReadOnlyCollection<string> existingIds, IReadOnlyCollection<string>? unknownIds = null)
         {
             var keep = new HashSet<string>(existingIds, StringComparer.Ordinal);
+            var unknown = new HashSet<string>(unknownIds ?? Array.Empty<string>(), StringComparer.Ordinal);
             Enqueue(() =>
             {
-                foreach (string id in _notes.Keys.Where(id => !keep.Contains(id)).ToList()) Forget(id);
+                foreach (string id in _notes.Keys.Where(id => !keep.Contains(id) && !unknown.Contains(id)).ToList()) Forget(id);
                 _unfed.Clear();
                 _unfed.UnionWith(keep.Where(id => !_notes.ContainsKey(id)));
                 _unsaved = true;

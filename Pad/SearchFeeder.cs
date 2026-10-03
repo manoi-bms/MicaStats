@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services.Pad;
@@ -11,7 +12,8 @@ namespace Kil0bitSystemMonitor.Pad
     /// Hands the notes to the search indexer (spec 3.5): every note at start and on
     /// <see cref="ReconcileAll"/>, an open note's text 2 s after its last change (read on the UI
     /// thread, where <see cref="OpenNote.TextProvider"/> lives) or at once when its tab closes
-    /// sooner, and deletions at once.
+    /// sooner, a note that joins the open tabs (a file opened, a closed note reopened) the same
+    /// way, and deletions at once.
     /// </summary>
     internal sealed class SearchFeeder : IDisposable
     {
@@ -25,16 +27,21 @@ namespace Kil0bitSystemMonitor.Pad
         /// <param name="workspace">The open notes, and the store of the rest.</param>
         /// <param name="indexer">Where the notes go.</param>
         /// <param name="debounce">How long after an edit a note is sent; <see cref="DefaultDebounce"/> when null.</param>
-        /// <param name="readOnly">How the first reconcile lists the stored notes; see <see cref="ReconcileAll"/>.</param>
-        public SearchFeeder(PadWorkspace workspace, SearchIndexer indexer, TimeSpan? debounce = null, bool readOnly = false)
+        /// <param name="reconcile">
+        /// False leaves the first <see cref="ReconcileAll"/> to the caller: a start for a note
+        /// tool, which lists the stored notes without the store's repairs and tries again when
+        /// they cannot be listed.
+        /// </param>
+        public SearchFeeder(PadWorkspace workspace, SearchIndexer indexer, TimeSpan? debounce = null, bool reconcile = true)
         {
             _workspace = workspace;
             _indexer = indexer;
             _debounce = debounce ?? DefaultDebounce;
-            ReconcileAll(readOnly);   // first: when it throws, nothing is left subscribed
+            if (reconcile) ReconcileAll();   // first: when it throws, nothing is left subscribed
             _workspace.NoteTextChanged += OnTextChanged;
             _workspace.NoteClosing += OnClosing;
             _workspace.NoteDeleted += OnDeleted;
+            _workspace.Open.CollectionChanged += OnOpenChanged;
         }
 
         /// <summary>
@@ -42,13 +49,16 @@ namespace Kil0bitSystemMonitor.Pad
         /// <paramref name="readOnly"/> lists the stored notes without the store's repairs
         /// (<see cref="NoteStore.PeekAllMetas"/>): for a reconcile a note tool asked for, which must
         /// not change the store. A note whose <c>meta.json</c> is damaged is then left out until
-        /// MicaPad itself has loaded it.
+        /// MicaPad itself has loaded it; one whose <c>meta.json</c> cannot be read right now keeps
+        /// what the index has for it; and when the notes cannot be listed at all, this throws
+        /// before the index is touched.
         /// </summary>
         public void ReconcileAll(bool readOnly = false)
         {
-            var metas = readOnly ? _workspace.Store.PeekAllMetas() : _workspace.Store.LoadAllMetas();
+            IReadOnlyList<string> unknown = Array.Empty<string>();
+            var metas = readOnly ? _workspace.Store.PeekAllMetas(out unknown) : _workspace.Store.LoadAllMetas();
             var open = _workspace.Open.ToDictionary(n => n.Id, StringComparer.Ordinal);
-            _indexer.Reconcile(metas.Select(m => m.Id).Concat(open.Keys).Distinct().ToList());
+            _indexer.Reconcile(metas.Select(m => m.Id).Concat(open.Keys).Distinct().ToList(), unknown);
             foreach (var note in open.Values) Send(note);
             foreach (var meta in metas.Where(m => !open.ContainsKey(m.Id)))
                 _indexer.IndexStored(meta.Id, meta.Title, meta.ModifiedUtc);
@@ -71,6 +81,26 @@ namespace Kil0bitSystemMonitor.Pad
             }
             timer.Stop();
             timer.Start();
+        }
+
+        /// <summary>
+        /// A note joined the open tabs: a file opened in a tab, a closed note reopened, a new note.
+        /// The workspace raises no text change for those, so without this the index would not know
+        /// a file's text until its first edit. It waits for the debounce like an edit; a search
+        /// flushes it first. Raised inside the workspace's own change, so it must not throw: a tab
+        /// always opens, and a note not sent here is sent at its next edit or reconcile.
+        /// </summary>
+        private void OnOpenChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.NewItems == null || e.Action == NotifyCollectionChangedAction.Move) return;
+            try
+            {
+                foreach (OpenNote note in e.NewItems.OfType<OpenNote>()) OnTextChanged(note);
+            }
+            catch (Exception)
+            {
+                // Nothing to do here; see the summary.
+            }
         }
 
         /// <summary>The tab closes while an edit still waits for its debounce: sent now, while the text can still be read.</summary>
@@ -108,6 +138,7 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace.NoteTextChanged -= OnTextChanged;
             _workspace.NoteClosing -= OnClosing;
             _workspace.NoteDeleted -= OnDeleted;
+            _workspace.Open.CollectionChanged -= OnOpenChanged;
             foreach (var timer in _timers.Values) timer.Stop();
             _timers.Clear();
         }

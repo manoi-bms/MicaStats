@@ -5,7 +5,7 @@
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:ctrl="clr-namespace:Kil0bitSystemMonitor.Controls"
     Title="MicaStats Capture"
-    Width="1120" Height="780" MinWidth="720" MinHeight="520"
+    Width="1120" Height="780" MinWidth="800" MinHeight="520"
     WindowStartupLocation="CenterScreen"
     Background="#0E0E13"
     Foreground="#E9EDEDF2"
@@ -220,6 +220,23 @@
                             ToolTip="Apply the pending crop (Enter)" Content="Apply crop" />
                     <Button Style="{StaticResource ActionButton}" Click="OnResetCrop"
                             ToolTip="Restore the full capture" Content="Reset crop" />
+
+                    <!-- Zoom. The percent is screen pixels per image pixel, so 100% is the capture's real size. -->
+                    <Rectangle Width="1" Height="20" Fill="#26FFFFFF" Margin="2,0,8,0" />
+                    <Button x:Name="ZoomOutButton" Style="{StaticResource ActionButton}" Click="OnZoomOut"
+                            ToolTip="Zoom out (Ctrl+&#x2212; or Ctrl+wheel)">
+                        <TextBlock Text="&#xE71F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
+                    </Button>
+                    <Button x:Name="ZoomActualButton" Style="{StaticResource ActionButton}" Click="OnZoomActual"
+                            ToolTip="Actual size (Ctrl+0)">
+                        <TextBlock x:Name="ZoomText" Text="100%" MinWidth="30" TextAlignment="Center" />
+                    </Button>
+                    <Button x:Name="ZoomInButton" Style="{StaticResource ActionButton}" Click="OnZoomIn"
+                            ToolTip="Zoom in (Ctrl++ or Ctrl+wheel)">
+                        <TextBlock Text="&#xE8A3;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
+                    </Button>
+                    <Button x:Name="ZoomFitButton" Style="{StaticResource ActionButton}" Click="OnZoomFit"
+                            ToolTip="Fit to window" Content="Fit" />
                 </StackPanel>
 
                 <TextBlock x:Name="StatusText" Grid.Column="1" Style="{StaticResource BarLabel}"
@@ -253,7 +270,7 @@
         <!-- Canvas -->
         <Grid Background="#08080C">
             <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                          Padding="16">
+                          Padding="16" PreviewMouseWheel="OnScrollerWheel">
                 <ctrl:AnnotationCanvas x:Name="Canvas" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </ScrollViewer>
 

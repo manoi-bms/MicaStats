@@ -114,21 +114,19 @@ namespace Kil0bitSystemMonitor.Controls
             DocumentChanged?.Invoke();
         }
 
+        /// <summary>
+        /// The widest range the canvas will draw at, in device-independent units per image pixel.
+        /// A safety net only: the range the user can reach is <see cref="EditorZoom"/>'s, 1% to
+        /// 800% of screen pixels, which lies inside this one on any display scaled 50% to 200%.
+        /// </summary>
+        private const double MinZoom = 0.005, MaxZoom = 16;
+
         public void SetZoom(double zoom)
         {
-            Zoom = Math.Clamp(zoom, 0.05, 8);
+            if (double.IsNaN(zoom)) return;
+            Zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
             InvalidateMeasure();
             InvalidateVisual();
-        }
-
-        /// <summary>Picks the zoom that fits the current crop inside the given viewport.</summary>
-        public void ZoomToFit(Size viewport)
-        {
-            if (Document == null || viewport.Width <= 0 || viewport.Height <= 0) return;
-            var crop = Document.Crop;
-            if (crop.IsEmpty) return;
-            // Never scale above 1: enlarging a screenshot only blurs it.
-            SetZoom(Math.Min(1, Math.Min(viewport.Width / crop.Width, viewport.Height / crop.Height)));
         }
 
         public void CommitText(ImgPoint at, string text)
@@ -270,9 +268,9 @@ namespace Kil0bitSystemMonitor.Controls
         }
 
         /// <summary>Hit slack in image pixels, so the grab area stays constant on screen at any zoom.</summary>
-        private double ToleranceInImagePixels => AnnotationGeometry.DefaultTolerance / Math.Max(0.05, Zoom);
+        private double ToleranceInImagePixels => AnnotationGeometry.DefaultTolerance / Math.Max(MinZoom, Zoom);
 
-        private double GripInImagePixels => 6 / Math.Max(0.05, Zoom);
+        private double GripInImagePixels => 6 / Math.Max(MinZoom, Zoom);
 
         private void SetSelection(Annotation? annotation)
         {
@@ -508,7 +506,7 @@ namespace Kil0bitSystemMonitor.Controls
         /// </summary>
         private void DrawSelectionChrome(DrawingContext dc, Annotation annotation)
         {
-            double z = Math.Max(0.05, Zoom);
+            double z = Math.Max(MinZoom, Zoom);
             var b = AnnotationGeometry.BoundsOf(annotation);
 
             var outline = new Pen(new SolidColorBrush(Color.FromRgb(0x3F, 0xD2, 0xE4)), 1.2 / z)

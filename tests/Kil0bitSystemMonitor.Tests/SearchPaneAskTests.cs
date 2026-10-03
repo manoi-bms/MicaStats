@@ -290,6 +290,31 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public Task Asking_the_running_question_again_after_editing_the_query_back_leaves_no_typed_search_to_cancel_it() => OnUi(async f =>
+        {
+            Task first = Ask(f);
+            f.Feed(Text("Use the"));
+            await Handled(f, 1);
+
+            // Edited and put back while the answer runs: that arms the typed-search pause.
+            f.Pane.QueryBox.Text = "vpn2";
+            f.Pane.QueryBox.Text = "vpn";
+            Assert.True(f.Pane.TypedSearchPending);
+
+            await f.Pane.AskNowAsync();                           // the same question: not sent again
+
+            Assert.False(f.Pane.TypedSearchPending);              // and no typed search is left to cancel its answer
+            Assert.Equal(new[] { "vpn" }, f.Asked);
+            Assert.False(f.Tokens[0].IsCancellationRequested);
+            Assert.Equal("Use the", f.Pane.AnswerBox.Shown);
+
+            f.Feed(Text(" office wifi."));
+            f.End();
+            await first;
+            Assert.Equal("Use the office wifi.", f.Pane.AnswerBox.Shown);
+        });
+
+        [Fact]
         public Task The_question_still_being_searched_for_is_not_asked_again() => OnUi(async f =>
         {
             var slow = new TaskCompletionSource<AskStart>(TaskCreationOptions.RunContinuationsAsynchronously);

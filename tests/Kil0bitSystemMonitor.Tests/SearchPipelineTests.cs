@@ -301,9 +301,9 @@ namespace Kil0bitSystemMonitor.Tests
             using (indexer)
             {
                 // A query made from a selection that cut two references: the end of one, the start of another.
-                var outcome = await search.SearchAsync("noodles M9XD}} and {{secret:K7Q2", default);
+                var outcome = await search.SearchAsync("M9XD}} noodles and {{secret:K7Q2", default);
 
-                const string cleaned = "noodles [credential] and [credential]";
+                const string cleaned = "[credential] noodles and [credential]";
                 Assert.Equal(cleaned, outcome.Query);
                 Assert.Contains(cleaned, embedder.Texts);
                 Assert.Equal(cleaned, Assert.Single(reranker.Queries));

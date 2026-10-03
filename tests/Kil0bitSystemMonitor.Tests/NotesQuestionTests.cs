@@ -43,9 +43,9 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var sources = new List<Passage> { P(1) };
 
-            string msg = NotesQuestion.Message("vpn M9XD}} and {{secret:K7Q2", sources);
+            string msg = NotesQuestion.Message("M9XD}} vpn and {{secret:K7Q2", sources);
 
-            Assert.Equal(PadAiPrompts.ForQuestion("vpn [credential] and [credential]", sources), msg);
+            Assert.Equal(PadAiPrompts.ForQuestion("[credential] vpn and [credential]", sources), msg);
             foreach (string part in new[] { "K7Q2", "M9XD", "{{secret", "}}" })
                 Assert.DoesNotContain(part, msg, System.StringComparison.Ordinal);   // no character of the id leaves the PC
         }

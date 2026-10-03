@@ -196,7 +196,7 @@ namespace Kil0bitSystemMonitor.Tests
 
         [Theory]
         [InlineData("explain {{secret:K7Q2", "explain [credential]")]
-        [InlineData("what is M9XD}} for", "what is [credential] for")]
+        [InlineData("M9XD}} what is it for", "[credential] what is it for")]
         public void A_typed_instruction_with_part_of_a_credential_sends_no_id_character(string typed, string sent)
         {
             var s = new AiSession(PadAiAction.Ask, "text", true, typed);

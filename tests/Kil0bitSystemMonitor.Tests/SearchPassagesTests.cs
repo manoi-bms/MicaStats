@@ -182,13 +182,14 @@ namespace Kil0bitSystemMonitor.Tests
 
         [Theory]
         [InlineData("explain {{secret:K7Q2", "explain [credential]")]                        // cut at its end
-        [InlineData("vpn M9XD}} and {{secret:K7Q2", "vpn [credential] and [credential]")]    // cut at its start, and another at its end
+        [InlineData("M9XD}} vpn and {{secret:K7Q2", "[credential] vpn and [credential]")]    // a selection that cut two: one at its start, one at its end
         [InlineData("M9XD}} now", "[credential] now")]                                        // at the very start of the text
+        [InlineData("ecret:K7Q2M9XD}} b", "[credential] b")]                                  // cut inside its opening: what is left of it goes too
         [InlineData("a {{secret: b", "a [credential] b")]                                     // no id character yet
         [InlineData("a {{secret:K7Q2M9XD b", "a [credential] b")]                             // the whole id, no closing braces
         [InlineData("a {{secret:K7Q2M9XD} b", "a [credential] b")]                            // one closing brace short
         [InlineData("a {{secret:K7Q2}} b", "a [credential] b")]                               // too few characters to be a reference
-        [InlineData("t:K7Q2M9XD}} b", "t:[credential] b")]                                    // cut inside its opening
+        [InlineData("t:K7Q2M9XD}} b", "[credential] b")]                                      // cut inside its opening
         [InlineData("a {{secret:K7Q2M9XD}} b", "a [credential] b")]                           // a whole one, as WithoutSecrets
         public void A_reference_cut_at_either_end_becomes_credential(string text, string cleaned)
         {
@@ -207,6 +208,14 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("a {{secret")]                  // not the start of a reference yet
         [InlineData("braces {{ and {")]
         [InlineData("ABCDEFGHJK}}")]                // more characters than an id has
+        [InlineData("{{NAME}}")]                    // a template placeholder
+        [InlineData("Dear {{NAME}}, hello")]
+        [InlineData("{{0}} and {{HOST}}")]
+        [InlineData("${{secrets.API_KEY}}")]
+        [InlineData("x^{2^{3}}")]                   // math
+        [InlineData(@"\sqrt{\frac{A}{B}}")]
+        [InlineData("{\"a\": {\"b\": 1}}")]         // nested JSON ends the same way
+        [InlineData("vpn M9XD}} typed by hand")]    // not at the start of the text: no selection leaves it there
         public void Text_with_no_part_of_a_reference_is_unchanged(string text) =>
             Assert.Equal(text, NotePassages.WithoutSecretParts(text));
 

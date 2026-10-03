@@ -46,11 +46,14 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         private static readonly Regex CutAtEnd = new(Opening + @"\}{0,2}", RegexOptions.CultureInvariant);
 
         /// <summary>
-        /// A reference cut at its start: the last 1 to 8 characters of an id and the closing
-        /// braces, at the start of a text or after a character no id has.
+        /// A reference cut at its start, where a cut leaves it: at the very start of a text.
+        /// What is left of the opening (<c>ecret:</c> and shorter) may come first, then the last
+        /// 1 to 8 characters of the id and the closing braces. The same characters in the middle
+        /// of a text are not a cut reference: <c>{{NAME}}</c>, <c>x^{2^{3}}</c> and nested JSON
+        /// end the same way, and cleaning them would change what the user searches for or asks.
         /// </summary>
         private static readonly Regex CutAtStart = new(
-            "(?<!" + SecretTokens.IdClass + ")" + SecretTokens.IdClass + @"{1,8}\}\}", RegexOptions.CultureInvariant);
+            @"\A(?:\{secret:|secret:|ecret:|cret:|ret:|et:|t:|:)?" + SecretTokens.IdClass + @"{1,8}\}\}", RegexOptions.CultureInvariant);
 
         /// <summary>Credential references replaced by <c>[credential]</c>; the vault is never read.</summary>
         public static string WithoutSecrets(string text) => Secret.Replace(text, Cleaned);
@@ -64,10 +67,10 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
 
         /// <summary>
         /// Text a user typed or selected (a question, an instruction, a search query) with its
-        /// credential references replaced by <c>[credential]</c>, and every part of one too: a
-        /// reference cut at its end (<c>{{secret:K7Q2</c>) or at its start (<c>M9XD}}</c>), as a
-        /// selection that ran through one leaves it. No character of an id is left to be sent.
-        /// Text that holds no part of a reference comes back as it is.
+        /// credential references replaced by <c>[credential]</c>, and a reference cut by a
+        /// selection too: cut at its end (<c>{{secret:K7Q2</c>, anywhere in the text) or at its
+        /// start (<c>M9XD}}</c>, which a selection leaves at the very start of the text). Text
+        /// that holds no part of a reference comes back as it is, templates and JSON included.
         /// </summary>
         public static string WithoutSecretParts(string text) =>
             CutAtStart.Replace(CutAtEnd.Replace(WithoutSecrets(text), Cleaned), Cleaned);

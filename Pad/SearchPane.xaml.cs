@@ -72,6 +72,9 @@ namespace Kil0bitSystemMonitor.Pad
         internal const string AskFailedText = "The question could not be answered";
 
         private readonly DispatcherTimer _typing;
+
+        /// <summary>True while a search typed into the query box waits for its pause to run; for tests.</summary>
+        internal bool TypedSearchPending => _typing.IsEnabled;
         private readonly DispatcherTimer _redraw;
         private readonly Stopwatch _sinceDraw = new();
         private readonly StringBuilder _answer = new();
@@ -182,9 +185,13 @@ namespace Kil0bitSystemMonitor.Pad
         {
             string query = QueryBox.Text;
             if (query.Trim().Length == 0 || Ask is not { } ask) return;
+
+            // Before the duplicate check: the query may have been edited and put back while its
+            // answer ran, which leaves the typing timer armed. Its search would cancel the very
+            // answer the check below keeps.
+            _typing.Stop();
             if (IsBeingAsked(query)) return;
 
-            _typing.Stop();
             CancelRunning();
             var mine = _running = new CancellationTokenSource();
             ClearAnswer();

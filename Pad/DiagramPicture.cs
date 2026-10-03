@@ -51,6 +51,18 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Opens the error's help link (through the window's safe-link path).</summary>
         public Action<Uri>? OpenLink { get; init; }
 
+        /// <summary>
+        /// Asks AI to fix the block this error is about (MicaPad AI part 2, spec 2.2). Null where a
+        /// corrected source would cure nothing, or nothing can ask: the error box then has no menu.
+        /// </summary>
+        public Action? FixWithAi { get; init; }
+
+        /// <summary>True while AI is on in MicaPad, asked each time the menu opens; null, false or a failure reads as off.</summary>
+        public Func<bool>? AiOn { get; init; }
+
+        /// <summary>Set up AI…, what the entry does while AI is off: opens Settings → MicaPad.</summary>
+        public Action? SetUpAi { get; init; }
+
         /// <summary>The width an image asks for (<c>=200x</c>, device-independent pixels), or null; diagrams leave it null.</summary>
         public double? Width { get; init; }
 
@@ -73,6 +85,9 @@ namespace Kil0bitSystemMonitor.Pad
     internal sealed class DiagramPicture : Border
     {
         internal const double PaperPadding = 8;
+
+        /// <summary>The error box's entry while AI is on in MicaPad; while it is off the entry reads <see cref="EditorMenus.SetUpAiText"/>, as the AI menu does.</summary>
+        internal const string FixWithAiText = "Fix with AI";
 
         /// <summary>True when <paramref name="element"/> is a picture or sits inside one (a right-click there must leave the caret and selection alone).</summary>
         internal static bool IsInside(DependencyObject? element)
@@ -333,6 +348,8 @@ namespace Kil0bitSystemMonitor.Pad
                 panel.Children.Add(new TextBlock(HelpLink) { Margin = new Thickness(0, 4, 0, 0), FontSize = 12 });
             }
 
+            if (view.Menu && view.FixWithAi is { } fix) AddFixMenu(view, fix, ErrorText);
+
             return new Border
             {
                 Child = panel,
@@ -343,6 +360,48 @@ namespace Kil0bitSystemMonitor.Pad
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(8, 6, 8, 6),
             };
+        }
+
+        /// <summary>
+        /// The error box's right-click menu (MicaPad AI part 2, spec 2.2): Fix with AI while AI is on,
+        /// Set up AI… while it is off, as the editor's AI menu does; and Copy, for the message stays
+        /// selectable. The box and its message share the one menu: a right-click on the text would
+        /// otherwise open the text box's own Cut, Copy, Paste.
+        ///
+        /// <para>
+        /// Whether AI is on is asked as the box is drawn and again each time the menu opens, so the
+        /// entry follows the setting without the line being drawn again. A setting that cannot be
+        /// read counts as off. The entry only names what a click does: the window asks the setting
+        /// itself before it reads or sends anything.
+        /// </para>
+        /// </summary>
+        private void AddFixMenu(DiagramView view, Action fix, TextBox message)
+        {
+            var menu = new ContextMenu();
+            EditorMenus.Style(menu, view.Palette);
+            ModernWpf.ThemeManager.SetRequestedTheme(menu, view.Palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
+
+            bool on = false;
+            var entry = EditorMenus.Item(FixWithAiText, null, () =>
+            {
+                if (on) fix();
+                else view.SetUpAi?.Invoke();
+            }, icon: ((char)0xE99A).ToString());
+            void Label()
+            {
+                bool now = false;
+                EditorMenus.Guard("Reading the AI setting for a diagram", () => now = view.AiOn?.Invoke() == true);
+                on = now;
+                entry.Header = on ? FixWithAiText : EditorMenus.SetUpAiText;
+            }
+            Label();
+            menu.Opened += (s, e) => Label();
+
+            menu.Items.Add(entry);
+            // The text box's own command: on only while part of the message is selected.
+            menu.Items.Add(new MenuItem { Command = System.Windows.Input.ApplicationCommands.Copy, CommandTarget = message });
+            ContextMenu = menu;
+            message.ContextMenu = menu;
         }
     }
 }

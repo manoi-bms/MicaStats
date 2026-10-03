@@ -49,12 +49,27 @@ namespace Kil0bitSystemMonitor.Tests
         /// <summary>A window, its fakes and what they recorded.</summary>
         private sealed class Harness
         {
-            public Harness(PadTestEnv env)
+            /// <param name="renderer">Draws the window's diagrams; null (most tests) means no pictures.</param>
+            public Harness(PadTestEnv env, IDiagramRenderer? renderer = null)
             {
                 Env = env;
                 Usage = new UsageMeter(env.FileOf("ai-usage.json"), () => new DateTime(2026, 10, 3, 12, 0, 0));
                 Client = Model;
-                Window = new MicaPadWindow(env.Workspace, new AppConfig());
+                // The window reads the app's renderer, a static, as it is built. The UI tests of other
+                // classes share this thread and that static, and one of them may hold its own
+                // renderer there while it pumps the dispatcher, which is when this window can be
+                // built. So the static is set here either way (null: this window draws nothing),
+                // for the construction alone with no await in between, and then put back.
+                IDiagramRenderer? others = MicaPadWindow.DiagramRenderer;
+                MicaPadWindow.DiagramRenderer = renderer;
+                try
+                {
+                    Window = new MicaPadWindow(env.Workspace, new AppConfig());
+                }
+                finally
+                {
+                    MicaPadWindow.DiagramRenderer = others;
+                }
                 Window.AiEnabled = () => AiOn;
                 Window.AiRunnerFactory = () =>
                 {
@@ -182,14 +197,17 @@ namespace Kil0bitSystemMonitor.Tests
             }
         }
 
-        /// <summary>Runs an async test on the UI thread over a loaded window; a test that hangs fails after a minute.</summary>
-        private static async Task OnUiAsync(Func<Harness, Task> test)
+        /// <summary>
+        /// Runs an async test on the UI thread over a loaded window; a test that hangs fails after a
+        /// minute. With a <paramref name="renderer"/>, the window draws its diagrams through it.
+        /// </summary>
+        private static async Task OnUiAsync(Func<Harness, Task> test, IDiagramRenderer? renderer = null)
         {
             Task body = UiThread.RunAsync(async () =>
             {
                 var dispatcher = Dispatcher.CurrentDispatcher;
                 using var env = new PadTestEnv(post: action => dispatcher.BeginInvoke(action));
-                var h = new Harness(env);
+                var h = new Harness(env, renderer);
                 try
                 {
                     h.Window.LoadSession();
@@ -352,7 +370,7 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
-        public Task With_AI_on_the_menu_lists_the_eight_actions_and_a_rewrite_waits_for_a_selection() => OnUi(h =>
+        public Task With_AI_on_the_menu_lists_the_nine_actions_and_a_rewrite_waits_for_a_selection() => OnUi(h =>
         {
             Write(h, Note);
 
@@ -360,12 +378,12 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[]
             {
                 "Improve writing", "Fix spelling and grammar", "Make shorter", "Translate to English", "Translate to Thai",
-                "Summarize", "Explain", "-", "Ask AI…",
+                "Summarize", "Explain", "Draw as diagram", "-", "Ask AI…",
             }, Headers(ai));
             Assert.Equal("Ctrl+Shift+A", Sub(ai, "Ask AI…").InputGestureText);
             foreach (string rewrite in new[] { "Improve writing", "Fix spelling and grammar", "Make shorter", "Translate to English", "Translate to Thai" })
                 Assert.False(Sub(ai, rewrite).IsEnabled, rewrite);
-            foreach (string other in new[] { "Summarize", "Explain", "Ask AI…" })
+            foreach (string other in new[] { "Summarize", "Explain", "Draw as diagram", "Ask AI…" })
                 Assert.True(Sub(ai, other).IsEnabled, other);
 
             h.Editor.Select(6, Picked.Length);
@@ -2843,6 +2861,490 @@ namespace Kil0bitSystemMonitor.Tests
             h.Window.ToggleTheme();
 
             Assert.Equal(PadThemeApplier.ToColor(AskPalette.Light.Ink), ((System.Windows.Media.SolidColorBrush)box.Foreground).Color);
+        });
+
+        // ---- diagram help (part 2, spec 2): Draw as diagram --------------------------------------
+
+        private const string DrawnReply = "```mermaid\nflowchart LR\n  login --> pay --> ship\n```";
+
+        /// <summary>The text the AI pane's result box shows, as the user reads it.</summary>
+        private static string Rendered(AiPane pane)
+        {
+            var document = pane.ResultBox.Document;
+            return new System.Windows.Documents.TextRange(document.ContentStart, document.ContentEnd).Text
+                .TrimEnd().Replace("\r\n", "\n", StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public Task Draw_as_diagram_on_a_selection_sends_its_instruction_shows_the_block_as_plain_text_and_Insert_below_is_one_undo_step() => OnUiAsync(async h =>
+        {
+            const string note = "Checkout\nlogin, then pay, then ship\nEnd";
+            Write(h, note, "login, then pay, then ship");
+            h.Model.Reply(DrawnReply);
+
+            await h.Window.RunAiAsync(PadAiAction.Diagram);
+
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Diagram.Instruction, "login, then pay, then ship"), h.Sent());
+            Assert.Equal("Draw as diagram", h.Pane.TitleText.Text);
+            Assert.Equal("Selection, 26 characters", h.Pane.SourceText.Text);
+            Assert.Equal(DrawnReply, h.Pane.ResultBox.Shown);
+            Assert.Equal(DrawnReply, Rendered(h.Pane));               // the fenced block as it would be inserted, not drawn as Markdown
+            Assert.Equal(Visibility.Visible, h.Pane.ReplaceButton.Visibility);   // offered for a selection, as Ask AI does
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+            Assert.Equal(note, h.Editor.Document.Text);              // nothing changes before a click
+
+            Click(h.Pane.InsertButton);
+
+            Assert.Equal("Checkout\nlogin, then pay, then ship\n\n" + DrawnReply + "\nEnd", h.Editor.Document.Text);
+            Assert.Equal(DrawnReply, h.Editor.SelectedText);
+            h.Editor.Undo();                                          // one Ctrl+Z
+            Assert.Equal(note, h.Editor.Document.Text);
+            Assert.StartsWith("AI diagram: ", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task Draw_as_diagram_with_no_selection_takes_the_whole_note_and_offers_Insert_below_but_not_Replace() => OnUiAsync(async h =>
+        {
+            Write(h, "login\npay\nship");
+            h.Model.Reply(DrawnReply);
+
+            await h.Window.RunAiAsync(PadAiAction.Diagram);
+
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Diagram.Instruction, "login\npay\nship"), h.Sent());
+            Assert.Equal("Whole note, 14 characters", h.Pane.SourceText.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.ReplaceButton.Visibility);
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+
+            Click(h.Pane.InsertButton);                               // at the end of the note
+
+            Assert.Equal("login\npay\nship\n\n" + DrawnReply, h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task Draw_as_diagram_in_the_menu_runs_at_once_and_never_asks_for_an_instruction() => OnUiAsync(async h =>
+        {
+            Write(h, "login\npay\nship");
+            h.Model.Reply(DrawnReply);
+
+            PadMenuTests.Click(Sub(AiMenu(h), "Draw as diagram"));
+
+            Assert.False(h.Window.AiSessionNow!.AwaitingInstruction);
+            Assert.Equal(Visibility.Collapsed, h.Pane.InstructionBox.Visibility);
+            await Finished(h);
+            Assert.Single(h.Model.Requests);
+            Assert.Equal(DrawnReply, h.Pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Collapsed, h.Pane.InstructionBox.Visibility);
+        });
+
+        [Fact]
+        public Task Draw_as_diagram_over_24000_characters_shows_the_refusal_and_sends_nothing() => OnUiAsync(async h =>
+        {
+            Write(h, new string('x', PadAiAction.ReadMaxChars + 1));
+
+            await h.Window.RunAiAsync(PadAiAction.Diagram);
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal("Select less text: at most 24,000 characters", h.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task With_AI_off_Draw_as_diagram_sends_nothing() => OnUiAsync(async h =>
+        {
+            h.AiOn = false;
+            Write(h, "login\npay\nship");
+
+            await h.Window.RunAiAsync(PadAiAction.Diagram);
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal(AiOff, h.Window.StatusMessage.Text);
+        });
+
+        // ---- diagram help (part 2, spec 2): Fix with AI ------------------------------------------
+
+        /// <summary>
+        /// A note with two Mermaid blocks, on lines 1 to 4 and 6 to 10. The tests make the second
+        /// one fail; its source is lines 7 to 9.
+        /// </summary>
+        private const string TwoDiagrams = "```mermaid\nflowchart LR\n  a --> b\n```\nbetween\n```mermaid\nflowchart LR\n  c --> d --\n  d --> e\n```\nafter";
+        private const string FailingSource = "flowchart LR\n  c --> d --\n  d --> e";
+        private const string FixedSource = "flowchart LR\n  c --> d\n  d --> e";
+        private const string RendererMessage = "Parse error on line 2:\n  c --> d --\n-----------^\nExpecting 'NODE', got 'NEWLINE'";
+        private const string DiagramGone = "That diagram is no longer there";
+
+        /// <summary>What a request holds between its note tags: the text that was sent as data.</summary>
+        private static string NoteBody(string userMessage)
+        {
+            const string open = "\n\n<note>\n", close = "\n</note>";
+            int at = userMessage.IndexOf(open, StringComparison.Ordinal);
+            Assert.True(at >= 0, "the request has no note tag");
+            Assert.EndsWith(close, userMessage, StringComparison.Ordinal);
+            int start = at + open.Length;
+            return userMessage.Substring(start, userMessage.Length - close.Length - start);
+        }
+
+        /// <summary>Runs a test over a window that draws its diagrams through a fake renderer.</summary>
+        private static Task OnUiWithDiagrams(Func<Harness, FakeRenderer, Task> test)
+        {
+            var renderer = new FakeRenderer();
+            return OnUiAsync(h => test(h, renderer), renderer);
+        }
+
+        /// <summary>The picture or the error box under line <paramref name="line"/>, once the editor is laid out; null when it has none.</summary>
+        private static DiagramPicture? PictureUnder(Harness h, int line)
+        {
+            PadLanguageWindowTests.Render(h.Window);
+            return h.Editor.TextArea.TextView.GetVisualLine(line)?.Elements.OfType<DiagramElement>().SingleOrDefault()?.Picture as DiagramPicture;
+        }
+
+        /// <summary>The first item of an error box's menu: Fix with AI, or Set up AI….</summary>
+        private static MenuItem FixEntry(DiagramPicture box) => box.ContextMenu!.Items.OfType<MenuItem>().First();
+
+        /// <summary>Writes <see cref="TwoDiagrams"/> and draws it: the first block gets a picture, the second the renderer's error.</summary>
+        private static async Task WriteTwoDiagramsTheSecondFailing(Harness h, FakeRenderer renderer)
+        {
+            Write(h, TwoDiagrams);
+            PadLanguageWindowTests.Render(h.Window);
+            h.Window.LanguageView.DiagramBoard!.DrawDue();            // as if typing had paused
+            PadLanguageWindowTests.Render(h.Window);
+            Assert.Equal(2, renderer.Calls.Count);
+            renderer.Finish(0, DiagramFakes.Picture());
+            renderer.Finish(1, DiagramResult.Failure(RendererMessage, lasting: true));
+            await Dispatcher.Yield(DispatcherPriority.Background);    // the drawings' continuations
+            Assert.Equal(RendererMessage, PictureUnder(h, 10)!.ErrorText!.Text);
+            Assert.NotNull(PictureUnder(h, 4)!.Image);
+        }
+
+        private static void PutCaretOnLine(Harness h, int line) => h.Editor.CaretOffset = h.Editor.Document.GetLineByNumber(line).Offset;
+
+        /// <summary>Nothing was sent, built or counted, the pane is closed and the selection is where it was.</summary>
+        private static void AssertNothingRan(Harness h)
+        {
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Equal(0, h.Editor.SelectionLength);
+            Assert.Empty(h.Log);
+        }
+
+        // ---- review focus 5 (part 2): only the failing block's source is sent and replaced ---------
+
+        [Fact]
+        public Task Fix_diagram_sends_only_the_failing_blocks_source_and_Replace_changes_only_those_lines() => OnUiAsync(async h =>
+        {
+            Write(h, TwoDiagrams);
+            h.Model.Reply(FixedSource);
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            // What was sent: the instruction and, between the note tags, exactly the second block's source.
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            string sent = request.Messages[1].Text;
+            Assert.Equal(PadAiPrompts.System, request.Messages[0].Text);
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.FixDiagram("mermaid", RendererMessage).Instruction, FailingSource), sent);
+            Assert.Equal(FailingSource, NoteBody(sent));
+            Assert.DoesNotContain("```", sent, StringComparison.Ordinal);                   // not a fence
+            foreach (string elsewhere in new[] { "a --> b", "between", "after" })           // not the other block, not the text around
+                Assert.DoesNotContain(elsewhere, sent, StringComparison.Ordinal);
+
+            // The user sees what is sent and what will be replaced: it is selected, and the pane names it.
+            Assert.Equal(FailingSource, h.Editor.SelectedText);
+            Assert.Equal("Fix diagram", h.Pane.TitleText.Text);
+            Assert.Equal("Selection, " + Count(FailingSource.Length) + " characters", h.Pane.SourceText.Text);
+            Assert.Equal(FixedSource, h.Pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Visible, h.Pane.ChangesToggle.Visibility);              // a rewrite: Changes shows the diff
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(TwoDiagrams, h.Editor.Document.Text);                              // nothing changes before a click
+
+            Click(h.Pane.ReplaceButton);
+
+            string[] before = TwoDiagrams.Split('\n'), after = h.Editor.Document.Text.Split('\n');
+            Assert.Equal(before.Length, after.Length);
+            for (int i = 0; i < before.Length; i++)
+            {
+                if (i == 7) Assert.Equal("  c --> d", after[i]);                            // line 8, the one the fix changed
+                else Assert.Equal(before[i], after[i]);                                     // both fence pairs, the first block and the text
+            }
+            Assert.Equal(FixedSource, h.Editor.SelectedText);
+
+            h.Editor.Undo();                                                                // one Ctrl+Z
+            Assert.Equal(TwoDiagrams, h.Editor.Document.Text);
+
+            // The log has the action and the counts, never the renderer's message or the source.
+            Assert.Equal(new[] { "AI fix-diagram: " + Count(sent.Length) + " chars in the request, " + Count(FixedSource.Length) + " chars back, ok" }, h.Log);
+        });
+
+        [Fact]
+        public Task Fix_with_AI_on_the_error_box_runs_on_the_failing_block_alone_and_MicaPad_draws_the_corrected_source() => OnUiWithDiagrams(async (h, renderer) =>
+        {
+            await WriteTwoDiagramsTheSecondFailing(h, renderer);
+            h.Model.Reply(FixedSource);
+            MenuItem entry = FixEntry(PictureUnder(h, 10)!);
+            Assert.Equal("Fix with AI", entry.Header);
+
+            PadMenuTests.Click(entry);
+            await Finished(h);
+
+            string sent = Assert.Single(h.Model.Requests).Messages[1].Text;
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.FixDiagram("mermaid", RendererMessage).Instruction, FailingSource), sent);
+            Assert.Equal(FailingSource, NoteBody(sent));
+            Assert.Equal(FailingSource, h.Editor.SelectedText);
+            Assert.Equal("Fix diagram", h.Pane.TitleText.Text);
+
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(TwoDiagrams.Replace(FailingSource, FixedSource, StringComparison.Ordinal), h.Editor.Document.Text);
+
+            h.Window.LanguageView.DiagramBoard!.DrawDue();            // typing paused: the block is drawn again
+            PadLanguageWindowTests.Render(h.Window);
+            Assert.Equal(3, renderer.Calls.Count);                    // the first block's picture came from the cache
+            Assert.Equal(FixedSource, renderer.Calls[2].Request.Source);
+        });
+
+        [Fact]
+        public Task The_AI_menu_has_Fix_diagram_only_while_the_caret_is_in_a_block_that_shows_an_error() => OnUiWithDiagrams(async (h, renderer) =>
+        {
+            await WriteTwoDiagramsTheSecondFailing(h, renderer);
+            h.Model.Reply(FixedSource);
+
+            foreach (int line in new[] { 2, 4, 5, 11 })              // a block that renders, the text between and the text after
+            {
+                PutCaretOnLine(h, line);
+                Assert.DoesNotContain("Fix diagram", Headers(AiMenu(h)));
+            }
+            foreach (int line in new[] { 6, 7, 9, 10 })              // the failing block, its fences included
+            {
+                PutCaretOnLine(h, line);
+                Assert.Contains("Fix diagram", Headers(AiMenu(h)));
+            }
+
+            PutCaretOnLine(h, 8);
+            MenuItem ai = AiMenu(h);
+            Assert.Equal(new[]
+            {
+                "Improve writing", "Fix spelling and grammar", "Make shorter", "Translate to English", "Translate to Thai",
+                "Summarize", "Explain", "Draw as diagram", "Fix diagram", "-", "Ask AI…",
+            }, Headers(ai));
+
+            PadMenuTests.Click(Sub(ai, "Fix diagram"));
+            await Finished(h);
+
+            Assert.Equal(FailingSource, NoteBody(Assert.Single(h.Model.Requests).Messages[1].Text));
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.FixDiagram("mermaid", RendererMessage).Instruction, FailingSource), h.Sent());
+            Assert.Equal(FailingSource, h.Editor.SelectedText);
+        });
+
+        [Fact]
+        public Task Without_diagram_pictures_the_AI_menu_has_no_Fix_diagram() => OnUi(h =>
+        {
+            Write(h, TwoDiagrams);
+            PutCaretOnLine(h, 8);
+
+            Assert.Null(h.Window.LanguageView.DiagramBoard);          // this window draws no diagrams: no block shows an error
+            Assert.DoesNotContain("Fix diagram", Headers(AiMenu(h)));
+        });
+
+        [Fact]
+        public Task With_AI_off_the_error_box_reads_Set_up_AI_the_menu_has_no_Fix_diagram_and_nothing_is_sent() => OnUiWithDiagrams(async (h, renderer) =>
+        {
+            h.AiOn = false;
+            await WriteTwoDiagramsTheSecondFailing(h, renderer);
+            PutCaretOnLine(h, 8);
+            h.Editor.Select(h.Editor.CaretOffset, 0);
+
+            Assert.Equal(new[] { "Set up AI…" }, Headers(AiMenu(h)));
+            MenuItem entry = FixEntry(PictureUnder(h, 10)!);
+            Assert.Equal("Set up AI…", entry.Header);
+
+            PadMenuTests.Click(entry);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            Assert.Equal(1, h.SettingsOpened);                        // Settings → MicaPad
+            AssertNothingRan(h);
+        });
+
+        [Fact]
+        public Task With_AI_off_Fix_diagram_sends_nothing_builds_no_runner_counts_nothing_and_selects_nothing() => OnUiAsync(async h =>
+        {
+            h.AiOn = false;
+            Write(h, TwoDiagrams);
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            AssertNothingRan(h);                                      // the gate comes first: not even the selection moves
+            Assert.Equal(AiOff, h.Window.StatusMessage.Text);         // the user is told why
+        });
+
+        [Fact]
+        public Task With_AI_off_a_diagram_that_is_gone_is_still_answered_with_how_to_turn_AI_on() => OnUiAsync(async h =>
+        {
+            h.AiOn = false;
+            Write(h, "no diagram here");
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            AssertNothingRan(h);
+            Assert.Equal(AiOff, h.Window.StatusMessage.Text);         // the note is not even read while AI is off
+        });
+
+        [Fact]
+        public Task With_AI_turned_off_between_the_click_and_the_request_Fix_diagram_sends_nothing() => OnUiAsync(async h =>
+        {
+            Write(h, TwoDiagrams);
+            int asked = 0;
+            h.Window.AiEnabled = () => asked++ == 0;              // on at the click, off when the request is about to start
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            Assert.Equal(2, asked);                               // the same two checks as every action: no way round them
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Equal(AiOff, h.Pane.StatusText.Text);
+            Assert.Equal(new[] { "AI fix-diagram: 0 chars in the request, 0 chars back, failed" }, h.Log);
+            Assert.Equal(TwoDiagrams, h.Editor.Document.Text);
+        });
+
+        [Theory]
+        [InlineData(6, 9)]                                            // line 9 is no fence
+        [InlineData(5, 10)]                                           // line 5 is no fence
+        [InlineData(4, 6)]                                            // one block's closing fence and the next one's opening
+        [InlineData(1, 10)]                                           // two fences, not of one block
+        [InlineData(7, 9)]
+        [InlineData(0, 4)]
+        [InlineData(6, 99)]
+        [InlineData(10, 6)]
+        public Task Lines_that_no_longer_hold_a_diagrams_fence_pair_say_so_and_send_nothing(int open, int close) => OnUiAsync(async h =>
+        {
+            Write(h, TwoDiagrams);
+
+            await h.Window.FixDiagramAsync(open, close, "mermaid", RendererMessage);
+
+            AssertNothingRan(h);
+            Assert.Equal(DiagramGone, h.Window.StatusMessage.Text);
+            Assert.Equal(Visibility.Visible, h.Window.StatusMessage.Visibility);
+            Assert.Equal(TwoDiagrams, h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task A_diagram_edited_away_between_the_click_and_the_call_says_so_and_sends_nothing() => OnUiAsync(async h =>
+        {
+            Write(h, TwoDiagrams);
+            h.Editor.Document.Insert(0, "# Title\n");                // the block moved a line down: 6 and 10 are not its fences now
+            h.Editor.Select(0, 0);
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            AssertNothingRan(h);
+            Assert.Equal(DiagramGone, h.Window.StatusMessage.Text);
+
+            Write(h, "```js\nlet a = 1;\n```");                       // the lines hold a fence pair, of ordinary code
+            await h.Window.FixDiagramAsync(1, 3, "js", RendererMessage);
+
+            AssertNothingRan(h);
+            Assert.Equal(DiagramGone, h.Window.StatusMessage.Text);
+        });
+
+        [Theory]
+        [InlineData("text\n```mermaid\n```\nafter", 2, 3)]            // nothing between the fences
+        [InlineData("text\n```mermaid\n   \n\n```\nafter", 2, 5)]     // blank lines only
+        [InlineData("```kroki\nmermaid\n```", 1, 3)]                  // only its type line
+        public Task An_empty_diagram_says_there_is_no_text_and_sends_nothing(string note, int open, int close) => OnUiAsync(async h =>
+        {
+            Write(h, note);
+
+            await h.Window.FixDiagramAsync(open, close, "mermaid", "No diagram type detected");
+
+            AssertNothingRan(h);
+            Assert.Equal(NoText, h.Window.StatusMessage.Text);
+            Assert.Equal(note, h.Editor.Document.Text);
+        });
+
+        [Theory]
+        [InlineData("Energy:\r\n$$\r\nE = mc^{2\r\n$$\r\nafter", 2, 4, "math", "E = mc^{2")]                                   // a $$ block
+        [InlineData("```kroki\nplantuml\n@startuml\na -> \n@enduml\n```\nafter", 1, 6, "plantuml", "@startuml\na -> \n@enduml")]   // not its type line
+        [InlineData("~~~DOT my graph\r\ndigraph { a -> }\r\n  x\r\n~~~", 1, 4, "DOT", "digraph { a -> }\r\n  x")]
+        public Task Fix_diagram_takes_the_lines_between_the_fences_of_any_kind_of_block(string note, int open, int close, string kind, string source) => OnUiAsync(async h =>
+        {
+            Write(h, note);
+            h.Model.Reply("fixed");
+
+            await h.Window.FixDiagramAsync(open, close, kind, "Parse error");
+
+            Assert.Equal(source, h.Editor.SelectedText);
+            Assert.Equal(source, NoteBody(h.Sent()));
+            Assert.StartsWith("Task: This " + kind.ToLowerInvariant() + " block does not render.", h.Sent(), StringComparison.Ordinal);
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal(note.Replace(source, "fixed", StringComparison.Ordinal), h.Editor.Document.Text);   // the fences, the type line and the rest are as they were
+        });
+
+        [Fact]
+        public Task A_credential_in_the_failing_block_or_in_the_renderers_message_never_leaves() => OnUiAsync(async h =>
+        {
+            Write(h, "```mermaid\nflowchart LR\n  a --> {{secret:K7Q2M9XD}} --\n```");
+            h.Model.Reply("flowchart LR\n  a --> [[CREDENTIAL_1]]");
+
+            await h.Window.FixDiagramAsync(1, 4, "mermaid", "Parse error on line 2:\n  a --> {{secret:K7Q2M9XD}} --");
+
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            string everything = string.Join("\n", request.Messages.Select(m => m.Text).Concat(h.Log));
+            Assert.DoesNotContain("{{secret", everything, StringComparison.Ordinal);
+            Assert.DoesNotContain("K7Q2M9XD", everything, StringComparison.Ordinal);
+            Assert.Contains("a --> [credential] --", h.Sent().Substring(0, h.Sent().IndexOf("<note>", StringComparison.Ordinal)), StringComparison.Ordinal);
+            Assert.Equal("flowchart LR\n  a --> [[CREDENTIAL_1]] --", NoteBody(h.Sent()));
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("```mermaid\nflowchart LR\n  a --> {{secret:K7Q2M9XD}}\n```", h.Editor.Document.Text);   // the pill is back
+        });
+
+        [Fact]
+        public Task Fix_diagram_on_a_read_only_note_is_refused_and_selects_nothing() => OnUiAsync(async h =>
+        {
+            Write(h, TwoDiagrams);
+            h.Editor.IsReadOnly = true;
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            AssertNothingRan(h);
+            Assert.Equal(ReadOnly, h.Window.StatusMessage.Text);
+        });
+
+        [Fact]
+        public Task A_failing_block_over_8000_characters_shows_the_rewrite_refusal_and_sends_nothing() => OnUiAsync(async h =>
+        {
+            Write(h, "```mermaid\nflowchart LR\n" + new string('x', PadAiAction.RewriteMaxChars) + "\n```");
+
+            await h.Window.FixDiagramAsync(1, 4, "mermaid", "Parse error");
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal("Select less text: at most 8,000 characters for a rewrite", h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+        });
+
+        [Fact]
+        public Task Try_again_after_a_fix_sends_the_same_instruction_on_the_same_block() => OnUiAsync(async h =>
+        {
+            Write(h, TwoDiagrams);
+            h.Model.Reply("first try").Reply(FixedSource);
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+            AiSession first = h.Window.AiSessionNow!;
+            h.Editor.Select(0, 0);                                // a click elsewhere in the note
+
+            Click(h.Pane.RetryButton);
+            await Finished(h, after: first);
+
+            Assert.Equal(2, h.Model.Requests.Count);
+            Assert.Equal(h.Sent(0), h.Sent(1));
+            Assert.Equal(FailingSource, NoteBody(h.Sent(1)));
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(TwoDiagrams.Replace(FailingSource, FixedSource, StringComparison.Ordinal), h.Editor.Document.Text);
         });
     }
 }

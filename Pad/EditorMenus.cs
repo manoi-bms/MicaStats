@@ -213,17 +213,25 @@ namespace Kil0bitSystemMonitor.Pad
             return tools;
         }
 
+        /// <summary>The one AI entry while AI is off in MicaPad, in the AI menu and on a diagram's error box: it opens Settings → MicaPad.</summary>
+        public const string SetUpAiText = "Set up AI…";
+
+        /// <summary>The AI menu's entry for a block that fails to render.</summary>
+        public const string FixDiagramText = "Fix diagram";
+
         /// <summary>
         /// AI (MicaPad AI spec 3.1): one item per action, with Ask AI… after a separator; a rewrite
         /// waits for a selection. While AI is off the menu holds one item, Set up AI…, so nothing
         /// can be sent from it. <paramref name="run"/> starts an action; <paramref name="setUp"/> opens the settings.
+        /// With <paramref name="fixDiagram"/> (the caret is in a diagram or math block that shows an
+        /// error; part 2, spec 2.2), Fix diagram follows Draw as diagram and runs it.
         /// </summary>
-        public static MenuItem AiMenu(TextEditor editor, bool enabled, Action<PadAiAction> run, Action setUp)
+        public static MenuItem AiMenu(TextEditor editor, bool enabled, Action<PadAiAction> run, Action setUp, Action? fixDiagram = null)
         {
             var ai = new MenuItem { Header = "AI", Icon = ((char)0xE99A).ToString() };
             if (!enabled)
             {
-                ai.Items.Add(Item("Set up AI…", null, setUp));
+                ai.Items.Add(Item(SetUpAiText, null, setUp));
                 return ai;
             }
 
@@ -240,6 +248,9 @@ namespace Kil0bitSystemMonitor.Pad
                 else
                 {
                     ai.Items.Add(Item(action.Name, null, () => run(chosen), selected || !action.NeedsSelection));
+                    // It takes the failing block's source, whatever is selected: no selection to wait for.
+                    if (fixDiagram != null && ReferenceEquals(action, PadAiAction.Diagram))
+                        ai.Items.Add(Item(FixDiagramText, null, fixDiagram));
                 }
             }
             return ai;

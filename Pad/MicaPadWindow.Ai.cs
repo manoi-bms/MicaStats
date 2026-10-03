@@ -40,6 +40,7 @@ namespace Kil0bitSystemMonitor.Pad
         private const string AiNotReadyText = "AI is not available yet";
         private const string AiShowSourceText = "Show the note this came from to try again";
         private const string AiSourceGoneText = "The text this ran on is gone; select text and run the action again";
+        private const string AiDiagramGoneText = "That diagram is no longer there";
 
         /// <summary>Tells when the history preview opens or closes: it makes the note read-only for the pane.</summary>
         private static readonly DependencyPropertyDescriptor s_previewVisibility =
@@ -241,9 +242,41 @@ namespace Kil0bitSystemMonitor.Pad
 
         // ---- the menu and the shortcut ---------------------------------------------------------
 
-        /// <summary>The editor menu's AI submenu: the actions while AI is on, Set up AI… while it is off.</summary>
-        private System.Windows.Controls.MenuItem BuildAiMenu() =>
-            AiMenu(Editor, !AiIsOff(), RunAiFromMenu, () => OpenPadSettings());
+        /// <summary>
+        /// The editor menu's AI submenu: the actions while AI is on, Set up AI… while it is off.
+        /// With the caret in a diagram or math block that shows an error, Fix diagram too.
+        /// </summary>
+        private System.Windows.Controls.MenuItem BuildAiMenu()
+        {
+            bool on = AiOnInMenus();
+            Action? fix = null;
+            if (on && FailingDiagramAtCaret() is { } failing)
+                fix = () => _ = FixDiagramAsync(failing.OpenLine, failing.CloseLine, failing.Kind, failing.Message);
+            return AiMenu(Editor, on, RunAiFromMenu, () => OpenPadSettings(), fix);
+        }
+
+        /// <summary>
+        /// What a menu names its AI entries by: the actions while AI is on, Set up AI… while it is
+        /// off or cannot be read. The editor's AI menu and a diagram's error box ask it as they
+        /// open. It only names entries: every action asks again at its own gate.
+        /// </summary>
+        private bool AiOnInMenus() => !AiIsOff();
+
+        /// <summary>
+        /// The failing diagram or math block the caret is in, or null: this editor draws no
+        /// diagrams, the caret is in no such block, or the block shows no error a fix could cure.
+        /// A failure while asking is logged and means none.
+        /// </summary>
+        private DiagramFailure? FailingDiagramAtCaret()
+        {
+            DiagramFailure? failing = null;
+            GuardAi("Looking for a failing diagram", () =>
+            {
+                if (_language.DiagramBoard is { } board && ReferenceEquals(board.Document, Editor.Document))
+                    failing = board.FailureAt(Editor.TextArea.Caret.Line);
+            });
+            return failing;
+        }
 
         private void RunAiFromMenu(PadAiAction action)
         {
@@ -304,8 +337,11 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// With <paramref name="again"/>, the earlier request whose text this one takes: its
         /// selection where it is now, or its whole note. Never what is selected or shown at the click.
+        /// With <paramref name="select"/> (Fix with AI), a step that selects the text to run on
+        /// first; false from it means there is nothing to run on, and nothing starts. It runs after
+        /// the gate, never before it: while AI is off the note is not read and the selection stays.
         /// </summary>
-        private async Task RunAiAsync(PadAiAction action, string? instruction, AiRun? again)
+        private async Task RunAiAsync(PadAiAction action, string? instruction, AiRun? again, Func<bool>? select = null)
         {
             // The consent gate. Every way in ends here (the menu, Ctrl+Shift+A, an instruction
             // entered in the pane, Try again, a direct call), so it does not rest on any caller:
@@ -317,8 +353,70 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             AiRun? run = null;
-            if (!GuardAi("Starting an AI action", () => run = BeginAi(action, instruction, again))) return;
+            if (!GuardAi("Starting an AI action", () =>
+                {
+                    if (select == null || select()) run = BeginAi(action, instruction, again);
+                })) return;
             if (run != null) await StreamAiAsync(run);
+        }
+
+        /// <summary>
+        /// Fix with AI (part 2, spec 2.2): asks for a rewrite of the source of the diagram or math
+        /// block whose fences are on <paramref name="openLine"/> and <paramref name="closeLine"/>
+        /// (1-based), naming its <paramref name="kind"/> (the fence word) and the renderer's
+        /// <paramref name="message"/>. The error box and the AI menu's Fix diagram call it.
+        ///
+        /// <para>
+        /// It is an action like any other: it goes through <c>RunAiAsync</c> and so through its
+        /// gate, and it never reaches the runner by another way. Once the gate has passed, the
+        /// block's source is selected (<see cref="SelectDiagramSource"/>), and the action then
+        /// runs on that selection as a rewrite does: the pane, Changes, Replace selection on that
+        /// range alone, the limits, the masking and the log are part 1's.
+        /// </para>
+        /// </summary>
+        internal Task FixDiagramAsync(int openLine, int closeLine, string kind, string message) =>
+            RunAiAsync(PadAiAction.FixDiagram(kind, message), null, null, () => SelectDiagramSource(openLine, closeLine));
+
+        /// <summary>
+        /// Selects the source of the block between the two fence lines, so the user sees what will
+        /// be sent and replaced: the lines strictly between the fences (after the type line, in the
+        /// kroki form), never a fence. The lines are read again here, as the note is now: they came
+        /// from a click, and the note may have been edited since. False, with the reason in the
+        /// status bar and the selection left alone, when there is nothing to run on: the lines no
+        /// longer hold a diagram's fence pair, the block is empty, or the note is read-only.
+        /// </summary>
+        private bool SelectDiagramSource(int openLine, int closeLine)
+        {
+            if (_shown == null) return false;
+            if (AiReadOnly)
+            {
+                ShowStatus(AiReadOnlyText);
+                return false;
+            }
+
+            TextDocument document = Editor.Document;
+            var lines = new string[document.LineCount];
+            foreach (DocumentLine line in document.Lines) lines[line.LineNumber - 1] = document.GetText(line);
+            if (DiagramBlocks.SourceLines(lines, openLine, closeLine) is not { } source)
+            {
+                ShowStatus(AiDiagramGoneText);
+                return false;
+            }
+
+            int start = 0, end = 0;
+            if (source.Last >= source.First)
+            {
+                start = document.GetLineByNumber(source.First).Offset;
+                end = document.GetLineByNumber(source.Last).EndOffset;   // without the last line's break
+            }
+            if (string.IsNullOrWhiteSpace(document.GetText(start, end - start)))
+            {
+                ShowStatus(AiNoTextText);
+                return false;
+            }
+
+            Editor.Select(start, end - start);
+            return true;
         }
 
         /// <summary>Enter in the pane's instruction box: Ask AI runs on the text the pane names.</summary>

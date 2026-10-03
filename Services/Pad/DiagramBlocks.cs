@@ -68,5 +68,51 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
             return blank ? null : new DiagramBlock(kind, openLine, closeLine, string.Join("\n", parts), TooLarge: false);
         }
+
+        /// <summary>
+        /// The lines that hold the source of the block between the fences on
+        /// <paramref name="openLine"/> and <paramref name="closeLine"/> (1-based, both inclusive): the
+        /// lines strictly between the two; in the kroki form, the lines after its type line. This is
+        /// what Fix with AI sends and replaces (MicaPad AI part 2, spec 2.2), so neither fence and no
+        /// type line is ever in it. A block with nothing between its fences gives a range whose last
+        /// line is before its first.
+        ///
+        /// <para>
+        /// Null when the two lines are not the fences of one diagram block as the text is now: one
+        /// of them is no fence, they pair with other fences, the opening line names no diagram
+        /// (ordinary code), or a kroki block's type line names none. The pairing is worked out
+        /// here, from the whole text, never taken from the caller.
+        /// </para>
+        /// </summary>
+        public static (int First, int Last)? SourceLines(IReadOnlyList<string> lines, int openLine, int closeLine)
+        {
+            if (openLine < 1 || closeLine <= openLine || closeLine > lines.Count) return null;
+            if (FenceTracker.Openings(FenceTracker.Classify(lines))[closeLine - 1] != openLine) return null;
+
+            var kind = DiagramKinds.FromFence(lines[openLine - 1] ?? "");
+            if (kind == null) return null;
+
+            int first = openLine + 1;
+            if (ReferenceEquals(kind, DiagramKinds.KrokiForm))
+            {
+                if (first >= closeLine || DiagramKinds.FromKrokiType(lines[first - 1]) == null) return null;
+                first++;
+            }
+            return (first, closeLine - 1);
+        }
+
+        /// <summary>
+        /// The word that names the language of the block opened on <paramref name="openLine"/>
+        /// (1-based) to a reader of its source: the fence word as it is written ("mermaid", "dot"),
+        /// "math" for a <c>$$</c> block, and for the kroki form the type its first inside line
+        /// names. "" for a fence with no word, or a line that opens none.
+        /// </summary>
+        public static string WordOf(Func<int, string> lineText, int openLine)
+        {
+            string open = lineText(openLine) ?? "";
+            if (FenceTracker.IsMathDelimiter(open)) return "math";
+            string word = FenceTracker.InfoWord(open) ?? "";
+            return ReferenceEquals(DiagramKinds.FromWord(word), DiagramKinds.KrokiForm) ? (lineText(openLine + 1) ?? "").Trim() : word;
+        }
     }
 }

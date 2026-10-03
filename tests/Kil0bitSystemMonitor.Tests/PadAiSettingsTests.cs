@@ -90,6 +90,71 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains("Turn on Settings → MicaPad → AI to get answers", section);
         }
 
+        /// <summary>The guide's AI section, with each bullet's wrapped lines joined into one.</summary>
+        private static string GuideAiSection()
+        {
+            string guide = Read("GUIDE.md").Replace("\r\n", "\n", StringComparison.Ordinal);
+            int start = guide.IndexOf("### AI in MicaPad", StringComparison.Ordinal);
+            string section = guide.Substring(start);
+            section = section.Substring(0, section.IndexOf("\n### ", 5, StringComparison.Ordinal));
+            return section.Replace("\n  ", " ", StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_guide_says_what_a_question_sends_and_denies_a_title_only_for_an_action()
+        {
+            string sent = Assert.Single(GuideAiSection().Split('\n'), l => l.StartsWith("* **What is sent**", StringComparison.Ordinal));
+
+            // An action on text: the text and nothing about the note.
+            Assert.Contains("For an action on text", sent, StringComparison.Ordinal);
+            Assert.Contains("no title, no other note, no file path", sent, StringComparison.Ordinal);
+            // A question: up to 8 passages from any note, each under its note's title, heading and line numbers.
+            int question = sent.IndexOf("For a question", StringComparison.Ordinal);
+            Assert.True(question > sent.IndexOf("no file path", StringComparison.Ordinal), "the denial comes before the question, and covers the action only");
+            string forQuestion = sent.Substring(question);
+            Assert.Contains("up to 8 passages", forQuestion, StringComparison.Ordinal);
+            Assert.Contains("title", forQuestion, StringComparison.Ordinal);
+            Assert.Contains("heading", forQuestion, StringComparison.Ordinal);
+            Assert.Contains("line numbers", forQuestion, StringComparison.Ordinal);
+            Assert.Contains("file name", forQuestion, StringComparison.Ordinal);
+            Assert.DoesNotContain("no title", forQuestion, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void The_guide_does_not_promise_Insert_below_where_it_is_off()
+        {
+            string section = GuideAiSection();
+
+            Assert.DoesNotContain("**Insert below** and **Copy** still work", section, StringComparison.Ordinal);
+            string replace = Assert.Single(section.Split('\n'), l => l.StartsWith("* **Replace selection** is offered only", StringComparison.Ordinal));
+            Assert.Contains("failed", replace, StringComparison.Ordinal);          // a failed reply: Copy only
+            Assert.Contains("another tab", replace, StringComparison.Ordinal);     // and so on another tab
+            Assert.Contains("read-only", replace, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_readme_says_Ctrl_Shift_A_opens_Ask_AI_and_what_a_question_sends_in_both_languages()
+        {
+            string readme = Read("README.md");
+            int thai = readme.IndexOf("## เกี่ยวกับ MicaStats", StringComparison.Ordinal);
+            string english = readme.Substring(0, thai);
+            string thaiPart = readme.Substring(thai);
+
+            // What's New: the shortcut opens Ask AI…; it does not run Improve, Fix and the rest.
+            string news = Assert.Single(english.Split('\n'), l => l.StartsWith("* **AI in MicaPad.**", StringComparison.Ordinal));
+            Assert.DoesNotContain("menu or **Ctrl+Shift+A**", news, StringComparison.Ordinal);
+            Assert.Contains("**Ask AI…** (**Ctrl+Shift+A**)", news, StringComparison.Ordinal);
+            string thaiNews = Assert.Single(thaiPart.Split('\n'), l => l.StartsWith("* **AI ใน MicaPad**", StringComparison.Ordinal));
+            Assert.DoesNotContain("**AI** หรือ **Ctrl+Shift+A**", thaiNews, StringComparison.Ordinal);
+            Assert.Contains("**Ask AI…** (**Ctrl+Shift+A**)", thaiNews, StringComparison.Ordinal);
+
+            // Private: the denial is the action's; a question sends each passage with its note's title, heading and lines.
+            Assert.DoesNotContain("or a question and its passages, is sent", english, StringComparison.Ordinal);
+            Assert.Contains("each with its note's title, heading and line numbers", english, StringComparison.Ordinal);
+            Assert.DoesNotContain("หรือคำถามกับข้อความที่เกี่ยวข้อง โดยห่อไว้", thaiPart, StringComparison.Ordinal);
+            Assert.Contains("ชื่อโน้ต หัวข้อ และเลขบรรทัด", thaiPart, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void The_readme_announces_ai_and_lists_the_shortcuts_in_both_languages()
         {

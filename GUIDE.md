@@ -268,35 +268,46 @@ sent while you type, when a note opens or in the background — only when you ru
   Explain and Ask AI use the whole note when nothing is selected; the rewrites need a selection.
   While AI is off, the menu holds one item, **Set up AI…**.
 * **The AI pane** opens on the right, where History and Search notes open. It shows the text it
-  runs on ("Selection, 412 characters") and the result as it arrives. **Stop** ends it and keeps what
-  came. For a rewrite, **Changes** shows a line diff of your text against the result. Size limits:
-  8,000 characters for a rewrite, 24,000 for the rest; over that, nothing is sent.
+  runs on and where that goes ("Selection, 412 characters · to api.anthropic.com", or "· to this
+  PC" for a server on this PC) and the result as it arrives. **Stop**, beside the close button, ends
+  it and keeps what came. For a rewrite, **Changes** shows a line diff of your text against the
+  result. Size limits: 8,000 characters for a rewrite, 24,000 for the rest; over that, the pane
+  says so and nothing is sent.
 * **Replace selection** puts the result in place of your text, **Insert below** adds it as a new
   paragraph after the text, **Copy** copies it. Each edit is one **Ctrl+Z**, and undoing a Replace
   brings the button back. The reply takes the note's own line ending. Your note changes only when
   you click one of these two buttons.
-* **Replace selection** is offered only when the reply finished (not stopped or cut short), you
-  selected text, its note is the one shown and not read-only, the text is still what it was, and
-  every stored credential came back. Otherwise the status line says why; **Insert below** and
-  **Copy** still work.
+* **Replace selection** is offered only when the reply finished (not stopped, cut short or ended
+  early by the provider), you selected text, its note is the one shown and not read-only, the text
+  is still what it was, and every stored credential came back. Otherwise the status line says why.
+  **Copy** works whenever there is text. **Insert below** works for a stopped or cut-short reply and
+  when the text changed, but not for a failed reply, on another tab or on a read-only note.
 * **Try again** reruns on the text the pane names — the earlier selection, or the whole note — not
   on whatever is selected now, and only while that note is shown. An instruction typed for
   **Ask AI…** works the same way.
 * **Ask in Search notes**: type a question and press **Ctrl+Enter**, or click **Ask** (**Enter**
   still only searches). The best 8 passages go to the model and the answer streams above the
-  results; the status line says "Answering from 6 passages", then "Answered from 6 passages". A
-  citation such as [2] is a number matching result row 2, not a link, and the first 8 rows carry
-  their numbers. A new search, a new question or closing the pane clears the answer. With no
-  match, nothing is sent. With AI off, **Ask** runs the normal search and the answer area says
+  results; the status line says "Answering from 6 passages · api.anthropic.com", then
+  "Answered from 6 passages · api.anthropic.com" once it ends well. A citation such as [2] is a
+  number matching result row 2, not a link, and the first 8 rows carry their numbers. A new
+  search, a new question or closing the pane clears the answer. Holding **Ctrl+Enter**, or asking
+  the question that is being answered, does not send it again. With no match, nothing is sent.
+  With AI off, **Ask** runs the normal search and the answer area says
   "Turn on Settings → MicaPad → AI to get answers".
 * **Links in an answer are never clickable.** They show as text, "label (address)", so text pasted
   into a note cannot steer the model into handing you a link to click.
-* **What is sent**: a fixed instruction, the task, and the selected text (or the question and the
-  passages), wrapped as data the model must not obey. No title, no other note, no file path.
-  Stored credentials are never sent: in text for an action each one goes as `[[CREDENTIAL_1]]` and
-  is put back in the result; in a question and passages it goes as `[credential]`. A selection
+* **What is sent**: For an action on text, a fixed instruction, the task, and the text it runs on
+  (the selection, or the whole note): no title, no other note, no file path. For a question, a
+  fixed instruction, the question, and up to 8 passages found by Search notes, which can come from
+  any note, open or closed; each passage goes with its note's title (the file name, for a note
+  opened from a file), its heading and its line numbers. Note text is wrapped as data the model
+  must not obey.
+* **Stored credentials are never sent**: in text for an action each one goes as `[[CREDENTIAL_1]]`
+  and is put back in the result; in a question and passages it goes as `[credential]`. A selection
   that cuts through a credential takes the whole credential. Your own words are not otherwise
-  altered, so a rewrite does not rename anything in them.
+  altered, so a rewrite does not rename anything in them. Storing selected text as a credential
+  closes the AI pane for that note and clears an answer from notes, since both could still hold
+  the value.
 * **The daily limit** is the one from **Settings → AI**, shared with Ask MicaStats: each action or
   answer counts one, even when it fails or is stopped. When it is reached, or no key is set, the
   pane says so and nothing is sent.

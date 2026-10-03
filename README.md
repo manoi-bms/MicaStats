@@ -47,7 +47,7 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 
 **Since v1.14.0** — coming in the next release:
 
-* **AI in MicaPad.** Improve, fix, shorten, translate, summarize or explain selected text from the right-click **AI** menu or **Ctrl+Shift+A**, and press **Ctrl+Enter** in **Search notes** to get an answer from your notes with numbered sources. It uses the provider you set in **Settings → AI**, is off until you turn on **Settings → MicaPad → AI**, and sends nothing until you run an action. Stored credentials are never sent. [More below](#ai)
+* **AI in MicaPad.** Improve, fix, shorten, translate, summarize or explain selected text from the right-click **AI** menu, give your own instruction with **Ask AI…** (**Ctrl+Shift+A**), and press **Ctrl+Enter** in **Search notes** to get an answer from your notes with numbered sources. It uses the provider you set in **Settings → AI**, is off until you turn on **Settings → MicaPad → AI**, and sends nothing until you run an action. Stored credentials are never sent. [More below](#ai)
 
 **v1.14.0** — search every note, capture a whole scrolling page, and zoom in the capture editor:
 
@@ -208,11 +208,13 @@ Open it from the overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, 
 #### AI
 
 * Off by default: turn on **Settings → MicaPad → AI → Use AI in MicaPad**. It uses the provider, model and key from **Settings → AI** (Claude, or an OpenAI-compatible server such as Ollama), and the same daily limit as Ask MicaStats. The line under the switch says where text goes
-* Right-click → **AI** (or **Ctrl+Shift+A**): **Improve writing**, **Fix spelling and grammar**, **Make shorter**, **Translate to English** or **Thai**, **Summarize**, **Explain**, or **Ask AI…** with your own instruction
+* Right-click → **AI**: **Improve writing**, **Fix spelling and grammar**, **Make shorter**, **Translate to English** or **Thai**, **Summarize**, **Explain**, or **Ask AI…** with your own instruction (**Ctrl+Shift+A** opens **Ask AI…**)
 * The AI pane shows the result as it streams, with **Stop**, **Changes** (a line diff), **Replace selection**, **Insert below**, **Copy** and **Try again**. Your note changes only when you click Replace or Insert, and each is one undo step. **Try again** reruns on the text the pane names, not on a new selection
 * In **Search notes**, **Ctrl+Enter** or **Ask** answers a question from the best 8 passages. The answer cites them as [1], [2]… matching the numbered result rows, and the status line shows "Answering from n passages", then "Answered from n passages". With AI off, **Ask** runs the normal search and says how to turn it on
 * **Private**:
-  * Only the text you run an action on, or a question and its passages, is sent, wrapped as data the model must not obey. Never a title, another note or a file path.
+  * An action sends only the text it runs on, wrapped as data the model must not obey: never a title, another note or a file path.
+  * A question sends the question and up to 8 passages from your notes, each with its note's title, heading and line numbers.
+  * The AI pane and the status line name where the text goes ("· to api.anthropic.com", or "· to this PC").
   * Stored credentials are never sent: each goes as a placeholder and is put back in the result.
   * Links in an answer are shown as text and are never clickable.
 
@@ -353,7 +355,7 @@ Inside MicaPad:
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | Open file · save to its file · save as |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | Find · replace · next / previous |
 | **Ctrl+Shift+F** | Search every note |
-| **Ctrl+Shift+A** | AI on the selection (while **Use AI in MicaPad** is on) |
+| **Ctrl+Shift+A** | **Ask AI…** on the selection or the whole note (while **Use AI in MicaPad** is on) |
 | **Ctrl+Enter** | In Search notes: answer the question from your notes |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | Go to line · word wrap · history |
 | **F11** | Full screen |
@@ -794,7 +796,7 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 
 **หลัง v1.14.0** (จะมาในรีลีสถัดไป):
 
-* **AI ใน MicaPad** ปรับปรุง แก้ ย่อ แปล สรุป หรืออธิบายข้อความที่เลือกได้จากเมนูคลิกขวา **AI** หรือ **Ctrl+Shift+A** และกด **Ctrl+Enter** ใน **Search notes** เพื่อรับคำตอบจากโน้ตของคุณพร้อมแหล่งที่มาเป็นหมายเลข ใช้ผู้ให้บริการที่ตั้งไว้ใน **Settings → AI** ปิดไว้จนกว่าจะเปิด **Settings → MicaPad → AI** และไม่ส่งอะไรจนกว่าคุณจะสั่งทำ รหัสลับที่เก็บไว้ไม่ถูกส่งเลย [อ่านต่อด้านล่าง](#ai-1)
+* **AI ใน MicaPad** ปรับปรุง แก้ ย่อ แปล สรุป หรืออธิบายข้อความที่เลือกได้จากเมนูคลิกขวา **AI** พิมพ์คำสั่งของคุณเองด้วย **Ask AI…** (**Ctrl+Shift+A**) และกด **Ctrl+Enter** ใน **Search notes** เพื่อรับคำตอบจากโน้ตของคุณพร้อมแหล่งที่มาเป็นหมายเลข ใช้ผู้ให้บริการที่ตั้งไว้ใน **Settings → AI** ปิดไว้จนกว่าจะเปิด **Settings → MicaPad → AI** และไม่ส่งอะไรจนกว่าคุณจะสั่งทำ รหัสลับที่เก็บไว้ไม่ถูกส่งเลย [อ่านต่อด้านล่าง](#ai-1)
 
 **v1.14.0** — ค้นหาทุกโน้ต จับภาพหน้าที่เลื่อนได้ทั้งหน้า และซูมในหน้าต่างมาร์กอัป:
 
@@ -934,11 +936,13 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 #### AI
 
 * ปิดไว้เป็นค่าเริ่มต้น เปิดได้ที่ **Settings → MicaPad → AI → Use AI in MicaPad** ใช้ผู้ให้บริการ โมเดล และคีย์จาก **Settings → AI** (Claude หรือเซิร์ฟเวอร์ที่เข้ากับ OpenAI เช่น Ollama) และใช้โควตารายวันเดียวกับ Ask MicaStats บรรทัดใต้สวิตช์บอกว่าข้อความถูกส่งไปที่ไหน
-* คลิกขวา → **AI** (หรือ **Ctrl+Shift+A**): **Improve writing**, **Fix spelling and grammar**, **Make shorter**, **Translate to English** หรือ **Thai**, **Summarize**, **Explain** หรือ **Ask AI…** พร้อมคำสั่งของคุณเอง
+* คลิกขวา → **AI**: **Improve writing**, **Fix spelling and grammar**, **Make shorter**, **Translate to English** หรือ **Thai**, **Summarize**, **Explain** หรือ **Ask AI…** พร้อมคำสั่งของคุณเอง (**Ctrl+Shift+A** เปิด **Ask AI…**)
 * แผง AI แสดงผลลัพธ์ขณะที่ไหลเข้ามา พร้อม **Stop**, **Changes** (ต่างกันทีละบรรทัด), **Replace selection**, **Insert below**, **Copy** และ **Try again** โน้ตเปลี่ยนก็ต่อเมื่อคุณกด Replace หรือ Insert และแต่ละครั้งเป็นหนึ่งขั้นของ Undo **Try again** ทำซ้ำกับข้อความที่แผงระบุไว้ ไม่ใช่ข้อความที่เลือกใหม่
 * ใน **Search notes** กด **Ctrl+Enter** หรือ **Ask** เพื่อตอบคำถามจาก 8 ข้อความที่เกี่ยวข้องที่สุด คำตอบอ้างอิงเป็น [1], [2]… ตรงกับหมายเลขของผลลัพธ์ และบรรทัดสถานะแสดง "Answering from n passages" แล้วเป็น "Answered from n passages" เมื่อปิด AI อยู่ **Ask** จะค้นตามปกติและบอกวิธีเปิด
 * **เป็นส่วนตัว**:
-  * ส่งเฉพาะข้อความที่คุณสั่งทำ หรือคำถามกับข้อความที่เกี่ยวข้อง โดยห่อไว้เป็นข้อมูลที่โมเดลต้องไม่ทำตาม ไม่ส่งชื่อโน้ต โน้ตอื่น หรือพาธไฟล์
+  * การสั่งทำกับข้อความส่งเฉพาะข้อความนั้น โดยห่อไว้เป็นข้อมูลที่โมเดลต้องไม่ทำตาม ไม่ส่งชื่อโน้ต โน้ตอื่น หรือพาธไฟล์
+  * คำถามส่งคำถามกับข้อความจากโน้ตของคุณไม่เกิน 8 ช่วง แต่ละช่วงมีชื่อโน้ต หัวข้อ และเลขบรรทัดกำกับ
+  * แผง AI และบรรทัดสถานะบอกว่าข้อความถูกส่งไปที่ไหน ("· to api.anthropic.com" หรือ "· to this PC")
   * รหัสลับที่เก็บไว้ไม่ถูกส่งเลย แต่ละตัวถูกส่งเป็นตัวแทนและใส่กลับในผลลัพธ์
   * ลิงก์ในคำตอบแสดงเป็นข้อความและคลิกไม่ได้
 
@@ -1079,7 +1083,7 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | เปิดไฟล์ · บันทึกลงไฟล์ · บันทึกเป็น |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | ค้นหา · แทนที่ · ถัดไป / ก่อนหน้า |
 | **Ctrl+Shift+F** | ค้นหาทุกโน้ต |
-| **Ctrl+Shift+A** | AI กับข้อความที่เลือก (เมื่อเปิด **Use AI in MicaPad**) |
+| **Ctrl+Shift+A** | **Ask AI…** กับข้อความที่เลือกหรือทั้งโน้ต (เมื่อเปิด **Use AI in MicaPad**) |
 | **Ctrl+Enter** | ใน Search notes: ตอบคำถามจากโน้ตของคุณ |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | ไปยังบรรทัด · ตัดบรรทัดอัตโนมัติ · ประวัติ |
 | **F11** | เต็มจอ |

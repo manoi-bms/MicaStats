@@ -309,6 +309,126 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Selection, 412 characters", new AiSession(PadAiAction.Summarize, text, true, destination: "").View(Ok).SourceLine);
         }
 
+        // ---- Fix with AI: a reply that holds a code fence (part 2, spec 2.2) -------------------------
+
+        private const string HoldsFence = "The result holds a code fence, so it cannot replace the diagram's source";
+
+        /// <summary>The fix of a block opened by <paramref name="fence"/>.</summary>
+        private static PadAiAction Fix(string fence = "```") => PadAiAction.FixDiagram("mermaid", "Parse error", fence);
+
+        [Fact]
+        public void A_fix_that_comes_back_in_a_code_fence_is_unwrapped_before_it_is_shown_and_applied()
+        {
+            var s = Done(Fix(), "flowchart LR\n  a --> b --", "```mermaid\nflowchart LR\n  a --> b\n```\n");
+
+            var v = s.View(Ok);
+            Assert.Equal("flowchart LR\n  a --> b", v.Result);
+            Assert.Equal("flowchart LR\n  a --> b", s.ResultForNote);
+            Assert.True(v.CanReplace);
+            Assert.True(v.CanCopy);
+            Assert.True(v.CanShowChanges);
+            Assert.Equal("", v.Status);
+
+            // Tildes, no info word, blank lines around the fences and inside them.
+            Assert.Equal("  x", Done(Fix(), "s", "\n\n~~~~\n\n  x\n\n~~~~\n\n").View(Ok).Result);
+            // A fence with nothing in it is no result at all.
+            var empty = Done(Fix(), "s", "```mermaid\n```").View(Ok);
+            Assert.Equal("", empty.Result);
+            Assert.False(empty.CanReplace);
+            Assert.False(empty.CanCopy);
+        }
+
+        [Fact]
+        public void A_fix_is_unwrapped_only_once_its_closing_fence_has_arrived()
+        {
+            var s = new AiSession(Fix(), "source", true);
+            s.Start();
+            s.Append("```mermaid\nflowchart LR\n");
+            Assert.Equal("```mermaid\nflowchart LR", s.View(Ok).Result);   // while it streams: not yet a pair
+            s.Append("  a --> b\n```");
+            Assert.Equal("flowchart LR\n  a --> b", s.View(Ok).Result);
+            s.Complete(false);
+            Assert.True(s.View(Ok).CanReplace);
+        }
+
+        [Fact]
+        public void Only_a_fix_is_unwrapped()
+        {
+            const string fenced = "```mermaid\nflowchart LR\n```";
+
+            Assert.Equal(fenced, Done(PadAiAction.Diagram, "text", fenced).View(Ok).Result);     // Draw as diagram is asked for the fence
+            Assert.Equal(fenced, Done(PadAiAction.Improve, "```mermaid\nflowchart\n```", fenced).View(Ok).Result);
+            Assert.Equal(fenced, Done(PadAiAction.Ask, "text", fenced, instruction: "as a diagram").View(Ok).Result);
+        }
+
+        [Theory]
+        [InlineData("```", "flowchart LR\n```\nThe arrow had no target.")]         // it would close the block, and the note's own fence would open one
+        [InlineData("```", "flowchart LR\r\n   `````  \r\nmore")]                    // longer, indented up to three spaces, spaces after it
+        [InlineData("~~~~", "a\n~~~~~\nb")]                                         // a tilde block and a longer tilde line
+        [InlineData("$$", "x^2\n$$\ny")]                                            // a math block
+        [InlineData("$$", "$$\nx^2\n$$")]                                           // $$ around the reply is not unwrapped
+        [InlineData("```", "```mermaid\na\n```\nb\n```\nc\n```")]                   // unwrapped, and a fence is still inside
+        [InlineData("```", "a\n```")]                                               // on its last line
+        public void A_fix_with_a_line_that_would_close_its_block_cannot_replace_and_says_why(string fence, string reply)
+        {
+            var v = Done(Fix(fence), "source", reply).View(Ok);
+
+            Assert.True(v.ShowReplace);
+            Assert.False(v.CanReplace);
+            Assert.Equal(HoldsFence, v.Status);
+            Assert.True(v.CanCopy);                               // the text is still there to take
+            Assert.False(v.CanInsert);
+        }
+
+        [Theory]
+        [InlineData("```", "a\n~~~\nb")]                                            // the other fence character
+        [InlineData("````", "# Root\n```\ncode\n```")]                              // shorter than the block's own: text of the diagram
+        [InlineData("```", "a ``` b\n```js\nc")]                                    // not a line of fence characters only
+        [InlineData("$$", "a\n```\nb\n$$$\nc")]                                     // a math block closes on exactly $$
+        [InlineData("~~~", "    ~~~\nb")]                                           // four spaces before it: not a fence
+        [InlineData("~~~~", "a\n~~~\nb\n~~~")]                                      // shorter than the block's own
+        public void A_fix_whose_fence_like_lines_cannot_close_its_block_can_replace(string fence, string reply)
+        {
+            var v = Done(Fix(fence), "source", reply).View(Ok);
+
+            Assert.True(v.CanReplace);
+            Assert.Equal("", v.Status);
+            Assert.Equal(reply, v.Result);
+        }
+
+        [Fact]
+        public void The_other_reasons_come_before_the_fence()
+        {
+            const string reply = "a\n```\nb";
+
+            Assert.Equal("Show the note this came from to apply it", Done(Fix(), "s", reply).View(new AiSourceFacts(false, false, true)).Status);
+            Assert.Equal("This note is read-only", Done(Fix(), "s", reply).View(new AiSourceFacts(true, true, true)).Status);
+            Assert.Equal("The text changed since the request; use Insert below or Copy", Done(Fix(), "s", reply).View(new AiSourceFacts(true, false, false)).Status);
+            Assert.Equal(SecretMask.Lost, Done(Fix(), "s {{secret:K7Q2M9XD}}", reply).View(Ok).Status);
+            Assert.Equal(HoldsFence, Done(Fix(), "s {{secret:K7Q2M9XD}}", reply + " [[CREDENTIAL_1]]").View(Ok).Status);
+        }
+
+        [Fact]
+        public void A_fix_offers_no_Insert_below_and_every_other_action_does()
+        {
+            var fix = Done(Fix(), "source", "fixed").View(Ok);
+            Assert.False(fix.ShowInsert);
+            Assert.False(fix.CanInsert);
+            Assert.True(fix.CanReplace);
+            Assert.True(fix.CanCopy);
+
+            // A stopped fix: Copy only.
+            var stopped = new AiSession(Fix(), "source", true);
+            stopped.Start(); stopped.Append("partial"); stopped.Complete(true);
+            Assert.False(stopped.View(Ok).CanInsert);
+            Assert.True(stopped.View(Ok).CanCopy);
+
+            Assert.True(Done(PadAiAction.Improve, "a", "b").View(Ok).ShowInsert);
+            Assert.True(Done(PadAiAction.Improve, "a", "b").View(Ok).CanInsert);
+            Assert.True(Done(PadAiAction.Diagram, "a", "b", fromSelection: false).View(Ok).ShowInsert);
+            Assert.True(Done(PadAiAction.Summarize, "a", "b", fromSelection: false).View(Ok).ShowInsert);
+        }
+
         [Fact]
         public void A_credential_comes_back_as_a_pill()
         {

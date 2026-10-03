@@ -18,6 +18,80 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact] public void Clean_of_blank_text_is_empty() =>
             Assert.Equal("", SelectionEdit.Clean(" \n\n  "));
 
+        // ---- a reply to Fix with AI that came back in a code fence (part 2, spec 2.2) ----------------
+
+        [Theory]
+        [InlineData("```mermaid\nflowchart LR\n  a --> b\n```", "flowchart LR\n  a --> b")]
+        [InlineData("```\nx\n```", "x")]                                    // no info word
+        [InlineData("~~~~dot my graph\ndigraph {}\n~~~~", "digraph {}")]     // tildes, and an info string
+        [InlineData("```\r\na\r\nb\r\n```", "a\r\nb")]                       // the reply's own line breaks stay
+        [InlineData("```\ra\r```", "a")]
+        [InlineData("  ```mermaid\na\n   ```  ", "a")]                       // up to three spaces before either, spaces after the closing one
+        [InlineData("```mermaid\na\n`````", "a")]                           // a closing fence may be longer
+        [InlineData("```\n\n  a\n\n```", "\n  a\n")]                         // only the two fence lines go
+        [InlineData("```\n```", "")]                                        // nothing between them
+        public void Unfenced_drops_one_enclosing_fence_pair(string reply, string inside) =>
+            Assert.Equal(inside, SelectionEdit.Unfenced(reply));
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("flowchart LR\n  a --> b")]
+        [InlineData("```")]                                                 // one line is no pair
+        [InlineData("```mermaid\nflowchart LR")]                            // never closed
+        [InlineData("flowchart LR\n```")]                                   // closed, never opened
+        [InlineData("````mermaid\na\n```")]                                 // a shorter fence does not close it
+        [InlineData("```mermaid\na\n~~~")]                                  // nor does the other character
+        [InlineData("```mermaid\na\n``` done")]                             // nor a line with words after it
+        [InlineData("Here it is:\n```mermaid\na\n```")]                     // the first line is no fence
+        [InlineData("```mermaid\na\n```\nThat fixes it.")]                  // the last line is no fence
+        [InlineData("$$\nx^2\n$$")]                                         // backticks and tildes only
+        [InlineData("    ```\na\n    ```")]                                 // four spaces: indented code, not a fence
+        public void Unfenced_leaves_anything_else_as_it_is(string reply) =>
+            Assert.Equal(reply, SelectionEdit.Unfenced(reply));
+
+        [Fact]
+        public void Unfenced_takes_one_pair_only_and_null_is_empty()
+        {
+            Assert.Equal("```\na\n```", SelectionEdit.Unfenced("````\n```\na\n```\n````"));
+            Assert.Equal("", SelectionEdit.Unfenced(null!));
+        }
+
+        [Theory]
+        [InlineData("```mermaid", '`', 3)]
+        [InlineData("   ~~~~", '~', 4)]
+        [InlineData("`````  js title", '`', 5)]
+        [InlineData("$$", '$', 2)]
+        [InlineData(" $$  ", '$', 2)]
+        public void The_delimiter_of_an_opening_line_is_its_fence_character_and_how_many(string line, char fence, int length) =>
+            Assert.Equal((fence, length), FenceTracker.DelimiterOf(line));
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("text")]
+        [InlineData("``")]
+        [InlineData("    ```")]                                             // four spaces
+        [InlineData("``` a `b`")]                                           // a backtick in a backtick fence's info string: inline code
+        [InlineData("$$ x $$")]
+        [InlineData("$$$")]
+        public void A_line_that_opens_no_block_has_no_delimiter(string line) =>
+            Assert.Null(FenceTracker.DelimiterOf(line));
+
+        [Theory]
+        [InlineData("```", '`', 3, true)]
+        [InlineData("   `````  ", '`', 3, true)]                            // longer, indented up to three spaces, spaces after
+        [InlineData("``", '`', 3, false)]
+        [InlineData("```js", '`', 3, false)]                                // an info word: it would open, not close
+        [InlineData("~~~", '`', 3, false)]
+        [InlineData("    ```", '`', 3, false)]
+        [InlineData("~~~~~", '~', 4, true)]
+        [InlineData("~~~", '~', 4, false)]
+        [InlineData("$$", '$', 2, true)]
+        [InlineData(" $$ ", '$', 2, true)]
+        [InlineData("$$$", '$', 2, false)]                                  // a math block closes on exactly $$
+        [InlineData("$$ x", '$', 2, false)]
+        public void A_line_closes_a_block_when_it_is_only_that_blocks_fence_at_least_as_long(string line, char fence, int length, bool closes) =>
+            Assert.Equal(closes, FenceTracker.Closes(line, fence, length));
+
         [Fact]
         public void Normalize_turns_every_line_break_into_the_notes_own()
         {

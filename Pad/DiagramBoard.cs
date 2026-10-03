@@ -163,13 +163,16 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>
-        /// The failure shown under <paramref name="closing"/>, with the block's lines and word as
-        /// they are now, not as they were when its box was drawn; null when it shows none to fix.
+        /// The failure shown under the closing fence line <paramref name="closing"/>, with the
+        /// block's lines and word as they are now, not as they were when its box was drawn; null
+        /// when the line closes no diagram block any more, or its block shows no failure to fix.
+        /// The line object follows its block through edits, so a menu built earlier asks with it
+        /// at the click and gets the block where it is then.
         /// </summary>
-        private DiagramFailure? FailureOf(DocumentLine closing)
+        internal DiagramFailure? FailureOf(DocumentLine closing)
         {
             if (BlockClosedBy(closing) is not { } block) return null;
-            if (!_states.TryGetValue(closing, out var state) || state.Shown is not { } shown || !Fixable(block, shown)) return null;
+            if (!_states.TryGetValue(closing, out var state) || state.Shown is not { } shown || !Fixable(shown)) return null;
             return new DiagramFailure(block.OpenLine, block.CloseLine, DiagramBlocks.WordOf(TextOf, block.OpenLine), shown.Error ?? DiagramText.Failed);
         }
 
@@ -179,11 +182,14 @@ namespace Kil0bitSystemMonitor.Pad
         /// fails the same way). Not the board's own notices (too large to draw, Kroki is off), and
         /// not a passing failure (no WebView2 Runtime, a server out of reach, a timeout): sending
         /// the source to AI would fix none of those.
+        ///
+        /// <para>
+        /// A notice is known by the flag it was made with, not by asking the block and the
+        /// settings as they are now: a notice stays in its box until the block is drawn again, and
+        /// in between the block may have been made smaller, or Kroki turned on.
+        /// </para>
         /// </summary>
-        private bool Fixable(DiagramBlock block, DiagramResult? shown) =>
-            shown is { IsPicture: false, Lasting: true }
-            && !block.TooLarge
-            && !(block.Kind.NeedsKroki && _services.KrokiServer() == null);
+        private static bool Fixable(DiagramResult? shown) => shown is { IsPicture: false, Lasting: true, IsNotice: false };
 
         /// <summary>
         /// Fix with AI on the error box under <paramref name="closing"/>. The window is told the
@@ -209,11 +215,11 @@ namespace Kil0bitSystemMonitor.Pad
             DiagramResult? result;
             if (block.TooLarge)
             {
-                result = state.Shown = DiagramResult.Failure(DiagramText.TooLarge, lasting: true);
+                result = state.Shown = DiagramResult.Notice(DiagramText.TooLarge);
             }
             else if (block.Kind.NeedsKroki && server == null)
             {
-                result = state.Shown = DiagramResult.Failure(DiagramText.NeedsKroki(block.Kind), lasting: true);
+                result = state.Shown = DiagramResult.Notice(DiagramText.NeedsKroki(block.Kind));
             }
             else
             {
@@ -326,7 +332,7 @@ namespace Kil0bitSystemMonitor.Pad
                 SaveSvg = () => _ = ExportAsync(closing, DiagramExport.Svg),
                 OpenLink = _services.OpenLink,
                 // Only on an error a corrected source can cure, and only where something takes the request.
-                FixWithAi = _services.FixWithAi != null && Fixable(block, result) ? () => Fix(closing) : null,
+                FixWithAi = _services.FixWithAi != null && Fixable(result) ? () => Fix(closing) : null,
                 AiOn = _services.AiOn,
                 SetUpAi = _services.SetUpAi,
             };

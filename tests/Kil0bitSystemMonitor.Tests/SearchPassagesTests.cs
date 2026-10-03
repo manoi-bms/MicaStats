@@ -219,6 +219,51 @@ namespace Kil0bitSystemMonitor.Tests
         public void Text_with_no_part_of_a_reference_is_unchanged(string text) =>
             Assert.Equal(text, NotePassages.WithoutSecretParts(text));
 
+        // ---- text quoted by a renderer: a reference can be cut at its start anywhere in it ----------
+
+        [Theory]
+        [InlineData("Parse error on line 3: ...et:K7Q2M9XD}} A->B ---^", "Parse error on line 3: ...[credential] A->B ---^")]   // Mermaid's last 20 characters before the error
+        [InlineData("near ...2M9XD}} here", "near ...[credential] here")]                     // cut inside the id
+        [InlineData("near ...D}} here", "near ...[credential] here")]                         // one id character left
+        [InlineData("got {secret:K7Q2M9XD}} twice", "got [credential] twice")]                // one brace of the opening left
+        [InlineData("got ...:K7Q2M9XD}} twice", "got ...[credential] twice")]                 // only the colon of the opening left
+        [InlineData("x M9XD}} and {{secret:K7Q2 y", "x [credential] and [credential] y")]     // one cut at its start, one at its end
+        [InlineData("a {{secret:K7Q2 M9XD}} b", "a [credential] [credential] b")]             // split in two: each half goes
+        [InlineData("a {{secret:K7Q2M9XD}} b", "a [credential] b")]                           // a whole one, as WithoutSecrets
+        [InlineData("M9XD}} now", "[credential] now")]                                         // at the very start too
+        [InlineData("explain {{secret:K7Q2", "explain [credential]")]                         // cut at its end, as before
+        public void In_quoted_text_a_reference_cut_at_its_start_anywhere_becomes_credential(string text, string cleaned)
+        {
+            string result = NotePassages.WithoutSecretPartsAnywhere(text);
+
+            Assert.Equal(cleaned, result);
+            foreach (string part in new[] { "K7Q2", "M9XD", "secret:", "D}}" })
+                Assert.DoesNotContain(part, result, StringComparison.Ordinal);   // no part of an id or of its marker
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("Parse error on line 3: got 'NEWLINE'")]
+        [InlineData("if (a) { b(); }}")]            // merely contains }}
+        [InlineData("{{name}} and }} alone")]       // lower case is no id character
+        [InlineData("a {{secret")]                  // not the start of a reference yet
+        [InlineData("braces {{ and {")]
+        [InlineData("${{secrets.api_key}}")]
+        public void Quoted_text_with_no_part_of_a_reference_is_unchanged(string text) =>
+            Assert.Equal(text, NotePassages.WithoutSecretPartsAnywhere(text));
+
+        [Fact]
+        public void A_false_hit_only_blurs_quoted_text_and_what_a_user_typed_is_still_cleaned_only_at_its_start()
+        {
+            // A renderer's message is a hint, so id characters before }} go wherever they stand.
+            Assert.Equal("Dear {{[credential], hello", NotePassages.WithoutSecretPartsAnywhere("Dear {{NAME}}, hello"));
+            Assert.Equal("vpn [credential] typed by hand", NotePassages.WithoutSecretPartsAnywhere("vpn M9XD}} typed by hand"));
+
+            // A question, an instruction and a search query keep them: the rule for those did not change.
+            Assert.Equal("Dear {{NAME}}, hello", NotePassages.WithoutSecretParts("Dear {{NAME}}, hello"));
+            Assert.Equal("vpn M9XD}} typed by hand", NotePassages.WithoutSecretParts("vpn M9XD}} typed by hand"));
+        }
+
         [Fact]
         public void A_title_is_still_cleaned_only_at_its_end()
         {

@@ -45,6 +45,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         /// </summary>
         private static readonly Regex CutAtEnd = new(Opening + @"\}{0,2}", RegexOptions.CultureInvariant);
 
+        /// <summary>What a cut at its start leaves of a reference: maybe the end of its opening, then the last 1 to 8 characters of the id and the closing braces.</summary>
+        private const string StartCut = @"(?:\{secret:|secret:|ecret:|cret:|ret:|et:|t:|:)?" + SecretTokens.IdClass + @"{1,8}\}\}";
+
         /// <summary>
         /// A reference cut at its start, where a cut leaves it: at the very start of a text.
         /// What is left of the opening (<c>ecret:</c> and shorter) may come first, then the last
@@ -52,8 +55,14 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         /// of a text are not a cut reference: <c>{{NAME}}</c>, <c>x^{2^{3}}</c> and nested JSON
         /// end the same way, and cleaning them would change what the user searches for or asks.
         /// </summary>
-        private static readonly Regex CutAtStart = new(
-            @"\A(?:\{secret:|secret:|ecret:|cret:|ret:|et:|t:|:)?" + SecretTokens.IdClass + @"{1,8}\}\}", RegexOptions.CultureInvariant);
+        private static readonly Regex CutAtStart = new(@"\A" + StartCut, RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// The same cut reference wherever it stands, for text a renderer quoted
+        /// (<see cref="WithoutSecretPartsAnywhere"/>): there a window of the source can begin
+        /// inside a reference in the middle of the message.
+        /// </summary>
+        private static readonly Regex CutAtStartAnywhere = new(StartCut, RegexOptions.CultureInvariant);
 
         /// <summary>Credential references replaced by <c>[credential]</c>; the vault is never read.</summary>
         public static string WithoutSecrets(string text) => Secret.Replace(text, Cleaned);
@@ -74,6 +83,23 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         /// </summary>
         public static string WithoutSecretParts(string text) =>
             CutAtStart.Replace(CutAtEnd.Replace(WithoutSecrets(text), Cleaned), Cleaned);
+
+        /// <summary>
+        /// Text that a program quoted from a note (a diagram renderer's message) with every part of
+        /// a credential reference replaced by <c>[credential]</c>: whole references, one cut at
+        /// its end, and one cut at its start <b>anywhere</b> in the text. A renderer quotes a
+        /// window of the source around an error (Mermaid: the last 20 characters before it), so a
+        /// reference can arrive without its start in the middle of a message, as
+        /// <c>...et:K7Q2M9XD}}</c>.
+        ///
+        /// <para>
+        /// Not for what a user typed: there <see cref="WithoutSecretParts"/> cleans a cut start
+        /// only at the very start of the text, so <c>{{NAME}}</c> and JSON stay as they are. Here
+        /// such text loses its last characters before <c>}}</c> too, which only blurs a hint.
+        /// </para>
+        /// </summary>
+        public static string WithoutSecretPartsAnywhere(string text) =>
+            CutAtStartAnywhere.Replace(CutAtEnd.Replace(WithoutSecrets(text), Cleaned), Cleaned);
 
         /// <summary>Lowercase hex SHA-256 of the UTF-8 text.</summary>
         public static string HashOf(string sentText) =>

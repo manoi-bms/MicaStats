@@ -8,6 +8,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     {
         private const char CR = (char)13;
         private const char LF = (char)10;
+        private static readonly char[] LineBreaks = { CR, LF };
 
         /// <summary>Removes leading and trailing lines that are empty or whitespace only, and nothing else.</summary>
         public static string Clean(string result)
@@ -30,6 +31,31 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             int end = last + 1;
             while (end < result.Length && result[end] != CR && result[end] != LF) end++;
             return result.Substring(start, end - start);
+        }
+
+        /// <summary>
+        /// The result without one enclosing code fence (part 2, spec 2.2): when its first line is
+        /// an opening fence (backticks or tildes, with any info word) and its last line closes that
+        /// fence, both lines go and what stood between them comes back, line breaks and all.
+        /// Anything else comes back as it is. A model asked for the source of a diagram block
+        /// alone may still wrap it in a fence; put between the block's own fences, that would end
+        /// the block early. The first and the last line are read as they are, so the result is
+        /// <see cref="Clean"/> already; what comes back may begin or end with blank lines.
+        /// </summary>
+        public static string Unfenced(string result)
+        {
+            result ??= "";
+            int firstEnd = result.IndexOfAny(LineBreaks);
+            if (firstEnd < 0) return result;   // one line is no pair
+            int lastStart = result.LastIndexOfAny(LineBreaks) + 1;
+            if (FenceTracker.DelimiterOf(result.Substring(0, firstEnd)) is not { } fence || fence.Char == '$') return result;
+            if (!FenceTracker.Closes(result.Substring(lastStart), fence.Char, fence.Length)) return result;
+
+            // From after the first line's break to before the last line's; a CRLF is one break.
+            int from = firstEnd + (result[firstEnd] == CR && result[firstEnd + 1] == LF ? 2 : 1);
+            int to = lastStart - 1;
+            if (result[to] == LF && to > 0 && result[to - 1] == CR) to--;
+            return to > from ? result.Substring(from, to - from) : "";
         }
 
         /// <summary>

@@ -221,6 +221,23 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_result_that_must_not_be_inserted_below_has_no_Insert_button() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            Assert.True(Done.ShowInsert);                         // every view offers it unless it says otherwise
+
+            pane.Show(Done with { ShowInsert = false, CanInsert = false });   // a fix of a diagram: it would land inside the block
+
+            Assert.Equal(Visibility.Collapsed, pane.InsertButton.Visibility);
+            Assert.Equal(Visibility.Visible, pane.ReplaceButton.Visibility);
+            Assert.Equal(Visibility.Visible, pane.CopyButton.Visibility);
+            Assert.Equal(Visibility.Visible, pane.RetryButton.Visibility);
+
+            pane.Show(Done);                                      // the next request offers it again
+            Assert.Equal(Visibility.Visible, pane.InsertButton.Visibility);
+        });
+
+        [Fact]
         public void Each_button_is_enabled_by_its_own_flag() => UiThread.Run(() =>
         {
             var pane = new AiPane();

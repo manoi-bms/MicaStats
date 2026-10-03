@@ -114,6 +114,29 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return i > start ? line.Substring(start, i - start) : null;
         }
 
+        /// <summary>
+        /// What the opening line of a block is made of: its fence character and how many of them
+        /// (a backtick or a tilde, three or more), or <c>'$'</c> and 2 for a line that is only
+        /// <c>$$</c>. Null for a line that opens no block. The same rules as <see cref="Classify"/>
+        /// applies to a line outside every block.
+        /// </summary>
+        public static (char Char, int Length)? DelimiterOf(string openingLine)
+        {
+            string line = openingLine ?? "";
+            if (!MayBeDelimiter(line)) return null;
+            if (MathRx.IsMatch(line)) return ('$', 2);
+            Match m = OpenRx.Match(line);
+            if (!m.Success || (m.Groups[1].Value[0] == '`' && m.Groups[2].Value.Contains('`'))) return null;
+            return (m.Groups[1].Value[0], m.Groups[1].Length);
+        }
+
+        /// <summary>
+        /// True when <paramref name="line"/> would close a block opened by <paramref name="length"/>
+        /// of <paramref name="fence"/>: after at most three spaces, at least as many of that
+        /// character (for <c>$</c>, exactly as many) and then nothing but white space.
+        /// </summary>
+        public static bool Closes(string line, char fence, int length) => IsClose(line ?? "", fence, length);
+
         private static bool IsClose(string line, char c, int length)
         {
             int i = 0;

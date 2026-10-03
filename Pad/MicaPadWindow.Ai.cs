@@ -249,10 +249,7 @@ namespace Kil0bitSystemMonitor.Pad
         private System.Windows.Controls.MenuItem BuildAiMenu()
         {
             bool on = AiOnInMenus();
-            Action? fix = null;
-            if (on && FailingDiagramAtCaret() is { } failing)
-                fix = () => _ = FixDiagramAsync(failing.OpenLine, failing.CloseLine, failing.Kind, failing.Message);
-            return AiMenu(Editor, on, RunAiFromMenu, () => OpenPadSettings(), fix);
+            return AiMenu(Editor, on, RunAiFromMenu, () => OpenPadSettings(), on ? FixDiagramAtCaret() : null);
         }
 
         /// <summary>
@@ -263,19 +260,33 @@ namespace Kil0bitSystemMonitor.Pad
         private bool AiOnInMenus() => !AiIsOff();
 
         /// <summary>
-        /// The failing diagram or math block the caret is in, or null: this editor draws no
-        /// diagrams, the caret is in no such block, or the block shows no error a fix could cure.
-        /// A failure while asking is logged and means none.
+        /// What Fix diagram does when the caret is in a diagram or math block that shows an error,
+        /// or null (no entry): this editor draws no diagrams, the caret is in no such block, or the
+        /// block shows no error a fix could cure. A failure while asking is logged and means none.
+        ///
+        /// <para>
+        /// The menu is built before the click, so the entry holds no line numbers: it keeps the
+        /// block's closing fence line, which follows the block through edits, and asks the board
+        /// again at the click, as the error box does. The fix then runs on the block where it is
+        /// by then; a block that is gone says so, and one that draws by then asks for nothing.
+        /// </para>
         /// </summary>
-        private DiagramFailure? FailingDiagramAtCaret()
+        private Action? FixDiagramAtCaret()
         {
-            DiagramFailure? failing = null;
+            Action? fix = null;
             GuardAi("Looking for a failing diagram", () =>
             {
-                if (_language.DiagramBoard is { } board && ReferenceEquals(board.Document, Editor.Document))
-                    failing = board.FailureAt(Editor.TextArea.Caret.Line);
+                if (_language.DiagramBoard is not { } board || !ReferenceEquals(board.Document, Editor.Document)) return;
+                if (board.FailureAt(Editor.TextArea.Caret.Line) is not { } failing) return;
+                DocumentLine closing = board.Document.GetLineByNumber(failing.CloseLine);
+                fix = () =>
+                {
+                    DiagramFailure? now = ReferenceEquals(board.Document, Editor.Document) ? board.FailureOf(closing) : null;
+                    if (now != null) _ = FixDiagramAsync(now.OpenLine, now.CloseLine, now.Kind, now.Message);
+                    else if (board.BlockClosedBy(closing) == null) ShowStatus(AiDiagramGoneText);
+                };
             });
-            return failing;
+            return fix;
         }
 
         private void RunAiFromMenu(PadAiAction action)
@@ -338,10 +349,12 @@ namespace Kil0bitSystemMonitor.Pad
         /// With <paramref name="again"/>, the earlier request whose text this one takes: its
         /// selection where it is now, or its whole note. Never what is selected or shown at the click.
         /// With <paramref name="select"/> (Fix with AI), a step that selects the text to run on
-        /// first; false from it means there is nothing to run on, and nothing starts. It runs after
-        /// the gate, never before it: while AI is off the note is not read and the selection stays.
+        /// first and gives back the action as it then runs (a fix learns its block's fence from
+        /// the note); null from it means there is nothing to run on, and nothing starts. It runs
+        /// after the gate, never before it: while AI is off the note is not read and the selection
+        /// stays.
         /// </summary>
-        private async Task RunAiAsync(PadAiAction action, string? instruction, AiRun? again, Func<bool>? select = null)
+        private async Task RunAiAsync(PadAiAction action, string? instruction, AiRun? again, Func<PadAiAction, PadAiAction?>? select = null)
         {
             // The consent gate. Every way in ends here (the menu, Ctrl+Shift+A, an instruction
             // entered in the pane, Try again, a direct call), so it does not rest on any caller:
@@ -355,7 +368,8 @@ namespace Kil0bitSystemMonitor.Pad
             AiRun? run = null;
             if (!GuardAi("Starting an AI action", () =>
                 {
-                    if (select == null || select()) run = BeginAi(action, instruction, again);
+                    PadAiAction? ready = select == null ? action : select(action);
+                    if (ready != null) run = BeginAi(ready, instruction, again);
                 })) return;
             if (run != null) await StreamAiAsync(run);
         }
@@ -371,27 +385,31 @@ namespace Kil0bitSystemMonitor.Pad
         /// gate, and it never reaches the runner by another way. Once the gate has passed, the
         /// block's source is selected (<see cref="SelectDiagramSource"/>), and the action then
         /// runs on that selection as a rewrite does: the pane, Changes, Replace selection on that
-        /// range alone, the limits, the masking and the log are part 1's.
+        /// range alone, the limits, the masking and the log are part 1's. What a fix adds is the
+        /// session's: a reply in a code fence is unwrapped, one that would close the block's fence
+        /// cannot replace, and Insert below is not offered.
         /// </para>
         /// </summary>
         internal Task FixDiagramAsync(int openLine, int closeLine, string kind, string message) =>
-            RunAiAsync(PadAiAction.FixDiagram(kind, message), null, null, () => SelectDiagramSource(openLine, closeLine));
+            RunAiAsync(PadAiAction.FixDiagram(kind, message), null, null, fix => SelectDiagramSource(fix, openLine, closeLine));
 
         /// <summary>
         /// Selects the source of the block between the two fence lines, so the user sees what will
         /// be sent and replaced: the lines strictly between the fences (after the type line, in the
-        /// kroki form), never a fence. The lines are read again here, as the note is now: they came
-        /// from a click, and the note may have been edited since. False, with the reason in the
-        /// status bar and the selection left alone, when there is nothing to run on: the lines no
-        /// longer hold a diagram's fence pair, the block is empty, or the note is read-only.
+        /// kroki form), never a fence. A fold that hides any of it is opened first. The lines are
+        /// read again here, as the note is now: they came from a click, and the note may have been
+        /// edited since. Gives back <paramref name="fix"/> with the fence its block opens with, as
+        /// that line reads now. Null, with the reason in the status bar and the selection and the
+        /// folds left alone, when there is nothing to run on: the lines no longer hold a diagram's
+        /// fence pair, the block is empty, or the note is read-only.
         /// </summary>
-        private bool SelectDiagramSource(int openLine, int closeLine)
+        private PadAiAction? SelectDiagramSource(PadAiAction fix, int openLine, int closeLine)
         {
-            if (_shown == null) return false;
+            if (_shown == null) return null;
             if (AiReadOnly)
             {
                 ShowStatus(AiReadOnlyText);
-                return false;
+                return null;
             }
 
             TextDocument document = Editor.Document;
@@ -400,7 +418,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (DiagramBlocks.SourceLines(lines, openLine, closeLine) is not { } source)
             {
                 ShowStatus(AiDiagramGoneText);
-                return false;
+                return null;
             }
 
             int start = 0, end = 0;
@@ -412,11 +430,31 @@ namespace Kil0bitSystemMonitor.Pad
             if (string.IsNullOrWhiteSpace(document.GetText(start, end - start)))
             {
                 ShowStatus(AiNoTextText);
-                return false;
+                return null;
             }
 
+            ShowFolded(document.GetLineByNumber(closeLine), start, end);
             Editor.Select(start, end - start);
-            return true;
+            // SourceLines found the pair, so the opening line is a fence; its own default is three backticks.
+            return FenceTracker.DelimiterOf(lines[openLine - 1]) is { } fence
+                ? fix with { BlockFence = new string(fence.Char, fence.Length) }
+                : fix;
+        }
+
+        /// <summary>
+        /// Opens every fold that hides text between <paramref name="start"/> and
+        /// <paramref name="end"/>, the source of the block <paramref name="closing"/> closes: what
+        /// is about to be sent and replaced must be in sight. AvalonEdit opens a fold the caret
+        /// moves into, but the selection's caret lands at the very end of Hide code's fold, which
+        /// is not inside it. Hide code is undone through the board, so its button follows.
+        /// </summary>
+        private void ShowFolded(DocumentLine closing, int start, int end)
+        {
+            if (_language.DiagramBoard is { } board && ReferenceEquals(board.Document, Editor.Document) && board.IsCodeHidden(closing))
+                board.SetCodeHidden(closing, false);
+            if (_language.Folding?.Manager is not { } manager) return;
+            foreach (ICSharpCode.AvalonEdit.Folding.FoldingSection fold in manager.AllFoldings)
+                if (fold.IsFolded && fold.StartOffset < end && fold.EndOffset > start) fold.IsFolded = false;
         }
 
         /// <summary>Enter in the pane's instruction box: Ask AI runs on the text the pane names.</summary>

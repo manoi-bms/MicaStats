@@ -96,7 +96,7 @@ namespace Kil0bitSystemMonitor.Pad
             bool noResultYet = view.Running || view.AskForInstruction;
             StopButton.Visibility = When(view.Running);
             ReplaceButton.Visibility = When(!noResultYet && view.ShowReplace);
-            InsertButton.Visibility = When(!noResultYet);
+            InsertButton.Visibility = When(!noResultYet && view.ShowInsert);
             CopyButton.Visibility = When(!noResultYet);
             RetryButton.Visibility = When(!noResultYet);
             ReplaceButton.IsEnabled = view.CanReplace;

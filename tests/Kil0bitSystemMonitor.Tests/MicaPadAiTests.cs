@@ -3295,7 +3295,7 @@ namespace Kil0bitSystemMonitor.Tests
             string everything = string.Join("\n", request.Messages.Select(m => m.Text).Concat(h.Log));
             Assert.DoesNotContain("{{secret", everything, StringComparison.Ordinal);
             Assert.DoesNotContain("K7Q2M9XD", everything, StringComparison.Ordinal);
-            Assert.Contains("a --> [credential] --", h.Sent().Substring(0, h.Sent().IndexOf("<note>", StringComparison.Ordinal)), StringComparison.Ordinal);
+            Assert.Contains("a -- [credential] --", h.Sent().Substring(0, h.Sent().IndexOf("<note>", StringComparison.Ordinal)), StringComparison.Ordinal);
             Assert.Equal("flowchart LR\n  a --> [[CREDENTIAL_1]] --", NoteBody(h.Sent()));
 
             Click(h.Pane.ReplaceButton);
@@ -3326,6 +3326,200 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(0, h.Usage.UsedToday);
             Assert.Equal("Select less text: at most 8,000 characters for a rewrite", h.Pane.StatusText.Text);
             Assert.False(h.Pane.ReplaceButton.IsEnabled);
+        });
+
+        // ---- fix round 1: a credential the renderer cut, a reply that holds a fence, folds, the menu ----
+
+        private const string HoldsFence = "The result holds a code fence, so it cannot replace the diagram's source";
+
+        /// <summary>The opening and closing fence lines (1-based) of every closed block of the shown note.</summary>
+        private static (int Open, int Close)[] BlocksOf(Harness h)
+        {
+            string[] lines = h.Editor.Document.Text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            int[] openings = FenceTracker.Openings(FenceTracker.Classify(lines));
+            return openings.Select((open, i) => (Open: open, Close: i + 1)).Where(b => b.Open != 0).ToArray();
+        }
+
+        [Fact]
+        public Task A_credential_the_renderer_cut_at_its_start_never_leaves_in_its_message() => OnUiAsync(async h =>
+        {
+            Write(h, "```mermaid\nflowchart LR\n  x --> {{secret:K7Q2M9XD}}  A->B\n```");
+            h.Model.Reply("flowchart LR\n  x --> [[CREDENTIAL_1]]\n  A --> B");
+
+            // Mermaid quotes the last 20 characters before the error: the pill arrives without its start.
+            await h.Window.FixDiagramAsync(1, 4, "mermaid", "Parse error on line 2:\n...et:K7Q2M9XD}}  A->B\n----------------------^");
+
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            string everything = string.Join("\n", request.Messages.Select(m => m.Text).Concat(h.Log));
+            foreach (string part in new[] { "K7Q2M9XD", "K7Q2", "M9XD", "{{secret" })
+                Assert.DoesNotContain(part, everything, StringComparison.Ordinal);
+            Assert.Contains("...[credential] A- B", h.Sent(), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task A_fix_that_comes_back_in_a_code_fence_is_unwrapped_and_Replace_changes_only_the_source_lines() => OnUiAsync(async h =>
+        {
+            Write(h, TwoDiagrams);
+            h.Model.Reply("```mermaid\n" + FixedSource + "\n```\n");
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            Assert.Equal(FixedSource, h.Pane.ResultBox.Shown);        // shown as it will be written: no fence
+            Assert.Equal("", h.Pane.StatusText.Text);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal(TwoDiagrams.Replace(FailingSource, FixedSource, StringComparison.Ordinal), h.Editor.Document.Text);
+            Assert.Equal(new[] { (1, 4), (6, 10) }, BlocksOf(h));     // the note's two blocks, where they were
+        });
+
+        [Fact]
+        public Task A_fix_with_a_closing_fence_in_the_middle_cannot_replace_and_says_why() => OnUiAsync(async h =>
+        {
+            Write(h, TwoDiagrams);
+            h.Model.Reply(FixedSource + "\n```\nThe second arrow had no target.");
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            Assert.Equal(Visibility.Visible, h.Pane.ReplaceButton.Visibility);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(HoldsFence, h.Pane.StatusText.Text);
+            Assert.True(h.Pane.CopyButton.IsEnabled);                 // the text is still there to take
+
+            Click(h.Pane.ReplaceButton);                              // even a forced click leaves the block whole
+            Assert.Equal(TwoDiagrams, h.Editor.Document.Text);
+            Assert.Equal(new[] { (1, 4), (6, 10) }, BlocksOf(h));
+        });
+
+        [Theory]
+        [InlineData("Energy:\n$$\nE = mc^{2\n$$\nafter", 2, 4, "math", "E = mc^{2}\n$$\nSo it is.")]                                // a math block and $$
+        [InlineData("~~~~mermaid\nflowchart LR\n  a --> b --\n~~~~\nafter", 1, 4, "mermaid", "flowchart LR\n  a --> b\n~~~~~\nDone.")]   // a tilde block and a longer tilde line
+        [InlineData("```kroki\nplantuml\n@startuml\na -> \n@enduml\n```", 1, 6, "plantuml", "@startuml\na -> b\n@enduml\n````")]         // the fence of a kroki block, on the last line
+        public Task A_reply_that_would_close_the_blocks_own_fence_cannot_replace(string note, int open, int close, string kind, string reply) => OnUiAsync(async h =>
+        {
+            Write(h, note);
+            h.Model.Reply(reply);
+
+            await h.Window.FixDiagramAsync(open, close, kind, "Parse error");
+
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(HoldsFence, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(note, h.Editor.Document.Text);
+        });
+
+        [Theory]
+        [InlineData("~~~~markmap\n# Rot\n~~~~\nafter", 1, 3, "# Root\n```js\ncode\n```")]      // backticks in a tilde block are its text
+        [InlineData("````markmap\n# Rot\n````\nafter", 1, 3, "# Root\n```\ncode\n```")]        // and so is a fence shorter than the block's own
+        [InlineData("$$\nx^{2\n$$\nafter", 1, 3, "x^{2}\n$$$")]                                // a math block closes on exactly $$
+        public Task A_reply_whose_fence_like_lines_cannot_close_the_block_replaces_its_source(string note, int open, int close, string reply) => OnUiAsync(async h =>
+        {
+            Write(h, note);
+            h.Model.Reply(reply);
+
+            await h.Window.FixDiagramAsync(open, close, "markmap", "Parse error");
+
+            Assert.Equal("", h.Pane.StatusText.Text);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+            Click(h.Pane.ReplaceButton);
+
+            (int Open, int Close) block = BlocksOf(h).First();
+            Assert.Equal(open, block.Open);                           // the block still ends on its own closing fence
+            Assert.Equal("after", h.Editor.Document.GetText(h.Editor.Document.GetLineByNumber(block.Close + 1)));
+        });
+
+        [Fact]
+        public Task The_pane_offers_no_Insert_below_for_a_fix() => OnUiAsync(async h =>
+        {
+            Write(h, TwoDiagrams);
+            h.Model.Reply(FixedSource).Reply("- two blocks");
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            Assert.Equal(Visibility.Collapsed, h.Pane.InsertButton.Visibility);   // it would land inside the block, under the old source
+            Assert.Equal(Visibility.Visible, h.Pane.ReplaceButton.Visibility);
+            Assert.Equal(Visibility.Visible, h.Pane.CopyButton.Visibility);
+            Click(h.Pane.InsertButton);                               // even a forced click inserts nothing
+            Assert.Equal(TwoDiagrams, h.Editor.Document.Text);
+
+            h.Editor.Select(0, 0);
+            await h.Window.RunAiAsync(PadAiAction.Summarize);         // the next action offers it again
+            Assert.Equal(Visibility.Visible, h.Pane.InsertButton.Visibility);
+            Assert.True(h.Pane.InsertButton.IsEnabled);
+        });
+
+        [Fact]
+        public Task Fix_diagram_unfolds_the_fold_that_hides_the_blocks_source_and_no_other() => OnUiWithDiagrams(async (h, renderer) =>
+        {
+            await WriteTwoDiagramsTheSecondFailing(h, renderer);
+            h.Model.Reply(FixedSource);
+            DiagramBoard board = h.Window.LanguageView.DiagramBoard!;
+            var document = h.Editor.Document;
+            board.SetCodeHidden(document.GetLineByNumber(4), true);   // Hide code on both blocks
+            board.SetCodeHidden(document.GetLineByNumber(10), true);
+            Assert.True(board.IsCodeHidden(document.GetLineByNumber(4)));
+            Assert.True(board.IsCodeHidden(document.GetLineByNumber(10)));
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            Assert.False(board.IsCodeHidden(document.GetLineByNumber(10)));   // what is sent is in sight
+            Assert.True(board.IsCodeHidden(document.GetLineByNumber(4)));     // the other block stays as it was
+            Assert.Equal(FailingSource, h.Editor.SelectedText);
+            Assert.Equal(FailingSource, NoteBody(Assert.Single(h.Model.Requests).Messages[1].Text));
+            Assert.DoesNotContain(h.Window.LanguageView.Folding!.Manager!.AllFoldings,
+                f => f.IsFolded && f.StartOffset < h.Editor.SelectionStart + h.Editor.SelectionLength && f.EndOffset > h.Editor.SelectionStart);
+        });
+
+        [Fact]
+        public Task A_refused_fix_unfolds_nothing() => OnUiWithDiagrams(async (h, renderer) =>
+        {
+            await WriteTwoDiagramsTheSecondFailing(h, renderer);
+            DiagramBoard board = h.Window.LanguageView.DiagramBoard!;
+            var closing = h.Editor.Document.GetLineByNumber(10);
+            board.SetCodeHidden(closing, true);
+            h.Editor.Select(0, 0);
+            h.AiOn = false;
+
+            await h.Window.FixDiagramAsync(6, 10, "mermaid", RendererMessage);
+
+            AssertNothingRan(h);
+            Assert.True(board.IsCodeHidden(closing));                 // with AI off the note is left as it is
+        });
+
+        [Fact]
+        public Task Fix_diagram_in_the_AI_menu_asks_the_board_again_at_the_click() => OnUiWithDiagrams(async (h, renderer) =>
+        {
+            await WriteTwoDiagramsTheSecondFailing(h, renderer);
+            h.Model.Reply(FixedSource);
+            PutCaretOnLine(h, 8);
+            MenuItem fix = Sub(AiMenu(h), "Fix diagram");             // built while the block was on lines 6 to 10
+
+            h.Editor.Document.Insert(0, "# Title\n\n");               // it moved two lines down before the click
+            PadMenuTests.Click(fix);
+            await Until(() => h.Window.AiSessionNow is { Finished: true } || h.Window.StatusMessage.Text == DiagramGone, "the fix to end");
+
+            Assert.Equal(FailingSource, NoteBody(Assert.Single(h.Model.Requests).Messages[1].Text));
+            Assert.Equal(FailingSource, h.Editor.SelectedText);
+            Assert.Equal(8, h.Editor.Document.GetLineByOffset(h.Editor.SelectionStart).LineNumber - 1);   // under its opening fence, where that is now
+        });
+
+        [Fact]
+        public Task Fix_diagram_in_the_AI_menu_for_a_block_that_is_gone_at_the_click_says_so_and_sends_nothing() => OnUiWithDiagrams(async (h, renderer) =>
+        {
+            await WriteTwoDiagramsTheSecondFailing(h, renderer);
+            PutCaretOnLine(h, 8);
+            MenuItem fix = Sub(AiMenu(h), "Fix diagram");
+            var document = h.Editor.Document;
+
+            var opening = document.GetLineByNumber(6);
+            document.Remove(opening.Offset, opening.Length);          // its opening fence is deleted before the click
+            h.Editor.Select(0, 0);
+            PadMenuTests.Click(fix);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+
+            AssertNothingRan(h);
+            Assert.Equal(DiagramGone, h.Window.StatusMessage.Text);
         });
 
         [Fact]

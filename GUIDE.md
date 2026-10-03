@@ -274,7 +274,9 @@ sent while you type, when a note opens or in the background — only when you ru
   about its source (not for "too large", a missing runtime, or a server that cannot be reached).
   The menu has **Fix diagram** for the same job. It sends that block's source and the renderer's
   message, and **Replace selection** replaces only that source, not the fences or any other block.
-  With AI off it sends nothing.
+  A fix offers **Replace selection** and **Copy**, not **Insert below**. A code fence around the
+  reply is dropped; a reply that still holds a line that would close the block cannot replace the
+  source, and the status line says so. With AI off it sends nothing.
 * **The AI pane** opens on the right, where History and Search notes open. It shows the text it
   runs on and where that goes ("Selection, 412 characters · to api.anthropic.com", or "· to this
   PC" for a server on this PC) and the result as it arrives. **Stop**, beside the close button, ends

@@ -8,7 +8,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     /// <summary>What the window knows about the source text right now.</summary>
     public readonly record struct AiSourceFacts(bool SourceShown, bool ReadOnly, bool SourceUnchanged);
 
-    /// <summary>Everything the AI pane draws; immutable.</summary>
+    /// <summary>
+    /// Everything the AI pane draws; immutable. <c>ShowInsert</c> is false only for the fix of a
+    /// diagram block: Insert below is then not offered at all (it would land inside the block),
+    /// as <c>ShowReplace</c> is false for a result with nothing to replace.
+    /// </summary>
     public sealed record AiPaneView(
         string Title,
         string SourceLine,
@@ -20,7 +24,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         bool ShowReplace, bool CanReplace,
         bool CanInsert, bool CanCopy, bool CanRetry,
         bool CanShowChanges,
-        string Original);
+        string Original,
+        bool ShowInsert = true);
 
     /// <summary>
     /// The state of one AI request and the rules for which buttons the pane offers
@@ -34,6 +39,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
         /// <summary>The status right after Insert below, for one drawing of the pane: an insert changes none of the rules.</summary>
         public const string Inserted = "Inserted below";
+
+        /// <summary>Why the result of a fix may not replace its block's source: a line of it would close the block's fence.</summary>
+        public const string HoldsFence = "The result holds a code fence, so it cannot replace the diagram's source";
 
         private const string NotShownText = "Show the note this came from to apply it";
         private const string ReadOnlyText = "This note is read-only";
@@ -102,22 +110,58 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// <summary>The edit was undone and the source text is back as it was sent: Replace selection may be offered again.</summary>
         public void ClearApplied() => _applied = null;
 
-        private string CleanRaw => SelectionEdit.Clean(_raw.ToString());
+        /// <summary>
+        /// The reply without the blank lines around it. The fix of a diagram block that came back
+        /// in a code fence, against its instruction, loses that one enclosing fence too: its
+        /// result goes between the block's own fences (<see cref="PadAiAction.BlockFence"/>).
+        /// While the reply streams, the fence shows until its closing line has arrived.
+        /// </summary>
+        private string CleanRaw
+        {
+            get
+            {
+                string clean = SelectionEdit.Clean(_raw.ToString());
+                return Action.BlockFence == null ? clean : SelectionEdit.Clean(SelectionEdit.Unfenced(clean));
+            }
+        }
 
         /// <summary>The cleaned result with each credential placeholder turned back into its pill.</summary>
         public string ResultForNote => _mask.Unmask(CleanRaw);
 
+        /// <summary>
+        /// True when a line of <paramref name="result"/> would close a block opened by
+        /// <paramref name="fence"/>: put between that block's fences, it would end the block
+        /// early, and the note's own closing fence would then open one that never closes. A line
+        /// of the other fence character, or of fewer of them, is text of the block and closes nothing.
+        /// </summary>
+        private static bool ClosesBlock(string result, string fence)
+        {
+            int start = 0;
+            for (int i = 0; i <= result.Length; i++)
+            {
+                if (i < result.Length && result[i] != '\n' && result[i] != '\r') continue;
+                if (FenceTracker.Closes(result.Substring(start, i - start), fence[0], fence.Length)) return true;
+                start = i + 1;   // a CRLF gives an empty line in between, which closes nothing
+            }
+            return false;
+        }
+
         public AiPaneView View(AiSourceFacts facts)
         {
-            bool hasText = Refusal == null && ResultForNote.Length > 0;
+            string result = Refusal != null ? "" : ResultForNote;
+            bool hasText = result.Length > 0;
             bool failed = _failure != null;
             bool clean = Finished && !failed && !_stopped && !_cutShort;
             bool showReplace = Action.Kind != PadAiKind.Read && FromSelection;
             string? credentialProblem = _mask.Problem(CleanRaw);
+            // A fix goes inside its block: nothing in it may close the block, and Insert below, which
+            // would land under the old source inside the block, is not offered at all.
+            bool fix = Action.BlockFence != null;
+            bool closesBlock = Action.BlockFence is { Length: > 0 } fence && ClosesBlock(result, fence);
 
             bool canReplace = showReplace && Refusal == null && clean && _applied == null && hasText
-                && facts.SourceShown && !facts.ReadOnly && facts.SourceUnchanged && credentialProblem == null;
-            bool canInsert = Refusal == null && Finished && hasText && !failed && facts.SourceShown && !facts.ReadOnly;
+                && facts.SourceShown && !facts.ReadOnly && facts.SourceUnchanged && credentialProblem == null && !closesBlock;
+            bool canInsert = !fix && Refusal == null && Finished && hasText && !failed && facts.SourceShown && !facts.ReadOnly;
 
             string status = "";
             if (Refusal != null) status = Refusal;
@@ -134,6 +178,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 else if (facts.ReadOnly) status = ReadOnlyText;
                 else if (showReplace && !facts.SourceUnchanged) status = ChangedText;
                 else if (showReplace && credentialProblem != null) status = credentialProblem;
+                else if (showReplace && closesBlock) status = HoldsFence;
             }
 
             return new AiPaneView(
@@ -142,7 +187,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 SourceLine: (FromSelection ? "Selection, " : "Whole note, ") + Count(Original.Length)
                             + (Destination.Length > 0 ? " · to " + Destination : ""),
                 AskForInstruction: AwaitingInstruction,
-                Result: Refusal != null ? "" : ResultForNote,
+                Result: result,
                 Markdown: Action.RendersMarkdown,
                 Running: Running,
                 Status: status,
@@ -153,7 +198,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 // Only on the note it came from: on another note, that note's text would be sent in its place.
                 CanRetry: !Running && !AwaitingInstruction && Refusal == null && facts.SourceShown,
                 CanShowChanges: Action.Kind == PadAiKind.Rewrite && Refusal == null && Finished && hasText && !failed,
-                Original: Original);
+                Original: Original,
+                ShowInsert: !fix);
         }
 
         private static string Count(int n) =>

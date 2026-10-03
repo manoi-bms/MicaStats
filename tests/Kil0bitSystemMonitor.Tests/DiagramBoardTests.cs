@@ -675,6 +675,58 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void The_needs_Kroki_notice_is_not_fixable_while_Kroki_is_being_turned_on() => UiThread.Run(() =>
+        {
+            var board = new Board("```plantuml\n@startuml\na -> b\n@enduml\n```");
+            string notice = "PlantUML needs Kroki — turn it on in Settings → MicaPad.";
+            Assert.Equal(notice, board.PictureUnder(5)!.ErrorText!.Text);
+
+            board.Server = "https://kroki.io";                        // turned on in Settings; the block is not drawn again yet
+            Assert.Null(board.Diagrams.FailureAt(3));                 // its box still shows the notice, which no source cures
+
+            board.Language.RefreshDiagrams();                         // now it is being drawn, and the notice stays until that ends
+            board.Render();
+            Assert.Single(board.Renderer.Calls);
+            Assert.Equal(notice, board.PictureUnder(5)!.ErrorText!.Text);
+            Assert.Null(board.PictureUnder(5)!.ContextMenu);
+            Assert.Null(board.Diagrams.FailureAt(3));
+
+            board.Renderer.Finish(0, DiagramResult.Failure("Syntax Error? (line: 2)", lasting: true));   // what the server said of the source
+            board.PumpAndRender();
+            Assert.Equal(new DiagramFailure(1, 5, "plantuml", "Syntax Error? (line: 2)"), board.Diagrams.FailureAt(3));
+            Assert.Equal("Fix with AI", FixEntry(board, 5).Header);
+        });
+
+        [Fact]
+        public void The_too_large_notice_is_not_fixable_while_a_block_made_smaller_waits_for_its_redraw() => UiThread.Run(() =>
+        {
+            var board = new Board("```dot\n" + new string('x', DiagramBlocks.MaxSourceLength + 1) + "\n```");
+            var scroll = (System.Windows.Controls.Primitives.IScrollInfo)board.View;
+            scroll.CanVerticallyScroll = true;
+            scroll.SetVerticalOffset(scroll.ExtentHeight - scroll.ViewportHeight);
+            board.Render();
+            Assert.Equal("Too large to draw", board.PictureUnder(3)!.ErrorText!.Text);
+
+            var document = board.Editor.Document;
+            var big = document.GetLineByNumber(2);
+            document.Replace(big.Offset, big.Length, "digraph { a -> }");   // made small; typing has not paused, so nothing is drawn yet
+            Assert.Null(board.Diagrams.FailureAt(2));                 // its box still says Too large to draw
+
+            scroll.SetVerticalOffset(0);
+            board.PumpAndRender();                                    // drawn again while typing: the notice stays until the pause
+            Assert.Empty(board.Renderer.Calls);
+            Assert.Equal("Too large to draw", board.PictureUnder(3)!.ErrorText!.Text);
+            Assert.Null(board.PictureUnder(3)!.ContextMenu);
+            Assert.Null(board.Diagrams.FailureAt(2));
+
+            board.Diagrams.DrawDue();                                 // the pause: the engine is asked, and says what is wrong with the source
+            board.Render();
+            board.Renderer.Finish(0, DiagramResult.Failure("syntax error in line 1 near '}'", lasting: true));
+            board.PumpAndRender();
+            Assert.Equal(new DiagramFailure(1, 3, "dot", "syntax error in line 1 near '}'"), board.Diagrams.FailureAt(2));
+        });
+
+        [Fact]
         public void A_math_block_is_named_math_or_by_its_fence_word_and_a_kroki_block_by_its_type_line() => UiThread.Run(() =>
         {
             var board = new Board("$$\nx^{2\n$$\n```latex\n\\frac{1\n```\n```kroki\nmermaid\nflowchart LR\n  a --> b --\n```");

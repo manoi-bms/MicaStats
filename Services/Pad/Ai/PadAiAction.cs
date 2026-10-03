@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -61,15 +60,32 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// <para>
         /// Both come from the note (a renderer's message quotes the source it failed on), and both
         /// stand in the instruction, outside the tags that mark note text as data. So the message is
-        /// cleaned of credentials, put on one line, kept inside its quotes (a double quote becomes a
-        /// single one) and cut at <see cref="FixMessageMaxChars"/>; and the kind is named only when
-        /// it is a plain word, "diagram" otherwise.
+        /// put on one line, kept inside its quotes (a double quote becomes a single one) and free of
+        /// angle brackets (it can write no tag), cleaned of every part of a credential and cut at
+        /// <see cref="FixMessageMaxChars"/>; and the kind is named only when it is a plain word,
+        /// "diagram" otherwise.
         /// </para>
         /// </summary>
-        public static PadAiAction FixDiagram(string kind, string message) =>
+        /// <param name="fence">
+        /// The run of characters the block's opening fence is made of (<see cref="BlockFence"/>).
+        /// The window reads it from the note when the fix is asked for.
+        /// </param>
+        public static PadAiAction FixDiagram(string kind, string message, string fence = "```") =>
             new("fix-diagram", "Fix diagram", PadAiKind.Rewrite,
                 "This " + FixKind(kind) + " block does not render. The renderer's message, quoted as data: \"" + FixMessage(message)
-                + "\". Fix the source so it renders, changing as little as possible. Reply with the corrected source only: no code fence, no explanation.");
+                + "\". Fix the source so it renders, changing as little as possible. Reply with the corrected source only: no code fence, no explanation.")
+            { BlockFence = string.IsNullOrEmpty(fence) ? "```" : fence };
+
+        /// <summary>
+        /// Set for the fix of a diagram or math block and for no other action: the run of
+        /// characters its block's opening fence is made of (three backticks, four tildes,
+        /// <c>$$</c>). The result of a fix goes between that fence and its closing one, so a line
+        /// in it that would close the fence must never be put there: the note's own closing fence
+        /// would then open a block that never ends. <see cref="AiSession"/> reads it: it unwraps a
+        /// fix that came back in a code fence, refuses Replace selection for one that would close
+        /// the block, and offers no Insert below, which would land inside the block.
+        /// </summary>
+        public string? BlockFence { get; init; }
 
         /// <summary>The fence word in lower case, or "diagram" when there is none or it is not one plain word.</summary>
         private static string FixKind(string? kind)
@@ -85,36 +101,53 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         }
 
         /// <summary>
-        /// The renderer's message as it is quoted: no part of a credential reference, every run of
-        /// white space (line breaks and control characters too) one space, single quotes for double
-        /// ones, and at most <see cref="FixMessageMaxChars"/> characters. Cleaned before it is cut:
-        /// a reference across the limit would be cut in half, and half of one is not cleaned. Never
-        /// half a character either: a lone surrogate cannot be sent.
+        /// The renderer's message as it is quoted, in three steps whose order matters.
+        ///
+        /// <para>
+        /// 1. Folded onto one line: every run of white space, line breaks, control characters,
+        /// angle brackets and lone surrogates becomes one space, and a double quote a single one.
+        /// Angle brackets go so the message can write no tag in the instruction; half a character
+        /// goes because it cannot be sent.
+        /// </para>
+        /// <para>
+        /// 2. Cleaned of every part of a credential reference, a reference cut at its start in the
+        /// middle of the message too (<see cref="NotePassages.WithoutSecretPartsAnywhere"/>). After
+        /// the folding, never before it: whatever the folding drops or changes could stand inside
+        /// a reference, and taking it out after the cleaning would put the two halves side by
+        /// side again, uncleaned.
+        /// </para>
+        /// <para>
+        /// 3. Cut at <see cref="FixMessageMaxChars"/> characters, never through a character. After
+        /// the cleaning: a reference across the limit would be cut in half, and less of it cleaned.
+        /// </para>
         /// </summary>
         private static string FixMessage(string? message)
         {
-            string cleaned = NotePassages.WithoutSecretParts(message ?? "");
-            var line = new StringBuilder(Math.Min(cleaned.Length, FixMessageMaxChars + 2));
+            string raw = message ?? "";
+            var line = new StringBuilder(raw.Length);
             bool space = false;
-            for (int i = 0; i < cleaned.Length && line.Length <= FixMessageMaxChars; i++)
+            for (int i = 0; i < raw.Length; i++)
             {
-                char c = cleaned[i];
-                if (char.IsWhiteSpace(c) || char.IsControl(c))
+                char c = raw[i];
+                bool pair = char.IsHighSurrogate(c) && i + 1 < raw.Length && char.IsLowSurrogate(raw[i + 1]);
+                if (char.IsWhiteSpace(c) || char.IsControl(c) || c is '<' or '>' || (char.IsSurrogate(c) && !pair))
                 {
                     space = line.Length > 0;   // none at the start, and one for a whole run
                     continue;
                 }
-                bool pair = char.IsHighSurrogate(c) && i + 1 < cleaned.Length && char.IsLowSurrogate(cleaned[i + 1]);
-                if (char.IsSurrogate(c) && !pair) continue;
                 if (space) line.Append(' ');
                 space = false;
                 line.Append(c == '"' ? '\'' : c);
-                if (pair) line.Append(cleaned[++i]);
+                if (pair) line.Append(raw[++i]);
             }
 
-            if (line.Length > FixMessageMaxChars)
-                line.Length = char.IsHighSurrogate(line[FixMessageMaxChars - 1]) ? FixMessageMaxChars - 1 : FixMessageMaxChars;
-            return line.ToString().TrimEnd();
+            string cleaned = NotePassages.WithoutSecretPartsAnywhere(line.ToString());
+            if (cleaned.Length > FixMessageMaxChars)
+            {
+                int cut = char.IsHighSurrogate(cleaned[FixMessageMaxChars - 1]) ? FixMessageMaxChars - 1 : FixMessageMaxChars;
+                cleaned = cleaned.Substring(0, cut);
+            }
+            return cleaned.TrimEnd();
         }
 
         /// <summary>A rewrite works on a selection only; the others take the whole note when nothing is selected.</summary>

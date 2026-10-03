@@ -128,6 +128,7 @@ namespace Kil0bitSystemMonitor.Pad
             AiPanel.InstructionEntered += instruction => GuardAi("Asking AI", () => EnterAiInstruction(instruction));
             SearchPanel.Ask = AskNotesAsync;
             SearchPanel.CopyAnswer = answer => GuardAi("Copying an answer", () => CopyNotesAnswer(answer));
+            SearchPanel.Warn = message => Warn(message);   // what the pane reports goes where the window's own warnings go
             _workspace.NoteClosing += OnAiNoteClosing;
             _workspace.NoteTextChanged += OnAiNoteTextChanged;
             s_previewVisibility.AddValueChanged(PreviewPanel, OnAiPreviewChanged);
@@ -760,17 +761,32 @@ namespace Kil0bitSystemMonitor.Pad
         /// either. The request itself starts only when the pane reads the answer
         /// (<see cref="AnswerFromNotesAsync"/>). Cancelling throws, as the search does.
         /// </para>
+        ///
+        /// <para>
+        /// The passages are those of the notes as they are now. An edit reaches the index two
+        /// seconds after it, so the feeder is flushed and the index waited for before the search:
+        /// text deleted a moment ago is not found, and so is not sent.
+        /// </para>
         /// </summary>
         private async Task<AskStart> AskNotesAsync(string query, CancellationToken token)
         {
-            // The consent gate: asked before anything else. Off, or search not ready yet: the
-            // normal search, and the sentence that says why there is no answer.
+            // The consent gate: asked before anything else.
             bool off = AiIsOff();
+
+            // Every edit still waiting for its two seconds goes to the index now, as when the pane opens.
+            SearchFeeder?.FlushPending();
+
+            // Off, or search not ready yet: the normal search, and the sentence that says why
+            // there is no answer (for search not ready, the search's own status says it).
             if (off || SearchService is not { } service)
             {
                 (IReadOnlyList<SearchRow> found, string how) = await RunSearchAsync(query, token);
-                return new AskStart(found, how, null, off ? NotesQuestion.AiOff : NotesQuestion.NoSources);
+                return new AskStart(found, how, null, off ? NotesQuestion.AiOff : how);
             }
+
+            // The index has taken those edits in before it is searched. This waits for the notes'
+            // words only, never for the embedding server.
+            await service.Indexer.WhenApplied().WaitAsync(token);
 
             // Off the UI thread, as RunSearchAsync does; the rows are built back here.
             SearchOutcome outcome = await Task.Run(() => service.Search.SearchAsync(query, token), token);
@@ -802,10 +818,13 @@ namespace Kil0bitSystemMonitor.Pad
             }
             if (runner == null) return Instead(AiNotReadyText, "not available");
 
+            // The status claims an answer only once one came: "Answering" while it streams,
+            // "Answered" after a clean end, the search status alone after anything else.
             string message = NotesQuestion.Message(query, sources);
-            return new AskStart(NoteRows(outcome.Hits, query, numbered: sources.Count),
-                                status + " · " + NotesQuestion.Status(sources.Count),
-                                AnswerFromNotesAsync(runner, message, sources.Count, token), null);
+            return new AskStart(NoteRows(outcome.Hits, query, numbered: sources.Count), status,
+                                AnswerFromNotesAsync(runner, message, sources.Count, token), null,
+                                Answering: status + " · " + NotesQuestion.Answering(sources.Count),
+                                Answered: status + " · " + NotesQuestion.Status(sources.Count));
         }
 
         /// <summary>A question's rows, in hit order; the first <paramref name="numbered"/> carry their source numbers, 1 up.</summary>
@@ -856,13 +875,18 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
-        /// <summary>One line per question: how many passages, how many characters went out and how it ended. Never the question or the answer.</summary>
-        private void LogAsk(int sources, int sent, string outcome)
+        /// <summary>
+        /// One line per question: how many passages, how many characters its request held and how
+        /// it ended. Never the question or the answer. "In the request", not "sent", as
+        /// <see cref="LogAi"/> says: the runner may refuse a request handed to it (no key, the
+        /// daily limit) without sending anything.
+        /// </summary>
+        private void LogAsk(int sources, int request, string outcome)
         {
             try
             {
                 AiLog("AI ask-notes: " + sources.ToString(CultureInfo.InvariantCulture) + " sources, "
-                      + sent.ToString(CultureInfo.InvariantCulture) + " chars sent, " + outcome);
+                      + request.ToString(CultureInfo.InvariantCulture) + " chars in the request, " + outcome);
             }
             catch (Exception)
             {

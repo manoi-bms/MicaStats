@@ -125,6 +125,62 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void A_credential_reference_across_the_size_limit_leaves_no_fragment()
+        {
+            // The reference starts 13 characters before the 2 MB limit and ends after it: a note cut
+            // at the limit first would end with "{{secret:K7Q2", half a reference that nothing cleans.
+            const string reference = "{{secret:K7Q2M9XD}}";
+            const string line = "some words on a line\n";
+            string filler = string.Concat(Enumerable.Repeat(line, NotePassages.MaxNoteChars / line.Length + 1))
+                                  .Substring(0, NotePassages.MaxNoteChars - 13);
+
+            var passages = NotePassages.Cut("n1", "t", filler + reference + "\nafter the limit");
+
+            Assert.NotEmpty(passages);
+            foreach (var p in passages)
+            {
+                foreach (string text in new[] { p.Body, p.SentText, p.FirstLineText, p.Heading, p.Title })
+                {
+                    Assert.DoesNotContain("{{secret", text, StringComparison.Ordinal);
+                    Assert.DoesNotContain("secret:", text, StringComparison.Ordinal);
+                    Assert.DoesNotContain("K7Q2", text, StringComparison.Ordinal);
+                }
+            }
+            Assert.EndsWith("[credential]", passages[^1].Body.TrimEnd(), StringComparison.Ordinal);
+            Assert.DoesNotContain(passages, p => p.Body.Contains("after the limit", StringComparison.Ordinal));   // the limit still holds
+        }
+
+        [Theory]
+        [InlineData("db password is {{secret:K7Q2M9XD}}")]         // the 30 characters end inside the id
+        [InlineData("my main database pwd {{secret:K7Q2M9XD}}")]   // ... right after the colon
+        [InlineData("my password {{secret:K7Q2M9XD}}")]            // ... before the second closing brace
+        [InlineData("the password {{secret:K7Q2M9XD}}")]           // ... before both closing braces
+        public void A_credential_reference_cut_short_by_an_automatic_title_leaves_no_fragment(string firstLine)
+        {
+            string text = firstLine + "\nmore";
+            string title = Kil0bitSystemMonitor.Services.Pad.NoteTitle.FromText(text, 1);
+            Assert.Contains("{{secret:", title, StringComparison.Ordinal);       // the title is the line's first 30 characters:
+            Assert.DoesNotContain("K7Q2M9XD}}", title, StringComparison.Ordinal); // half a reference, which nothing cleaned
+
+            var p = Assert.Single(NotePassages.Cut("n1", title, text));
+
+            Assert.EndsWith(" [credential]", p.Title, StringComparison.Ordinal);
+            foreach (string sent in new[] { p.Title, p.SentText, p.Body, p.FirstLineText })
+            {
+                Assert.DoesNotContain("{{secret", sent, StringComparison.Ordinal);
+                Assert.DoesNotContain("K7Q2", sent, StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
+        public void A_title_that_only_looks_like_the_start_of_a_reference_is_kept()
+        {
+            Assert.Equal("braces {{", NotePassages.TitleWithoutSecrets("braces {{"));
+            Assert.Equal("a {{secret", NotePassages.TitleWithoutSecrets("a {{secret"));   // no id character yet: nothing to hide
+            Assert.Equal("a {{secret:K7Q2 and more", NotePassages.TitleWithoutSecrets("a {{secret:K7Q2 and more"));   // typed by hand, not cut: as any text
+        }
+
+        [Fact]
         public void A_credential_reference_in_the_title_is_never_indexed()
         {
             var p = Assert.Single(NotePassages.Cut("n1", "db {{secret:K7Q2M9XD}}", "# Access\nuser admin"));

@@ -45,6 +45,19 @@ namespace Kil0bitSystemMonitor.Tests
         public void Status_is_plural_otherwise() => Assert.Equal("Answered from 6 passages", NotesQuestion.Status(6));
 
         [Fact]
+        public void Answering_is_singular_for_one() => Assert.Equal("Answering from 1 passage", NotesQuestion.Answering(1));
+
+        [Fact]
+        public void Answering_is_plural_otherwise() => Assert.Equal("Answering from 6 passages", NotesQuestion.Answering(6));
+
+        [Fact]
+        public void Message_puts_each_passage_between_note_tags()
+        {
+            string msg = NotesQuestion.Message("where?", new List<Passage> { P(1), P(2) });
+            Assert.Contains("[1] Note 1 (lines 1–2)\n<note>\nbody 1\n</note>\n\n[2] Note 2 (lines 2–3)\n<note>\nbody 2\n</note>", msg);
+        }
+
+        [Fact]
         public void The_fixed_sentences()
         {
             Assert.Equal("Nothing in your notes matches, so there is nothing to answer from.", NotesQuestion.NoSources);

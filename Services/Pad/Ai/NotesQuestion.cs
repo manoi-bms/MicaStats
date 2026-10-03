@@ -19,7 +19,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         public static string Message(string question, IReadOnlyList<Passage> sources) =>
             PadAiPrompts.ForQuestion(NotePassages.WithoutSecrets(question ?? ""), sources);
 
-        public static string Status(int sources) =>
-            "Answered from " + sources.ToString(CultureInfo.InvariantCulture) + (sources == 1 ? " passage" : " passages");
+        /// <summary>The status once an answer ended cleanly: "Answered from 6 passages".</summary>
+        public static string Status(int sources) => "Answered from " + Passages(sources);
+
+        /// <summary>The status while an answer streams in: "Answering from 6 passages". Nothing is claimed before the end.</summary>
+        public static string Answering(int sources) => "Answering from " + Passages(sources);
+
+        private static string Passages(int sources) =>
+            sources.ToString(CultureInfo.InvariantCulture) + (sources == 1 ? " passage" : " passages");
     }
 }

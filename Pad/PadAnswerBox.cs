@@ -22,6 +22,13 @@ namespace Kil0bitSystemMonitor.Pad
     /// <c>Ask.*</c> brushes for the pad's light or dark theme, so it works anywhere, not only inside
     /// an Ask window. The text can be selected and copied, and nothing else: the box and each code
     /// block in it get a Copy and Select all menu in the pad's look.
+    ///
+    /// <para>
+    /// Nothing in the box navigates or opens anything. A link in an answer is shown as plain text,
+    /// its label and then its address (<see cref="Unlink"/>): an answer is written from notes that
+    /// may hold text pasted from the web, and such text can steer the model into a link that looks
+    /// like a citation and carries other passages in its address. One click would send them.
+    /// </para>
     /// </summary>
     internal sealed class PadAnswerBox : RichTextBox
     {
@@ -68,7 +75,7 @@ namespace Kil0bitSystemMonitor.Pad
             _dark = dark;
             AskThemeApplier.ApplyResources(Resources, dark ? AskPalette.Dark : AskPalette.Light);
             if (ContextMenu is { } own) Paint(own);
-            foreach (TextBoxBase code in TextBoxesIn(Document))
+            foreach (TextBoxBase code in All<TextBoxBase>(Document))
                 if (code.ContextMenu is { } menu) Paint(menu);
         }
 
@@ -107,14 +114,63 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
-        /// <summary>Shows <paramref name="document"/> with no page padding (WPF adds one to a document handed to a box that has a view).</summary>
+        /// <summary>
+        /// Shows <paramref name="document"/> with its links turned into text and with no page
+        /// padding (WPF adds one to a document handed to a box that has a view). The links go
+        /// first: a document that still holds one is never shown.
+        /// </summary>
         private void Put(FlowDocument document)
         {
+            Unlink(document);
             Document = document;
             document.PagePadding = new Thickness(0);
             // The chat renderer gives a code block the Ask window's menu, which follows the theme only inside that window.
-            foreach (TextBoxBase code in TextBoxesIn(document)) GiveMenu(code);
+            foreach (TextBoxBase code in All<TextBoxBase>(document)) GiveMenu(code);
         }
+
+        /// <summary>
+        /// Turns every link in <paramref name="document"/> into plain text in its place: its label
+        /// as it was styled, then its address in parentheses. A label that is the address itself
+        /// (a bare address in the answer) is shown once. Whatever built the document, no
+        /// <see cref="Hyperlink"/> is left in it, so nothing can be clicked open and no address
+        /// hides behind a label.
+        /// </summary>
+        private static void Unlink(FlowDocument document)
+        {
+            foreach (Hyperlink link in All<Hyperlink>(document))
+            {
+                // Thrown, not skipped: a link that cannot be taken out must not be shown (the caller falls back to plain text).
+                InlineCollection around = link.SiblingInlines
+                    ?? throw new InvalidOperationException("A link in an answer has no place to put its text");
+                string label = new TextRange(link.ContentStart, link.ContentEnd).Text.Trim();
+                string? address = AddressOf(link);
+
+                var inside = new List<Inline>(link.Inlines);
+                foreach (Inline inline in inside)
+                {
+                    link.Inlines.Remove(inline);
+                    around.InsertBefore(link, inline);
+                }
+                if (address != null && !SameAddress(label, address))
+                    around.InsertBefore(link, new Run(label.Length == 0 ? address : " (" + address + ")"));
+                around.Remove(link);
+            }
+        }
+
+        /// <summary>
+        /// Where a link goes. The chat renderer keeps the address in the link's tool tip and opens
+        /// it from a click handler; a link built any other way names it in <c>NavigateUri</c>.
+        /// </summary>
+        private static string? AddressOf(Hyperlink link)
+        {
+            if (link.NavigateUri is { } uri) return uri.IsAbsoluteUri ? uri.AbsoluteUri : uri.OriginalString;
+            return link.ToolTip is string { Length: > 0 } tip ? tip : null;
+        }
+
+        /// <summary>True when the label is the address: the same text, or an address that is the same once both are written out in full.</summary>
+        private static bool SameAddress(string label, string address) =>
+            string.Equals(label, address, StringComparison.Ordinal)
+            || (SafeLinks.TryCreate(label) is { } written && string.Equals(written.AbsoluteUri, address, StringComparison.Ordinal));
 
         /// <summary>Reports a render failure once, by its type only: the message could quote the answer.</summary>
         private void Report(Exception ex)
@@ -148,15 +204,15 @@ namespace Kil0bitSystemMonitor.Pad
             ModernWpf.ThemeManager.SetRequestedTheme(menu, _dark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
         }
 
-        /// <summary>The text boxes inside a document: the code blocks of a rendered answer.</summary>
-        private static List<TextBoxBase> TextBoxesIn(DependencyObject root)
+        /// <summary>Every <typeparamref name="T"/> inside a document: its text boxes are the code blocks of a rendered answer.</summary>
+        private static List<T> All<T>(DependencyObject root) where T : DependencyObject
         {
-            var found = new List<TextBoxBase>();
+            var found = new List<T>();
             foreach (object child in LogicalTreeHelper.GetChildren(root))
             {
                 if (child is not DependencyObject element) continue;
-                if (element is TextBoxBase box) found.Add(box);
-                found.AddRange(TextBoxesIn(element));
+                if (element is T match) found.Add(match);
+                found.AddRange(All<T>(element));
             }
             return found;
         }

@@ -11,7 +11,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
     /// Cuts a note into passages (spec 3.1): at Markdown headings and blank lines, packed up to
     /// about <see cref="TargetChars"/>, never over <see cref="MaxChars"/>. A fenced code block stays
     /// whole when it fits; anything longer is cut at line boundaries, and a single longer line at
-    /// <see cref="MaxChars"/>. Only the first <see cref="MaxNoteChars"/> of a note are read.
+    /// <see cref="MaxChars"/>. Only the first <see cref="MaxNoteChars"/> of a note are read, counted
+    /// once its credential references are taken out.
     /// </summary>
     public static class NotePassages
     {
@@ -26,8 +27,22 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         private const string HeadingSeparator = " › ";
         private static readonly Regex Secret = new(SecretTokens.Pattern, RegexOptions.CultureInvariant);
 
+        /// <summary>
+        /// A reference cut short at the end of a text: <c>{{secret:</c> and as much of the id as
+        /// was left. An automatic title is the first 30 characters of a note's first line
+        /// (<see cref="NoteTitle.FromText"/>), which can end inside a reference.
+        /// </summary>
+        private static readonly Regex CutSecret = new(@"\{\{secret:[0-9A-HJKMNP-TV-Z]{0,8}\}?\z", RegexOptions.CultureInvariant);
+
         /// <summary>Credential references replaced by <c>[credential]</c>; the vault is never read.</summary>
         public static string WithoutSecrets(string text) => Secret.Replace(text, "[credential]");
+
+        /// <summary>
+        /// A title with its credential references replaced by <c>[credential]</c>, a reference
+        /// cut short at its end too: half a reference is not a reference, so it would not be
+        /// cleaned, and part of the credential's id would be indexed and sent.
+        /// </summary>
+        public static string TitleWithoutSecrets(string title) => CutSecret.Replace(WithoutSecrets(title), "[credential]");
 
         /// <summary>Lowercase hex SHA-256 of the UTF-8 text.</summary>
         public static string HashOf(string sentText) =>
@@ -36,9 +51,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         /// <summary>The note's passages in order. Blank text has none. Credential references become <c>[credential]</c> in the title too.</summary>
         public static IReadOnlyList<Passage> Cut(string noteId, string title, string text)
         {
-            if (text.Length > MaxNoteChars) text = text.Substring(0, MaxNoteChars);
+            // Cleaned before it is cut: a reference across the limit would be cut in half, and half
+            // a reference is not cleaned, so part of the credential's id would be indexed and sent.
             text = WithoutSecrets(text);
-            title = WithoutSecrets(title);
+            if (text.Length > MaxNoteChars) text = text.Substring(0, MaxNoteChars);
+            title = TitleWithoutSecrets(title);
             string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
             var passages = new List<Passage>();

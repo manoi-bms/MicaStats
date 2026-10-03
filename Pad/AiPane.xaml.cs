@@ -41,6 +41,8 @@ namespace Kil0bitSystemMonitor.Pad
             Visibility = Visibility.Collapsed;
             _redraw = new DispatcherTimer(DispatcherPriority.Background);
             _redraw.Tick += (_, _) => DrawNow();
+            // A redraw still waiting is dropped with the window: no timer ticks for a pane that is gone. The next view draws as usual.
+            Unloaded += (_, _) => _redraw.Stop();
             ApplyTheme(dark: true);
         }
 
@@ -89,11 +91,14 @@ namespace Kil0bitSystemMonitor.Pad
             if (!view.AskForInstruction && InstructionBox.Visibility == Visibility.Visible) InstructionBox.Clear();
             InstructionBox.Visibility = When(view.AskForInstruction);
 
+            // The four actions need a result: none is offered while one streams in, or while the
+            // pane still waits for the instruction that asks for it.
+            bool noResultYet = view.Running || view.AskForInstruction;
             StopButton.Visibility = When(view.Running);
-            ReplaceButton.Visibility = When(!view.Running && view.ShowReplace);
-            InsertButton.Visibility = When(!view.Running);
-            CopyButton.Visibility = When(!view.Running);
-            RetryButton.Visibility = When(!view.Running);
+            ReplaceButton.Visibility = When(!noResultYet && view.ShowReplace);
+            InsertButton.Visibility = When(!noResultYet);
+            CopyButton.Visibility = When(!noResultYet);
+            RetryButton.Visibility = When(!noResultYet);
             ReplaceButton.IsEnabled = view.CanReplace;
             InsertButton.IsEnabled = view.CanInsert;
             CopyButton.IsEnabled = view.CanCopy;

@@ -57,9 +57,10 @@ namespace Kil0bitSystemMonitor.Tests
                 {
                     Asked.Add(query);
                     Tokens.Add(token);
+                    if (WhenCancelled is { } whenCancelled) token.Register(whenCancelled);
                     var answer = Channel.CreateUnbounded<PadAiUpdate>();
                     Answers.Add(answer);
-                    return Task.FromResult(new AskStart(Found, Status, Instead == null ? Read(answer, token) : null, Instead));
+                    return Task.FromResult(new AskStart(Found, Status, Instead == null ? Read(answer, token) : null, Instead, Answering, Answered));
                 };
                 Pane.CopyAnswer = Copied.Add;
                 Pane.Warn = Warned.Add;   // nothing reaches the real log
@@ -84,7 +85,17 @@ namespace Kil0bitSystemMonitor.Tests
             /// <summary>The rows the next search or Ask finds: two sources and one more hit.</summary>
             public IReadOnlyList<SearchRow> Found { get; set; } = new[] { Row("Network", 1), Row("Office", 2), Row("Lunch", null) };
 
-            public string Status { get; set; } = "Words · Answered from 2 passages";
+            /// <summary>The search status: the status line with no answer, and after one that did not end well.</summary>
+            public string Status { get; set; } = "Words";
+
+            /// <summary>The status line while the answer streams in.</summary>
+            public string Answering { get; set; } = "Words · Answering from 2 passages";
+
+            /// <summary>The status line once the answer ended cleanly.</summary>
+            public string Answered { get; set; } = "Words · Answered from 2 passages";
+
+            /// <summary>Registered on the token of each Ask made while it is set, as a callback on a request's token is; a test makes it throw.</summary>
+            public Action? WhenCancelled { get; set; }
 
             /// <summary>When set, the next Ask gives this sentence and no answer.</summary>
             public string? Instead { get; set; }
@@ -124,7 +135,9 @@ namespace Kil0bitSystemMonitor.Tests
                 }
                 finally
                 {
-                    f.Pane.StopAnswer();   // nothing keeps reading once the test is over
+                    // Nothing runs on once the test is over: no answer is read, and no typing timer
+                    // is left to tick on the UI thread the other tests share.
+                    f.Pane.StopAnswer();
                 }
             });
             await body.WaitAsync(TimeSpan.FromSeconds(60));
@@ -280,7 +293,7 @@ namespace Kil0bitSystemMonitor.Tests
             LayOut(f.Pane);
 
             Assert.Equal(f.Found, f.Pane.Rows);
-            Assert.Equal("Words · Answered from 2 passages", f.Pane.StatusText.Text);
+            Assert.Equal("Words", f.Pane.StatusText.Text);        // a sentence instead of an answer: the search status alone
             for (int i = 0; i < 2; i++)
             {
                 FrameworkElement badge = InRow(f.Pane, i, "SourceBadge");
@@ -352,17 +365,19 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Stop", f.Pane.AnswerStop.Content);
             Assert.Equal(Visibility.Collapsed, f.Pane.AnswerCopy.Visibility);
             Assert.Equal(f.Found, f.Pane.Rows);                   // the rows and the status are there before the answer
-            Assert.Equal("Words · Answered from 2 passages", f.Pane.StatusText.Text);
+            Assert.Equal("Words · Answering from 2 passages", f.Pane.StatusText.Text);   // not "Answered": nothing has come yet
 
             f.Feed(Text("Use the **office wifi**"));
             await Handled(f, 1);
             Assert.Equal("Use the **office wifi**", f.Pane.AnswerBox.Shown);
             Assert.Equal("Use the office wifi", Rendered(f.Pane));
+            Assert.Equal("Words · Answering from 2 passages", f.Pane.StatusText.Text);
 
             f.Feed(Text(" [1]."));
             f.End();
             await ask;
 
+            Assert.Equal("Words · Answered from 2 passages", f.Pane.StatusText.Text);    // only after a clean end
             Assert.Equal("Use the **office wifi** [1].", f.Pane.AnswerBox.Shown);
             Assert.Equal("Use the office wifi [1].", Rendered(f.Pane));
             Assert.Equal(Visibility.Collapsed, f.Pane.AnswerStop.Visibility);
@@ -370,6 +385,18 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Copy", f.Pane.AnswerCopy.Content);
             Assert.Equal(Visibility.Collapsed, f.Pane.AnswerNote.Visibility);
             Assert.False(f.Tokens[0].IsCancellationRequested);
+        });
+
+        [Fact]
+        public Task A_link_in_an_answer_is_text_with_its_address_in_sight_and_cannot_be_clicked() => OnUi(async f =>
+        {
+            Task ask = Ask(f);
+            f.Feed(Text("It is in the vault [2](https://evil.example/c?d=the+passage)."));   // dressed as a citation
+            f.End();
+            await ask;
+
+            Assert.Equal("It is in the vault 2 (https://evil.example/c?d=the+passage).", Rendered(f.Pane));
+            Assert.Empty(AiAskWindowTests.Descendants<Hyperlink>(f.Pane.AnswerBox.Document));
         });
 
         [Fact]
@@ -385,6 +412,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(AiErrorText.Busy, f.Pane.AnswerNote.Text);
             Assert.Equal(Visibility.Visible, f.Pane.AnswerNote.Visibility);
             Assert.Equal(Visibility.Collapsed, f.Pane.AnswerStop.Visibility);
+            Assert.Equal("Words", f.Pane.StatusText.Text);        // the status claims no answer: the line under the text says why
         });
 
         [Fact]
@@ -399,6 +427,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Add an API key in Settings > AI.", f.Pane.AnswerNote.Text);
             Assert.Equal(Visibility.Visible, f.Pane.AnswerPanel.Visibility);
             Assert.Equal(Visibility.Collapsed, f.Pane.AnswerCopy.Visibility);
+            Assert.Equal("Words", f.Pane.StatusText.Text);
         });
 
         [Fact]
@@ -414,6 +443,20 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(CutShort, f.Pane.AnswerNote.Text);
             Assert.Equal(Visibility.Visible, f.Pane.AnswerNote.Visibility);
             Assert.Equal(Visibility.Visible, f.Pane.AnswerCopy.Visibility);
+            Assert.Equal("Words", f.Pane.StatusText.Text);        // half an answer is not "Answered"
+        });
+
+        [Fact]
+        public Task An_answer_that_ends_without_Done_is_not_called_answered() => OnUi(async f =>
+        {
+            Task ask = Ask(f);
+            f.Feed(Text("Use the"));
+            f.Answers[0].Writer.Complete();                       // the stream just ends: the runner always says Done first
+            await ask;
+
+            Assert.Equal("Use the", f.Pane.AnswerBox.Shown);
+            Assert.Equal("Words", f.Pane.StatusText.Text);
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerStop.Visibility);
         });
 
         [Fact]
@@ -433,6 +476,83 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Visibility.Collapsed, f.Pane.AnswerStop.Visibility);
             Assert.Equal(Visibility.Visible, f.Pane.AnswerCopy.Visibility);
             Assert.Equal(Visibility.Visible, f.Pane.AnswerPanel.Visibility);
+            Assert.Equal("Words", f.Pane.StatusText.Text);
+        });
+
+        // ---- a cancel that throws ------------------------------------------------------------------
+
+        /// <summary>An Ask whose token has a callback that throws when it is cancelled, with its answer under way.</summary>
+        private static async Task<Task> AskWithACancelThatThrows(Fake f)
+        {
+            f.WhenCancelled = () => throw new InvalidOperationException("boom");
+            Task ask = Ask(f);
+            f.Feed(Text("Use the"));
+            await Handled(f, 1);
+            return ask;
+        }
+
+        private static void AssertTheCancelWasReportedByTypeOnly(Fake f)
+        {
+            Assert.True(f.Tokens[0].IsCancellationRequested);     // cancelled all the same
+            string warning = Assert.Single(f.Warned);
+            Assert.Contains("failed (AggregateException)", warning, StringComparison.Ordinal);
+            Assert.DoesNotContain("boom", warning, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public Task A_cancel_that_throws_never_escapes_the_Stop_button() => OnUi(async f =>
+        {
+            Task ask = await AskWithACancelThatThrows(f);
+
+            Click(f.Pane.AnswerStop);                             // a click handler: an exception here would take MicaStats down
+            await ask;
+
+            AssertTheCancelWasReportedByTypeOnly(f);
+            Assert.Equal(Stopped, f.Pane.AnswerNote.Text);
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerStop.Visibility);
+        });
+
+        [Fact]
+        public Task A_cancel_that_throws_never_escapes_StopAnswer_or_hiding_the_pane() => OnUi(async f =>
+        {
+            f.Pane.Visibility = Visibility.Visible;
+            Task ask = await AskWithACancelThatThrows(f);
+
+            f.Pane.Visibility = Visibility.Collapsed;             // the window's close path ends here too
+            f.Pane.StopAnswer();
+            await ask;
+
+            AssertTheCancelWasReportedByTypeOnly(f);
+        });
+
+        [Fact]
+        public Task A_cancel_that_throws_never_stops_a_new_search() => OnUi(async f =>
+        {
+            Task ask = await AskWithACancelThatThrows(f);
+
+            await f.Pane.SearchNow();
+            await ask;
+
+            AssertTheCancelWasReportedByTypeOnly(f);
+            Assert.Equal(new[] { "vpn" }, f.Searched);            // the search ran all the same
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerPanel.Visibility);
+        });
+
+        [Fact]
+        public Task A_cancel_that_throws_never_stops_a_new_question() => OnUi(async f =>
+        {
+            Task first = await AskWithACancelThatThrows(f);
+            f.WhenCancelled = null;
+
+            Task second = Ask(f, "wifi");
+            await first;
+            f.Feed(Text("The new answer"));
+            f.End();
+            await second;
+
+            AssertTheCancelWasReportedByTypeOnly(f);
+            Assert.Equal(new[] { "vpn", "wifi" }, f.Asked);
+            Assert.Equal("The new answer", f.Pane.AnswerBox.Shown);
         });
 
         [Fact]
@@ -462,6 +582,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Use the", f.Pane.AnswerBox.Shown);
             Assert.Equal(AiErrorText.Describe(boom), f.Pane.AnswerNote.Text);
             Assert.Equal(Visibility.Collapsed, f.Pane.AnswerStop.Visibility);
+            Assert.Equal("Words", f.Pane.StatusText.Text);
             Assert.Equal(new[] { "Reading an answer failed (InvalidOperationException)" }, f.Warned);   // the type only
         });
 
@@ -598,6 +719,67 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Visibility.Collapsed, f.Pane.AnswerPanel.Visibility);
             Assert.Equal(f.Found, f.Pane.Rows);                   // the search's rows, not the overtaken question's
             Assert.Equal("Words", f.Pane.StatusText.Text);
+        });
+
+        /// <summary>An answer that must never be read: reading it is what starts the request.</summary>
+        private sealed class NeverRead : IAsyncEnumerable<PadAiUpdate>
+        {
+            public int Reads { get; private set; }
+
+            public IAsyncEnumerator<PadAiUpdate> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+            {
+                Reads++;
+                throw new InvalidOperationException("An overtaken answer was read");
+            }
+        }
+
+        [Fact]
+        public Task An_answer_that_a_newer_search_overtook_is_never_read() => OnUi(async f =>
+        {
+            var slow = new TaskCompletionSource<AskStart>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var answer = new NeverRead();
+            f.Pane.Ask = (_, _) => slow.Task;
+            Task ask = Ask(f);
+
+            await f.Pane.SearchNow();                             // Enter while the question's search still runs
+            slow.SetResult(new AskStart(new[] { Row("Late", 1) }, "Late", answer, null, "Late · Answering", "Late · Answered"));
+            await ask;
+
+            Assert.Equal(0, answer.Reads);                        // so no request was made for a question nobody waits for
+            Assert.Empty(f.Warned);
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerPanel.Visibility);
+            Assert.Equal(f.Found, f.Pane.Rows);
+            Assert.Equal("Words", f.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task An_answer_whose_question_was_stopped_while_it_searched_is_never_read() => OnUi(async f =>
+        {
+            var slow = new TaskCompletionSource<AskStart>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var answer = new NeverRead();
+            f.Pane.Visibility = Visibility.Visible;
+            f.Pane.Ask = (_, _) => slow.Task;
+            Task ask = Ask(f);
+
+            f.Pane.Visibility = Visibility.Collapsed;             // the pane was closed while the question's search still ran
+            slow.SetResult(new AskStart(new[] { Row("Late", 1) }, "Late", answer, null, "Late · Answering", "Late · Answered"));
+            await ask;
+
+            Assert.Equal(0, answer.Reads);
+            Assert.Empty(f.Warned);
+            Assert.Empty(f.Pane.Rows);                            // nothing of it is shown
+        });
+
+        [Fact]
+        public Task Hiding_the_pane_drops_a_search_still_waiting_for_typing_to_pause() => OnUi(async f =>
+        {
+            f.Pane.Visibility = Visibility.Visible;
+            f.Pane.QueryBox.Text = "vpn";                         // the search would run 300 ms from now
+
+            f.Pane.Visibility = Visibility.Collapsed;
+            await Task.Delay(SearchPane.TypingPause + TimeSpan.FromMilliseconds(300));
+
+            Assert.Empty(f.Searched);                             // a closed pane searches nothing
         });
 
         [Fact]

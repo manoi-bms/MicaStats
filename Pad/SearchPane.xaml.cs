@@ -30,8 +30,16 @@ namespace Kil0bitSystemMonitor.Pad
         public string Where => (Closed ? "closed · " : "") + "line " + FirstLine;
     }
 
-    /// <summary>What the window gives back for an Ask: the rows, the status, and the answer stream or the sentence shown instead.</summary>
-    public sealed record AskStart(IReadOnlyList<SearchRow> Rows, string Status, IAsyncEnumerable<PadAiUpdate>? Answer, string? Instead);
+    /// <summary>
+    /// What the window gives back for an Ask: the rows, the status, and the answer stream or the
+    /// sentence shown instead. The status line never claims an answer that did not come:
+    /// <see cref="Status"/> is the search status alone, shown with a sentence instead of an
+    /// answer and after an answer that failed, was stopped or was cut short;
+    /// <see cref="Answering"/> is shown while the answer streams in, and <see cref="Answered"/>
+    /// only once it ended cleanly. Without them the search status stays.
+    /// </summary>
+    public sealed record AskStart(IReadOnlyList<SearchRow> Rows, string Status, IAsyncEnumerable<PadAiUpdate>? Answer, string? Instead,
+                                  string? Answering = null, string? Answered = null);
 
     /// <summary>
     /// The Search notes pane (search spec 1): searches 300 ms after typing stops, Enter at once; a
@@ -69,12 +77,13 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Builds the pane hidden; <see cref="Open"/> reveals it.</summary>
         public SearchPane()
         {
-            InitializeComponent();
-            Visibility = Visibility.Collapsed;
+            // The timers first: hiding the pane, below, already stops one of them.
             _typing = new DispatcherTimer { Interval = TypingPause };
             _typing.Tick += (_, _) => { _typing.Stop(); _ = SearchNow(); };
             _redraw = new DispatcherTimer(DispatcherPriority.Background);
             _redraw.Tick += (_, _) => DrawAnswer();
+            InitializeComponent();
+            Visibility = Visibility.Collapsed;
         }
 
         /// <summary>The user picked a result.</summary>
@@ -124,7 +133,7 @@ namespace Kil0bitSystemMonitor.Pad
         public async Task SearchNow()
         {
             _typing.Stop();
-            _running?.Cancel();
+            CancelRunning();
             var mine = _running = new CancellationTokenSource();
             ClearAnswer();
             string query = QueryBox.Text;
@@ -151,7 +160,10 @@ namespace Kil0bitSystemMonitor.Pad
         /// What the Ask button and Ctrl+Enter run: <see cref="Ask"/> for the query, its rows and
         /// status, then its answer streaming in above them (or the sentence given instead). An
         /// empty query does nothing. A search or an answer still running is cancelled and the old
-        /// answer cleared first. The task completes when the answer ends, and never faults.
+        /// answer cleared first. The answer is read, which is what starts its request, only while
+        /// this question still owns the pane: one that a newer search overtook, or whose pane
+        /// closed while it searched, is never read. The task completes when the answer ends, and
+        /// never faults.
         /// </summary>
         internal async Task AskNowAsync()
         {
@@ -159,7 +171,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (query.Trim().Length == 0 || Ask is not { } ask) return;
 
             _typing.Stop();
-            _running?.Cancel();
+            CancelRunning();
             var mine = _running = new CancellationTokenSource();
             ClearAnswer();
 
@@ -183,11 +195,36 @@ namespace Kil0bitSystemMonitor.Pad
 
             ShowFound(start.Rows, start.Status);
             if (start.Instead != null) ShowInstead(start.Instead);
-            else if (start.Answer != null) await StreamAnswerAsync(start.Answer, mine);
+            else if (start.Answer != null) await StreamAnswerAsync(start, start.Answer, mine);
         }
 
-        /// <summary>Stop, and a pane or window that goes away: cancels what is running. What came of an answer so far stays, marked "Stopped".</summary>
-        internal void StopAnswer() => _running?.Cancel();
+        /// <summary>
+        /// The pane or its window goes away: what is running is cancelled, and a search still
+        /// waiting for typing to pause is dropped. What came of an answer so far stays, marked
+        /// "Stopped". Never throws: it is called from the window's close path.
+        /// </summary>
+        internal void StopAnswer()
+        {
+            _typing.Stop();
+            CancelRunning();
+        }
+
+        /// <summary>
+        /// Cancels the search or the answer that is running. A callback on its token that throws
+        /// is reported by its type here, never thrown into a click, a key or the window closing
+        /// (MicaStats has no dispatcher exception handler). The token is cancelled all the same.
+        /// </summary>
+        private void CancelRunning()
+        {
+            try
+            {
+                _running?.Cancel();
+            }
+            catch (Exception ex)
+            {
+                Report("Cancelling a search or an answer", ex);
+            }
+        }
 
         /// <summary>Paints the answer for the pad's dark or light theme. The rest of the pane reads the window's <c>Pad.*</c> brushes.</summary>
         public void ApplyTheme(bool dark) => AnswerBox.ApplyTheme(dark);
@@ -238,8 +275,11 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>Lists what a query found; with nothing found, the status says so.</summary>
-        private void ShowFound(IReadOnlyList<SearchRow> rows, string status) =>
-            Show(rows, rows.Count == 0 ? status + " · No notes found" : status);
+        private void ShowFound(IReadOnlyList<SearchRow> rows, string status) => Show(rows, FoundStatus(rows, status));
+
+        /// <summary>The status line for what a query found: the search status, and with nothing found, that too.</summary>
+        private static string FoundStatus(IReadOnlyList<SearchRow> rows, string status) =>
+            rows.Count == 0 ? status + " · No notes found" : status;
 
         // ---- the answer ----------------------------------------------------------------------
 
@@ -268,13 +308,23 @@ namespace Kil0bitSystemMonitor.Pad
         /// Reads <paramref name="answer"/> into the answer box as Markdown until it ends, is
         /// stopped, or a newer search or question takes the pane (which then draws nothing more
         /// for this one). Never throws: a stream that fails ends the answer with its error.
+        ///
+        /// <para>
+        /// The status line claims no answer that did not come. While this reads it says
+        /// <see cref="AskStart.Answering"/>; it says <see cref="AskStart.Answered"/> only after a
+        /// Done with no error, no stop and no cut-short before it. Otherwise it goes back to the
+        /// search status, and the line under the answer says what happened.
+        /// </para>
         /// </summary>
-        private async Task StreamAnswerAsync(IAsyncEnumerable<PadAiUpdate> answer, CancellationTokenSource mine)
+        private async Task StreamAnswerAsync(AskStart start, IAsyncEnumerable<PadAiUpdate> answer, CancellationTokenSource mine)
         {
+            string found = FoundStatus(start.Rows, start.Status);
+            StatusText.Text = start.Answering ?? found;
             AnswerStop.Visibility = Visibility.Visible;
             AnswerPanel.Visibility = Visibility.Visible;
 
             string? ending = null;
+            bool done = false;
             try
             {
                 await foreach (PadAiUpdate update in answer.WithCancellation(mine.Token))
@@ -296,6 +346,9 @@ namespace Kil0bitSystemMonitor.Pad
                         case PadAiUpdateKind.CutShort:
                             ending = CutShortText;
                             break;
+                        case PadAiUpdateKind.Done:
+                            done = true;
+                            break;
                     }
                 }
             }
@@ -312,6 +365,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (!ReferenceEquals(mine, _running)) return;
             DrawAnswer();   // the last text, at once
             ending ??= mine.IsCancellationRequested ? StoppedText : null;
+            StatusText.Text = done && ending == null ? start.Answered ?? found : found;
             AnswerNote.Text = ending ?? "";
             AnswerNote.Visibility = When(ending != null);
             AnswerStop.Visibility = Visibility.Collapsed;
@@ -369,7 +423,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnAskClick(object sender, RoutedEventArgs e) => _ = AskNowAsync();
 
-        private void OnAnswerStopClick(object sender, RoutedEventArgs e) => StopAnswer();
+        private void OnAnswerStopClick(object sender, RoutedEventArgs e) => CancelRunning();
 
         /// <summary>Copy: the answer as the model wrote it, never the line under it.</summary>
         private void OnAnswerCopyClick(object sender, RoutedEventArgs e)

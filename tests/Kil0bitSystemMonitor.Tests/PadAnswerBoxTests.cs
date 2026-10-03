@@ -78,7 +78,7 @@ namespace Kil0bitSystemMonitor.Tests
             box.ShowMarkdown("text");
 
             Assert.True(box.IsReadOnly);
-            Assert.True(box.IsDocumentEnabled);   // links can be clicked
+            Assert.True(box.IsDocumentEnabled);   // a code block inside can be selected and copied
             Assert.True(box.IsTabStop);           // keyboard users can reach it to select and copy
             var menu = Assert.IsType<ContextMenu>(box.ContextMenu);
             Assert.Equal(new[] { ApplicationCommands.Copy, ApplicationCommands.SelectAll },
@@ -179,6 +179,93 @@ namespace Kil0bitSystemMonitor.Tests
 
             box.ShowMarkdown("The password is {{secret:K7Q2M9XD}}.");
             Assert.Equal("The password is {{secret:K7Q2M9XD}}.", Rendered(box));
+        });
+
+        // ---- links are text: nothing in the box navigates or opens anything ----------------------
+
+        private static List<Hyperlink> Links(PadAnswerBox box) => AiAskWindowTests.Descendants<Hyperlink>(box.Document);
+
+        [Fact]
+        public void A_link_is_shown_as_its_label_and_its_address_and_is_not_a_link() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+
+            box.ShowMarkdown("See [site](https://example.com/x) for more.");
+
+            Assert.Equal("See site (https://example.com/x) for more.", Rendered(box));
+            Assert.Empty(Links(box));
+            Assert.Equal("See [site](https://example.com/x) for more.", box.Shown);   // Copy still gets what the model wrote
+        });
+
+        [Fact]
+        public void A_link_dressed_as_a_citation_shows_where_it_goes() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+
+            box.ShowMarkdown("The key is in the vault [2](https://evil.example/c?d=the+passage).");
+
+            Assert.Equal("The key is in the vault 2 (https://evil.example/c?d=the+passage).", Rendered(box));
+            Assert.Empty(Links(box));
+        });
+
+        [Fact]
+        public void A_bare_address_stays_as_text_and_is_not_a_link() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+
+            box.ShowMarkdown("Open https://example.com today.");
+
+            Assert.Equal("Open https://example.com today.", Rendered(box));   // once: the label is the address
+            Assert.Empty(Links(box));
+        });
+
+        [Fact]
+        public void A_mail_link_is_text_too() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+
+            box.ShowMarkdown("Write to [the admin](mailto:admin@example.com) or mailto:help@example.com.");
+
+            Assert.Equal("Write to the admin (mailto:admin@example.com) or mailto:help@example.com.", Rendered(box));
+            Assert.Empty(Links(box));
+        });
+
+        [Fact]
+        public void A_label_keeps_its_style_and_a_label_that_is_another_address_shows_both() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+
+            box.ShowMarkdown("[**bold** site](https://example.com/x) and [https://good.example](https://evil.example/login)");
+
+            Assert.Equal("bold site (https://example.com/x) and https://good.example (https://evil.example/login)", Rendered(box));
+            Assert.Empty(Links(box));
+            Run bold = Assert.Single(AiAskWindowTests.Descendants<Run>(box.Document), r => r.Text == "bold");
+            Assert.Equal(FontWeights.SemiBold, bold.FontWeight);
+        });
+
+        [Fact]
+        public void Links_in_a_heading_a_list_and_a_quote_are_text_too() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+
+            box.ShowMarkdown("# [a](https://a.example/1)\n\n- [b](https://b.example/2)\n  - [c](https://c.example/3)\n\n> [d](https://d.example/4)");
+
+            Assert.Empty(Links(box));
+            string text = Rendered(box);
+            foreach (string expected in new[] { "a (https://a.example/1)", "b (https://b.example/2)", "c (https://c.example/3)", "d (https://d.example/4)" })
+                Assert.Contains(expected, text, StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public void A_document_from_any_builder_loses_its_links() => UiThread.Run(() =>
+        {
+            var link = new Hyperlink(new Run("click me")) { NavigateUri = new Uri("https://other.example/path") };
+            var box = new PadAnswerBox { BuildDocument = _ => new FlowDocument(new Paragraph(link)) };
+
+            box.ShowMarkdown("anything");
+
+            Assert.Equal("click me (https://other.example/path)", Rendered(box));
+            Assert.Empty(Links(box));
         });
 
         [Fact]

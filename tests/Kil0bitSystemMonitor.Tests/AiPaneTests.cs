@@ -251,6 +251,25 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void While_an_instruction_is_awaited_none_of_the_four_actions_is_offered() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            var actions = new[] { pane.ReplaceButton, pane.InsertButton, pane.CopyButton, pane.RetryButton };
+
+            pane.Show(Asking);                                    // nothing was asked yet: there is no result to act on
+
+            Assert.All(actions, button => Assert.Equal(Visibility.Collapsed, button.Visibility));
+            Assert.Equal(Visibility.Collapsed, pane.StopButton.Visibility);
+            Assert.Equal(Visibility.Visible, pane.InstructionBox.Visibility);
+
+            pane.Show(Asking with { ShowReplace = false });       // Ask AI on a whole note
+            Assert.All(actions, button => Assert.Equal(Visibility.Collapsed, button.Visibility));
+
+            pane.Show(Done);                                      // the answer came: they are back
+            Assert.All(actions, button => Assert.Equal(Visibility.Visible, button.Visibility));
+        });
+
+        [Fact]
         public void Enter_runs_the_trimmed_instruction_and_nothing_for_an_empty_one() => UiThread.Run(() =>
         {
             var pane = new AiPane();
@@ -482,6 +501,17 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_link_in_a_result_is_text_with_its_address_in_sight_and_cannot_be_clicked() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+
+            pane.Show(Done with { Markdown = true, Result = "See [the docs](https://example.com/x) and https://example.org." });
+
+            Assert.Equal("See the docs (https://example.com/x) and https://example.org.", Rendered(pane));
+            Assert.Empty(AiAskWindowTests.Descendants<Hyperlink>(pane.ResultBox.Document));
+        });
+
+        [Fact]
         public void A_credential_marker_is_shown_as_it_is_in_the_result_and_in_the_changes() => UiThread.Run(() =>
         {
             var pane = new AiPane();
@@ -533,6 +563,23 @@ namespace Kil0bitSystemMonitor.Tests
         public void The_default_redraw_interval_is_100_ms() => UiThread.Run(() =>
         {
             Assert.Equal(TimeSpan.FromMilliseconds(100), new AiPane().RedrawInterval);
+        });
+
+        [Fact]
+        public void A_redraw_that_waits_is_dropped_when_the_pane_is_unloaded() => UiThread.Run(() =>
+        {
+            var pane = new AiPane { RedrawInterval = TimeSpan.FromMilliseconds(50) };
+            pane.Show(Streaming with { Result = "one" });
+            pane.Show(Streaming with { Result = "one two" });     // waits for the timer
+
+            pane.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));   // the window closed
+            var waited = Stopwatch.StartNew();
+            PumpUntil(() => pane.ResultBox.Shown != "one" || waited.Elapsed > TimeSpan.FromMilliseconds(400));
+
+            Assert.Equal("one", pane.ResultBox.Shown);            // no timer ticks for a pane that is gone
+
+            pane.Show(Done);                                      // shown again: it draws as before
+            Assert.Equal("Better text.", pane.ResultBox.Shown);
         });
 
         [Fact]

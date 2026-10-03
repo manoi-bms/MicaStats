@@ -1677,14 +1677,17 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         /// <summary>
-        /// Runs <paramref name="call"/> with <paramref name="search"/> as MicaPad's search. The
-        /// window reads that static before its first await, so it is swapped in for the call only:
-        /// the UI tests of other classes share this thread and the static.
+        /// Runs <paramref name="call"/> with <paramref name="search"/> as MicaPad's search and
+        /// <paramref name="feeder"/> as its feeder. The window reads those statics before its
+        /// first await, so they are swapped in for the call only: the UI tests of other classes
+        /// share this thread and the statics.
         /// </summary>
-        private static T WithSearch<T>(NoteSearchService? search, Func<T> call)
+        private static T WithSearch<T>(NoteSearchService? search, Func<T> call, SearchFeeder? feeder = null)
         {
             NoteSearchService? original = MicaPadWindow.SearchService;
+            SearchFeeder? originalFeeder = MicaPadWindow.SearchFeeder;
             MicaPadWindow.SearchService = search;
+            MicaPadWindow.SearchFeeder = feeder;
             try
             {
                 return call();
@@ -1692,17 +1695,18 @@ namespace Kil0bitSystemMonitor.Tests
             finally
             {
                 MicaPadWindow.SearchService = original;
+                MicaPadWindow.SearchFeeder = originalFeeder;
             }
         }
 
         /// <summary>Opens Search notes, types the question and asks, as Ctrl+Enter does. The task ends when the answer does.</summary>
-        private static Task AskNotes(Harness h, NoteSearchService search, string question) => WithSearch(search, () =>
+        private static Task AskNotes(Harness h, NoteSearchService search, string question, SearchFeeder? feeder = null) => WithSearch(search, () =>
         {
             SearchPane pane = h.Window.SearchPanel;
             if (pane.Visibility != Visibility.Visible) h.Window.ToggleSearch();
             pane.QueryBox.Text = question;
             return pane.AskNowAsync();
-        });
+        }, feeder);
 
         /// <summary>The passages a question is answered from: what the search finds, at most eight.</summary>
         private static async Task<IReadOnlyList<Passage>> SourcesOf(NoteSearchService search, string question) =>
@@ -1744,7 +1748,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Empty(h.Model.Requests);
             Assert.Equal(0, h.Usage.UsedToday);
             Assert.Equal(0, h.RunnersBuilt);
-            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars sent, AI off" }, h.Log);
+            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars in the request, AI off" }, h.Log);
         });
 
         [Fact]
@@ -1754,6 +1758,9 @@ namespace Kil0bitSystemMonitor.Tests
             AskStart start = await WithSearch(search, () => h.Window.SearchPanel.Ask!("vpn", CancellationToken.None));
             Assert.NotNull(start.Answer);                         // AI was on up to here: nothing is sent before the answer is read
             Assert.Null(start.Instead);
+            Assert.Equal("Words", start.Status);
+            Assert.Equal("Words · Answering from 1 passage", start.Answering);
+            Assert.Equal("Words · Answered from 1 passage", start.Answered);
             Assert.Empty(h.Model.Requests);
 
             h.AiOn = false;
@@ -1763,7 +1770,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { new PadAiUpdate(PadAiUpdateKind.Error, NotesQuestion.AiOff), new PadAiUpdate(PadAiUpdateKind.Done) }, updates);
             Assert.Empty(h.Model.Requests);
             Assert.Equal(0, h.Usage.UsedToday);
-            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars sent, AI off" }, h.Log);
+            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars in the request, AI off" }, h.Log);
         });
 
         [Fact]
@@ -1834,6 +1841,23 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public Task A_credential_cut_short_by_a_notes_automatic_title_reaches_the_model_as_credential() => OnUiWithSearch(async (h, search) =>
+        {
+            // The feeder titles a scratch note by the first 30 characters of its first line: here they end inside the reference.
+            Write(h, "db password is {{secret:K7Q2M9XD}}\nit opens the vpn");
+            using var feeder = new SearchFeeder(h.Env.Workspace, search.Indexer);
+            await search.Indexer.WhenIdle();
+            h.Model.Reply("It is stored [1].");
+
+            await AskNotes(h, search, "vpn", feeder);
+
+            string sent = Assert.Single(h.Model.Requests).Messages[1].Text;
+            Assert.Contains("[1] db password is [credential] (lines 1–2)", sent, StringComparison.Ordinal);
+            foreach (string part in new[] { "{{secret", "secret:", "K7Q2", "Q2M9", "M9XD" })
+                Assert.DoesNotContain(part, sent, StringComparison.Ordinal);   // no part of the id, in the header either
+        });
+
+        [Fact]
         public Task With_no_hits_Ask_says_there_is_nothing_to_answer_from_and_makes_no_request() => OnUiWithSearch(async (h, search) =>
         {
             await Index(h, search, VpnNote);
@@ -1847,7 +1871,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Empty(h.Model.Requests);
             Assert.Equal(0, h.Usage.UsedToday);                   // nothing is counted
             Assert.Equal(0, h.RunnersBuilt);
-            Assert.Equal(new[] { "AI ask-notes: 0 sources, 0 chars sent, no sources" }, h.Log);
+            Assert.Equal(new[] { "AI ask-notes: 0 sources, 0 chars in the request, no sources" }, h.Log);
         });
 
         [Fact]
@@ -1860,9 +1884,47 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Empty(start.Rows);
             Assert.Equal("Search is not ready yet.", start.Status);
             Assert.Null(start.Answer);
-            Assert.Equal(NotesQuestion.NoSources, start.Instead);
+            Assert.Equal("Search is not ready yet.", start.Instead);   // not "nothing matches": nothing was searched
             Assert.Equal(0, h.RunnersBuilt);
             Assert.Empty(h.Model.Requests);
+        });
+
+        [Fact]
+        public Task Text_removed_from_the_open_note_right_before_Ask_is_in_no_request() => OnUiWithSearch(async (h, search) =>
+        {
+            Write(h, "# Net\nthe vpn needs the office wifi\nthe vpn door code is 4471");
+            using var feeder = new SearchFeeder(h.Env.Workspace, search.Indexer);   // indexes the open notes, then each edit 2 s after it
+            await search.Indexer.WhenIdle();
+            h.Window.ToggleSearch();                              // the pane is open already: opening it is not what brings the index up to date
+            h.Model.Reply("Use the office wifi [1].");
+
+            h.Editor.Document.Text = "# Net\nthe vpn needs the office wifi";   // deleted a moment ago: the index still holds the code
+            await AskNotes(h, search, "vpn", feeder);
+
+            string sent = Assert.Single(h.Model.Requests).Messages[1].Text;
+            Assert.Contains("the vpn needs the office wifi", sent, StringComparison.Ordinal);
+            Assert.DoesNotContain("4471", sent, StringComparison.Ordinal);
+            Assert.DoesNotContain("door code", sent, StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task The_status_says_Answering_while_the_answer_streams_and_Answered_only_after_a_clean_end() => OnUiWithSearch(async (h, search) =>
+        {
+            await Index(h, search, VpnNote);
+            var model = new GatedModel("Use the", " office wifi [1].");
+            h.Client = model;
+            Task ask = AskNotes(h, search, "vpn");
+            await Reached(model);
+            SearchPane pane = h.Window.SearchPanel;
+
+            Assert.Equal("Words · Answering from 1 passage", pane.StatusText.Text);
+            Assert.Equal(1, Assert.Single(pane.Rows).Source);     // the sources are numbered from the start
+
+            model.Gate.SetResult();
+            await ask;
+
+            Assert.Equal("Words · Answered from 1 passage", pane.StatusText.Text);
+            Assert.Equal("Use the office wifi [1].", pane.AnswerBox.Shown);
         });
 
         [Fact]
@@ -1931,7 +1993,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Null(Assert.Single(pane.Rows).Source);
             Assert.Equal("Words", pane.StatusText.Text);
             Assert.Empty(h.Model.Requests);
-            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars sent, not available" }, h.Log);
+            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars in the request, not available" }, h.Log);
         });
 
         [Fact]
@@ -1950,7 +2012,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Null(Assert.Single(pane.Rows).Source);
             Assert.Contains("InvalidOperationException", Assert.Single(warned), StringComparison.Ordinal);
             Assert.DoesNotContain("broken", warned[0], StringComparison.Ordinal);   // the type only
-            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars sent, failed" }, h.Log);
+            Assert.Equal(new[] { "AI ask-notes: 1 sources, 0 chars in the request, failed" }, h.Log);
         });
 
         [Fact]
@@ -1966,8 +2028,9 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(AiAssistant.LimitText(1), pane.AnswerNote.Text);
             Assert.Equal(Visibility.Visible, pane.AnswerNote.Visibility);
             Assert.Equal("", pane.AnswerBox.Shown);
+            Assert.Equal("Words", pane.StatusText.Text);          // the status claims no answer
             Assert.Empty(h.Model.Requests);
-            Assert.EndsWith(" chars sent, failed", Assert.Single(h.Log), StringComparison.Ordinal);
+            Assert.EndsWith(" chars in the request, failed", Assert.Single(h.Log), StringComparison.Ordinal);
         });
 
         [Fact]
@@ -1996,7 +2059,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             int sent = NotesQuestion.Message("vpn password", await SourcesOf(search, "vpn password")).Length;
             string line = Assert.Single(h.Log);
-            Assert.Equal("AI ask-notes: 1 sources, " + Count(sent) + " chars sent, ok", line);
+            Assert.Equal("AI ask-notes: 1 sources, " + Count(sent) + " chars in the request, ok", line);
             Assert.DoesNotContain("password", line, StringComparison.Ordinal);
             Assert.DoesNotContain("wifi", line, StringComparison.Ordinal);
         });
@@ -2019,8 +2082,9 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(model.Cancelled);
             Assert.Equal("Use the", pane.AnswerBox.Shown);
             Assert.Equal("Stopped", pane.AnswerNote.Text);
+            Assert.Equal("Words", pane.StatusText.Text);          // a stopped answer is not "Answered"
             Assert.Equal(Visibility.Collapsed, pane.AnswerStop.Visibility);
-            Assert.EndsWith(" chars sent, stopped", Assert.Single(h.Log), StringComparison.Ordinal);
+            Assert.EndsWith(" chars in the request, stopped", Assert.Single(h.Log), StringComparison.Ordinal);
         });
 
         [Fact]
@@ -2036,7 +2100,8 @@ namespace Kil0bitSystemMonitor.Tests
             SearchPane pane = h.Window.SearchPanel;
             Assert.Equal("Use the office wi", pane.AnswerBox.Shown);
             Assert.Equal("Cut short at the length limit", pane.AnswerNote.Text);
-            Assert.EndsWith(" chars sent, cut short", Assert.Single(h.Log), StringComparison.Ordinal);
+            Assert.Equal("Words", pane.StatusText.Text);
+            Assert.EndsWith(" chars in the request, cut short", Assert.Single(h.Log), StringComparison.Ordinal);
         });
 
         [Fact]

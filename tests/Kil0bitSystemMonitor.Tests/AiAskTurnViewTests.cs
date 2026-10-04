@@ -74,9 +74,124 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Visibility.Visible, noted.Note.Visibility);
 
             var ended = new AskTurnView("q");
-            ended.Complete(DateTime.Now);
+            ended.Complete(DateTime.Now, TimeSpan.Zero);
             Assert.Equal(Visibility.Collapsed, ended.Typing.Visibility);
             Assert.Equal(Visibility.Collapsed, ended.Footer.Visibility);
+        });
+
+        [Theory]
+        [InlineData("get_live_status", "Reading live status…")]
+        [InlineData("get_top_processes", "Checking top processes…")]
+        [InlineData("get_history", "Looking at history…")]
+        [InlineData("list_slowdown_reports", "Listing slowdown reports…")]
+        [InlineData("get_slowdown_report", "Reading a slowdown report…")]
+        [InlineData("list_alerts", "Checking alerts…")]
+        [InlineData("get_hardware", "Reading hardware info…")]
+        [InlineData("get_battery", "Checking the battery…")]
+        [InlineData("get_boot_summary", "Checking startup times…")]
+        [InlineData("search_notes", "Searching notes…")]
+        [InlineData("get_note", "Reading a note…")]
+        [InlineData("something_new", "Using something_new…")]
+        public void Every_tool_has_its_activity_line(string tool, string line)
+        {
+            Assert.Equal(line, AskTurnView.ActivityFor(tool));
+        }
+
+        [Fact]
+        public void An_unknown_tool_name_is_cut_to_40_characters_and_cannot_break_the_line()
+        {
+            string longName = new string('x', 500);
+            Assert.Equal("Using " + new string('x', 40) + "…", AskTurnView.ActivityFor(longName));
+
+            // A line break or another control character from the model must not make a second line.
+            Assert.Equal("Using a b c…", AskTurnView.ActivityFor("a\nb\tc"));
+            Assert.Equal("Using a tool…", AskTurnView.ActivityFor("  "));
+
+            // A pair of surrogates is never cut in half.
+            string emoji = "a" + string.Concat(Enumerable.Repeat(char.ConvertFromUtf32(0x1F600), 30));
+            string cut = AskTurnView.ActivityFor(emoji);
+            Assert.False(char.IsHighSurrogate(cut[^2]));
+            Assert.True(cut.Length <= "Using ".Length + 40 + 1);
+        }
+
+        [Fact]
+        public void A_new_turn_says_thinking_beside_the_dots() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");
+
+            Assert.Equal("Thinking…", turn.ActivityText.Text);
+            Assert.Equal(Visibility.Visible, turn.Activity.Visibility);
+            Assert.Equal(Visibility.Visible, turn.Typing.Visibility);
+            Assert.Same(turn.Activity, ((FrameworkElement)turn.Typing).Parent);   // the dots and the text are one row
+            Assert.Same(turn.Activity, turn.ActivityText.Parent);
+        });
+
+        [Fact]
+        public void A_tool_line_replaces_thinking_text_hides_it_and_a_later_tool_shows_it_again_under_the_answer() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");
+            var content = (System.Windows.Controls.Panel)turn.Activity.Parent;
+
+            turn.AddTool("get_live_status", null);
+            turn.ShowActivity(AskTurnView.ActivityFor("get_live_status"));
+            Assert.Equal("Reading live status…", turn.ActivityText.Text);
+            Assert.Equal(Visibility.Visible, turn.Activity.Visibility);
+            // Before any text the row sits where the dots always sat: under the chips, above the answer.
+            Assert.True(content.Children.IndexOf(turn.Tools) < content.Children.IndexOf(turn.Activity));
+            Assert.True(content.Children.IndexOf(turn.Activity) < content.Children.IndexOf(turn.Answer));
+
+            turn.AppendText("The CPU is fine.");
+            Assert.Equal(Visibility.Collapsed, turn.Activity.Visibility);
+            Assert.Equal(Visibility.Collapsed, turn.Typing.Visibility);
+
+            turn.AddTool("get_history", null);
+            turn.ShowActivity(AskTurnView.ActivityFor("get_history"));
+            Assert.Equal(Visibility.Visible, turn.Activity.Visibility);
+            Assert.Equal(Visibility.Visible, turn.Typing.Visibility);
+            Assert.Equal("Looking at history…", turn.ActivityText.Text);
+            // Now the answer text is above it.
+            int answer = content.Children.IndexOf(turn.Answer);
+            int activity = content.Children.IndexOf(turn.Activity);
+            Assert.True(answer < activity, "the activity must sit below the answer text");
+            Assert.True(activity < content.Children.IndexOf(turn.Note));
+            Assert.True(activity < content.Children.IndexOf(turn.Footer));
+
+            turn.AppendText(" More.");
+            Assert.Equal(Visibility.Collapsed, turn.Activity.Visibility);
+            Assert.Equal(2, turn.ToolChips.Count);   // the chips stay: they are the record
+        });
+
+        [Fact]
+        public void A_note_or_the_end_hides_the_activity_and_nothing_brings_it_back_after_the_end() => UiThread.Run(() =>
+        {
+            var noted = new AskTurnView("q");
+            noted.ShowActivity("Reading a note…");
+            noted.ShowNote("Limited mode.");
+            Assert.Equal(Visibility.Collapsed, noted.Activity.Visibility);
+
+            var ended = new AskTurnView("q");
+            ended.AppendText("Done.");
+            ended.ShowActivity("Checking alerts…");
+            ended.Complete(DateTime.Now, TimeSpan.FromSeconds(2));
+            Assert.Equal(Visibility.Collapsed, ended.Activity.Visibility);
+            Assert.Equal(Visibility.Collapsed, ended.Typing.Visibility);
+
+            ended.ShowActivity("Using late_tool…");   // a straggling update after the end
+            Assert.Equal(Visibility.Collapsed, ended.Activity.Visibility);
+            Assert.Equal(Visibility.Collapsed, ended.Typing.Visibility);
+        });
+
+        [Fact]
+        public void A_tool_name_from_the_model_is_shown_as_plain_text_never_rendered() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");
+
+            turn.ShowActivity(AskTurnView.ActivityFor("**bold** [x](https://example.com)"));
+
+            Assert.Equal("Using **bold** [x](https://example.com)…", turn.ActivityText.Text);
+            Assert.Single(turn.ActivityText.Inlines);
+            Assert.IsType<Run>(turn.ActivityText.Inlines.FirstInline);
+            Assert.Empty(ChatDocument.All<Hyperlink>(turn.Answer.Document));
         });
 
         [Fact]
@@ -128,13 +243,13 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("**first** and more", turn.RawText);
             Assert.Equal("first", Rendered(turn));
 
-            turn.Complete(DateTime.Now);
+            turn.Complete(DateTime.Now, TimeSpan.Zero);
             Assert.Equal("first and more", Rendered(turn));
             Assert.Equal(new Thickness(0), turn.Answer.Document.PagePadding);   // a document handed to a templated box too
         });
 
         [Fact]
-        public void The_footer_shows_the_finish_time_in_24_hour_digits_whatever_the_culture() => UiThread.Run(() =>
+        public void The_footer_shows_the_finish_time_and_the_duration_in_ASCII_digits_whatever_the_culture() => UiThread.Run(() =>
         {
             var previous = CultureInfo.CurrentCulture;
             try
@@ -142,10 +257,10 @@ namespace Kil0bitSystemMonitor.Tests
                 CultureInfo.CurrentCulture = new CultureInfo("th-TH");
                 var turn = new AskTurnView("q");
                 turn.AppendText("Done.");
-                turn.Complete(new DateTime(2026, 10, 1, 14, 5, 0));
+                turn.Complete(new DateTime(2026, 10, 1, 14, 5, 0), TimeSpan.FromSeconds(4.2));
 
                 Assert.Equal(Visibility.Visible, turn.Footer.Visibility);
-                Assert.Equal("14:05", turn.TimeText.Text);
+                Assert.Equal("14:05 · 4 s", turn.TimeText.Text);
             }
             finally
             {
@@ -158,7 +273,7 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var turn = new AskTurnView("q");
             turn.AppendText("1. **Close** `chrome.exe`\n2. Restart");
-            turn.Complete(DateTime.Now);
+            turn.Complete(DateTime.Now, TimeSpan.Zero);
 
             var copied = new List<string>();
             var previous = AskTurnView.SetClipboard;
@@ -199,7 +314,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             turn.AppendText("**bold**\nline two");   // renders at once: the first failure
             turn.AppendText(" and more");
-            turn.Complete(DateTime.Now);             // renders again: no second report
+            turn.Complete(DateTime.Now, TimeSpan.Zero);             // renders again: no second report
 
             Assert.Equal("**bold**\nline two and more", Rendered(turn).Replace("\r\n", "\n", StringComparison.Ordinal));
             Assert.Equal(Visibility.Visible, turn.Answer.Visibility);
@@ -215,13 +330,13 @@ namespace Kil0bitSystemMonitor.Tests
 
             var plain = new AskTurnView("q") { PlainLinks = true };
             plain.AppendText(table);
-            plain.Complete(DateTime.Now);
+            plain.Complete(DateTime.Now, TimeSpan.Zero);
             Assert.Empty(ChatDocument.All<Hyperlink>(plain.Answer.Document));
             Assert.Contains("https://example.com/a", Rendered(plain), StringComparison.Ordinal);
 
             var open = new AskTurnView("q");
             open.AppendText(table);
-            open.Complete(DateTime.Now);
+            open.Complete(DateTime.Now, TimeSpan.Zero);
             Assert.Single(ChatDocument.All<Hyperlink>(open.Answer.Document));
         });
 
@@ -361,7 +476,7 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.Same(first, Picture(turn)!.Source);
                 Assert.DoesNotContain("Drawing the diagram…", Lines(turn));
             }
-            turn.Complete(DateTime.Now);
+            turn.Complete(DateTime.Now, TimeSpan.Zero);
 
             Assert.Same(first, Picture(turn)!.Source);
             Assert.Single(renderer.Calls);
@@ -432,7 +547,7 @@ namespace Kil0bitSystemMonitor.Tests
             for (int i = 0; i < 50; i++) turn.AppendText("more ");
             turn.ApplyTheme(false);
             turn.ApplyTheme(true);
-            turn.Complete(DateTime.Now);
+            turn.Complete(DateTime.Now, TimeSpan.Zero);
 
             Assert.Equal(2, renderer.Calls.Count);   // the dark failure once, and the light theme's own draw
             Assert.True(renderer.Calls[0].Request.Dark);
@@ -502,7 +617,7 @@ namespace Kil0bitSystemMonitor.Tests
             var (turn, diagrams, renderer) = DiagramTurn();
             var passing = DiagramResult.Failure(DiagramText.TookTooLong, lasting: false);   // the engine was still starting
             turn.AppendText(ChatDiagramFakes.Block() + "\n\nDone.");
-            turn.Complete(DateTime.Now);
+            turn.Complete(DateTime.Now, TimeSpan.Zero);
             await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, passing);
             Assert.Contains("This diagram could not be drawn: " + DiagramText.TookTooLong, Lines(turn));
             var builds = CountBuilds(turn);
@@ -561,7 +676,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             // A stream that was cancelled may still end the turn: it renders as text and code, and draws nothing.
             turn.AppendText("\n\n" + ChatDiagramFakes.Block("pie\n  \"a\" : 1"));
-            turn.Complete(DateTime.Now);
+            turn.Complete(DateTime.Now, TimeSpan.Zero);
             Assert.Single(renderer.Calls);
             Assert.Empty(ChatDocument.All<Image>(turn.Answer.Document));
         });

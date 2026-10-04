@@ -696,7 +696,7 @@ public class NoteToolsWiringTests : IDisposable
 
         turn.AddTool(tool, "{\"query\":\"vpn\"}");
         turn.AppendText("[x](https://example.com) and https://bare.example");
-        turn.Complete(DateTime.Now);
+        turn.Complete(DateTime.Now, TimeSpan.Zero);
 
         Assert.Empty(Links(turn.Answer.Document));
         Assert.Equal("x (https://example.com/) and https://bare.example", Shown(turn.Answer.Document));   // the address in full
@@ -710,7 +710,7 @@ public class NoteToolsWiringTests : IDisposable
 
         turn.AddTool("get_live_status", null);
         turn.AppendText("[x](https://example.com)");
-        turn.Complete(DateTime.Now);
+        turn.Complete(DateTime.Now, TimeSpan.Zero);
 
         Assert.Single(Links(turn.Answer.Document));
         Assert.Equal("x", Shown(turn.Answer.Document));

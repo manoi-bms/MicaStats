@@ -53,7 +53,7 @@ namespace Kil0bitSystemMonitor.Tests
             turn.AddTool("get_live_status", null);
             turn.AppendText("It is **fine**, see [docs](https://example.com) and `top`.\n\n> quoted");
             turn.ShowNote("Stopped.");
-            turn.Complete(new DateTime(2026, 9, 30, 10, 0, 0));
+            turn.Complete(new DateTime(2026, 9, 30, 10, 0, 0), TimeSpan.Zero);
             return turn;
         }
 
@@ -201,7 +201,7 @@ namespace Kil0bitSystemMonitor.Tests
             var turn = new AskTurnView("q");
             window.TranscriptPanel.Children.Add(turn.Root);
             turn.AppendText("```\ncode\n```");
-            turn.Complete(DateTime.Now);
+            turn.Complete(DateTime.Now, TimeSpan.Zero);
             var code = AiAskWindowTests.Descendants<System.Windows.Controls.TextBox>(turn.Answer.Document)
                 .First(t => t.ContextMenu != null);
 

@@ -13,6 +13,8 @@ using Kil0bitSystemMonitor.Services.History;
 using Microsoft.Extensions.AI;
 using Xunit;
 
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using Size = System.Windows.Size;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 using List = System.Windows.Documents.List;
 
@@ -43,7 +45,8 @@ namespace Kil0bitSystemMonitor.Tests
                     return Play(updates, ct);
                 }, null);
 
-            public AskWindow Build(Func<string?>? modelLabel = null) => new(
+            public AskWindow Build(Func<string?>? modelLabel = null, Func<(int Used, int Limit)?>? usage = null,
+                                   Kil0bitSystemMonitor.Models.AppConfig? config = null) => new(
                 () => Setups.Dequeue(),
                 () => SettingsOpened++,
                 action =>
@@ -51,7 +54,7 @@ namespace Kil0bitSystemMonitor.Tests
                     Ran.Add(action);
                     return "Ended chrome.exe.";
                 },
-                modelLabel);
+                modelLabel, config, usage);
         }
 
         private static void WithWindow(Action<AskWindow, Harness> test) => UiThread.Run(() =>
@@ -129,7 +132,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Visibility.Collapsed, turn.Tools.Visibility);
             Assert.Equal(Visibility.Visible, turn.Answer.Visibility);
             Assert.Equal(Visibility.Visible, turn.Footer.Visibility);
-            Assert.Matches("^[0-9]{2}:[0-9]{2}$", turn.TimeText.Text);
+            Assert.Matches("^[0-9]{2}:[0-9]{2} · [0-9]+ (s|min [0-9]+ s)$", turn.TimeText.Text);
             Assert.Equal("", window.QuestionBox.Text);
             Assert.True(window.SendButton.IsEnabled);
             Assert.False(window.StopButton.IsEnabled);
@@ -210,6 +213,289 @@ namespace Kil0bitSystemMonitor.Tests
             await gate.WaitAsync(ct);
             yield return new AssistantUpdate(AssistantUpdateKind.Text, "All fine.");
             yield return new AssistantUpdate(AssistantUpdateKind.Done);
+        }
+
+        [Fact]
+        public void The_activity_says_thinking_then_the_tool_then_goes_with_the_text() => WithWindow((window, h) =>
+        {
+            var toolSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            h.Setups.Enqueue(new AskSetup((conversation, question, ct) => ToolThenText(toolSeen, gate.Task, ct), null));
+
+            window.QuestionBox.Text = "Is it fine?";
+            Click(window.SendButton);
+            var turn = window.Turns[0];
+            Assert.Equal("Thinking…", turn.ActivityText.Text);
+            Assert.Equal(Visibility.Visible, turn.Activity.Visibility);
+
+            UiPump.Wait(toolSeen.Task);
+            Assert.Equal("Reading live status…", turn.ActivityText.Text);
+            Assert.Equal(Visibility.Visible, turn.Activity.Visibility);
+
+            gate.SetResult();
+            UiPump.Wait(window.Pending!);
+            Assert.Equal(Visibility.Collapsed, turn.Activity.Visibility);
+        });
+
+        [Fact]
+        public void A_tool_used_after_text_shows_its_line_below_the_answer_and_the_end_hides_it() => WithWindow((window, h) =>
+        {
+            var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            h.Setups.Enqueue(new AskSetup((conversation, question, ct) => TextThenTool(reached, gate.Task, ct), null));
+
+            window.QuestionBox.Text = "Is it fine?";
+            Click(window.SendButton);
+            var turn = window.Turns[0];
+            UiPump.Wait(reached.Task);
+
+            var content = (System.Windows.Controls.Panel)turn.Activity.Parent;
+            Assert.Equal("Checking alerts…", turn.ActivityText.Text);
+            Assert.Equal(Visibility.Visible, turn.Activity.Visibility);
+            Assert.True(content.Children.IndexOf(turn.Answer) < content.Children.IndexOf(turn.Activity));
+
+            gate.SetResult();
+            UiPump.Wait(window.Pending!);
+            Assert.Equal(Visibility.Collapsed, turn.Activity.Visibility);
+        });
+
+        private static async IAsyncEnumerable<AssistantUpdate> TextThenTool(
+            TaskCompletionSource reached, Task gate, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            yield return new AssistantUpdate(AssistantUpdateKind.Text, "First look.");
+            yield return new AssistantUpdate(AssistantUpdateKind.ToolUsed, ToolName: "list_alerts");
+            reached.TrySetResult();
+            await gate.WaitAsync(ct);
+            yield return new AssistantUpdate(AssistantUpdateKind.Done);
+        }
+
+        [Fact]
+        public void A_stopped_answer_with_text_still_gets_its_footer_with_the_time_so_far() => WithWindow((window, h) =>
+        {
+            var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            h.Setups.Enqueue(new AskSetup((conversation, question, ct) => Hang(reached, ct), null));
+
+            window.QuestionBox.Text = "Why?";
+            Click(window.SendButton);
+            UiPump.Wait(reached.Task);
+            window.Stop();
+            UiPump.Wait(window.Pending!);
+
+            var turn = window.Turns[0];
+            Assert.Equal(Visibility.Visible, turn.Footer.Visibility);
+            Assert.Matches("^[0-9]{2}:[0-9]{2} · [0-9]+ (s|min [0-9]+ s)$", turn.TimeText.Text);
+            Assert.Equal(Visibility.Collapsed, turn.Activity.Visibility);
+        });
+
+        // ---- the day's count in the hint ----
+
+        private const string OldHint = "Enter to send · Shift+Enter for a new line";
+
+        [Fact]
+        public void The_hint_is_the_old_text_while_the_count_is_unknown() => UiThread.Run(() =>
+        {
+            var none = new Harness().Build();
+            var unknown = new Harness().Build(usage: () => null);
+            var broken = new Harness().Build(usage: () => throw new InvalidOperationException("no meter"));
+            try
+            {
+                Assert.Equal(OldHint, none.HintText.Text);
+                Assert.Equal(OldHint, unknown.HintText.Text);
+                Assert.Equal(OldHint, broken.HintText.Text);
+            }
+            finally
+            {
+                none.Close();
+                unknown.Close();
+                broken.Close();
+            }
+        });
+
+        [Fact]
+        public void The_hint_ends_with_the_count_in_ASCII_digits_whatever_the_culture() => UiThread.Run(() =>
+        {
+            var previous = System.Globalization.CultureInfo.CurrentCulture;
+            try
+            {
+                System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("th-TH");
+                var window = new Harness().Build(usage: () => (1234, 10000));
+                try
+                {
+                    Assert.Equal(OldHint + " · 1234 of 10000 today", window.HintText.Text);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            }
+            finally
+            {
+                System.Globalization.CultureInfo.CurrentCulture = previous;
+            }
+        });
+
+        [Fact]
+        public void The_count_is_read_again_after_each_answer_and_when_asked() => UiThread.Run(() =>
+        {
+            int used = 3;
+            var h = new Harness();
+            var window = h.Build(usage: () => (used, 100));
+            try
+            {
+                Assert.Equal(OldHint + " · 3 of 100 today", window.HintText.Text);
+
+                h.Setups.Enqueue(new AskSetup((conversation, question, ct) =>
+                {
+                    used = 4;   // the assistant counted the question
+                    return Play(new[]
+                    {
+                        new AssistantUpdate(AssistantUpdateKind.Text, "Fine."),
+                        new AssistantUpdate(AssistantUpdateKind.Done),
+                    }, ct);
+                }, null));
+                Send(window, "Is it fine?");
+                Assert.Equal(OldHint + " · 4 of 100 today", window.HintText.Text);
+
+                used = 9;   // another feature asked something
+                window.RefreshUsage();   // what ShowOrActivate does
+                Assert.Equal(OldHint + " · 9 of 100 today", window.HintText.Text);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        // ---- jump to the latest ----
+
+        /// <summary>Gives the never-shown window a size and a layout pass, so the transcript has a viewport.</summary>
+        private static void Lay(AskWindow window)
+        {
+            var root = (FrameworkElement)window.Content;
+            root.Measure(new Size(window.Width, window.Height));
+            root.Arrange(new Rect(0, 0, window.Width, window.Height));
+            root.UpdateLayout();
+        }
+
+        private static AssistantUpdate[] LongAnswer() => new[]
+        {
+            new AssistantUpdate(AssistantUpdateKind.Text, string.Concat(Enumerable.Repeat("A line of the answer.\n\n", 60))),
+            new AssistantUpdate(AssistantUpdateKind.Done),
+        };
+
+        [Fact]
+        public void The_jump_button_is_hidden_at_the_end_shown_when_scrolled_up_and_a_click_follows_again() => WithWindow((window, h) =>
+        {
+            h.Setups.Enqueue(h.Answer(LongAnswer()));
+            Send(window, "Tell me a lot.");
+            Lay(window);
+            Assert.True(window.TranscriptScroll.ScrollableHeight > 0, "the answer must be taller than the window for this test");
+            Assert.Equal(Visibility.Collapsed, window.JumpButton.Visibility);   // following: at the end
+
+            window.TranscriptScroll.ScrollToVerticalOffset(0);
+            Lay(window);
+            Assert.Equal(Visibility.Visible, window.JumpButton.Visibility);
+
+            Click(window.JumpButton);
+            Lay(window);
+            Assert.Equal(window.TranscriptScroll.ScrollableHeight, window.TranscriptScroll.VerticalOffset);
+            Assert.Equal(Visibility.Collapsed, window.JumpButton.Visibility);
+
+            // Following again: more text keeps the end in view.
+            h.Setups.Enqueue(h.Answer(LongAnswer()));
+            Send(window, "And more.");
+            Lay(window);
+            Assert.Equal(window.TranscriptScroll.ScrollableHeight, window.TranscriptScroll.VerticalOffset);
+            Assert.Equal(Visibility.Collapsed, window.JumpButton.Visibility);
+        });
+
+        [Fact]
+        public void The_jump_button_is_not_in_the_scrolled_content_takes_no_focus_and_has_a_name() => WithWindow((window, h) =>
+        {
+            Assert.False(window.JumpButton.Focusable);
+            Assert.Equal("Jump to the latest", window.JumpButton.ToolTip);
+            Assert.Equal("Jump to the latest", System.Windows.Automation.AutomationProperties.GetName(window.JumpButton));
+            Assert.Equal(((char)0xE74B).ToString(), window.JumpButton.Content);
+            Assert.False(window.TranscriptScroll.IsAncestorOf(window.JumpButton));
+            // Over the transcript: the same grid cell, at its lower right.
+            Assert.Equal(System.Windows.Controls.Grid.GetRow(window.TranscriptScroll), System.Windows.Controls.Grid.GetRow(window.JumpButton));
+            Assert.Equal(HorizontalAlignment.Right, window.JumpButton.HorizontalAlignment);
+            Assert.Equal(VerticalAlignment.Bottom, window.JumpButton.VerticalAlignment);
+        });
+
+        [Theory]
+        [InlineData(true, 500, false)]    // following: at the end
+        [InlineData(false, 500, true)]    // scrolled away from the end
+        [InlineData(false, 0, false)]     // nothing to scroll
+        [InlineData(true, 0, false)]
+        public void The_jump_button_shows_only_when_not_following_and_there_is_something_to_scroll(bool follow, double scrollable, bool shown)
+        {
+            Assert.Equal(shown, AskWindow.ShowsJump(follow, scrollable));
+        }
+
+        // ---- the size ----
+
+        [Fact]
+        public void The_window_opens_at_the_configured_size_within_the_work_area() => UiThread.Run(() =>
+        {
+            var work = SystemParameters.WorkArea;
+            var config = new Kil0bitSystemMonitor.Models.AppConfig { AskWidth = 700, AskHeight = 560 };
+            var window = new Harness().Build(config: config);
+            var big = new Harness().Build(config: new Kil0bitSystemMonitor.Models.AppConfig { AskWidth = 9000, AskHeight = 9000 });
+            var normal = new Harness().Build(config: new Kil0bitSystemMonitor.Models.AppConfig());
+            try
+            {
+                Assert.Equal(Math.Min(700, work.Width), window.Width);
+                Assert.Equal(Math.Min(560, work.Height), window.Height);
+                Assert.Equal(Math.Max(big.MinWidth, work.Width), big.Width);     // a saved size from a larger screen
+                Assert.Equal(Math.Max(big.MinHeight, work.Height), big.Height);
+                Assert.Equal(Math.Min(640, work.Width), normal.Width);
+                Assert.Equal(Math.Min(720, work.Height), normal.Height);
+                Assert.Equal(WindowStartupLocation.CenterScreen, window.WindowStartupLocation);
+            }
+            finally
+            {
+                window.Close();
+                big.Close();
+                normal.Close();
+            }
+        });
+
+        [Fact]
+        public void The_window_writes_its_size_to_the_config_when_it_closes() => UiThread.Run(() =>
+        {
+            var config = new Kil0bitSystemMonitor.Models.AppConfig();
+            var window = new Harness().Build(config: config);
+            window.Width = 730;
+            window.Height = 510;
+
+            window.Close();
+
+            Assert.Equal(730, config.AskWidth);
+            Assert.Equal(510, config.AskHeight);
+        });
+
+        [Fact]
+        public void A_window_that_is_maximized_or_minimized_remembers_its_restored_size_not_the_big_one()
+        {
+            var restore = new Rect(10, 20, 700, 500);
+            Assert.Equal((800d, 600d), AskWindow.SizeToRemember(WindowState.Normal, restore, 800, 600));
+            Assert.Equal((700d, 500d), AskWindow.SizeToRemember(WindowState.Maximized, restore, 1920, 1040));
+            Assert.Equal((700d, 500d), AskWindow.SizeToRemember(WindowState.Minimized, restore, 160, 28));
+            // No restore size known (a window that was never shown): the window's own size.
+            Assert.Equal((640d, 720d), AskWindow.SizeToRemember(WindowState.Maximized, Rect.Empty, 640, 720));
+        }
+
+        [Fact]
+        public void The_size_is_kept_between_the_minimum_and_the_work_area()
+        {
+            Assert.Equal((640d, 720d), AskWindow.FitSize(640, 720, 420, 420, 1920, 1040));
+            Assert.Equal((1920d, 1040d), AskWindow.FitSize(5000, 5000, 420, 420, 1920, 1040));
+            Assert.Equal((420d, 420d), AskWindow.FitSize(100, 100, 420, 420, 1920, 1040));
+            Assert.Equal((420d, 420d), AskWindow.FitSize(640, 720, 420, 420, 400, 300));   // a work area below the minimum: the minimum wins
+            Assert.Equal((420d, 420d), AskWindow.FitSize(double.NaN, double.NaN, 420, 420, 1920, 1040));
+            Assert.Equal((1920d, 1040d), AskWindow.FitSize(double.PositiveInfinity, double.PositiveInfinity, 420, 420, 1920, 1040));
         }
 
         [Fact]

@@ -85,6 +85,13 @@
             </Grid>
         </ScrollViewer>
 
+                <!-- Over the transcript's lower right corner, outside its scrolled content; takes no keyboard focus. -->
+        <Button x:Name="JumpButton" Grid.Row="1" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                Margin="0,0,24,14" Visibility="Collapsed" Focusable="False"
+                Style="{StaticResource ChatRoundButton}"
+                Background="{DynamicResource Ask.SendBack}" Foreground="{DynamicResource Ask.SendGlyph}" Content="&#xE74B;"
+                ToolTip="Jump to the latest" AutomationProperties.Name="Jump to the latest" Click="OnJump" />
+
         <!-- Problems and notices: what failed, Settings, Retry, "suggestions do nothing...". -->
         <Grid x:Name="StatusRow" Grid.Row="2" MaxWidth="860" Margin="20,2,20,8" Visibility="Collapsed">
             <Grid.ColumnDefinitions>
@@ -139,7 +146,7 @@
                         </Grid>
                     </Grid>
                 </Border>
-                <TextBlock Text="Enter to send &#x00B7; Shift+Enter for a new line" FontSize="11"
+                <TextBlock x:Name="HintText" Text="Enter to send &#x00B7; Shift+Enter for a new line" FontSize="11"
                            Foreground="{DynamicResource Ask.Muted}" HorizontalAlignment="Center" Margin="0,6,0,0" />
             </StackPanel>
         </Border>

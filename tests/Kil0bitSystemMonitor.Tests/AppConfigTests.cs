@@ -155,6 +155,61 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void The_Ask_window_size_defaults_to_640_by_720_and_is_clamped_and_NaN_is_the_default()
+        {
+            var c = new AppConfig();
+            Assert.Equal(640, c.AskWidth);
+            Assert.Equal(720, c.AskHeight);
+
+            c.AskWidth = 100;
+            c.AskHeight = 100;
+            Assert.Equal(420, c.AskWidth);
+            Assert.Equal(420, c.AskHeight);
+
+            c.AskWidth = 1_000_000;
+            c.AskHeight = double.PositiveInfinity;
+            Assert.Equal(10_000, c.AskWidth);
+            Assert.Equal(10_000, c.AskHeight);
+
+            c.AskWidth = double.NegativeInfinity;
+            Assert.Equal(420, c.AskWidth);
+
+            c.AskWidth = 800;
+            c.AskHeight = 900;
+            c.AskWidth = double.NaN;
+            c.AskHeight = double.NaN;
+            Assert.Equal(640, c.AskWidth);
+            Assert.Equal(720, c.AskHeight);
+        }
+
+        [Fact]
+        public void The_Ask_window_size_round_trips_and_an_older_config_gets_the_default()
+        {
+            var back = System.Text.Json.JsonSerializer.Deserialize<AppConfig>(
+                System.Text.Json.JsonSerializer.Serialize(new AppConfig { AskWidth = 800, AskHeight = 600 }))!;
+            Assert.Equal(800, back.AskWidth);
+            Assert.Equal(600, back.AskHeight);
+
+            var older = System.Text.Json.JsonSerializer.Deserialize<AppConfig>("{}")!;
+            Assert.Equal(640, older.AskWidth);
+            Assert.Equal(720, older.AskHeight);
+            Assert.Equal(10_000, System.Text.Json.JsonSerializer.Deserialize<AppConfig>("{\"AskWidth\": 99999}")!.AskWidth);
+        }
+
+        [Fact]
+        public void Setting_the_same_Ask_size_does_not_notify()
+        {
+            var c = new AppConfig();
+            var seen = Track(c);
+            c.AskWidth = 640;
+            c.AskHeight = 720;
+            Assert.Empty(seen);
+
+            c.AskWidth = 700;
+            Assert.Equal(new[] { nameof(AppConfig.AskWidth) }, seen);
+        }
+
+        [Fact]
         public void Graph_history_seconds_is_clamped()
         {
             var c = new AppConfig();

@@ -54,6 +54,8 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>True when the document last built asked for a diagram's picture: only then does a theme change mean building it again.</summary>
         private bool _picturesAsked;
         private bool _released;
+        private bool _completed;
+        private readonly StackPanel _content;
         private bool _rendered;
         private bool _renderFailed;
 
@@ -105,6 +107,22 @@ namespace Kil0bitSystemMonitor.Ai
             };
             typing.SetResourceReference(TypingDots.FillProperty, "Ask.Muted");
             Typing = typing;
+
+            // What the assistant is doing, said beside the dots. Plain text in a TextBlock, never
+            // the Markdown renderer: a tool name comes from the model.
+            ActivityText = new TextBlock
+            {
+                Text = "Thinking…",
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0),
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+            ActivityText.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Muted");
+            Activity = new StackPanel { Orientation = Orientation.Horizontal };
+            Activity.Children.Add(typing);
+            Activity.Children.Add(ActivityText);
 
             Answer = new AnswerBox
             {
@@ -184,8 +202,9 @@ namespace Kil0bitSystemMonitor.Ai
             Footer.Children.Add(TimeText);
 
             var content = new StackPanel();
+            _content = content;
             content.Children.Add(Tools);
-            content.Children.Add(Typing);
+            content.Children.Add(Activity);
             content.Children.Add(Answer);
             content.Children.Add(Note);
             content.Children.Add(Actions);
@@ -228,6 +247,15 @@ namespace Kil0bitSystemMonitor.Ai
 
         /// <summary>The dots shown from Send until the first answer text, a note or the end.</summary>
         public FrameworkElement Typing { get; }
+
+        /// <summary>
+        /// The dots and <see cref="ActivityText"/> in one row: hidden by answer text, a note and
+        /// the end. It sits above the answer until text arrives, and below it after that.
+        /// </summary>
+        public StackPanel Activity { get; }
+
+        /// <summary>What the assistant is doing, in the present tense: "Thinking…", "Reading live status…".</summary>
+        public TextBlock ActivityText { get; }
 
         /// <summary>Holds a chip per tool used.</summary>
         public WrapPanel Tools { get; }
@@ -409,15 +437,17 @@ namespace Kil0bitSystemMonitor.Ai
         }
 
         /// <summary>
-        /// The answer ended (done, stopped or failed): the dots go, the answer renders at once,
-        /// and an answer with text gets Copy and the time it finished.
+        /// The answer ended (done, stopped or failed): the dots go and stay away, the answer
+        /// renders at once, and an answer with text gets Copy, the time it finished and how long
+        /// it took (<paramref name="took"/>, from Send to the end).
         /// </summary>
-        public void Complete(DateTime finishedAt)
+        public void Complete(DateTime finishedAt, TimeSpan took)
         {
+            _completed = true;
             StopTyping();
             RenderNow();
             if (_raw.Length == 0) return;
-            TimeText.Text = finishedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
+            TimeText.Text = finishedAt.ToString("HH:mm", CultureInfo.InvariantCulture) + " · " + ChatDuration.Text(took);
             Footer.Visibility = Visibility.Visible;
         }
 
@@ -476,10 +506,78 @@ namespace Kil0bitSystemMonitor.Ai
         }
 
         /// <summary>Shows the dots; they animate only while they are on screen (<see cref="TypingDots"/>).</summary>
-        private void StartTyping() => Typing.Visibility = Visibility.Visible;
+        private void StartTyping()
+        {
+            Activity.Visibility = Visibility.Visible;
+            Typing.Visibility = Visibility.Visible;
+        }
 
-        /// <summary>Hides the dots, which stops their animation, so nothing keeps the renderer busy.</summary>
-        private void StopTyping() => Typing.Visibility = Visibility.Collapsed;
+        /// <summary>Hides the dots and their text, which stops the animation, so nothing keeps the renderer busy.</summary>
+        private void StopTyping()
+        {
+            Typing.Visibility = Visibility.Collapsed;
+            Activity.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Shows the dots with <paramref name="text"/> (<see cref="ActivityFor"/>): a tool is
+        /// running. After answer text the row is moved under the answer, so it never sits above
+        /// text that is already there. Once the turn is complete nothing shows it again.
+        /// </summary>
+        public void ShowActivity(string text)
+        {
+            if (_completed) return;
+            ActivityText.Text = text;
+            int answer = _content.Children.IndexOf(Answer);
+            int now = _content.Children.IndexOf(Activity);
+            bool underAnswer = _raw.Length > 0;
+            if ((underAnswer && now < answer) || (!underAnswer && now > answer))
+            {
+                _content.Children.Remove(Activity);
+                int at = _content.Children.IndexOf(Answer);
+                _content.Children.Insert(underAnswer ? at + 1 : at, Activity);
+            }
+            StartTyping();
+        }
+
+        /// <summary>The longest part of a tool's name the activity line shows.</summary>
+        private const int MaxToolNameLength = 40;
+
+        /// <summary>
+        /// What the activity line says while a tool runs. The name is the model's: a tool this
+        /// app does not know is shown as "Using {name}…" with the name cut to
+        /// <see cref="MaxToolNameLength"/> characters and any line break or other control or
+        /// format character turned into a space, so it cannot make a second line or reorder the text.
+        /// </summary>
+        internal static string ActivityFor(string tool) => tool switch
+        {
+            "get_live_status" => "Reading live status…",
+            "get_top_processes" => "Checking top processes…",
+            "get_history" => "Looking at history…",
+            "list_slowdown_reports" => "Listing slowdown reports…",
+            "get_slowdown_report" => "Reading a slowdown report…",
+            "list_alerts" => "Checking alerts…",
+            "get_hardware" => "Reading hardware info…",
+            "get_battery" => "Checking the battery…",
+            "get_boot_summary" => "Checking startup times…",
+            "search_notes" => "Searching notes…",
+            "get_note" => "Reading a note…",
+            _ => "Using " + ShortName(tool) + "…",
+        };
+
+        private static string ShortName(string name)
+        {
+            var text = new StringBuilder(Math.Min(name.Length, MaxToolNameLength));
+            foreach (char c in name)
+            {
+                if (text.Length >= MaxToolNameLength) break;
+                bool odd = char.IsControl(c) || CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.Format;
+                text.Append(odd ? ' ' : c);
+            }
+            if (text.Length > 0 && char.IsHighSurrogate(text[^1])) text.Length--;   // never half a pair
+            string shown = text.ToString().Trim();
+            return shown.Length == 0 ? "a tool" : shown;
+        }
 
         /// <summary>A tool and its arguments as its chip's tooltip shows them; empty arguments are left out.</summary>
         internal static string Describe(string name, string? args)

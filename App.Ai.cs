@@ -448,6 +448,17 @@ public partial class App
     }
 
     /// <summary>
+    /// The day's question count and the configured limit, for the Ask window's hint. Only shown
+    /// there: the limit is still enforced where a question is counted. Null while the config is
+    /// not loaded.
+    /// </summary>
+    internal static (int Used, int Limit)? AskUsage()
+    {
+        var config = ConfigService?.Config;
+        return config == null ? null : (AiUsage.UsedToday, config.AiDailyLimit);
+    }
+
+    /// <summary>
     /// What one Send or Explain needs, built fresh each time so a provider, model or key change
     /// applies from the next question. Never throws: a problem comes back as the sentence to show.
     /// </summary>

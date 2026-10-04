@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,6 +41,9 @@ namespace Kil0bitSystemMonitor.Ai
         private const string LimitedModeNote =
             "Limited mode: this model could not use MicaStats' tools, so the answer rests on a short summary of the PC right now.";
 
+        /// <summary>The hint under the question box; the day's count is added to it while it is known.</summary>
+        private const string HintBase = "Enter to send · Shift+Enter for a new line";
+
         /// <summary>How close to the bottom the transcript must be for new content to keep it there.</summary>
         private const double FollowDistance = 40;
 
@@ -57,6 +62,7 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly Action _openSettings;
         private readonly Func<SuggestedAction, string> _runAction;
         private readonly Func<string?>? _modelLabel;
+        private readonly Func<(int Used, int Limit)?>? _usage;
         private readonly AppConfig _config;
         private AskPalette _palette = AskPalette.Dark;
         private AiConversation _conversation = new();
@@ -74,9 +80,11 @@ namespace Kil0bitSystemMonitor.Ai
         /// <param name="openSettings">Opens Settings on the AI section.</param>
         /// <param name="runAction">Runs a clicked suggestion and returns the sentence to show.</param>
         /// <param name="modelLabel">Names the model in use for the header, read on open and on each Send; null hides the line.</param>
-        /// <param name="config">The live config: <see cref="AppConfig.AskTheme"/> is read and written here. Null uses a private default config (tests).</param>
+        /// <param name="config">The live config: <see cref="AppConfig.AskTheme"/> and the window's size are read and written here. Null uses a private default config (tests).</param>
+        /// <param name="usage">Today's question count and the daily limit, for the hint under the question box; null, or a null result, shows no count. Shown only: the limit is enforced where it always was.</param>
         internal AskWindow(Func<AskSetup> setup, Action openSettings, Func<SuggestedAction, string> runAction,
-                           Func<string?>? modelLabel = null, AppConfig? config = null)
+                           Func<string?>? modelLabel = null, AppConfig? config = null,
+                           Func<(int Used, int Limit)?>? usage = null)
         {
             InitializeComponent();
             _setup = setup;
@@ -84,6 +92,11 @@ namespace Kil0bitSystemMonitor.Ai
             _runAction = runAction;
             _modelLabel = modelLabel;
             _config = config ?? new AppConfig();
+            _usage = usage;
+
+            // The size it was closed with, kept between its minimum and the screen's work area.
+            Rect work = SystemParameters.WorkArea;
+            (Width, Height) = FitSize(_config.AskWidth, _config.AskHeight, MinWidth, MinHeight, work.Width, work.Height);
 
             AskMenus.Install(QuestionBox, editable: true);
             ApplyTheme();
@@ -97,6 +110,16 @@ namespace Kil0bitSystemMonitor.Ai
                 PromptPanel.Children.Add(chip);
             }
 
+            // The restored size is remembered, never the maximized or minimized one. Read while the
+            // window is still open: RestoreBounds is not available once it is closed.
+            Closing += (s, e) =>
+            {
+                (double width, double height) = SizeToRemember(
+                    WindowState, WindowState == WindowState.Normal ? Rect.Empty : RestoreBounds, Width, Height);
+                _config.AskWidth = width;
+                _config.AskHeight = height;
+            };
+
             // Closing the window cancels an answer in progress, like Stop.
             Closed += (s, e) =>
             {
@@ -107,6 +130,7 @@ namespace Kil0bitSystemMonitor.Ai
             };
             UpdateButtons();
             RefreshModelLabel();
+            RefreshUsage();
         }
 
         /// <summary>The palette the window is painted with.</summary>
@@ -158,13 +182,14 @@ namespace Kil0bitSystemMonitor.Ai
             if (window == null)
             {
                 window = new AskWindow(App.CreateAskSetup, () => App.ShowSettingsSection("AI"), SuggestedActionRunner.Run,
-                    App.AskModelLabel, App.ConfigService?.Config);
+                    App.AskModelLabel, App.ConfigService?.Config, App.AskUsage);
                 s_current = window;
                 window.Show();
             }
             else
             {
                 window.RefreshModelLabel();
+                window.RefreshUsage();
             }
 
             if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
@@ -217,6 +242,7 @@ namespace Kil0bitSystemMonitor.Ai
             TranscriptPanel.Children.Clear();
             EmptyState.Visibility = Visibility.Visible;
             _follow = true;
+            UpdateJump();
             HideProblem();
             SetStatus("");
         }
@@ -257,6 +283,7 @@ namespace Kil0bitSystemMonitor.Ai
             }
 
             AskTurnView turn = AddTurn(question);
+            var watch = Stopwatch.StartNew();   // from the request starting to the stream ending
             int generation = _generation;
             var cts = new CancellationTokenSource();
             _cts = cts;
@@ -280,7 +307,11 @@ namespace Kil0bitSystemMonitor.Ai
                             if (!string.IsNullOrEmpty(update.Text)) turn.AppendText(update.Text);
                             break;
                         case AssistantUpdateKind.ToolUsed:
-                            if (!string.IsNullOrEmpty(update.ToolName)) turn.AddTool(update.ToolName, update.ToolArgs);
+                            if (!string.IsNullOrEmpty(update.ToolName))
+                            {
+                                turn.AddTool(update.ToolName, update.ToolArgs);
+                                turn.ShowActivity(AskTurnView.ActivityFor(update.ToolName));
+                            }
                             break;
                         case AssistantUpdateKind.Suggestion:
                             if (update.Suggestion is { } action)
@@ -327,8 +358,10 @@ namespace Kil0bitSystemMonitor.Ai
                 cts.Dispose();
                 setup.Resource?.Dispose();
                 if (conversation.NotesEverRead) turn.ShowLinksAsText();
-                turn.Complete(DateTime.Now);
+                watch.Stop();
+                turn.Complete(DateTime.Now, watch.Elapsed);
                 UpdateButtons();
+                RefreshUsage();   // the question just answered is counted
             }
 
             if (failed || generation != _generation) return;
@@ -364,6 +397,7 @@ namespace Kil0bitSystemMonitor.Ai
             EmptyState.Visibility = Visibility.Collapsed;
             _follow = true;
             TranscriptScroll.ScrollToEnd();
+            UpdateJump();
             return turn;
         }
 
@@ -451,6 +485,64 @@ namespace Kil0bitSystemMonitor.Ai
                 _follow = IsNearEnd(TranscriptScroll.VerticalOffset, TranscriptScroll.ScrollableHeight);
             else if (_follow)
                 TranscriptScroll.ScrollToEnd();
+            UpdateJump();
+        }
+
+        /// <summary>True when the jump button shows: the transcript is not following its end and there is something to scroll.</summary>
+        internal static bool ShowsJump(bool follow, double scrollableHeight) => !follow && scrollableHeight > 0;
+
+        private void UpdateJump() =>
+            JumpButton.Visibility = ShowsJump(_follow, TranscriptScroll.ScrollableHeight) ? Visibility.Visible : Visibility.Collapsed;
+
+        /// <summary>Scrolls to the end and keeps it there while an answer grows.</summary>
+        private void OnJump(object sender, RoutedEventArgs e)
+        {
+            _follow = true;
+            TranscriptScroll.ScrollToEnd();
+            UpdateJump();
+        }
+
+        /// <summary>
+        /// Shows the day's count after the hint, or only the hint while the count is unknown. Read
+        /// when the window opens or is brought forward, and after each answer. Never throws.
+        /// </summary>
+        internal void RefreshUsage()
+        {
+            (int Used, int Limit)? usage = null;
+            try
+            {
+                usage = _usage?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Reading the day's question count failed (" + ex.GetType().Name + ")");
+            }
+            HintText.Text = usage is { } u
+                ? HintBase + " · " + u.Used.ToString(CultureInfo.InvariantCulture) + " of " + u.Limit.ToString(CultureInfo.InvariantCulture) + " today"
+                : HintBase;
+        }
+
+        /// <summary>
+        /// The size to open with: the saved one, never below the window's minimum and never larger
+        /// than the work area. A work area smaller than the minimum gives the minimum.
+        /// </summary>
+        internal static (double Width, double Height) FitSize(
+            double width, double height, double minWidth, double minHeight, double workWidth, double workHeight) =>
+            (Fit(width, minWidth, workWidth), Fit(height, minHeight, workHeight));
+
+        private static double Fit(double value, double min, double max) =>
+            double.IsNaN(value) ? min : Math.Max(min, Math.Min(value, max));
+
+        /// <summary>
+        /// The size to write to the config when the window closes: its own, or when it is maximized
+        /// or minimized the size it will be restored to. A restore size that is not known (a window
+        /// that was never shown) gives the window's own.
+        /// </summary>
+        internal static (double Width, double Height) SizeToRemember(WindowState state, Rect restore, double width, double height)
+        {
+            bool known = !restore.IsEmpty && restore.Width > 0 && restore.Height > 0
+                         && !double.IsNaN(restore.Width) && !double.IsNaN(restore.Height);
+            return state != WindowState.Normal && known ? (restore.Width, restore.Height) : (width, height);
         }
 
         private void OnSend(object sender, RoutedEventArgs e) => StartSend();

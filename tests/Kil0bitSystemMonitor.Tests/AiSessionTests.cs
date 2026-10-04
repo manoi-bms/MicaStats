@@ -1,3 +1,4 @@
+using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
 using Xunit;
 
@@ -307,6 +308,277 @@ namespace Kil0bitSystemMonitor.Tests
 
             // No destination (a base URL that cannot be used, a test): the line says only what it runs on.
             Assert.Equal("Selection, 412 characters", new AiSession(PadAiAction.Summarize, text, true, destination: "").View(Ok).SourceLine);
+        }
+
+        // ---- the model's name, what is going on and how long it took (AI chat UI spec 3.3) ---------
+
+        private const string Sonnet = "claude-sonnet-5-5";
+
+        /// <summary>A clock a test moves by hand, which counts how often it was read.</summary>
+        private sealed class Clock
+        {
+            private System.DateTime _now = new(2026, 10, 4, 9, 0, 0, System.DateTimeKind.Utc);
+
+            public int Reads { get; private set; }
+
+            public System.DateTime Read()
+            {
+                Reads++;
+                return _now;
+            }
+
+            public void Pass(int milliseconds) => _now = _now.AddMilliseconds(milliseconds);
+        }
+
+        [Fact]
+        public void The_source_line_names_the_model_after_the_destination()
+        {
+            string text = new string('x', 412);
+            Assert.Equal("Selection, 412 characters · to api.anthropic.com (claude-sonnet-5-5)",
+                new AiSession(PadAiAction.Summarize, text, true, destination: "api.anthropic.com", model: Sonnet).View(Ok).SourceLine);
+            Assert.Equal("Whole note, 412 characters · to this PC (llama3.2)",
+                new AiSession(PadAiAction.Ask, text, false, "explain", "this PC", "llama3.2").View(Ok).SourceLine);
+
+            // No model: the line is as it was.
+            Assert.Equal("Selection, 412 characters · to api.anthropic.com",
+                new AiSession(PadAiAction.Summarize, text, true, destination: "api.anthropic.com", model: "").View(Ok).SourceLine);
+            Assert.Equal("Selection, 412 characters · to api.anthropic.com",
+                new AiSession(PadAiAction.Summarize, text, true, destination: "api.anthropic.com").View(Ok).SourceLine);
+
+            // A model and no destination: the model is still named.
+            Assert.Equal("Selection, 412 characters (llama3.2)", new AiSession(PadAiAction.Summarize, text, true, model: "llama3.2").View(Ok).SourceLine);
+        }
+
+        [Fact]
+        public void The_model_is_kept_trimmed_and_blank_names_none()
+        {
+            var named = new AiSession(PadAiAction.Summarize, "x", true, model: "  llama3.2 \n");
+            Assert.Equal("llama3.2", named.Model);
+            Assert.Equal("Selection, 1 character (llama3.2)", named.View(Ok).SourceLine);
+
+            foreach (string? blank in new[] { "", "   ", null })
+            {
+                var unnamed = new AiSession(PadAiAction.Summarize, "x", true, model: blank!);
+                Assert.Equal("", unnamed.Model);
+                Assert.Equal("Selection, 1 character", unnamed.View(Ok).SourceLine);
+            }
+        }
+
+        [Theory]
+        [InlineData(AiProviders.Claude, "claude-sonnet-5-5", "llama3.2", "claude-sonnet-5-5")]
+        [InlineData("SomethingElse", " claude-haiku-4-5 ", "llama3.2", "claude-haiku-4-5")]      // an unknown provider is Claude, as the factory has it; trimmed
+        [InlineData(AiProviders.OpenAiCompatible, "claude-sonnet-5-5", " llama3.2 ", "llama3.2")]
+        [InlineData(AiProviders.OpenAiCompatible, "claude-sonnet-5-5", "", "")]                  // no model chosen: none is named, never the other provider's
+        [InlineData(AiProviders.OpenAiCompatible, "claude-sonnet-5-5", null, "")]
+        [InlineData(AiProviders.Claude, null, "llama3.2", "")]
+        [InlineData(AiProviders.Claude, "   ", "llama3.2", "")]
+        public void The_model_named_is_the_one_of_the_provider_in_use(string provider, string? claudeModel, string? compatibleModel, string model) =>
+            Assert.Equal(model, PadAiPrivacy.Model(provider, claudeModel, compatibleModel));
+
+        [Fact]
+        public void While_it_runs_the_activity_says_waiting_for_the_model_until_text_arrives_and_writing_after()
+        {
+            var s = new AiSession(PadAiAction.Summarize, "text", false, model: Sonnet);
+            Assert.Equal("", s.View(Ok).Activity);                // not started: nothing is going on
+
+            s.Start();
+            Assert.Equal("Waiting for claude-sonnet-5-5…", s.View(Ok).Activity);
+
+            s.Append("\n\n");                                     // blank lines are no text to show
+            Assert.Equal("", s.View(Ok).Result);
+            Assert.Equal("Waiting for claude-sonnet-5-5…", s.View(Ok).Activity);
+
+            s.Append("- point");
+            Assert.Equal("Writing…", s.View(Ok).Activity);
+            s.Append(" one");
+            Assert.Equal("Writing…", s.View(Ok).Activity);
+            Assert.Equal("Writing…", s.View(new AiSourceFacts(false, true, false)).Activity);   // whatever the note's state
+
+            s.Complete(false);
+            Assert.Equal("", s.View(Ok).Activity);
+        }
+
+        [Fact]
+        public void Without_a_model_name_the_activity_says_waiting_for_the_model()
+        {
+            var s = new AiSession(PadAiAction.Improve, "a", true);
+            s.Start();
+            Assert.Equal("Waiting for the model…", s.View(Ok).Activity);
+
+            s.Append("b");
+            Assert.Equal("Writing…", s.View(Ok).Activity);
+        }
+
+        [Fact]
+        public void A_request_that_is_not_running_has_no_activity()
+        {
+            Assert.Equal("", new AiSession(PadAiAction.Ask, "text", true, model: Sonnet).View(Ok).Activity);                      // waits for its instruction
+            Assert.Equal("", new AiSession(PadAiAction.Improve, new string('x', 8001), true, model: Sonnet).View(Ok).Activity);   // refused
+
+            var failed = new AiSession(PadAiAction.Improve, "a", true, model: Sonnet);
+            failed.Start(); failed.Append("par"); failed.Fail("Broke");
+            Assert.Equal("", failed.View(Ok).Activity);
+
+            var stopped = new AiSession(PadAiAction.Improve, "a", true, model: Sonnet);
+            stopped.Start(); stopped.Complete(true);
+            Assert.Equal("", stopped.View(Ok).Activity);
+
+            var neverSent = new AiSession(PadAiAction.Improve, "a", true, model: Sonnet);
+            neverSent.Fail("Turn on AI");                         // the window found AI off right before the request
+            Assert.Equal("", neverSent.View(Ok).Activity);
+        }
+
+        [Theory]
+        [InlineData(200, "Finished in 1 s")]
+        [InlineData(4200, "Finished in 4 s")]
+        [InlineData(65_000, "Finished in 1 min 5 s")]
+        public void A_request_that_finished_whole_says_how_long_it_took(int milliseconds, string info)
+        {
+            var clock = new Clock();
+            var s = new AiSession(PadAiAction.Summarize, "text", false, utcNow: clock.Read);
+            Assert.Equal("", s.View(Ok).Info);
+            Assert.Equal(0, clock.Reads);                         // a session that has not started reads no clock
+
+            clock.Pass(30_000);                                   // the time before it starts does not count
+            s.Start();
+            Assert.Equal("", s.View(Ok).Info);
+            clock.Pass(milliseconds);
+            s.Append("- point");
+            Assert.Equal("", s.View(Ok).Info);                    // nothing is said while it runs
+            s.Complete(false);
+            clock.Pass(600_000);                                  // nor does the time after it ended
+
+            Assert.Equal(info, s.View(Ok).Info);
+            Assert.Equal(info, s.View(new AiSourceFacts(false, true, false)).Info);   // whatever the note's state
+            Assert.Equal("", s.View(Ok).Status);
+            Assert.Equal(2, clock.Reads);                         // at the start and at the end, never for a view
+        }
+
+        [Fact]
+        public void A_request_that_did_not_finish_whole_does_not_say_how_long_it_took()
+        {
+            AiSession Started(Clock clock, PadAiAction? action = null)
+            {
+                var s = new AiSession(action ?? PadAiAction.Summarize, "text", true, utcNow: clock.Read);
+                s.Start();
+                clock.Pass(4000);
+                s.Append("partial");
+                return s;
+            }
+
+            var stopped = Started(new Clock());
+            stopped.Complete(true);
+            Assert.Equal("", stopped.View(Ok).Info);
+            Assert.Equal("Stopped", stopped.View(Ok).Status);     // it says what it already says
+
+            var failed = Started(new Clock());
+            failed.Fail("Broke");
+            Assert.Equal("", failed.View(Ok).Info);
+            Assert.Equal("Broke", failed.View(Ok).Status);
+
+            var cutShort = Started(new Clock());
+            cutShort.MarkCutShort(); cutShort.Complete(false);
+            Assert.Equal("", cutShort.View(Ok).Info);
+            Assert.Equal("Cut short at the length limit", cutShort.View(Ok).Status);
+
+            var refused = new AiSession(PadAiAction.Improve, new string('x', 8001), true, utcNow: new Clock().Read);
+            Assert.Equal("", refused.View(Ok).Info);
+
+            var asking = new AiSession(PadAiAction.Ask, "text", true, utcNow: new Clock().Read);
+            Assert.Equal("", asking.View(Ok).Info);
+
+            var neverSent = new AiSession(PadAiAction.Improve, "a", true, utcNow: new Clock().Read);
+            neverSent.Fail("Turn on AI");
+            Assert.Equal("", neverSent.View(Ok).Info);
+        }
+
+        [Fact]
+        public void The_end_of_a_request_is_timed_once()
+        {
+            // As the window does when the stream reports an error: Fail, and Complete when the stream ends.
+            var failedClock = new Clock();
+            var failed = new AiSession(PadAiAction.Summarize, "text", false, utcNow: failedClock.Read);
+            failed.Start();
+            failed.Fail("Broke");
+            failed.Complete(false);
+            Assert.Equal(2, failedClock.Reads);
+            Assert.Equal("", failed.View(Ok).Info);
+
+            // A late failure after the end changes nothing, the time it took included.
+            var clock = new Clock();
+            var done = new AiSession(PadAiAction.Summarize, "text", false, utcNow: clock.Read);
+            done.Start();
+            clock.Pass(4000);
+            done.Append("- point");
+            done.Complete(false);
+            clock.Pass(9000);
+            done.Fail("late");
+            Assert.Equal(2, clock.Reads);
+            Assert.Equal("Finished in 4 s", done.View(Ok).Info);
+        }
+
+        [Fact]
+        public void How_long_it_took_stays_once_the_result_is_in_the_note()
+        {
+            var clock = new Clock();
+            var s = new AiSession(PadAiAction.Improve, "a", true, utcNow: clock.Read);
+            s.Start();
+            clock.Pass(4000);
+            s.Append("b");
+            s.Complete(false);
+
+            s.MarkApplied(AiSession.Replaced);
+            Assert.Equal("Finished in 4 s", s.View(Ok).Info);     // the status says what was done with it; the info still how it ended
+            Assert.Equal("Replaced the selection", s.View(Ok).Status);
+
+            s.ClearApplied();
+            Assert.Equal("Finished in 4 s", s.View(Ok).Info);
+        }
+
+        [Fact]
+        public void A_session_built_without_a_clock_times_itself()
+        {
+            var s = Done(PadAiAction.Summarize, "text", "- point", fromSelection: false);
+
+            // The real clock: over at once, so "1 s" unless this PC stalls in between. Only the start is pinned.
+            Assert.StartsWith("Finished in ", s.View(Ok).Info, System.StringComparison.Ordinal);
+            Assert.EndsWith(" s", s.View(Ok).Info, System.StringComparison.Ordinal);
+        }
+
+        // ---- Preview and Source (AI chat UI spec 3.2) ------------------------------------------------
+
+        [Fact]
+        public void Draw_as_diagram_and_Ask_AI_are_shown_rendered_and_what_goes_into_the_note_is_still_the_text()
+        {
+            const string fenced = "```mermaid\nflowchart LR\n  a --> b\n```";
+            AiSession diagram = Done(PadAiAction.Diagram, "text", "\n" + fenced + "\n");
+            Assert.True(diagram.View(Ok).Markdown);
+            Assert.Equal(fenced, diagram.View(Ok).Result);        // the pane renders it; the text is the block as it came
+            Assert.Equal(fenced, diagram.ResultForNote);
+            Assert.True(diagram.View(Ok).CanInsert);
+            Assert.True(diagram.View(Ok).CanReplace);
+
+            const string table = "| a | b |\n|---|---|\n| 1 | 2 |";
+            AiSession ask = Done(PadAiAction.Ask, "text", table, instruction: "as a table");
+            Assert.True(ask.View(Ok).Markdown);
+            Assert.Equal(table, ask.View(Ok).Result);
+            Assert.Equal(table, ask.ResultForNote);
+            Assert.True(ask.View(Ok).CanReplace);
+        }
+
+        [Fact]
+        public void A_result_is_never_offered_both_its_changes_and_a_rendering()
+        {
+            var actions = new System.Collections.Generic.List<PadAiAction>(PadAiAction.Menu) { Fix() };
+            foreach (PadAiAction action in actions)
+            {
+                AiPaneView done = Done(action, "text", "reply", instruction: "do it").View(Ok);
+                Assert.NotEqual(done.Markdown, done.CanShowChanges);   // a rewrite has Changes, every other result is rendered and has Source
+
+                var running = new AiSession(action, "text", true, "do it");
+                running.Start(); running.Append("re");
+                Assert.False(running.View(Ok).Markdown && running.View(Ok).CanShowChanges, action.Id);
+            }
         }
 
         // ---- Fix with AI: a reply that holds a code fence (part 2, spec 2.2) -------------------------

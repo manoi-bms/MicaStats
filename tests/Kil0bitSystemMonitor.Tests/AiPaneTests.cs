@@ -9,6 +9,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad;
@@ -20,8 +21,12 @@ using Brush = System.Windows.Media.Brush;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 using Color = System.Windows.Media.Color;
 using ContentPresenter = System.Windows.Controls.ContentPresenter;
+using Image = System.Windows.Controls.Image;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using Orientation = System.Windows.Controls.Orientation;
+using Panel = System.Windows.Controls.Panel;
 using Size = System.Windows.Size;
+using TextBox = System.Windows.Controls.TextBox;
 
 namespace Kil0bitSystemMonitor.Tests
 {
@@ -77,6 +82,30 @@ namespace Kil0bitSystemMonitor.Tests
 
         /// <summary>A finished rewrite that changed the middle line of three.</summary>
         private static readonly AiPaneView Edited = Done with { Original = "one\ntwo\nthree", Result = "one\nTWO\nthree" };
+
+        /// <summary>A finished answer to read (Summarize on a whole note): shown rendered, with no Replace and no Changes.</summary>
+        private static readonly AiPaneView Read = Done with
+        {
+            Title = "Summarize",
+            SourceLine = "Whole note, 11 characters",
+            Result = "**bold** and `code`",
+            Markdown = true,
+            ShowReplace = false,
+            CanReplace = false,
+            CanShowChanges = false,
+            Info = "Finished in 4 s",
+        };
+
+        /// <summary>The same answer while it streams in.</summary>
+        private static readonly AiPaneView Reading = Read with
+        {
+            Result = "**bo",
+            Running = true,
+            CanInsert = false,
+            CanRetry = false,
+            Activity = "Writing…",
+            Info = "",
+        };
 
         private static string Rendered(AiPane pane)
         {
@@ -657,6 +686,499 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Same(document, pane.ResultBox.Document);
             Assert.False(pane.ReplaceButton.IsEnabled);
+        });
+
+        // ---- the source line, what is going on and how long it took (AI chat UI spec 3.3) ----------
+
+        [Fact]
+        public void A_view_built_without_them_has_no_activity_and_no_info()
+        {
+            Assert.Equal("", Done.Activity);
+            Assert.Equal("", Done.Info);
+        }
+
+        [Fact]
+        public void The_source_line_wraps_and_is_never_cut_short() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            Assert.Equal(TextWrapping.Wrap, pane.SourceText.TextWrapping);
+            Assert.Equal(TextTrimming.None, pane.SourceText.TextTrimming);
+
+            pane.Show(Read);
+            LayOut(pane);
+            double oneLine = pane.SourceText.ActualHeight, toggle = pane.SourceToggle.ActualHeight;
+            Assert.True(oneLine > 0 && toggle > 0, "the line and the toggle beside it are drawn");
+
+            pane.Show(Read with { SourceLine = "Selection, 412 characters · to a-rather-long-host-name.example.com (some-long-model-name-2026-10-04)" });
+            LayOut(pane);
+
+            Assert.True(pane.SourceText.ActualHeight > oneLine * 1.5, "the line took a second line: " + pane.SourceText.ActualHeight + " against " + oneLine);
+            Rect line = BoundsIn(pane, pane.SourceText);
+            Assert.True(line.Left >= 0 && line.Right <= 320, "all of it is inside the pane: " + line);
+            Assert.Equal(toggle, pane.SourceToggle.ActualHeight);   // the toggle beside it keeps its own height
+            Assert.False(line.IntersectsWith(BoundsIn(pane, pane.SourceToggle)), "the line does not run under the toggle");
+        });
+
+        [Fact]
+        public void The_activity_row_is_there_while_the_view_says_what_is_going_on() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.ApplyTheme(false);
+
+            pane.Show(Read);
+            Assert.Equal(Visibility.Collapsed, pane.ActivityRow.Visibility);
+
+            pane.Show(Reading with { Result = "", Activity = "Waiting for claude-sonnet-5-5…" });
+            Assert.Equal(Visibility.Visible, pane.ActivityRow.Visibility);
+            Assert.Equal("Waiting for claude-sonnet-5-5…", pane.ActivityText.Text);
+            Assert.Equal(11.5, pane.ActivityText.FontSize);
+            Assert.Equal(Wpf(PadPalette.Light.Muted), BrushColor(pane.ActivityText.Foreground));
+            Assert.Same(pane.ActivityRow, pane.ActivityDots.Parent);             // the dots stand in the row, before the text
+            Assert.Equal(Wpf(PadPalette.Light.Muted), BrushColor(pane.ActivityDots.Fill));
+
+            pane.Show(Reading);
+            Assert.Equal(Visibility.Visible, pane.ActivityRow.Visibility);
+            Assert.Equal("Writing…", pane.ActivityText.Text);
+            LayOut(pane);
+            Rect row = BoundsIn(pane, pane.ActivityRow);
+            Assert.True(row.Height > 0, "the row is drawn");
+            Assert.True(row.Top >= BoundsIn(pane, pane.SourceText).Bottom, "under the source line");
+            Assert.True(row.Bottom <= BoundsIn(pane, pane.ResultScroller).Top, "above the result");
+            Assert.True(BoundsIn(pane, pane.ActivityDots).Right <= BoundsIn(pane, pane.ActivityText).Left, "the dots come before the text");
+
+            pane.ApplyTheme(true);                                // the row repaints with the pad
+            Assert.Equal(Wpf(PadPalette.Dark.Muted), BrushColor(pane.ActivityText.Foreground));
+            Assert.Equal(Wpf(PadPalette.Dark.Muted), BrushColor(pane.ActivityDots.Fill));
+
+            pane.Show(Read);                                      // the request ended
+            Assert.Equal(Visibility.Collapsed, pane.ActivityRow.Visibility);
+            Assert.Equal("", pane.ActivityText.Text);
+        });
+
+        [Fact]
+        public void The_info_line_is_there_while_the_view_has_one_and_stands_above_the_status() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.ApplyTheme(false);
+
+            pane.Show(Reading);
+            Assert.Equal(Visibility.Collapsed, pane.InfoText.Visibility);
+
+            pane.Show(Read with { CanInsert = false, Status = "This note is read-only" });
+            Assert.Equal(Visibility.Visible, pane.InfoText.Visibility);
+            Assert.Equal("Finished in 4 s", pane.InfoText.Text);
+            Assert.Equal(11.5, pane.InfoText.FontSize);
+            Assert.Equal(Wpf(PadPalette.Light.Muted), BrushColor(pane.InfoText.Foreground));
+            Assert.Equal("This note is read-only", pane.StatusText.Text);   // the status says what it said
+
+            LayOut(pane);
+            Rect info = BoundsIn(pane, pane.InfoText), status = BoundsIn(pane, pane.StatusText);
+            Assert.True(info.Height > 0 && status.Height > 0, "both lines are drawn");
+            Assert.True(info.Top >= BoundsIn(pane, pane.ResultScroller).Bottom, "under the result");
+            Assert.True(info.Bottom <= status.Top, "the info at " + info + " is above the status at " + status);
+            Assert.True(status.Bottom <= BoundsIn(pane, pane.InsertButton).Top, "and the status above the buttons");
+
+            pane.Show(Read with { Info = "" });                   // a request that did not finish whole says nothing here
+            Assert.Equal(Visibility.Collapsed, pane.InfoText.Visibility);
+            Assert.Equal("", pane.InfoText.Text);
+        });
+
+        // ---- the dots, the ones the Ask window has (AI chat UI spec 3.3) ---------------------------
+
+        /// <summary>
+        /// Shows <paramref name="content"/> in a real window far off screen and lets it load: only
+        /// a loaded element animates. The window is closed afterwards, with its content taken out.
+        /// </summary>
+        private static void InWindow(FrameworkElement content, Action test)
+        {
+            var window = new Window
+            {
+                Width = 400,
+                Height = 640,
+                Left = -20000,
+                Top = -20000,
+                ShowInTaskbar = false,
+                ShowActivated = false,
+                Content = content,
+            };
+            try
+            {
+                window.Show();
+                Pump();   // Loaded is raised from the dispatcher
+                test();
+            }
+            finally
+            {
+                window.Content = null;
+                window.Close();
+                Pump();   // and so is Unloaded
+            }
+        }
+
+        /// <summary>True when every dot's opacity is animated; false when none is. A mix fails the test.</summary>
+        private static bool Moving(FrameworkElement dots)
+        {
+            List<bool> animated = ((Panel)dots).Children.Cast<UIElement>().Select(dot => dot.HasAnimatedProperties).ToList();
+            Assert.Equal(3, animated.Count);
+            Assert.Single(animated.Distinct());
+            return animated[0];
+        }
+
+        [Fact]
+        public void The_dots_of_the_activity_row_move_only_while_the_row_is_on_screen() => UiThread.Run(() =>
+        {
+            var pane = new AiPane { Visibility = Visibility.Visible };
+            pane.Show(Reading);
+            Assert.False(Moving(pane.ActivityDots));              // never shown: nothing ticks for a pane nobody sees
+
+            InWindow(pane, () =>
+            {
+                Assert.True(Moving(pane.ActivityDots));
+
+                pane.Show(Read);                                  // the request ended: the row goes and its dots stop
+                Assert.False(Moving(pane.ActivityDots));
+
+                pane.Show(Reading with { Result = "" });          // Try again
+                Assert.True(Moving(pane.ActivityDots));
+
+                pane.Visibility = Visibility.Collapsed;           // the window closes the pane: its last view still says it runs
+                Assert.Equal(Visibility.Visible, pane.ActivityRow.Visibility);
+                Assert.False(Moving(pane.ActivityDots));
+
+                pane.Visibility = Visibility.Visible;
+                Assert.True(Moving(pane.ActivityDots));
+
+                pane.Clear();
+                Assert.False(Moving(pane.ActivityDots));
+
+                pane.Show(Reading);
+                Assert.True(Moving(pane.ActivityDots));
+            });
+
+            Assert.Equal(Visibility.Visible, pane.ActivityRow.Visibility);
+            Assert.False(Moving(pane.ActivityDots));              // the window is gone, and with it the animation
+        });
+
+        [Fact]
+        public void The_dots_are_three_small_ones_in_the_colour_their_user_names() => UiThread.Run(() =>
+        {
+            var dots = new TypingDots();
+            Assert.Equal(Orientation.Horizontal, dots.Orientation);
+            List<System.Windows.Shapes.Ellipse> three = dots.Children.Cast<System.Windows.Shapes.Ellipse>().ToList();
+            Assert.Equal(3, three.Count);
+            Assert.All(three, dot =>
+            {
+                Assert.Equal(6, dot.Width);
+                Assert.Equal(6, dot.Height);
+                Assert.Equal(new Thickness(0, 0, 5, 0), dot.Margin);
+                Assert.Null(dot.Fill);                            // no colour of its own
+            });
+
+            var red = new SolidColorBrush(Colors.Red);
+            dots.Fill = red;                                      // a brush
+            Assert.All(three, dot => Assert.Same(red, dot.Fill));
+
+            // Or a resource by its key, as the Ask window names its own; the dots follow when a theme changes it.
+            var blue = new SolidColorBrush(Colors.Blue);
+            var green = new SolidColorBrush(Colors.Green);
+            dots.Resources["Ask.Muted"] = blue;
+            dots.SetResourceReference(TypingDots.FillProperty, "Ask.Muted");
+            Assert.All(three, dot => Assert.Same(blue, dot.Fill));
+            dots.Resources["Ask.Muted"] = green;
+            Assert.All(three, dot => Assert.Same(green, dot.Fill));
+        });
+
+        [Fact]
+        public void An_Ask_turn_has_the_same_dots_which_move_while_it_waits_on_screen_and_stop_with_the_first_text() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");
+            Assert.IsType<TypingDots>(turn.Typing);
+            Assert.Equal(new Thickness(2, 11, 0, 11), turn.Typing.Margin);
+            Assert.Equal(System.Windows.HorizontalAlignment.Left, turn.Typing.HorizontalAlignment);
+            Assert.False(Moving(turn.Typing));                    // off screen
+
+            var muted = new SolidColorBrush(Colors.Gray);
+            turn.Root.Resources["Ask.Muted"] = muted;             // the Ask window's own brush, which the turn names by its key
+            Assert.All(((Panel)turn.Typing).Children.Cast<System.Windows.Shapes.Ellipse>(), dot => Assert.Same(muted, dot.Fill));
+
+            InWindow(turn.Root, () =>
+            {
+                Assert.Equal(Visibility.Visible, turn.Typing.Visibility);
+                Assert.True(Moving(turn.Typing));
+
+                turn.AddTool("get_live_status", null);            // a tool is no text: still waiting
+                Assert.True(Moving(turn.Typing));
+
+                turn.AppendText("Fine.");
+                Assert.Equal(Visibility.Collapsed, turn.Typing.Visibility);
+                Assert.False(Moving(turn.Typing));
+            });
+        });
+
+        // ---- Preview and Source (AI chat UI spec 3.2) ----------------------------------------------
+
+        /// <summary>Everything of one kind in the result as it is shown: its pictures, its code boxes.</summary>
+        private static List<T> InResult<T>(AiPane pane) where T : DependencyObject => ChatDocument.All<T>(pane.ResultBox.Document);
+
+        [Fact]
+        public void The_Source_toggle_is_offered_for_a_rendered_result_and_not_while_an_instruction_is_awaited() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);   // built hidden, as Changes is
+            Assert.False(pane.ShowingSource);
+
+            pane.Show(Done);                                      // a rewrite is shown as its text: Changes, and no Source
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+            Assert.Equal(Visibility.Visible, pane.ChangesToggle.Visibility);
+
+            pane.Show(Read);
+            Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+            Assert.Equal(Visibility.Collapsed, pane.ChangesToggle.Visibility);
+            Assert.Equal("Source", pane.SourceToggle.Content);
+            Assert.Equal("Show the text as it would be inserted", pane.SourceToggle.ToolTip);
+            Assert.False(pane.ShowingSource);
+
+            pane.Show(Reading);                                   // while the reply streams in, too
+            Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+
+            pane.Show(Asking with { Markdown = true });           // Ask AI before its instruction: nothing was asked yet
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+        });
+
+        [Fact]
+        public void Source_shows_the_text_as_it_would_be_inserted_and_off_shows_it_rendered_again() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.Show(Read);
+            Assert.Equal("bold and code", Rendered(pane));
+
+            pane.SourceToggle.IsChecked = true;
+
+            Assert.True(pane.ShowingSource);
+            Assert.Equal("**bold** and `code`", Rendered(pane));  // exactly what Insert below would put in the note
+            Assert.Equal("**bold** and `code`", pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Visible, pane.ResultBox.Visibility);
+
+            pane.SourceToggle.IsChecked = false;
+
+            Assert.False(pane.ShowingSource);
+            Assert.Equal("bold and code", Rendered(pane));
+            Assert.Equal("**bold** and `code`", pane.ResultBox.Shown);
+        });
+
+        [Fact]
+        public void A_diagram_is_shown_as_a_picture_and_Source_shows_its_block_as_text() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.ResultBox.Diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            string block = ChatDiagramFakes.Block();
+
+            pane.Show(Read with { Title = "Draw as diagram", Result = block });
+
+            Assert.Single(InResult<Image>(pane));                 // the diagram itself, before anything is inserted
+            Assert.NotEqual(block, Rendered(pane));
+
+            pane.SourceToggle.IsChecked = true;
+
+            Assert.Empty(InResult<Image>(pane));
+            Assert.Empty(InResult<TextBox>(pane));                // no code block either: only text
+            Assert.Equal(block, Rendered(pane));
+
+            pane.SourceToggle.IsChecked = false;
+
+            Assert.Single(InResult<Image>(pane));
+        });
+
+        [Fact]
+        public void The_Source_toggle_looks_like_the_Changes_toggle_and_shows_that_it_is_on_in_the_pad_accent() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.ApplyTheme(false);
+            pane.Show(Edited);
+            LayOut(pane);
+            double changesHeight = pane.ChangesToggle.ActualHeight;
+            Assert.True(changesHeight > 0, "Changes is drawn for a rewrite");
+
+            pane.Show(Read);
+            LayOut(pane);
+
+            Assert.Same(pane.ChangesToggle.Template, pane.SourceToggle.Template);   // one template for both
+            Assert.Equal(pane.ChangesToggle.FontSize, pane.SourceToggle.FontSize);
+            Assert.Equal(pane.ChangesToggle.Padding, pane.SourceToggle.Padding);
+            Assert.Equal(pane.ChangesToggle.Margin, pane.SourceToggle.Margin);
+            Assert.Same(pane.ChangesToggle.Cursor, pane.SourceToggle.Cursor);
+            Assert.Equal(changesHeight, pane.SourceToggle.ActualHeight);
+            Assert.Same(pane.ChangesToggle.Parent, pane.SourceToggle.Parent);       // beside it, in the same place
+
+            var label = Assert.IsType<ContentPresenter>(pane.SourceToggle.Template.FindName("Label", pane.SourceToggle));
+            Assert.Equal(Wpf(PadPalette.Light.TextSoft), BrushColor(TextElement.GetForeground(label)));
+
+            pane.SourceToggle.IsChecked = true;
+            Assert.Equal(Wpf(PadPalette.Light.Accent), BrushColor(TextElement.GetForeground(label)));
+
+            pane.ApplyTheme(true);
+            Assert.Equal(Wpf(PadPalette.Dark.Accent), BrushColor(TextElement.GetForeground(label)));
+        });
+
+        [Fact]
+        public void The_Source_toggle_goes_off_when_another_request_takes_the_pane() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.Show(Read);
+            pane.SourceToggle.IsChecked = true;
+
+            pane.Show(Reading with { Result = "", Activity = "Waiting for the model…" });   // Try again: the same action on the same text, running anew
+            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+            pane.Show(Read);
+            Assert.Equal("bold and code", Rendered(pane));        // its answer is shown rendered
+
+            pane.SourceToggle.IsChecked = true;
+            pane.Show(Read with { Title = "Explain", Result = "It is **text**." });          // another action, finished
+            Assert.False(pane.ShowingSource);
+            Assert.Equal("It is text.", Rendered(pane));
+
+            pane.SourceToggle.IsChecked = true;
+            pane.Show(Read with { Title = "Explain", Result = "It is **text**.", Original = "Other text." });   // the same action on other text
+            Assert.False(pane.ShowingSource);
+            Assert.Equal("It is text.", Rendered(pane));
+
+            pane.SourceToggle.IsChecked = true;
+            pane.Show(Read with { Title = "Explain", Result = "", Original = "Other text.", CanCopy = false });   // a new request before it starts
+            Assert.False(pane.ShowingSource);
+
+            pane.SourceToggle.IsChecked = true;                   // on, with no text yet
+            pane.Show(Reading with { Title = "Explain", Result = "", Original = "Other text." });               // and as it starts to run
+            Assert.False(pane.ShowingSource);
+
+            pane.Show(Read);
+            pane.SourceToggle.IsChecked = true;
+            pane.Show(Done);                                      // a rewrite: no Source at all
+            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+            Assert.Equal("Better text.", Rendered(pane));
+            pane.Show(Read);                                      // and the next rendered result starts rendered
+            Assert.False(pane.ShowingSource);
+            Assert.Equal("bold and code", Rendered(pane));
+
+            pane.SourceToggle.IsChecked = true;
+            pane.Show(Asking with { Markdown = true });           // Ask AI opened on its instruction box
+            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+        });
+
+        [Fact]
+        public void The_Source_choice_stays_while_one_request_streams_ends_and_is_refreshed() => UiThread.Run(() =>
+        {
+            var pane = new AiPane { RedrawInterval = TimeSpan.FromSeconds(30) };
+            pane.Show(Reading with { Result = "**bo" });
+            pane.SourceToggle.IsChecked = true;
+            Assert.Equal("**bo", Rendered(pane));
+
+            pane.Show(Reading with { Result = "**bold** and" });
+            Assert.True(pane.ShowingSource);
+            Assert.Equal("**bo", pane.ResultBox.Shown);           // inside the interval it waits, as a rendered reply does
+
+            pane.Show(Read);                                      // the stream ends
+            Assert.True(pane.ShowingSource);
+            Assert.Equal("**bold** and `code`", Rendered(pane));  // still the text as it is
+
+            var document = pane.ResultBox.Document;
+            pane.Show(Read with { CanInsert = false, Status = "This note is read-only" });   // the window refreshes the view on every keystroke in the note
+            Assert.True(pane.ShowingSource);
+            Assert.Same(document, pane.ResultBox.Document);       // what is on screen is left alone: a selection in it survives
+
+            pane.Show(Read with { Status = "Inserted below" });   // Insert below: still the same request
+            Assert.True(pane.ShowingSource);
+            Assert.Same(document, pane.ResultBox.Document);
+        });
+
+        [Fact]
+        public void A_credential_placeholder_that_becomes_its_pill_mid_stream_does_not_turn_Source_off() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.Show(Reading with { Result = "Log in with [[CREDENTIAL_" });
+            pane.SourceToggle.IsChecked = true;
+
+            // The placeholder is whole now and is shown as its pill: the reply does not go on from the text shown, yet it is the same reply.
+            pane.Show(Reading with { Result = "Log in with {{secret:K7Q2M9XD}} now" });
+
+            Assert.True(pane.ShowingSource);
+            Assert.Equal("Log in with {{secret:K7Q2M9XD}} now", Rendered(pane));
+
+            pane.Show(Read with { Result = "Log in with {{secret:K7Q2M9XD}} now." });
+            Assert.True(pane.ShowingSource);
+            Assert.Equal("Log in with {{secret:K7Q2M9XD}} now.", Rendered(pane));
+        });
+
+        [Fact]
+        public void Turning_Source_draws_at_once_though_the_text_did_not_change_and_takes_the_latest_text() => UiThread.Run(() =>
+        {
+            var pane = new AiPane { RedrawInterval = TimeSpan.FromSeconds(30) };
+            pane.Show(Reading with { Result = "**bo" });
+            pane.Show(Reading with { Result = "**bold** and" });  // waits for its redraw
+            Assert.Equal("**bo", pane.ResultBox.Shown);
+
+            pane.SourceToggle.IsChecked = true;
+
+            Assert.Equal("**bold** and", pane.ResultBox.Shown);
+            Assert.Equal("**bold** and", Rendered(pane));
+
+            pane.SourceToggle.IsChecked = false;                  // the same text again: only its form changes
+
+            Assert.Equal("**bold** and", pane.ResultBox.Shown);
+            Assert.Equal("bold and", Rendered(pane));
+        });
+
+        [Theory]
+        [InlineData(false, false)]   // a finished result, rendered
+        [InlineData(true, false)]    // the same with Source on
+        [InlineData(false, true)]    // while the reply streams in
+        [InlineData(true, true)]
+        public void Clear_leaves_nothing_of_the_result_in_either_form_and_turns_Source_off(bool source, bool streaming) => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            var pane = new AiPane { RedrawInterval = TimeSpan.FromMilliseconds(50) };
+            pane.ResultBox.Diagrams = diagrams;
+            string result = "The login is hunter2.\n\n" + ChatDiagramFakes.Block();
+            AiPaneView view = (streaming ? Reading : Read) with { Result = result, Status = streaming ? "" : "This note is read-only" };
+            pane.Show(view);
+            if (source) pane.SourceToggle.IsChecked = true;
+            if (streaming) pane.Show(view with { Result = result + "\n\nAnd the PIN is 4711." });   // a redraw is waiting
+            Assert.Contains("hunter2", Rendered(pane), StringComparison.Ordinal);
+            Assert.Equal(source ? 0 : 1, InResult<Image>(pane).Count);
+
+            pane.Clear();
+
+            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+            Assert.Equal("", pane.ResultBox.Shown);
+            Assert.Equal("", Rendered(pane));
+            Assert.Empty(InResult<Image>(pane));
+            Assert.Empty(InResult<TextBox>(pane));
+            Assert.Equal(1, diagrams.Cleared);                    // the pictures kept for drawing it again are forgotten
+            Assert.Equal("", pane.ActivityText.Text);
+            Assert.Equal(Visibility.Collapsed, pane.ActivityRow.Visibility);
+            Assert.Equal("", pane.InfoText.Text);
+            Assert.Equal(Visibility.Collapsed, pane.InfoText.Visibility);
+            Assert.Equal("", pane.StatusText.Text);
+            Assert.Equal("", pane.TitleText.Text);
+            Assert.Equal("", pane.SourceText.Text);
+
+            // Neither form comes back: not with the toggle, forced, and not with the redraw that was waiting.
+            pane.SourceToggle.IsChecked = true;
+            Assert.Equal("", Rendered(pane));
+            pane.SourceToggle.IsChecked = false;
+            Assert.Equal("", Rendered(pane));
+            var waited = Stopwatch.StartNew();
+            PumpUntil(() => pane.ResultBox.Shown.Length > 0 || waited.Elapsed > TimeSpan.FromMilliseconds(300));
+            Assert.Equal("", pane.ResultBox.Shown);
+            Assert.Equal("", Rendered(pane));
+
+            pane.Show(Read);                                      // the next view draws as usual, rendered
+            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+            Assert.Equal("bold and code", Rendered(pane));
         });
 
         [Fact]

@@ -81,10 +81,14 @@ namespace Kil0bitSystemMonitor.Tests
                 Window.OpenPadSettings = () => SettingsOpened++;
                 Window.AiLog = Log.Add;
                 Window.AiDestination = () => Destination;
+                Window.AiModel = () => ModelName;
             }
 
             /// <summary>Where the settings say the text goes; "" names nowhere, so the lines other tests read stay as they were.</summary>
             public string Destination { get; set; } = "";
+
+            /// <summary>The model the settings name; "" names none, so the lines other tests read stay as they were.</summary>
+            public string ModelName { get; set; } = "";
 
             public PadTestEnv Env { get; }
 
@@ -308,6 +312,23 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(MicaPadWindow.AiOnIn(new AppConfig()));  // off until the user turns it on
             Assert.False(MicaPadWindow.AiOnIn(new AppConfig { AiAssistantEnabled = true }));
             Assert.True(MicaPadWindow.AiOnIn(new AppConfig { PadAiEnabled = true, AiAssistantEnabled = false }));
+            return Task.CompletedTask;
+        });
+
+        [Fact]
+        public Task By_default_the_model_is_the_one_of_the_provider_in_the_apps_settings_and_none_while_there_are_none() => OnUiWithDefaults((window, env) =>
+        {
+            Assert.Null(App.ConfigService);                       // the tests never start the app: there are no settings to read
+
+            Assert.Equal("", window.AiModel());                   // so no model is named
+
+            // What the default reads: the model of the provider chosen in Settings → AI, and never the other one's.
+            Assert.Equal("", MicaPadWindow.AiModelIn(null));
+            Assert.Equal("claude-haiku-4-5", MicaPadWindow.AiModelIn(new AppConfig()));
+            Assert.Equal("claude-sonnet-5-5", MicaPadWindow.AiModelIn(new AppConfig { AiClaudeModel = "claude-sonnet-5-5", AiCompatibleModel = "llama3.2" }));
+            Assert.Equal("llama3.2", MicaPadWindow.AiModelIn(
+                new AppConfig { AiProvider = AiProviders.OpenAiCompatible, AiClaudeModel = "claude-sonnet-5-5", AiCompatibleModel = " llama3.2 " }));
+            Assert.Equal("", MicaPadWindow.AiModelIn(new AppConfig { AiProvider = AiProviders.OpenAiCompatible }));   // none chosen yet
             return Task.CompletedTask;
         });
 
@@ -636,6 +657,104 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Good text", h.Pane.ResultBox.Shown);
             Assert.Contains("InvalidOperationException", Assert.Single(warned), StringComparison.Ordinal);
             Assert.DoesNotContain("gpu.example", warned[0], StringComparison.Ordinal);   // the type only
+        });
+
+        // ---- the model's name, what is going on and how long it took (AI chat UI spec 3.3) ------
+
+        [Fact]
+        public Task The_session_is_built_with_the_model_the_settings_name_and_the_pane_says_what_it_is_doing_and_how_long_it_took() => OnUiAsync(async h =>
+        {
+            h.Destination = "api.anthropic.com";
+            h.ModelName = "claude-sonnet-5-5";
+            var drawn = new List<AiPaneView>();
+            h.Window.AiDraw = view =>
+            {
+                drawn.Add(view);
+                h.Pane.Show(view);
+            };
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good ", "text");
+            h.Client = model;
+
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+
+            Assert.Equal("claude-sonnet-5-5", h.Window.AiSessionNow!.Model);
+            Assert.Equal("Selection, 13 characters · to api.anthropic.com (claude-sonnet-5-5)", h.Pane.SourceText.Text);
+            Assert.Equal(Visibility.Visible, h.Pane.ActivityRow.Visibility);
+            Assert.Equal("Writing…", h.Pane.ActivityText.Text);   // the first words are in
+            Assert.Equal(Visibility.Collapsed, h.Pane.InfoText.Visibility);
+            // Before them the pane waited for the model, by its name; before the request started it said nothing.
+            Assert.Equal(new[] { "", "Waiting for claude-sonnet-5-5…", "Writing…" }, drawn.Select(view => view.Activity).Distinct());
+
+            model.Gate.SetResult();
+            await run;
+
+            Assert.Equal(Visibility.Collapsed, h.Pane.ActivityRow.Visibility);
+            Assert.Equal("", h.Pane.ActivityText.Text);
+            Assert.Equal(Visibility.Visible, h.Pane.InfoText.Visibility);
+            Assert.StartsWith("Finished in ", h.Pane.InfoText.Text, StringComparison.Ordinal);   // the real clock: "1 s" unless this PC stalls
+            Assert.Equal("", h.Pane.StatusText.Text);
+            Assert.Equal("Selection, 13 characters · to api.anthropic.com (claude-sonnet-5-5)", h.Pane.SourceText.Text);
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Improve.Instruction, Picked), Assert.Single(model.Sent));   // the name is shown, never sent
+        });
+
+        [Fact]
+        public Task The_model_is_read_again_for_each_request() => OnUiAsync(async h =>
+        {
+            h.ModelName = "claude-haiku-4-5";
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text").Reply("Better text");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            AiSession first = h.Window.AiSessionNow!;
+            Assert.Equal("Selection, 13 characters (claude-haiku-4-5)", h.Pane.SourceText.Text);
+
+            h.ModelName = "claude-sonnet-5-5";                    // changed in Settings: the next request names the new one
+            Click(h.Pane.RetryButton);
+            await Finished(h, after: first);
+
+            Assert.Equal("claude-sonnet-5-5", h.Window.AiSessionNow!.Model);
+            Assert.Equal("Selection, 13 characters (claude-sonnet-5-5)", h.Pane.SourceText.Text);
+        });
+
+        [Fact]
+        public Task A_stopped_request_says_Stopped_and_not_how_long_it_took() => OnUiAsync(async h =>
+        {
+            h.ModelName = "claude-sonnet-5-5";
+            Write(h, Note, Picked);
+            var model = new GatedModel("Good te", "xt");
+            h.Client = model;
+            Task run = h.Window.RunAiAsync(PadAiAction.Improve);
+            await Reached(model);
+            Assert.Equal(Visibility.Visible, h.Pane.ActivityRow.Visibility);
+
+            Click(h.Pane.StopButton);
+            await run;
+
+            Assert.Equal("Stopped", h.Pane.StatusText.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.InfoText.Visibility);
+            Assert.Equal("", h.Pane.InfoText.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.ActivityRow.Visibility);
+        });
+
+        [Fact]
+        public Task A_model_name_that_cannot_be_read_is_not_named_and_never_stops_the_action() => OnUiAsync(async h =>
+        {
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+            h.Destination = "this PC";
+            h.Window.AiModel = () => throw new InvalidOperationException("no settings for secret-model");
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal("", h.Window.AiSessionNow!.Model);
+            Assert.Equal("Selection, 13 characters · to this PC", h.Pane.SourceText.Text);
+            Assert.Equal("Good text", h.Pane.ResultBox.Shown);
+            Assert.Contains("InvalidOperationException", Assert.Single(warned), StringComparison.Ordinal);
+            Assert.DoesNotContain("secret-model", warned[0], StringComparison.Ordinal);   // the type only
         });
 
         [Fact]
@@ -2874,10 +2993,23 @@ namespace Kil0bitSystemMonitor.Tests
                 .TrimEnd().Replace("\r\n", "\n", StringComparison.Ordinal);
         }
 
+        /// <summary>The pictures and the code boxes in the AI pane's result, as it is shown.</summary>
+        private static List<T> InResult<T>(AiPane pane) where T : DependencyObject =>
+            Kil0bitSystemMonitor.Ai.ChatDocument.All<T>(pane.ResultBox.Document);
+
+        /// <summary>The pane draws its diagrams with a fake that has every picture ready: no page, no WebView2.</summary>
+        private static FakeChatDiagrams WithPictures(Harness h)
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            h.Pane.ResultBox.Diagrams = diagrams;
+            return diagrams;
+        }
+
         [Fact]
-        public Task Draw_as_diagram_on_a_selection_sends_its_instruction_shows_the_block_as_plain_text_and_Insert_below_is_one_undo_step() => OnUiAsync(async h =>
+        public Task Draw_as_diagram_on_a_selection_sends_its_instruction_shows_the_diagram_itself_and_Insert_below_puts_the_block_as_text_in_one_undo_step() => OnUiAsync(async h =>
         {
             const string note = "Checkout\nlogin, then pay, then ship\nEnd";
+            FakeChatDiagrams diagrams = WithPictures(h);
             Write(h, note, "login, then pay, then ship");
             h.Model.Reply(DrawnReply);
 
@@ -2886,20 +3018,167 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Diagram.Instruction, "login, then pay, then ship"), h.Sent());
             Assert.Equal("Draw as diagram", h.Pane.TitleText.Text);
             Assert.Equal("Selection, 26 characters", h.Pane.SourceText.Text);
-            Assert.Equal(DrawnReply, h.Pane.ResultBox.Shown);
-            Assert.Equal(DrawnReply, Rendered(h.Pane));               // the fenced block as it would be inserted, not drawn as Markdown
+            Assert.Equal(DrawnReply, h.Pane.ResultBox.Shown);         // the box was handed the block as it came
+            // And drew it as Markdown: the diagram is seen before anything is inserted (AI chat UI spec 3.2).
+            Assert.Single(InResult<System.Windows.Controls.Image>(h.Pane));
+            Assert.Equal("flowchart LR\n  login --> pay --> ship", Assert.Single(diagrams.Gets.Select(get => get.Source).Distinct()));
+            Assert.NotEqual(DrawnReply, Rendered(h.Pane));
+            Assert.Equal(Visibility.Visible, h.Pane.SourceToggle.Visibility);
+            Assert.False(h.Pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, h.Pane.ChangesToggle.Visibility);
             Assert.Equal(Visibility.Visible, h.Pane.ReplaceButton.Visibility);   // offered for a selection, as Ask AI does
             Assert.True(h.Pane.ReplaceButton.IsEnabled);
             Assert.True(h.Pane.InsertButton.IsEnabled);
             Assert.Equal(note, h.Editor.Document.Text);              // nothing changes before a click
 
-            Click(h.Pane.InsertButton);
+            h.Pane.SourceToggle.IsChecked = true;                     // Source: the fenced block as it would be inserted
+            Assert.Equal(DrawnReply, Rendered(h.Pane));
+            Assert.Empty(InResult<System.Windows.Controls.Image>(h.Pane));
+            Assert.Equal(note, h.Editor.Document.Text);              // looking at it changes nothing either
+            h.Pane.SourceToggle.IsChecked = false;
+            Assert.Single(InResult<System.Windows.Controls.Image>(h.Pane));
+
+            Click(h.Pane.InsertButton);                               // from the rendered view: the text goes in, never the rendering
 
             Assert.Equal("Checkout\nlogin, then pay, then ship\n\n" + DrawnReply + "\nEnd", h.Editor.Document.Text);
             Assert.Equal(DrawnReply, h.Editor.SelectedText);
+            Assert.Equal(h.Window.AiSessionNow!.ResultForNote, h.Editor.SelectedText);
             h.Editor.Undo();                                          // one Ctrl+Z
             Assert.Equal(note, h.Editor.Document.Text);
             Assert.StartsWith("AI diagram: ", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task Without_a_drawing_engine_Draw_as_diagram_shows_its_block_as_code_and_still_inserts_the_fenced_text() => OnUiAsync(async h =>
+        {
+            h.Pane.ResultBox.Diagrams = null;                         // no engine to draw with: every Mermaid block stays code
+            Write(h, "login\npay\nship");
+            h.Model.Reply(DrawnReply);
+
+            await h.Window.RunAiAsync(PadAiAction.Diagram);
+
+            Assert.Empty(InResult<System.Windows.Controls.Image>(h.Pane));
+            Assert.Equal("flowchart LR\n  login --> pay --> ship", Assert.Single(InResult<System.Windows.Controls.TextBox>(h.Pane)).Text);   // a code block, with no fence lines
+            Assert.Equal(DrawnReply, h.Pane.ResultBox.Shown);
+
+            Click(h.Pane.InsertButton);
+
+            Assert.Equal("login\npay\nship\n\n" + DrawnReply, h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task Replace_selection_from_a_rendered_Draw_as_diagram_result_puts_the_fenced_text_whichever_view_is_shown() => OnUiAsync(async h =>
+        {
+            const string note = "Checkout\nlogin, then pay, then ship\nEnd";
+            WithPictures(h);
+            Write(h, note, "login, then pay, then ship");
+            h.Model.Reply(DrawnReply);
+            await h.Window.RunAiAsync(PadAiAction.Diagram);
+
+            h.Pane.SourceToggle.IsChecked = true;
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("Checkout\n" + DrawnReply + "\nEnd", h.Editor.Document.Text);
+            Assert.Equal("Replaced the selection", h.Pane.StatusText.Text);
+            Assert.True(h.Pane.ShowingSource);                        // applying a result is no other request: the view stays as chosen
+            h.Editor.Undo();
+            Assert.Equal(note, h.Editor.Document.Text);
+            Assert.True(h.Pane.ShowingSource);
+        });
+
+        [Fact]
+        public Task An_Ask_AI_answer_is_shown_rendered_and_what_goes_into_the_note_is_the_text_as_it_came() => OnUiAsync(async h =>
+        {
+            const string table = "| Step | Who |\n|---|---|\n| login | user |\n| pay | [the **bank**](https://example.com/pay) |";
+            Write(h, Note, Picked);
+            h.Model.Reply(table);
+
+            await h.Window.RunAiAsync(PadAiAction.Ask, "as a table");
+
+            Assert.Equal(table, h.Pane.ResultBox.Shown);
+            Assert.Single(h.Pane.ResultBox.Document.Blocks.OfType<System.Windows.Documents.Table>());   // drawn as a table
+            Assert.DoesNotContain("|---|", Rendered(h.Pane), StringComparison.Ordinal);
+            // Rendered as every answer in MicaPad is: a link is text with its address in sight, in a table cell too.
+            Assert.Empty(InResult<System.Windows.Documents.Hyperlink>(h.Pane));
+            Assert.Contains("the bank (https://example.com/pay)", Rendered(h.Pane), StringComparison.Ordinal);
+            Assert.Equal(Visibility.Visible, h.Pane.SourceToggle.Visibility);
+            Assert.Equal(Visibility.Collapsed, h.Pane.ChangesToggle.Visibility);
+
+            h.Pane.SourceToggle.IsChecked = true;
+            Assert.Equal(table, Rendered(h.Pane));
+            Assert.Empty(h.Pane.ResultBox.Document.Blocks.OfType<System.Windows.Documents.Table>());
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("Intro\n" + table + "\nOutro", h.Editor.Document.Text);
+        });
+
+        [Fact]
+        public Task Ask_AI_offers_no_Source_while_it_waits_for_its_instruction_and_Try_again_starts_rendered() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            h.Model.Reply("**One**").Reply("**Two**");
+
+            h.Window.ToggleAi();                                      // Ask AI: the instruction box, and nothing to show yet
+            Assert.True(h.Window.AiSessionNow!.AwaitingInstruction);
+            Assert.Equal(Visibility.Collapsed, h.Pane.SourceToggle.Visibility);
+
+            h.Pane.InstructionBox.Text = "bold number";
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Finished(h);
+            AiSession first = h.Window.AiSessionNow!;
+            Assert.Equal(Visibility.Visible, h.Pane.SourceToggle.Visibility);
+            Assert.Equal("One", Rendered(h.Pane));
+
+            h.Pane.SourceToggle.IsChecked = true;
+            Assert.Equal("**One**", Rendered(h.Pane));
+
+            Click(h.Pane.RetryButton);                                // another request: its answer is shown rendered
+            await Finished(h, after: first);
+
+            Assert.False(h.Pane.ShowingSource);
+            Assert.Equal("Two", Rendered(h.Pane));
+        });
+
+        [Fact]
+        public Task Storing_a_credential_while_a_rendered_result_shows_its_source_leaves_nothing_of_it_in_the_pane() => OnUiAsync(async h =>
+        {
+            NewVault(h);
+            FakeChatDiagrams diagrams = WithPictures(h);
+            const string text = "the login is hunter2 today";
+            Write(h, text, text);
+            h.ModelName = "claude-sonnet-5-5";
+            h.Model.Reply("The login is **hunter2**.\n\n" + DrawnReply);
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Assert.Single(InResult<System.Windows.Controls.Image>(h.Pane));
+            h.Pane.SourceToggle.IsChecked = true;                     // the plain form is on screen
+            Assert.Contains("hunter2", Rendered(h.Pane), StringComparison.Ordinal);
+            Assert.StartsWith("Finished in ", h.Pane.InfoText.Text, StringComparison.Ordinal);
+
+            string id = Store(h, h.Window, "hunter2");
+
+            Assert.Equal("the login is " + SecretTokens.Format(id) + " today", h.Editor.Document.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal("", h.Pane.ResultBox.Shown);                 // nothing of the result is left, in either form
+            Assert.Equal("", Rendered(h.Pane));
+            Assert.Empty(InResult<System.Windows.Controls.Image>(h.Pane));
+            Assert.Empty(InResult<System.Windows.Controls.TextBox>(h.Pane));
+            Assert.Equal(1, diagrams.Cleared);                        // nor a picture kept for drawing it again
+            Assert.False(h.Pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, h.Pane.SourceToggle.Visibility);
+            Assert.Equal("", h.Pane.InfoText.Text);
+            Assert.Equal("", h.Pane.ActivityText.Text);
+            Assert.Equal("", h.Pane.SourceText.Text);
+
+            h.Pane.SourceToggle.IsChecked = true;                     // forced, as the forced clicks below: there is nothing to show
+            Assert.Equal("", Rendered(h.Pane));
+            h.Pane.SourceToggle.IsChecked = false;
+            Assert.Equal("", Rendered(h.Pane));
+            Click(h.Pane.InsertButton);
+            Click(h.Pane.CopyButton);
+            Assert.DoesNotContain("hunter2", h.Editor.Document.Text, StringComparison.Ordinal);
+            Assert.Empty(h.Copied);
         });
 
         [Fact]

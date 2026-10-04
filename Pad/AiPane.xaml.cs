@@ -19,6 +19,13 @@ namespace Kil0bitSystemMonitor.Pad
     /// The AI pane (MicaPad AI spec 3.2). It draws an <see cref="AiPaneView"/> and raises an event
     /// for each thing the user asks for; it knows nothing about the editor, the request or the
     /// note. The window opens and closes it: <see cref="Show"/> only draws.
+    ///
+    /// <para>
+    /// What it keeps of its own is how the result is looked at, which no view says: Changes for a
+    /// rewrite, and Source for a result shown rendered (AI chat UI spec 3.2). Neither changes
+    /// what Replace selection and Insert below put in the note, which is the window's to do and
+    /// always the text.
+    /// </para>
     /// </summary>
     public sealed partial class AiPane : UserControl
     {
@@ -30,7 +37,8 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly Stopwatch _sinceDraw = new();
         private AiPaneView? _view;
         private bool _drawn;
-        private bool _drawnMarkdown;
+        private bool _drawnRendered;
+        private bool _turningSourceOff;
         private string? _comparedOriginal;
         private string? _comparedResult;
 
@@ -73,19 +81,29 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>True while the line diff is shown in place of the result.</summary>
         internal bool ShowingChanges => ChangesToggle.IsChecked == true;
 
+        /// <summary>True while a result that is rendered by default is shown as its text: exactly what would go into the note.</summary>
+        internal bool ShowingSource => SourceToggle.IsChecked == true;
+
         /// <summary>
-        /// Draws <paramref name="view"/>. The title, the buttons and the status change at once. The
-        /// result text redraws at most every <see cref="RedrawInterval"/> while one reply streams
-        /// in, and at once when it ends or when the view belongs to another request. Showing a
-        /// view never opens or closes the pane.
+        /// Draws <paramref name="view"/>. The title, the lines, the buttons and the status change
+        /// at once. The result text redraws at most every <see cref="RedrawInterval"/> while one
+        /// reply streams in, and at once when it ends or when the view belongs to another request.
+        /// A result that is shown rendered gets the Source toggle, which is off again for another
+        /// request. Showing a view never opens or closes the pane.
         /// </summary>
         public void Show(AiPaneView view)
         {
-            bool streaming = Continues(view);
+            // Source is for a result shown rendered, and there is none to show while the pane waits for an
+            // instruction. The choice is made for one request: it does not carry over to the next.
+            bool offerSource = view.Markdown && !view.AskForInstruction;
+            if (!offerSource || !SameRequest(view)) TurnSourceOff();
+            bool streaming = Continues(view);   // asked once the toggle is settled: the form the text is drawn in counts
             _view = view;
 
             TitleText.Text = view.Title;
             SourceText.Text = view.SourceLine;
+            ActivityText.Text = view.Activity;
+            ActivityRow.Visibility = When(view.Activity.Length > 0);   // the dots in it move only while it is shown
 
             // The next question starts with an empty box.
             if (!view.AskForInstruction && InstructionBox.Visibility == Visibility.Visible) InstructionBox.Clear();
@@ -104,11 +122,14 @@ namespace Kil0bitSystemMonitor.Pad
             CopyButton.IsEnabled = view.CanCopy;
             RetryButton.IsEnabled = view.CanRetry;
 
+            InfoText.Text = view.Info;
+            InfoText.Visibility = When(view.Info.Length > 0);
             StatusText.Text = view.Status;
             StatusText.Visibility = When(view.Status.Length > 0);
 
             ChangesToggle.Visibility = When(view.CanShowChanges);
             if (!view.CanShowChanges) ChangesToggle.IsChecked = false;
+            SourceToggle.Visibility = When(offerSource);
             ShowResultOrChanges();
 
             if (streaming) ScheduleDraw();
@@ -117,9 +138,10 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>
         /// Empties the pane: nothing of the last request stays in it, shown or not (its result,
-        /// its Changes view, a typed instruction), and a redraw still waiting is dropped. For
-        /// text that must not be kept: a credential was stored from the note it came from. The
-        /// next view draws as usual.
+        /// rendered or as text, with the pictures drawn for it; its Changes view; a typed
+        /// instruction; its lines), and a redraw still waiting is dropped. Source goes off with
+        /// the result, and with no view left turning it shows nothing. For text that must not be
+        /// kept: a credential was stored from the note it came from. The next view draws as usual.
         /// </summary>
         public void Clear()
         {
@@ -130,14 +152,20 @@ namespace Kil0bitSystemMonitor.Pad
             _comparedResult = null;
             ChangesToggle.IsChecked = false;
             ChangesToggle.Visibility = Visibility.Collapsed;
+            TurnSourceOff();
+            SourceToggle.Visibility = Visibility.Collapsed;
             ChangesList.ItemsSource = null;
             ChangesSummary.Text = "";
             InstructionBox.Clear();
             TitleText.Text = "";
             SourceText.Text = "";
+            ActivityText.Text = "";
+            ActivityRow.Visibility = Visibility.Collapsed;
+            InfoText.Text = "";
+            InfoText.Visibility = Visibility.Collapsed;
             StatusText.Text = "";
             StatusText.Visibility = Visibility.Collapsed;
-            ResultBox.ShowPlain("");
+            ResultBox.Clear();   // the text, its diagrams' Source choices and the pictures kept for drawing it again
         }
 
         /// <summary>Puts the keyboard in the instruction box, with what it holds selected.</summary>
@@ -180,11 +208,56 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// True when <paramref name="view"/> is the reply on screen with more text added: one
         /// stream going on, which may wait for the next redraw. Anything else (the first view, a
-        /// finished one, another request) draws at once.
+        /// finished one, another request, a reply to be drawn in the other form) draws at once.
         /// </summary>
         private bool Continues(AiPaneView view) =>
-            view.Running && _drawn && _drawnMarkdown == view.Markdown
+            view.Running && _drawn && _drawnRendered == Rendered(view)
             && view.Result.StartsWith(ResultBox.Shown, StringComparison.Ordinal);
+
+        /// <summary>True when <paramref name="view"/>'s result is drawn rendered: Markdown, and Source is off.</summary>
+        private bool Rendered(AiPaneView view) => view.Markdown && !ShowingSource;
+
+        /// <summary>
+        /// True when <paramref name="view"/> belongs to the request the pane shows: the same action
+        /// on the same text, with the reply of the last view or more of it. The pane is handed
+        /// views, never requests, so it tells by what a view says, as <see cref="Continues"/> does.
+        ///
+        /// <para>
+        /// A view that starts to run after one that did not is another request: a request runs
+        /// once (Try again, and an instruction entered for Ask AI, make a new one), and the window
+        /// draws every request before it starts. A reply that does not go on from the last one is
+        /// another request too, with one exception: while a reply streams in, a credential's
+        /// placeholder that arrives in two pieces is shown as its pill once it is whole, so the
+        /// text before it changes. A reply that streams and has not become shorter is still the
+        /// same reply.
+        /// </para>
+        /// </summary>
+        private bool SameRequest(AiPaneView view) =>
+            _view is { } last
+            && !(view.Running && !last.Running)
+            && string.Equals(view.Title, last.Title, StringComparison.Ordinal)
+            && string.Equals(view.SourceLine, last.SourceLine, StringComparison.Ordinal)
+            && string.Equals(view.Original, last.Original, StringComparison.Ordinal)
+            && (view.Result.StartsWith(last.Result, StringComparison.Ordinal)
+                || (last.Running && view.Result.Length >= last.Result.Length));
+
+        /// <summary>
+        /// Turns Source off without drawing: the caller draws the view it has, or has none left.
+        /// A click on the toggle draws by itself (<see cref="OnSourceToggled"/>).
+        /// </summary>
+        private void TurnSourceOff()
+        {
+            if (!ShowingSource) return;
+            _turningSourceOff = true;
+            try
+            {
+                SourceToggle.IsChecked = false;
+            }
+            finally
+            {
+                _turningSourceOff = false;
+            }
+        }
 
         /// <summary>Draws now when the interval has passed since the last draw; otherwise once, when it has.</summary>
         private void ScheduleDraw()
@@ -201,19 +274,22 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>
-        /// Draws the latest view's result, cancelling a redraw that was waiting. Text that is on
-        /// screen already is left alone, so a refresh does not drop a selection in it.
+        /// Draws the latest view's result, cancelling a redraw that was waiting: rendered, or as
+        /// its text for a rewrite and while Source is on. Text that is on screen already, in the
+        /// form it is to have, is left alone, so a refresh does not drop a selection in it; the
+        /// same text in the other form is drawn, which is what turning Source asks for.
         /// </summary>
         private void DrawNow()
         {
             _redraw.Stop();
             if (_view is not { } view) return;
-            if (_drawn && _drawnMarkdown == view.Markdown && string.Equals(ResultBox.Shown, view.Result, StringComparison.Ordinal)) return;
+            bool rendered = Rendered(view);
+            if (_drawn && _drawnRendered == rendered && string.Equals(ResultBox.Shown, view.Result, StringComparison.Ordinal)) return;
 
-            if (view.Markdown) ResultBox.ShowMarkdown(view.Result);
+            if (rendered) ResultBox.ShowMarkdown(view.Result);
             else ResultBox.ShowPlain(view.Result);
             _drawn = true;
-            _drawnMarkdown = view.Markdown;
+            _drawnRendered = rendered;
             _sinceDraw.Restart();
         }
 
@@ -247,6 +323,17 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnChangesToggled(object sender, RoutedEventArgs e)
         {
             ShowResultOrChanges();
+            ResultScroller.ScrollToHome();
+        }
+
+        /// <summary>
+        /// Source was turned by the user: the result is drawn in its other form at once, though
+        /// its text did not change, with the latest text if a redraw was waiting.
+        /// </summary>
+        private void OnSourceToggled(object sender, RoutedEventArgs e)
+        {
+            if (_turningSourceOff) return;
+            DrawNow();
             ResultScroller.ScrollToHome();
         }
 

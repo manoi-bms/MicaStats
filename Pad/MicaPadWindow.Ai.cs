@@ -152,6 +152,30 @@ namespace Kil0bitSystemMonitor.Pad
             return destination;
         }
 
+        /// <summary>
+        /// The model a request goes to, for the pane's source line and its "Waiting for …" line:
+        /// the model of the provider of Settings → AI as <see cref="PadAiPrivacy.Model"/> names
+        /// it, or "" before the settings load. Tests replace it.
+        /// </summary>
+        internal Func<string> AiModel { get; set; } = ModelInSettings;
+
+        private static string ModelInSettings() => AiModelIn(App.ConfigService?.Config);
+
+        /// <summary>The model <paramref name="config"/> names for its provider; no settings name none.</summary>
+        internal static string AiModelIn(Models.AppConfig? config) =>
+            config == null ? "" : PadAiPrivacy.Model(config.AiProvider, config.AiClaudeModel, config.AiCompatibleModel);
+
+        /// <summary>
+        /// The model as the settings have it now. It is only shown, never decided on: one that
+        /// cannot be read is not named, and the failure is logged.
+        /// </summary>
+        private string AiModelNow()
+        {
+            string model = "";
+            GuardAi("Reading the AI model's name", () => model = AiModel() ?? "");
+            return model;
+        }
+
         /// <summary>Puts a result on the clipboard: the pad's own clipboard helper unless a test replaces it.</summary>
         internal Action<string> AiCopy
         {
@@ -670,7 +694,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             CancelAi(_ai);   // a new action ends the one still running
-            var session = new AiSession(action, source, fromSelection, instruction, AiDestinationNow());
+            var session = new AiSession(action, source, fromSelection, instruction, AiDestinationNow(), AiModelNow());
             var run = new AiRun(session, note, document, instruction);
             if (fromSelection)
             {

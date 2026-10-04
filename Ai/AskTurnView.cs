@@ -6,8 +6,6 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
-using System.Windows.Media.Animation;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
@@ -43,7 +41,6 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly StringBuilder _raw = new();
         private readonly Dictionary<string, ToolChip> _chipsByTool = new(StringComparer.Ordinal);
         private readonly List<ToolChip> _chips = new();
-        private readonly Ellipse[] _dots = new Ellipse[3];
         private readonly DispatcherTimer _renderTimer;
         private readonly Stopwatch _sinceRender = new();
 
@@ -87,18 +84,12 @@ namespace Kil0bitSystemMonitor.Ai
 
             Tools = new WrapPanel { Margin = new Thickness(0, 3, 0, 2), Visibility = Visibility.Collapsed };
 
-            var typing = new StackPanel
+            var typing = new TypingDots
             {
-                Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(2, 11, 0, 11),
             };
-            for (int i = 0; i < _dots.Length; i++)
-            {
-                _dots[i] = new Ellipse { Width = 6, Height = 6, Margin = new Thickness(0, 0, 5, 0) };
-                _dots[i].SetResourceReference(Shape.FillProperty, "Ask.Muted");
-                typing.Children.Add(_dots[i]);
-            }
+            typing.SetResourceReference(TypingDots.FillProperty, "Ask.Muted");
             Typing = typing;
 
             Answer = new AnswerBox
@@ -206,8 +197,6 @@ namespace Kil0bitSystemMonitor.Ai
 
             _renderTimer = new DispatcherTimer(DispatcherPriority.Background);
             _renderTimer.Tick += (s, e) => RenderNow();
-            Typing.Loaded += (s, e) => Animate(Typing.Visibility == Visibility.Visible);
-            Typing.Unloaded += (s, e) => Animate(false);
             StartTyping();
         }
 
@@ -470,41 +459,11 @@ namespace Kil0bitSystemMonitor.Ai
             _renderTimer.Start();
         }
 
-        /// <summary>Shows the dots; they animate only while they are on screen.</summary>
-        private void StartTyping()
-        {
-            Typing.Visibility = Visibility.Visible;
-            if (Typing.IsLoaded) Animate(true);
-        }
+        /// <summary>Shows the dots; they animate only while they are on screen (<see cref="TypingDots"/>).</summary>
+        private void StartTyping() => Typing.Visibility = Visibility.Visible;
 
-        /// <summary>Hides the dots and stops their animation, so nothing keeps the renderer busy.</summary>
-        private void StopTyping()
-        {
-            if (Typing.Visibility != Visibility.Visible) return;
-            Typing.Visibility = Visibility.Collapsed;
-            Animate(false);
-        }
-
-        /// <summary>Three dots fading in turn at 30 frames a second, or no animation at all.</summary>
-        private void Animate(bool on)
-        {
-            for (int i = 0; i < _dots.Length; i++)
-            {
-                if (!on)
-                {
-                    _dots[i].BeginAnimation(UIElement.OpacityProperty, null);
-                    continue;
-                }
-                var fade = new DoubleAnimation(0.3, 1.0, TimeSpan.FromMilliseconds(450))
-                {
-                    AutoReverse = true,
-                    RepeatBehavior = RepeatBehavior.Forever,
-                    BeginTime = TimeSpan.FromMilliseconds(150 * i),
-                };
-                Timeline.SetDesiredFrameRate(fade, 30);
-                _dots[i].BeginAnimation(UIElement.OpacityProperty, fade);
-            }
-        }
+        /// <summary>Hides the dots, which stops their animation, so nothing keeps the renderer busy.</summary>
+        private void StopTyping() => Typing.Visibility = Visibility.Collapsed;
 
         /// <summary>A tool and its arguments as its chip's tooltip shows them; empty arguments are left out.</summary>
         internal static string Describe(string name, string? args)

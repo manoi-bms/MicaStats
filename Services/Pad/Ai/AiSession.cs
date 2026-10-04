@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Text;
+using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Search;
 
 namespace Kil0bitSystemMonitor.Services.Pad.Ai
@@ -16,7 +17,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     /// <summary>
     /// Everything the AI pane draws; immutable. <c>ShowInsert</c> is false only for the fix of a
     /// diagram block: Insert below is then not offered at all (it would land inside the block),
-    /// as <c>ShowReplace</c> is false for a result with nothing to replace.
+    /// as <c>ShowReplace</c> is false for a result with nothing to replace. <c>Activity</c> says
+    /// what a running request is doing ("Waiting for …", "Writing…") and <c>Info</c> how long one
+    /// that finished whole took ("Finished in 4 s"); each is "" when there is nothing to say.
     /// </summary>
     public sealed record AiPaneView(
         string Title,
@@ -30,7 +33,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         bool CanInsert, bool CanCopy, bool CanRetry,
         bool CanShowChanges,
         string Original,
-        bool ShowInsert = true);
+        bool ShowInsert = true,
+        string Activity = "",
+        string Info = "");
 
     /// <summary>
     /// The state of one AI request and the rules for which buttons the pane offers
@@ -52,8 +57,16 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         private const string ReadOnlyText = "This note is read-only";
         private const string ChangedText = "The text changed since the request; use Insert below or Copy";
 
+        private const string WaitingForText = "Waiting for ";
+        private const string WaitingForTheModelText = "Waiting for the model…";
+        private const string WritingText = "Writing…";
+        private const string FinishedInText = "Finished in ";
+
         private readonly SecretMask _mask;
         private readonly StringBuilder _raw = new();
+        private readonly Func<DateTime> _utcNow;
+        private DateTime? _startedAt;
+        private DateTime? _endedAt;
         private string? _failure;
         private string? _applied;
         private bool _stopped;
@@ -63,12 +76,24 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// Where the text goes, in a word or two ("api.anthropic.com", "this PC"), for the source
         /// line; "" names none. The window reads it from the settings (<see cref="PadAiPrivacy.Destination"/>).
         /// </param>
-        public AiSession(PadAiAction action, string sourceText, bool fromSelection, string? instruction = null, string destination = "")
+        /// <param name="model">
+        /// The model the request goes to ("claude-sonnet-5-5"), for the source line and the
+        /// "Waiting for …" line; "" names none. The window reads it from the settings
+        /// (<see cref="PadAiPrivacy.Model"/>). It is only shown: nothing is decided on it.
+        /// </param>
+        /// <param name="utcNow">
+        /// The clock the request is timed with, read when it starts and when it ends; null is the
+        /// PC's own. Tests hand in one they move by hand.
+        /// </param>
+        public AiSession(PadAiAction action, string sourceText, bool fromSelection, string? instruction = null, string destination = "",
+                         string model = "", Func<DateTime>? utcNow = null)
         {
             Action = action;
             Original = sourceText ?? "";
             FromSelection = fromSelection;
             Destination = destination ?? "";
+            Model = (model ?? "").Trim();
+            _utcNow = utcNow ?? (() => DateTime.UtcNow);
             _mask = SecretMask.Of(Original);
             Refusal = action.TooLong(Original.Length);
             // A refusal wins: text that cannot be sent is not asked an instruction for, which could never run.
@@ -86,6 +111,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// <summary>Where the text goes, as the source line says it; "" when none is named.</summary>
         public string Destination { get; }
 
+        /// <summary>The model the request goes to, as the source line names it; "" when none is named.</summary>
+        public string Model { get; }
+
         public string Instruction { get; }
         public string? Refusal { get; }
         public bool AwaitingInstruction { get; }
@@ -98,13 +126,26 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             if (Running || Finished) throw new InvalidOperationException("An AI session runs once");
             if (Refusal != null) throw new InvalidOperationException("This request is refused and cannot start");
             if (AwaitingInstruction) throw new InvalidOperationException("This request still needs an instruction");
+            _startedAt = _utcNow();
             Running = true;
         }
 
         public void Append(string piece) { if (!Finished) _raw.Append(piece); }
-        public void Fail(string message) { if (Finished) return; _failure = message; Running = false; Finished = true; }
+        public void Fail(string message) { if (Finished) return; _failure = message; End(); }
         public void MarkCutShort() { if (!Finished) _cutShort = true; }
-        public void Complete(bool stopped) { _stopped = stopped; Running = false; Finished = true; }
+        public void Complete(bool stopped) { _stopped = stopped; End(); }
+
+        /// <summary>
+        /// The request is over, however it ended. The clock is read once, at its first end: the
+        /// window calls <see cref="Complete"/> when the stream closes, after a <see cref="Fail"/> too.
+        /// </summary>
+        private void End()
+        {
+            if (!Finished) _endedAt = _utcNow();
+            Running = false;
+            Finished = true;
+        }
+
         /// <summary>
         /// Replace selection put the result in the note (or a redo put it back): there is nothing
         /// left to replace, and the status says <paramref name="what"/> happened. Only a Replace
@@ -200,11 +241,24 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 else if (showReplace && closesBlock) status = HoldsFence;
             }
 
+            // What is going on while it runs: nothing to show yet, or the reply coming in.
+            string activity = !Running ? ""
+                : hasText ? WritingText
+                : Model.Length > 0 ? WaitingForText + Model + "…"
+                : WaitingForTheModelText;
+            // How long it took, for a request that finished whole and for no other: one that
+            // was stopped, failed, was cut short or was refused says that in its status.
+            string info = Refusal == null && clean && _startedAt is { } startedAt && _endedAt is { } endedAt
+                ? FinishedInText + ChatDuration.Text(endedAt - startedAt)
+                : "";
+
             return new AiPaneView(
                 Title: Action.Name,
-                // What it runs on, and where that goes: "Selection, 412 characters · to api.anthropic.com".
+                // What it runs on, where that goes and to which model:
+                // "Selection, 412 characters · to api.anthropic.com (claude-sonnet-5-5)".
                 SourceLine: (FromSelection ? "Selection, " : "Whole note, ") + Count(Original.Length)
-                            + (Destination.Length > 0 ? " · to " + Destination : ""),
+                            + (Destination.Length > 0 ? " · to " + Destination : "")
+                            + (Model.Length > 0 ? " (" + Model + ")" : ""),
                 AskForInstruction: AwaitingInstruction,
                 Result: result,
                 Markdown: Action.RendersMarkdown,
@@ -218,7 +272,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 CanRetry: !Running && !AwaitingInstruction && Refusal == null && facts.SourceShown,
                 CanShowChanges: Action.Kind == PadAiKind.Rewrite && Refusal == null && Finished && hasText && !failed,
                 Original: Original,
-                ShowInsert: !fix);
+                ShowInsert: !fix,
+                Activity: activity,
+                Info: info);
         }
 
         private static string Count(int n) =>

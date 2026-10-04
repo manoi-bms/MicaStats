@@ -4,12 +4,38 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:local="clr-namespace:Kil0bitSystemMonitor.Pad"
+    xmlns:ai="clr-namespace:Kil0bitSystemMonitor.Ai"
     Width="320" Background="{DynamicResource Pad.Chrome}" Foreground="{DynamicResource Pad.WindowText}">
 
-    <!-- The AI pane (MicaPad AI spec 3.2): what was asked, on what text, the result as it streams
-         in, and what to do with it. It draws an AiPaneView and raises events; it knows nothing
-         about the editor. Colors are the Pad.* brushes, as in History and Search notes; ApplyTheme
-         also puts them, and the two diff tints, in the pane's own resources. -->
+    <!-- The AI pane (MicaPad AI spec 3.2, AI chat UI spec 3.2 and 3.3): what was asked, on what
+         text and where that goes, what the request is doing, the result as it streams in, and
+         what to do with it. It draws an AiPaneView and raises events; it knows nothing about the
+         editor. Colors are the Pad.* brushes, as in History and Search notes; ApplyTheme also puts
+         them, and the two diff tints, in the pane's own resources. -->
+
+    <UserControl.Resources>
+        <!-- A flat toggle in the pad's own colors, for Changes and Source: the ModernWpf one paints its checked state in the Windows accent. -->
+        <ControlTemplate x:Key="AiPane.Toggle" TargetType="ToggleButton">
+            <Border x:Name="Bg" Background="Transparent" BorderBrush="{DynamicResource Pad.Border}" BorderThickness="1"
+                    CornerRadius="4" Padding="{TemplateBinding Padding}">
+                <ContentPresenter x:Name="Label" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  TextElement.Foreground="{DynamicResource Pad.TextSoft}" />
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Pad.Hover}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource Pad.Accent}" />
+                </Trigger>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Pad.Hover}" />
+                    <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource Pad.Accent}" />
+                    <Setter TargetName="Label" Property="TextElement.Foreground" Value="{DynamicResource Pad.Accent}" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+    </UserControl.Resources>
 
     <Border BorderBrush="{DynamicResource Pad.Border}" BorderThickness="1,0,0,0">
         <DockPanel>
@@ -24,36 +50,27 @@
                 <TextBlock x:Name="TitleText" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
             </DockPanel>
 
+            <!-- What it ran on, where that goes and to which model. The line wraps and is never cut short: the
+                 destination must always be readable. Beside it one toggle at most: Changes for a rewrite, Source
+                 for a result shown rendered. Each keeps its own height when the line takes two. -->
             <DockPanel DockPanel.Dock="Top" Margin="12,0,12,6">
-                <!-- A flat toggle in the pad's own colors: the ModernWpf one paints its checked state in the Windows accent. -->
                 <ToggleButton x:Name="ChangesToggle" DockPanel.Dock="Right" Content="Changes" FontSize="11.5" Padding="8,2"
-                              Margin="8,0,0,0" Visibility="Collapsed" Cursor="Hand"
-                              ToolTip="Show what changed, line by line"
-                              Checked="OnChangesToggled" Unchecked="OnChangesToggled">
-                    <ToggleButton.Template>
-                        <ControlTemplate TargetType="ToggleButton">
-                            <Border x:Name="Bg" Background="Transparent" BorderBrush="{DynamicResource Pad.Border}" BorderThickness="1"
-                                    CornerRadius="4" Padding="{TemplateBinding Padding}">
-                                <ContentPresenter x:Name="Label" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                  TextElement.Foreground="{DynamicResource Pad.TextSoft}" />
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Pad.Hover}" />
-                                </Trigger>
-                                <Trigger Property="IsKeyboardFocused" Value="True">
-                                    <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource Pad.Accent}" />
-                                </Trigger>
-                                <Trigger Property="IsChecked" Value="True">
-                                    <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Pad.Hover}" />
-                                    <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource Pad.Accent}" />
-                                    <Setter TargetName="Label" Property="TextElement.Foreground" Value="{DynamicResource Pad.Accent}" />
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </ToggleButton.Template>
-                </ToggleButton>
-                <TextBlock x:Name="SourceText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                              Margin="8,0,0,0" Visibility="Collapsed" Cursor="Hand" VerticalAlignment="Top"
+                              ToolTip="Show what changed, line by line" Template="{StaticResource AiPane.Toggle}"
+                              Checked="OnChangesToggled" Unchecked="OnChangesToggled" />
+                <ToggleButton x:Name="SourceToggle" DockPanel.Dock="Right" Content="Source" FontSize="11.5" Padding="8,2"
+                              Margin="8,0,0,0" Visibility="Collapsed" Cursor="Hand" VerticalAlignment="Top"
+                              ToolTip="Show the text as it would be inserted" Template="{StaticResource AiPane.Toggle}"
+                              Checked="OnSourceToggled" Unchecked="OnSourceToggled" />
+                <TextBlock x:Name="SourceText" VerticalAlignment="Center" TextWrapping="Wrap"
+                           Foreground="{DynamicResource Pad.Muted}" FontSize="11.5" />
+            </DockPanel>
+
+            <!-- What the request is doing while it runs. The dots move only while they are on screen. -->
+            <DockPanel x:Name="ActivityRow" DockPanel.Dock="Top" Margin="12,0,12,6" Visibility="Collapsed">
+                <ai:TypingDots x:Name="ActivityDots" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,1,3,0"
+                               Fill="{DynamicResource Pad.Muted}" />
+                <TextBlock x:Name="ActivityText" VerticalAlignment="Center" TextWrapping="Wrap"
                            Foreground="{DynamicResource Pad.Muted}" FontSize="11.5" />
             </DockPanel>
 
@@ -66,7 +83,8 @@
                      ToolTip="Enter runs it; Shift+Enter adds a line"
                      PreviewKeyDown="OnInstructionKeyDown" />
 
-            <!-- Bottom up: the four actions on a result, then the status line above them. Stop is in the header. -->
+            <!-- Bottom up: the four actions on a result, the status line above them, and above that how long a
+                 request that finished whole took. Stop is in the header. -->
             <WrapPanel DockPanel.Dock="Bottom" Margin="12,0,6,6">
                 <Button x:Name="ReplaceButton" Content="Replace selection" FontSize="12" Padding="10,4" Margin="0,0,6,6"
                         Foreground="{DynamicResource Pad.Accent}"
@@ -80,6 +98,8 @@
             </WrapPanel>
             <TextBlock x:Name="StatusText" DockPanel.Dock="Bottom" Margin="12,0,12,8" TextWrapping="Wrap"
                        Foreground="{DynamicResource Pad.TextSoft}" FontSize="12" Visibility="Collapsed" />
+            <TextBlock x:Name="InfoText" DockPanel.Dock="Bottom" Margin="12,0,12,6" TextWrapping="Wrap"
+                       Foreground="{DynamicResource Pad.Muted}" FontSize="11.5" Visibility="Collapsed" />
 
             <!-- The result, or the changes in its place: a page of the note's own background. -->
             <Border Margin="12,0,12,8" Background="{DynamicResource Pad.Background}"

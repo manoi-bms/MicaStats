@@ -5,8 +5,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 {
     /// <summary>
     /// Where MicaPad's AI text goes, from the settings alone (MicaPad AI spec 1 and 2): the line
-    /// under "Use AI in MicaPad", and the short name of the destination shown where an action
-    /// runs. Both read the provider as <see cref="AiProviderFactory"/> does.
+    /// under "Use AI in MicaPad", and the short name of the destination and of the model shown
+    /// where an action runs. All read the provider as <see cref="AiProviderFactory"/> does.
     /// </summary>
     public static class PadAiPrivacy
     {
@@ -56,6 +56,14 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             if (Endpoint(compatibleBaseUrl) is not { } uri) return "";
             return uri.IsLoopback ? ThisPc : uri.Host;
         }
+
+        /// <summary>
+        /// The id of the model a request goes to, trimmed, for the AI pane's source line and its
+        /// "Waiting for …" line: the Claude model for Claude, the compatible server's model for
+        /// that provider, never the other one's. "" when none is set. It is only shown.
+        /// </summary>
+        public static string Model(string provider, string? claudeModel, string? compatibleModel) =>
+            ((IsCompatible(provider) ? compatibleModel : claudeModel) ?? "").Trim();
 
         /// <summary>Any other value is Claude, as the factory has it.</summary>
         private static bool IsCompatible(string provider) =>

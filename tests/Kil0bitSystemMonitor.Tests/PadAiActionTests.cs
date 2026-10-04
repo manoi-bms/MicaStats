@@ -43,8 +43,25 @@ namespace Kil0bitSystemMonitor.Tests
         {
             Assert.Equal(PadAiKind.Custom, PadAiAction.Ask.Kind);
             Assert.Equal(24000, PadAiAction.Ask.MaxChars);
-            Assert.False(PadAiAction.Ask.RendersMarkdown);
+            Assert.True(PadAiAction.Ask.RendersMarkdown);         // an answer is shown rendered (AI chat UI spec 3.2)
             Assert.Equal("", PadAiAction.Ask.Instruction);
+        }
+
+        [Fact]
+        public void Only_a_rewrite_is_shown_as_the_text_it_would_insert_and_every_other_result_is_rendered()
+        {
+            foreach (PadAiAction rewrite in new[]
+            {
+                PadAiAction.Improve, PadAiAction.FixGrammar, PadAiAction.Shorten, PadAiAction.TranslateEnglish, PadAiAction.TranslateThai,
+                PadAiAction.FixDiagram("mermaid", "Parse error"),
+            })
+                Assert.False(rewrite.RendersMarkdown, rewrite.Id);
+
+            foreach (PadAiAction rendered in new[] { PadAiAction.Summarize, PadAiAction.Explain, PadAiAction.Diagram, PadAiAction.Ask })
+                Assert.True(rendered.RendersMarkdown, rendered.Id);
+
+            // Every action of the menu is one or the other, by its kind.
+            Assert.All(PadAiAction.Menu, a => Assert.Equal(a.Kind != PadAiKind.Rewrite, a.RendersMarkdown));
         }
 
         [Fact]
@@ -67,7 +84,7 @@ namespace Kil0bitSystemMonitor.Tests
         private const string FixEnd = "\". Fix the source so it renders, changing as little as possible. Reply with the corrected source only: no code fence, no explanation.";
 
         [Fact]
-        public void Draw_as_diagram_is_custom_takes_24000_is_shown_as_plain_text_and_needs_no_selection()
+        public void Draw_as_diagram_is_custom_takes_24000_is_shown_rendered_and_needs_no_selection()
         {
             PadAiAction a = PadAiAction.Diagram;
 
@@ -75,7 +92,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Draw as diagram", a.Name);
             Assert.Equal(PadAiKind.Custom, a.Kind);
             Assert.Equal(24000, a.MaxChars);
-            Assert.False(a.RendersMarkdown);
+            Assert.True(a.RendersMarkdown);                       // the diagram is seen before anything is inserted (AI chat UI spec 3.2)
             Assert.False(a.NeedsSelection);
             Assert.Equal("Draw this as a Mermaid diagram. Reply with one fenced code block that starts with ```mermaid and nothing else. "
                          + "Pick the diagram type that fits best: flowchart, sequence, class, state, gantt or mindmap. "

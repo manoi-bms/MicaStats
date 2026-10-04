@@ -34,8 +34,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             "Explain what this is and what it does, briefly. If it is code, explain the code.");
         /// <summary>
         /// Draws the text as a Mermaid diagram (part 2, spec 2.1). Custom, as Ask AI is: the reply is
-        /// the fenced block as it would be inserted, shown as plain text, and it never waits for an
-        /// instruction, having its own.
+        /// the fenced block as it would be inserted, which the pane shows rendered, the diagram
+        /// drawn (<see cref="RendersMarkdown"/>), and it never waits for an instruction, having its own.
         /// </summary>
         public static readonly PadAiAction Diagram = new("diagram", "Draw as diagram", PadAiKind.Custom,
             "Draw this as a Mermaid diagram. Reply with one fenced code block that starts with ```mermaid and nothing else. Pick the diagram type that fits best: flowchart, sequence, class, state, gantt or mindmap. Keep labels short, in the language of the text.");
@@ -164,8 +164,14 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
         public int MaxChars => Kind == PadAiKind.Rewrite ? RewriteMaxChars : ReadMaxChars;
 
-        /// <summary>An answer to read is shown as Markdown; text that may go into the note is shown as it is.</summary>
-        public bool RendersMarkdown => Kind == PadAiKind.Read;
+        /// <summary>
+        /// A rewrite is shown as its text, exactly what Replace selection would put in the note, with
+        /// Changes beside it. Every other result is shown rendered (AI chat UI spec 3.2): an answer
+        /// to read, and what Draw as diagram and Ask AI give back, so a diagram is seen before
+        /// anything is inserted; the pane's Source toggle shows the text. What goes into the note
+        /// is the text either way, never the rendering.
+        /// </summary>
+        public bool RendersMarkdown => Kind != PadAiKind.Rewrite;
 
         /// <summary>The sentence for text that is too long to send, or null when it fits.</summary>
         public string? TooLong(int chars)

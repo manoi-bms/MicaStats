@@ -108,7 +108,7 @@ Both system prompts say what the answer is shown as, so the model writes for it.
 
 ## 4. The Ask MicaStats window
 
-- **What it is doing.** Beside the moving dots: "Thinking…", and while a tool runs, what it does: "Reading live status…", "Checking top processes…", "Looking at history…", "Listing slowdown reports…", "Reading a slowdown report…", "Checking alerts…", "Reading hardware info…", "Checking the battery…", "Checking startup times…", "Searching notes…", "Reading a note…". Another tool: "Using <name>…". It goes when answer text arrives, and comes back if a tool is used after that.
+- **What it is doing.** Beside the moving dots: "Thinking…", and while a tool runs, what it does: "Reading live status…", "Checking top processes…", "Looking at history…", "Listing slowdown reports…", "Reading a slowdown report…", "Checking alerts…", "Reading hardware info…", "Checking the battery…", "Checking startup times…", "Searching notes…", "Reading a note…". Another tool: "Using <name>…". It goes when answer text arrives, and comes back if a tool is used after that. The line names the step the assistant is on: the tools are quick reads, so most of the wait is the model working on what the tool just returned. *(Added after Task 6's review.)* The limited-mode note does not end it: the dots and "Thinking…" stay until the answer starts.
 - **How long it took.** Under a finished answer, after the time: "14:32 · 4 s".
 - **How many questions are left.** The hint under the question box ends with the day's count: "Enter to send · Shift+Enter for a new line · 12 of 100 today". It is refreshed when the window opens and after each answer.
 - **Jump to the latest.** When the transcript is scrolled away from its end, a round button at its lower right jumps back to it.

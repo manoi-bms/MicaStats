@@ -183,6 +183,27 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(0, page.RefusedRequests);   // drawing asked the network for nothing
         });
 
+        /// <summary>
+        /// A line break in a label, which models write in most flowcharts. Mermaid hands its picture
+        /// over as HTML text, where a break is written without a closing slash: that is not XML, and
+        /// the picture "could not be read". Found with a real model's answer (the Thai one below).
+        /// </summary>
+        [Theory]
+        [InlineData("flowchart TD\n    A[\"Close unused tabs<br/>or stop Docker\"] --> B{\"Disk C: 91% full\"}\n    B -->|Yes| C[\"Move files to D:<br>clear temp and cache\"]\n    B -->|No| D[\"Check the temperature\"]")]
+        [InlineData("flowchart TD\n    A[\"เครื่องช้า\"] --> B{\"แรมใช้ 86%\"}\n    B -->|ใช่| C[\"ปิดแท็บ Chrome ที่ไม่ใช้<br/>หรือลด Docker/Teams\"]\n    B -->|ไม่ใช่| D[\"ดูสาเหตุอื่น\"]\n    C --> E[\"วัดซ้ำ: แรม CPU อุณหภูมิ\"]\n    D --> E")]
+        [InlineData("sequenceDiagram\n    participant U as User\n    participant A as App\n    U->>A: Ask<br/>about the PC\n    A-->>U: Answer")]
+        public void A_mermaid_label_with_a_line_break_draws(string source) => WithPage(async page =>
+        {
+            var drawing = await Draw(page, "mermaid", source);
+
+            Assert.True(drawing.Error == null, drawing.Error);
+            Assert.True(drawing.Width > 0 && drawing.Height > 0, "no size");
+            var (width, height) = PngSize(drawing.Png!);
+            Assert.True(width > 0 && height > 0, "an empty picture");
+            Assert.Contains("<svg", drawing.Svg!, StringComparison.Ordinal);
+            Assert.Equal(0, page.RefusedRequests);   // drawing asked the network for nothing
+        });
+
         [Fact]
         public void Every_mermaid_type_the_prompts_quote_is_one_the_drawing_test_covers()
         {

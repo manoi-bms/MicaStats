@@ -70,6 +70,14 @@
     return { svg: new XMLSerializer().serializeToString(el), width: w, height: h };
   }
 
+  // Mermaid hands its picture over as HTML text: a label's line break is "<br>", which is not XML,
+  // and finish reads XML. Read here as HTML and written out again as XML. Like finish, it only parses:
+  // the markup is never put into the page, so nothing in it runs or loads.
+  function wellFormed(svgText) {
+    const el = new DOMParser().parseFromString(svgText, "text/html").querySelector("svg");
+    return el ? new XMLSerializer().serializeToString(el) : svgText;
+  }
+
   async function drawMermaid(req) {
     mermaid.initialize({
       startOnLoad: false,
@@ -80,7 +88,7 @@
     const id = "mermaid-" + (++counter);
     try {
       const result = await mermaid.render(id, req.source, stage());
-      return finish(result.svg);
+      return finish(wellFormed(result.svg));
     } finally {
       for (const leftover of [document.getElementById(id), document.getElementById("d" + id)]) {
         if (leftover) leftover.remove();

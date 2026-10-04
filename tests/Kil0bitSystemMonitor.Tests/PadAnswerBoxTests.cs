@@ -200,6 +200,26 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void An_image_in_an_answer_is_never_loaded_it_is_text_with_its_address_and_HTML_is_text() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+
+            box.ShowMarkdown("![a chart](https://example.com/a.png)\n\n<img src=x onerror=alert(1)> <script>alert(1)</script>");
+
+            Assert.Equal("!a chart (https://example.com/a.png)\n<img src=x onerror=alert(1)> <script>alert(1)</script>", Rendered(box));
+            Assert.Empty(Links(box));
+            Assert.Empty(ChatDocument.All<System.Windows.Controls.Image>(box.Document));   // nothing that could load the address
+            Assert.Empty(ChatDocument.All<InlineUIContainer>(box.Document));
+            Assert.Empty(ChatDocument.All<BlockUIContainer>(box.Document));
+
+            box.ShowMarkdown("<img src=\"https://example.com/b.png\">");                  // an address in a tag is text too
+            Assert.Empty(Links(box));
+            Assert.Empty(ChatDocument.All<System.Windows.Controls.Image>(box.Document));
+            Assert.Empty(ChatDocument.All<InlineUIContainer>(box.Document));
+            Assert.StartsWith("<img src=\"https://example.com/b.png", Rendered(box), StringComparison.Ordinal);
+        });
+
+        [Fact]
         public void A_link_dressed_as_a_citation_shows_where_it_goes() => UiThread.Run(() =>
         {
             var box = new PadAnswerBox();

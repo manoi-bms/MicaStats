@@ -76,6 +76,13 @@ namespace Kil0bitSystemMonitor.Ai
 
         /// <summary>The redraw whose cost is waited for; a callback for an older one stores nothing.</summary>
         private int _measured;
+
+        /// <summary>
+        /// True from a redraw showing its document until its cost is stored (or given up: another
+        /// redraw, <see cref="Cancel"/>, <see cref="Forget"/>, a cost set by hand). While it is
+        /// true the pace cannot be worked out: <see cref="LastCost"/> is still the redraw before.
+        /// </summary>
+        private bool _costAwaited;
         private bool _pointerFailureSaid;
 
         /// <param name="view">The view that redraws; held weakly.</param>
@@ -100,6 +107,7 @@ namespace Kil0bitSystemMonitor.Ai
             set
             {
                 _measured++;
+                _costAwaited = false;
                 _lastCost = value;
             }
         }
@@ -123,10 +131,24 @@ namespace Kil0bitSystemMonitor.Ai
         /// the timer fires and when new text finds no redraw waiting, so the cost it reads is
         /// the newest. A <paramref name="pointerHeld"/> that throws counts as not held, and is
         /// told to <paramref name="warn"/> once, by its type.
+        ///
+        /// <para>
+        /// Nor may it while the cost of the last redraw is still awaited: text that arrives after
+        /// a redraw returned and before its layout has run. Drawing then would be paced by the
+        /// redraw before, and would drop the measurement under way, so a heavy answer whose text
+        /// keeps coming would be drawn back to back and never measured. The timer is started
+        /// instead (for what is left of the pace as it is known, or for nothing); it ticks below
+        /// the priority the cost is stored at, so the tick asks again with the cost in.
+        /// </para>
         /// </summary>
         public bool Ready(TimeSpan least, Func<bool> pointerHeld, Action<string> warn)
         {
             TimeSpan left = Left(least);
+            if (_costAwaited)
+            {
+                Start(left > TimeSpan.Zero ? left : TimeSpan.Zero);
+                return false;
+            }
             if (left > TimeSpan.Zero)
             {
                 Start(left);
@@ -168,6 +190,7 @@ namespace Kil0bitSystemMonitor.Ai
         {
             _timer.Stop();
             _measured++;
+            _costAwaited = false;
         }
 
         /// <summary>
@@ -190,6 +213,7 @@ namespace Kil0bitSystemMonitor.Ai
         public void Measure(long started)
         {
             _since.Restart();
+            _costAwaited = true;
             Post(_timer.Dispatcher, _self, ++_measured, started);
         }
 
@@ -198,8 +222,9 @@ namespace Kil0bitSystemMonitor.Ai
         {
             dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
             {
-                if (weak.TryGetTarget(out RedrawTimer<TView>? pace) && pace._measured == measured && pace._view.TryGetTarget(out _))
-                    pace._lastCost = Stopwatch.GetElapsedTime(started);
+                if (!weak.TryGetTarget(out RedrawTimer<TView>? pace) || pace._measured != measured) return;
+                pace._costAwaited = false;   // whether or not there is a view left to store it for
+                if (pace._view.TryGetTarget(out _)) pace._lastCost = Stopwatch.GetElapsedTime(started);
             }));
         }
 

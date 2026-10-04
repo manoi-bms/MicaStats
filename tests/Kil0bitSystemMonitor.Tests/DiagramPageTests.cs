@@ -204,22 +204,129 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(0, page.RefusedRequests);   // drawing asked the network for nothing
         });
 
+        /// <summary>
+        /// The Mermaid type names a system prompt quotes: every double-quoted word of letters,
+        /// digits and dashes in the whole of each rule that speaks of a mermaid block. A rule is a
+        /// line that starts with "- " and the lines under it up to the next one, so a name quoted
+        /// on a later line of the rule counts, and so does one with capitals or a digit
+        /// ("sequenceDiagram", "stateDiagram-v2").
+        /// </summary>
+        internal static System.Collections.Generic.HashSet<string> MermaidTypesQuoted(string prompt)
+        {
+            var quoted = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+            var rule = new System.Text.StringBuilder();
+            void EndRule()
+            {
+                string text = rule.ToString();
+                rule.Clear();
+                if (!text.Contains("```mermaid", StringComparison.Ordinal)) return;
+                foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(text, "\"([A-Za-z0-9][A-Za-z0-9-]*)\""))
+                    quoted.Add(m.Groups[1].Value);
+            }
+            foreach (string line in prompt.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+            {
+                if (line.TrimStart().StartsWith("- ", StringComparison.Ordinal)) EndRule();
+                rule.Append(line).Append('\n');
+            }
+            EndRule();
+            return quoted;
+        }
+
+        [Fact]
+        public void The_type_names_are_read_from_the_whole_diagram_rule_with_capitals_digits_and_later_lines()
+        {
+            const string prompt =
+                "Rules:\n" +
+                "- Say \"hello\" first.\n" +
+                "- A fenced code block that starts with ```mermaid is drawn. Use \"pie\" for shares,\n" +
+                "  \"sequenceDiagram\" for messages, \"stateDiagram-v2\" for states\n" +
+                "  and \"C4Context\" or \"xychart-beta\" otherwise. Not \"two words\", not \"\", not \"a.b\".\n" +
+                "- Keep \"other\" rules apart.";
+
+            var quoted = MermaidTypesQuoted(prompt);
+
+            Assert.Equal(new[] { "C4Context", "pie", "sequenceDiagram", "stateDiagram-v2", "xychart-beta" },
+                         quoted.OrderBy(t => t, StringComparer.Ordinal));
+
+            Assert.Empty(MermaidTypesQuoted("- No diagram rule here, only \"pie\"."));
+        }
+
         [Fact]
         public void Every_mermaid_type_the_prompts_quote_is_one_the_drawing_test_covers()
         {
             var covered = PromptedMermaidSamples.Select(s => s.Type).ToHashSet(StringComparer.Ordinal);
             var quoted = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
             foreach (string prompt in new[] { Kil0bitSystemMonitor.Services.Ai.AiPrompts.System, Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrompts.System })
-                foreach (string line in prompt.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
-                    if (line.Contains("```mermaid", StringComparison.Ordinal))
-                        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(line, "\"([a-z][a-z-]*)\""))
-                            quoted.Add(m.Groups[1].Value);
+                quoted.UnionWith(MermaidTypesQuoted(prompt));
 
             Assert.Contains("xychart-beta", quoted);   // the extraction finds the rule, so an empty set cannot pass
             Assert.Contains("pie", quoted);
             Assert.Contains("flowchart", quoted);
             Assert.All(quoted, t => Assert.Contains(t, covered));
         }
+
+        // ---- Draw as diagram names its own types: each is drawn by the bundled Mermaid ----
+
+        /// <summary>
+        /// The types the Draw as diagram instruction names (<c>PadAiAction.Diagram</c>), each with
+        /// the word that opens such a diagram in Mermaid and a small source shaped like what a
+        /// model writes for a note.
+        /// </summary>
+        private static readonly (string Word, string Type, string Source)[] DrawAsDiagramSamples =
+        {
+            ("flowchart", "flowchart", "flowchart TD\n    A[Draft the plan] --> B{Approved?}\n    B -->|Yes| C[Build]\n    B -->|No| A\n    C --> D[Ship]"),
+            ("sequence", "sequenceDiagram", "sequenceDiagram\n    participant U as User\n    participant A as App\n    participant S as Server\n    U->>A: Sign in\n    A->>S: Check the password\n    S-->>A: Token\n    A-->>U: Welcome"),
+            ("class", "classDiagram", "classDiagram\n    class Customer {\n        +String name\n        +String email\n    }\n    class Order {\n        +int id\n        +Date placed\n        +total() float\n    }\n    class Item {\n        +String sku\n        +int quantity\n    }\n    Customer \"1\" --> \"*\" Order : places\n    Order \"1\" *-- \"1..*\" Item : holds"),
+            ("state", "stateDiagram-v2", "stateDiagram-v2\n    [*] --> Draft\n    Draft --> Review : submit\n    Review --> Draft : changes asked\n    Review --> Approved : accept\n    Approved --> [*]"),
+            ("gantt", "gantt", "gantt\n    title Release plan\n    dateFormat YYYY-MM-DD\n    section Build\n    Design      :done, d1, 2026-10-01, 3d\n    Implement   :active, d2, after d1, 5d\n    section Ship\n    Test        :d3, after d2, 3d\n    Release     :milestone, m1, after d3, 0d"),
+            ("mindmap", "mindmap", "mindmap\n  root((Project))\n    Design\n      Wireframes\n      Colours\n    Build\n      Frontend\n      Backend\n    Ship"),
+        };
+
+        /// <summary>The type words of the Draw as diagram instruction: what follows "fits best:", split at commas and "or".</summary>
+        private static string[] TypeWordsOfDrawAsDiagram()
+        {
+            string instruction = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiAction.Diagram.Instruction;
+            const string lead = "Pick the diagram type that fits best:";
+            int from = instruction.IndexOf(lead, StringComparison.Ordinal);
+            Assert.True(from >= 0, "the instruction names its diagram types after \"" + lead + "\"");
+            from += lead.Length;
+            string list = instruction.Substring(from, instruction.IndexOf('.', from) - from);
+            return list.Split(new[] { ",", " or " }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        [Fact]
+        public void Every_type_word_in_the_Draw_as_diagram_instruction_has_a_sample_the_drawing_test_draws()
+        {
+            string[] words = TypeWordsOfDrawAsDiagram();
+
+            Assert.Equal(new[] { "flowchart", "sequence", "class", "state", "gantt", "mindmap" }, words);   // found, so an empty list cannot pass
+            Assert.All(words, word => Assert.Contains(DrawAsDiagramSamples, s => s.Word == word));
+            // Each sample is of the type it stands for: its source opens with that type's own word.
+            Assert.All(DrawAsDiagramSamples, s =>
+            {
+                Assert.StartsWith(s.Type, s.Source, StringComparison.Ordinal);
+                Assert.Contains(s.Source[s.Type.Length], " \n");   // the whole word: "flowchart TD", "gantt" and a new line
+                Assert.StartsWith(s.Word, s.Type, StringComparison.Ordinal);
+            });
+        }
+
+        [Fact]
+        public void Every_mermaid_type_Draw_as_diagram_names_draws_a_picture() => WithPage(async page =>
+        {
+            foreach (var (word, type, source) in DrawAsDiagramSamples)
+            {
+                var drawing = await Draw(page, "mermaid", source);
+
+                Assert.True(drawing.Error == null, word + " (" + type + "): " + drawing.Error);
+                Assert.True(drawing.Width > 0 && drawing.Height > 0, type + " has no size");
+                var (width, height) = PngSize(drawing.Png!);
+                _output.WriteLine(type + ": " + drawing.Width.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " x "
+                                  + drawing.Height.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " (" + width + " x " + height + " px)");
+                Assert.True(width > 0 && height > 0, type + " has an empty picture");
+                Assert.Contains("<svg", drawing.Svg!, StringComparison.Ordinal);
+            }
+            Assert.Equal(0, page.RefusedRequests);   // drawing asked the network for nothing
+        });
 
         [Fact]
         public void Syntax_errors_come_back_as_messages() => WithPage(async page =>

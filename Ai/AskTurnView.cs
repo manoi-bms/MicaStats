@@ -536,10 +536,12 @@ namespace Kil0bitSystemMonitor.Ai
             _redraw.Stop();
             long started = Stopwatch.GetTimestamp();
             string raw = RawText;
-            bool plainLinks = PlainLinks;   // read once: the document shown is built for this value
             try
             {
                 FlowDocument document = BuildDocument(raw);
+                // Read once, and after the build: the document is shown for the value as it is when
+                // it goes on screen, also when the build itself ended with the links having to go.
+                bool plainLinks = PlainLinks;
                 if (plainLinks) ChatDocument.RemoveLinks(document);
                 Answer.Show(document);
                 _shownPlainLinks = plainLinks;
@@ -555,7 +557,7 @@ namespace Kil0bitSystemMonitor.Ai
                 try
                 {
                     Answer.Show(ChatDocument.Plain(raw));
-                    _shownPlainLinks = plainLinks;   // plain text holds no link, whichever the value
+                    _shownPlainLinks = PlainLinks;   // plain text holds no link, whichever the value
                 }
                 catch (Exception)
                 {

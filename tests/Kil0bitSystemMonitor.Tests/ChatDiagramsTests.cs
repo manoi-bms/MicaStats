@@ -1142,6 +1142,62 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(sources[0], true, redraw).Status);
         });
 
+        /// <summary>
+        /// How the app wires answer diagrams cannot be run in a test (it is the running app), and
+        /// every other test builds its own adapter: "always on" in place of the Draw diagrams
+        /// setting, or an adapter set after the first MicaPad window was built (a window's answer
+        /// boxes take <see cref="ChatDiagrams.Current"/> as they are made), would pass them all.
+        /// So the wiring is read from the source, white space aside.
+        /// </summary>
+        [Fact]
+        public void The_app_wires_answer_diagrams_to_the_Draw_diagrams_setting_before_any_MicaPad_window_and_disposes_the_renderer_at_exit()
+        {
+            static string Source(string name) => System.Text.RegularExpressions.Regex.Replace(
+                File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), name)), @"\s+", " ");
+            static int Count(string text, string part) => text.Split(part, StringSplitOptions.None).Length - 1;
+            string ai = Source("App.Ai.cs");
+            string app = Source("App.xaml.cs");
+
+            // Set once, in StartAi: the renderer made on first use, the setting read at every call, the screen's scaling.
+            const string wiring = "AppConfig diagramSettings = config.Config; Kil0bitSystemMonitor.Ai.ChatDiagrams.Current = "
+                + "new Kil0bitSystemMonitor.Ai.ChatDiagrams(DiagramRendererOnFirstUse, () => diagramSettings.PadDiagrams, PrimaryScreenScale);";
+            int startAi = ai.IndexOf("internal static void StartAi(", StringComparison.Ordinal);
+            int afterStartAi = ai.IndexOf("internal static double PrimaryScreenScale()", StringComparison.Ordinal);
+            int set = ai.IndexOf(wiring, StringComparison.Ordinal);
+            Assert.True(startAi > 0 && afterStartAi > startAi, "StartAi, then the method after it");
+            Assert.True(set > startAi && set < afterStartAi, "ChatDiagrams.Current is set in StartAi, from the Draw diagrams setting and the app's one renderer");
+            Assert.Equal(1, Count(ai, "ChatDiagrams.Current =") + Count(app, "ChatDiagrams.Current ="));
+            Assert.Equal(1, Count(ai, "new Kil0bitSystemMonitor.Ai.ChatDiagrams("));
+            Assert.Equal(1, Count(ai, "PadDiagrams"));
+
+            // Startup: StartAi comes before MicaPad is opened, at once (--pad) or once startup has settled.
+            int startup = app.IndexOf("protected override void OnStartup(", StringComparison.Ordinal);
+            int afterStartup = app.IndexOf("private void StartDiagnostics(", StringComparison.Ordinal);
+            Assert.True(startup > 0 && afterStartup > startup, "OnStartup, then the method after it");
+            string starting = app.Substring(startup, afterStartup - startup);
+            // The hotkey's handler opens MicaPad when the key is pressed, which is no call at startup.
+            Assert.Equal(1, Count(starting, "() => OpenPad(null)"));
+            string calls = starting.Replace("() => OpenPad(null)", "", StringComparison.Ordinal);
+            int started = calls.IndexOf("StartAi(config, m_telemetry, m_history, Dispatcher);", StringComparison.Ordinal);
+            Assert.True(started > 0, "startup calls StartAi");
+            Assert.Equal(1, Count(calls, "StartAi("));
+            Assert.True(Count(calls, "OpenPad(") >= 1 && calls.IndexOf("OpenPad(", StringComparison.Ordinal) > started, "no MicaPad window is opened before StartAi");
+            Assert.True(calls.IndexOf("ReopenPadIfItWasOpen(", StringComparison.Ordinal) > started, "nor is MicaPad brought back before it");
+
+            // The one renderer, for MicaPad's windows and for answers; none is made once exit began.
+            Assert.Contains("internal static Kil0bitSystemMonitor.Services.Pad.DiagramRenderer? DiagramRendererOnFirstUse() { if (s_diagrams != null || s_diagramsClosed) return s_diagrams;",
+                            app, StringComparison.Ordinal);
+            Assert.Equal(1, Count(app, "s_diagrams = new Kil0bitSystemMonitor.Services.Pad.DiagramRenderer("));
+
+            // Exit: the closed flag first, so nothing makes a new renderer, then the renderer is disposed.
+            int exit = app.IndexOf("protected override void OnExit(", StringComparison.Ordinal);
+            int closed = app.IndexOf("s_diagramsClosed = true;", exit, StringComparison.Ordinal);
+            int disposed = app.IndexOf("s_diagrams?.Dispose();", exit, StringComparison.Ordinal);
+            Assert.True(exit > 0 && closed > exit, "OnExit sets the closed flag");
+            Assert.True(disposed > closed, "and disposes the renderer after it");
+            Assert.Equal(1, Count(app, "s_diagramsClosed = true;"));
+        }
+
         [Fact]
         public Task A_draw_that_ends_on_another_thread_is_brought_back_to_the_UI_thread() => UiThread.RunAsync(async () =>
         {

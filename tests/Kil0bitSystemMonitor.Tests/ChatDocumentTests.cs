@@ -219,6 +219,66 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { "c", "mailto:me@example.com" }, All<Hyperlink>(document).Select(l => string.Concat(All<Run>(l).Select(r => r.Text))));
         });
 
+        // ---- an answer loads nothing: an image is a link, and HTML is the text it is ----
+
+        private static string TextOf(FlowDocument document) =>
+            new TextRange(document.ContentStart, document.ContentEnd).Text.TrimEnd().Replace("\r\n", "\n", StringComparison.Ordinal);
+
+        [Fact]
+        public void An_image_in_an_answer_builds_no_picture_it_is_an_exclamation_mark_and_a_link() => UiThread.Run(() =>
+        {
+            var document = Build("Look: ![a chart](https://example.com/a.png) and that is all.\n\n| ![in a cell](https://example.com/b.png) |\n|---|");
+
+            Assert.Empty(ChatDocument.All<Image>(document));                // nothing that could load the address
+            Assert.Empty(ChatDocument.All<InlineUIContainer>(document));
+            Assert.Empty(ChatDocument.All<BlockUIContainer>(document));
+            Assert.StartsWith("Look: !a chart and that is all.", TextOf(document), StringComparison.Ordinal);
+            var links = ChatDocument.All<Hyperlink>(document);
+            Assert.Equal(new[] { "https://example.com/a.png", "https://example.com/b.png" }, links.Select(l => (string)l.ToolTip));
+            Assert.Equal(new[] { "a chart", "in a cell" }, links.Select(l => string.Concat(All<Run>(l).Select(r => r.Text))));
+
+            ChatDocument.RemoveLinks(document);                             // as MicaPad shows it, and Ask once notes were read
+
+            Assert.Empty(ChatDocument.All<Hyperlink>(document));
+            Assert.Empty(ChatDocument.All<Image>(document));
+            Assert.Empty(ChatDocument.All<InlineUIContainer>(document));
+            Assert.StartsWith("Look: !a chart (https://example.com/a.png) and that is all.", TextOf(document), StringComparison.Ordinal);
+            Assert.Contains("!in a cell (https://example.com/b.png)", TextOf(document), StringComparison.Ordinal);
+        });
+
+        [Theory]
+        [InlineData("<img src=x onerror=alert(1)>")]
+        [InlineData("<img src=\"a.png\" alt=\"a chart\">")]
+        [InlineData("<script>alert(1)</script>")]
+        [InlineData("<iframe src=\"about:blank\"></iframe>")]
+        [InlineData("<b>bold</b> <br> <hr/>")]
+        public void HTML_in_an_answer_is_shown_as_the_text_it_is(string html) => UiThread.Run(() =>
+        {
+            var document = Build("Before " + html + " after.\n\n## " + html);
+
+            Assert.Empty(ChatDocument.All<Image>(document));
+            Assert.Empty(ChatDocument.All<InlineUIContainer>(document));
+            Assert.Empty(ChatDocument.All<BlockUIContainer>(document));
+            Assert.Empty(ChatDocument.All<Hyperlink>(document));
+            Assert.Equal("Before " + html + " after.\n" + html, TextOf(document));
+            Assert.All(document.Blocks, block => Assert.IsType<Paragraph>(block));   // a paragraph and a heading: text, nothing else
+        });
+
+        [Fact]
+        public void An_address_inside_an_HTML_tag_is_a_link_like_any_other_and_still_loads_nothing() => UiThread.Run(() =>
+        {
+            var document = Build("<img src=\"https://example.com/a.png\"> and <a href=\"https://example.com/\">here</a>");
+
+            Assert.Empty(ChatDocument.All<Image>(document));
+            Assert.Empty(ChatDocument.All<InlineUIContainer>(document));
+            Assert.StartsWith("<img src=\"https://example.com/a.png", TextOf(document), StringComparison.Ordinal);   // the tag's letters are all shown
+
+            ChatDocument.RemoveLinks(document);
+            Assert.Empty(ChatDocument.All<Hyperlink>(document));
+            Assert.Contains("<img src=", TextOf(document), StringComparison.Ordinal);
+            Assert.Contains("</a>", TextOf(document), StringComparison.Ordinal);
+        });
+
         private const string TableWithLink =
             "| Name | Count |\n|:---|---:|\n| [site](https://example.com/a) | 2 |\n| plain | 3 |";
 

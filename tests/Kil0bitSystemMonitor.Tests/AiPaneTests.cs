@@ -1398,6 +1398,46 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void At_the_tick_the_pace_is_read_again_and_a_draw_that_turned_out_heavy_makes_the_timer_wait_on() => UiThread.Run(() =>
+        {
+            // The path a real stream takes: text sets the timer by the cost known then, and the cost
+            // of the draw on screen is stored only after its layout, before the tick.
+            var pane = new AiPane { RedrawInterval = Ms(50), PointerHeld = () => false };
+            var clock = Stopwatch.StartNew();
+            pane.Show(Reading with { Result = "one" });
+            pane.LastRedrawCost = TimeSpan.Zero;                  // a light draw, as far as is known
+            pane.Show(Reading with { Result = "one two" });
+            TimeSpan? first = pane.PendingRedraw;
+            Assert.NotNull(first);
+            Assert.InRange(first.GetValueOrDefault(), TimeSpan.Zero, Ms(50));   // set with the old cost
+
+            pane.LastRedrawCost = Ms(300);                        // its layout was heavy: stored before the tick
+            PumpUntil(() => pane.PendingRedraw != first);         // the tick
+
+            Assert.Equal("one", pane.ResultBox.Shown);            // nothing is drawn
+            RedrawWaits.AssertWaits(pane.PendingRedraw, Ms(1200), clock);   // the timer waits again, for what is left of 1.2 s
+        });
+
+        [Fact]
+        public void Text_that_arrives_before_the_cost_of_the_last_draw_is_stored_waits_for_the_timer_and_the_cost_is_kept() => UiThread.Run(() =>
+        {
+            var pane = new AiPane { RedrawInterval = TimeSpan.Zero, PointerHeld = () => false };
+            pane.Show(Reading with { Result = "one" });           // the first text draws at once; its layout is still to come
+
+            pane.Show(Reading with { Result = "one two" });       // more text, before that layout
+
+            Assert.Equal("one", pane.ResultBox.Shown);            // not drawn at once: that would drop the measurement under way
+            Assert.Equal(TimeSpan.Zero, pane.PendingRedraw);
+            Assert.Equal(TimeSpan.Zero, pane.LastRedrawCost);
+
+            PumpUntil(() => pane.ResultBox.Shown == "one two");   // the cost is stored, then the tick draws
+            Assert.True(pane.LastRedrawCost > TimeSpan.Zero, "the first draw was measured");
+
+            pane.Show(Read with { Result = "one two three" });    // the end of the reply waits for nothing
+            Assert.Equal("one two three", pane.ResultBox.Shown);
+        });
+
+        [Fact]
         public void A_tick_while_the_pointer_is_held_draws_nothing_and_waits_the_plain_interval_and_the_next_tick_draws() => UiThread.Run(() =>
         {
             bool held = true;
@@ -1514,7 +1554,9 @@ namespace Kil0bitSystemMonitor.Tests
             };
 
             pane.Show(Reading with { Result = "one" });
+            pane.LastRedrawCost = TimeSpan.Zero;                  // the last draw is known to have cost nothing: only the pointer is asked
             pane.Show(Reading with { Result = "one two" });
+            pane.LastRedrawCost = TimeSpan.Zero;
             pane.Show(Reading with { Result = "one two three" });
 
             Assert.Equal("one two three", pane.ResultBox.Shown);  // each drawn at once: nothing held it back

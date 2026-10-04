@@ -682,6 +682,28 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal((400, 300), PixelsOf(DrawnAt(png, 400, 300, () => 1.0)));
         });
 
+        /// <summary>
+        /// A cap can ask the decoder for a side of less than one pixel (a 4,000 by 1 picture at
+        /// 1,600 wide is 0.4 high). The decoder gives one pixel there and does not throw, so a very
+        /// thin picture is drawn like any other, within the caps.
+        /// </summary>
+        [Theory]
+        [InlineData(1, 3000, 0.5, 1500.0, 1, 2400)]     // a hair of a line, higher than the height cap
+        [InlineData(2, 4000, 1.0, 2000.0, 1, 2000)]
+        [InlineData(4000, 1, 2000.0, 0.5, 1600, 1)]     // wider than the width cap, one pixel high
+        [InlineData(4000, 2, 2000.0, 1.0, 1600, 1)]
+        public void A_very_thin_picture_is_still_drawn_within_the_caps_with_its_thin_side_one_pixel(
+            int pngWidth, int pngHeight, double width, double height, int decodedWidth, int decodedHeight) => UiThread.Run(() =>
+        {
+            byte[] png = ChatDiagramFakes.Png(pngWidth, pngHeight);
+
+            var state = DrawnAt(png, width, height, () => 1.0);   // DrawnAt checks it is drawn, not a failure
+
+            Assert.Equal((decodedWidth, decodedHeight), PixelsOf(state));
+            Assert.Equal(width, state.Width);
+            Assert.Equal(height, state.Height);
+        });
+
         [Fact]
         public Task The_scaling_is_read_when_a_picture_is_decoded() => UiThread.RunAsync(async () =>
         {

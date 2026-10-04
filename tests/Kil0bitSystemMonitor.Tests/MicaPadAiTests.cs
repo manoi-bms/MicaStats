@@ -3527,6 +3527,107 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(ThreeBackticks, h.Editor.Document.Text);
         });
 
+        // ---- the fence is read once per batch of edits, and again at the click (re-check, residual 2) ----
+
+        /// <summary>The four-backtick block with <paramref name="words"/> lines of text under it for a batch of edits to change.</summary>
+        private static string FourBackticksAnd(int words) => FourBackticks + "\n" + string.Join("\n", Enumerable.Repeat("word", words));
+
+        [Fact]
+        public Task While_a_finished_fix_is_shown_a_batch_of_edits_reads_the_blocks_fence_at_most_once() => OnUiAsync(async h =>
+        {
+            Write(h, FourBackticksAnd(200));
+            h.Model.Reply(HoldsThree);
+            await h.Window.FixDiagramAsync(1, 3, "markmap", "Parse error");
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+
+            var document = h.Editor.Document;
+            int before = h.Window.AiFenceReads;
+            using (document.RunUpdate())                               // one update group, as Replace All makes
+            {
+                for (int n = document.LineCount; n > document.LineCount - 200; n--)
+                    document.Replace(document.GetLineByNumber(n).Offset, 4, "text");
+                Assert.Equal(before, h.Window.AiFenceReads);           // none while the batch runs
+            }
+
+            Assert.InRange(h.Window.AiFenceReads - before, 0, 1);      // each read copies and classifies the whole note
+            Assert.Equal(200, document.Text.Split("text").Length - 1);
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);               // the block and its fences were not touched
+            Assert.Equal("", h.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task A_batch_of_edits_that_shortens_the_fences_is_told_in_the_pane_when_the_batch_ends_with_one_read() => OnUiAsync(async h =>
+        {
+            Write(h, FourBackticksAnd(200));
+            h.Model.Reply(HoldsThree);
+            await h.Window.FixDiagramAsync(1, 3, "markmap", "Parse error");
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+
+            var document = h.Editor.Document;
+            int before = h.Window.AiFenceReads;
+            using (document.RunUpdate())
+            {
+                for (int n = document.LineCount; n > document.LineCount - 200; n--)
+                    document.Replace(document.GetLineByNumber(n).Offset, 4, "text");
+                ShortenFences(h);
+            }
+
+            Assert.Equal(1, h.Window.AiFenceReads - before);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);              // said as the batch ends, with no click
+            Assert.Equal(HoldsFence, h.Pane.StatusText.Text);
+        });
+
+        /// <summary>
+        /// Inside an update group the pane still has the fence it read before the group began. The
+        /// click does not: it reads the fence as it is then.
+        /// </summary>
+        [Fact]
+        public Task Replace_selection_is_judged_against_the_fence_as_it_is_at_the_click_whatever_the_pane_last_read() => OnUiAsync(async h =>
+        {
+            Write(h, FourBackticks);
+            h.Model.Reply(HoldsThree);
+            await h.Window.FixDiagramAsync(1, 3, "markmap", "Parse error");
+
+            var document = h.Editor.Document;
+            using (document.RunUpdate())
+            {
+                ShortenFences(h);
+                Assert.True(h.Pane.ReplaceButton.IsEnabled);           // the pane has not looked again yet
+
+                Click(h.Pane.ReplaceButton);
+
+                Assert.Equal(ThreeBackticks, document.Text);           // refused: the result would close the block
+                Assert.False(h.Pane.ReplaceButton.IsEnabled);
+                Assert.Equal(HoldsFence, h.Pane.StatusText.Text);
+            }
+            Assert.Equal(ThreeBackticks, document.Text);
+            Assert.Equal(new[] { (1, 3) }, BlocksOf(h));
+        });
+
+        [Fact]
+        public Task Try_again_reads_the_fence_as_it_is_at_the_click_whatever_the_pane_last_read() => OnUiAsync(async h =>
+        {
+            Write(h, FourBackticks);
+            h.Model.Reply("first try").Reply(HoldsThree);
+            await h.Window.FixDiagramAsync(1, 3, "markmap", "Parse error");
+            AiSession first = h.Window.AiSessionNow!;
+
+            var document = h.Editor.Document;
+            using (document.RunUpdate())
+            {
+                ShortenFences(h);
+                Click(h.Pane.RetryButton);                             // the pane has not looked again yet
+                Assert.NotSame(first, h.Window.AiSessionNow);
+                Assert.Equal("```", h.Window.AiSessionNow!.Action.BlockFence);
+            }
+            await Finished(h, after: first);
+
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.Equal(HoldsFence, h.Pane.StatusText.Text);
+            Click(h.Pane.ReplaceButton);
+            Assert.Equal(ThreeBackticks, document.Text);
+        });
+
         /// <summary>Deletes both fence lines of the block on lines 1 to 4, so its source stands in no block.</summary>
         private static void DeleteFences(Harness h)
         {

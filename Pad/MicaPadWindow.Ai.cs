@@ -94,6 +94,17 @@ namespace Kil0bitSystemMonitor.Pad
 
             /// <summary>True while the pane shows a status that holds for one drawing only ("Inserted below"): the next edit draws it again.</summary>
             public bool Noticed { get; set; }
+
+            /// <summary>
+            /// For the fix of a diagram block: the fence around its source when the window last
+            /// read it, "" when none stood around it; null before the first read. The pane is
+            /// drawn with it between the edits of one update group. Nothing is decided on it:
+            /// Replace selection and Try again read the fence at the click.
+            /// </summary>
+            public string? FenceRead { get; set; }
+
+            /// <summary>True from an edit of the source note until its update group ends, when the fence is read again, once.</summary>
+            public bool FenceReadPending { get; set; }
         }
 
         private AiRun? _ai;
@@ -162,6 +173,12 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>The request the AI pane shows, or null while the pane is closed.</summary>
         internal AiSession? AiSessionNow => _ai?.Session;
+
+        /// <summary>
+        /// How many times this window read the fence around a fix's source. Each read copies and
+        /// classifies the whole note, so the tests count them: once per batch of edits, not per edit.
+        /// </summary>
+        internal int AiFenceReads { get; private set; }
 
         /// <summary>The pane's buttons, and the two things that end or change a request from outside: a note closing and its text changing.</summary>
         private void ConfigureAi()
@@ -519,8 +536,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// no block any more: its place is gone, a fence was typed into it, or the fences around
         /// it were deleted. Read from the whole text, as the fences are when a fix is asked for.
         /// </summary>
-        private static string? EnclosingFence(AiRun run)
+        private string? EnclosingFence(AiRun run)
         {
+            AiFenceReads++;
             if (run.Start is not { IsDeleted: false } start || run.End is not { IsDeleted: false } end || end.Offset < start.Offset) return null;
 
             TextDocument document = run.Document;
@@ -540,13 +558,53 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>
-        /// For the fix of a diagram block whose result is in: the fence around its source as the
-        /// note reads now, "" when none stands around it any more. The session checks the result
-        /// against it, at every drawing of the pane and again at the click on Replace selection.
-        /// Null for every other request: not a fix, still running, or its source not shown.
+        /// For the fix of a diagram block whose result is in: the fence around its source, "" when
+        /// none stands around it any more. The session checks the result against it. Null for
+        /// every other request: not a fix, still running, or its source not shown.
+        ///
+        /// <para>
+        /// With <paramref name="now"/> the note is read: at the click on Replace selection, which
+        /// is decided on it, and at a drawing of the pane that no edit asked for. Without it the
+        /// answer is the last one read. Reading copies and classifies the whole note, and an edit
+        /// may be one of thousands in an update group (Replace All), so an edit only draws with
+        /// what was read last and <see cref="ReadFenceAfterUpdate"/> reads once when its group ends.
+        /// </para>
         /// </summary>
-        private string? FixFenceNow(AiRun run) =>
-            run.Session.Action.BlockFence == null || !run.Session.Finished || !AiSourceShown(run) ? null : EnclosingFence(run) ?? "";
+        private string? FixFence(AiRun run, bool now)
+        {
+            if (run.Session.Action.BlockFence == null || !run.Session.Finished || !AiSourceShown(run)) return null;
+            if (now || run.FenceRead == null) run.FenceRead = EnclosingFence(run) ?? "";
+            return run.FenceRead;
+        }
+
+        /// <summary>
+        /// An edit of the source note may have changed the fence around a fix's source: the fence
+        /// is read again, and the pane drawn if that changes what it says, once the update group
+        /// the edit belongs to has ended. One read for the group, however many edits it holds; a
+        /// single edit is a group of its own, so typing on a fence line is told at once.
+        /// </summary>
+        private void ReadFenceAfterUpdate(AiRun run)
+        {
+            if (run.FenceReadPending || run.Session.Action.BlockFence == null || !run.Session.Finished) return;
+            TextDocument document = run.Document;
+            if (!document.IsInUpdate) return;   // no edit of this document is under way: what was read still holds
+
+            run.FenceReadPending = true;
+            EventHandler? finished = null;
+            finished = (_, _) =>
+            {
+                document.UpdateFinished -= finished;
+                run.FenceReadPending = false;
+                if (!ReferenceEquals(_ai, run)) return;
+                // Raised as the edit ends, so it is guarded like the edit itself.
+                GuardAi("Following an edit of the AI source text", () =>
+                {
+                    AiSourceFacts facts = AiFacts(run);
+                    if (facts != run.Drawn) DrawAi(run, facts);
+                });
+            };
+            document.UpdateFinished += finished;
+        }
 
         /// <summary>
         /// Everything before the request: the refusals, the source text, the session, its anchors
@@ -762,7 +820,13 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         private bool AiSourceShown(AiRun run) => ReferenceEquals(_shown, run.Note) && ReferenceEquals(Editor.Document, run.Document);
 
-        private AiSourceFacts AiFacts(AiRun run) => new(AiSourceShown(run), AiReadOnly, AiSourceUnchanged(run), FixFenceNow(run));
+        /// <summary>
+        /// What the window knows about the request's source text. With <paramref name="fenceNow"/>
+        /// (everywhere but inside an edit) the fence around a fix's source is read from the note;
+        /// without it, the one read last stands in (<see cref="FixFence"/>).
+        /// </summary>
+        private AiSourceFacts AiFacts(AiRun run, bool fenceNow = true) =>
+            new(AiSourceShown(run), AiReadOnly, AiSourceUnchanged(run), FixFence(run, fenceNow));
 
         /// <summary>A selection is unchanged while the text between its anchors still equals what was sent; a whole note has nothing to replace.</summary>
         private static bool AiSourceUnchanged(AiRun run)
@@ -792,7 +856,12 @@ namespace Kil0bitSystemMonitor.Pad
         private void RefreshAi(string? notice = null)
         {
             if (_ai is not { } run) return;
-            AiSourceFacts facts = AiFacts(run);
+            DrawAi(run, AiFacts(run), notice);
+        }
+
+        /// <summary>Draws the pane for <paramref name="run"/>, the request it shows, with <paramref name="facts"/> the caller has just worked out.</summary>
+        private void DrawAi(AiRun run, AiSourceFacts facts, string? notice = null)
+        {
             run.Drawn = facts;
             run.Noticed = notice != null;
             AiPaneView view = run.Session.View(facts);
@@ -886,11 +955,19 @@ namespace Kil0bitSystemMonitor.Pad
         /// Replace again when a Replace was undone, and says "Replaced the selection" again when
         /// it was redone. A status shown for one drawing ("Inserted below") goes with the next
         /// edit. Typing that changes none of this draws nothing.
+        ///
+        /// <para>
+        /// This runs for every edit, thousands of times inside one Replace All, so it does not
+        /// read the fence around a fix's source: it draws with the fence read last, and the fence
+        /// is read again once, when the update group ends.
+        /// </para>
         /// </summary>
         private void FollowSourceEdit(AiRun run)
         {
             bool turned = ReplaceWasUndoneOrRedone(run);
-            if (turned || run.Noticed || AiFacts(run) != run.Drawn) RefreshAi();
+            ReadFenceAfterUpdate(run);
+            AiSourceFacts facts = AiFacts(run, fenceNow: false);
+            if (turned || run.Noticed || facts != run.Drawn) DrawAi(run, facts);
         }
 
         /// <summary>

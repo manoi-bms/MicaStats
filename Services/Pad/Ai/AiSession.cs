@@ -20,6 +20,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     /// as <c>ShowReplace</c> is false for a result with nothing to replace. <c>Activity</c> says
     /// what a running request is doing ("Waiting for …", "Writing…") and <c>Info</c> how long one
     /// that finished whole took ("Finished in 4 s"); each is "" when there is nothing to say.
+    /// <c>SourceFirst</c> asks the pane to start a result that is shown rendered with Source on
+    /// (Ask AI on a note that is not Markdown, whose answer is often code); the user's toggle
+    /// decides from then on.
     /// </summary>
     public sealed record AiPaneView(
         string Title,
@@ -35,7 +38,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         string Original,
         bool ShowInsert = true,
         string Activity = "",
-        string Info = "");
+        string Info = "",
+        bool SourceFirst = false);
 
     /// <summary>
     /// The state of one AI request and the rules for which buttons the pane offers
@@ -85,14 +89,20 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// The clock the request is timed with, read when it starts and when it ends; null is the
         /// PC's own. Tests hand in one they move by hand.
         /// </param>
+        /// <param name="sourceFirst">
+        /// True when the result is to be shown as its text first, though it is one the pane
+        /// renders: the window says so for Ask AI on a note it does not show as Markdown. It is
+        /// only how the pane starts; what goes into the note is the text either way.
+        /// </param>
         public AiSession(PadAiAction action, string sourceText, bool fromSelection, string? instruction = null, string destination = "",
-                         string model = "", Func<DateTime>? utcNow = null)
+                         string model = "", Func<DateTime>? utcNow = null, bool sourceFirst = false)
         {
             Action = action;
             Original = sourceText ?? "";
             FromSelection = fromSelection;
             Destination = destination ?? "";
             Model = (model ?? "").Trim();
+            SourceFirst = sourceFirst;
             _utcNow = utcNow ?? (() => DateTime.UtcNow);
             _mask = SecretMask.Of(Original);
             Refusal = action.TooLong(Original.Length);
@@ -113,6 +123,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
         /// <summary>The model the request goes to, as the source line names it; "" when none is named.</summary>
         public string Model { get; }
+
+        /// <summary>True when the pane is to start this request's rendered result with Source on.</summary>
+        public bool SourceFirst { get; }
 
         public string Instruction { get; }
         public string? Refusal { get; }
@@ -274,7 +287,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 Original: Original,
                 ShowInsert: !fix,
                 Activity: activity,
-                Info: info);
+                Info: info,
+                SourceFirst: SourceFirst);
         }
 
         private static string Count(int n) =>

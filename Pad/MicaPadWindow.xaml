@@ -201,7 +201,8 @@
                           Background="{DynamicResource Pad.Border}" Cursor="SizeWE"
                           ToolTip="Drag to resize; double-click to reset"
                           DragStarted="OnPaneSplitterDragStarted" DragCompleted="OnPaneSplitterDragCompleted" MouseDoubleClick="OnPaneSplitterDoubleClick"
-                          PreviewKeyDown="OnPaneSplitterPreviewKeyDown" KeyUp="OnPaneSplitterKeyUp" />
+                          PreviewKeyDown="OnPaneSplitterPreviewKeyDown" KeyUp="OnPaneSplitterKeyUp"
+                          LostKeyboardFocus="OnPaneSplitterLostKeyboardFocus" />
             <local:HistoryPane x:Name="HistoryPanel" Grid.Column="2" />
             <local:SearchPane x:Name="SearchPanel" Grid.Column="2" />
             <local:AiPane x:Name="AiPanel" Grid.Column="2" Visibility="Collapsed" />

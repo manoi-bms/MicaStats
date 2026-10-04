@@ -948,6 +948,90 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
         });
 
+        // ---- a view that asks for Source first (Ask AI on a note that is not Markdown) ---------------
+
+        [Fact]
+        public void A_view_that_asks_for_Source_first_starts_as_text_and_the_toggle_then_decides_for_that_request() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            AiPaneView answer = Read with { Title = "Ask AI…", Result = "# count them\n**n** = 2", SourceFirst = true };
+
+            pane.Show(answer);
+
+            Assert.True(pane.ShowingSource);
+            Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+            Assert.Equal("# count them\n**n** = 2", Rendered(pane));   // the text as it would go into the note: a comment, not a heading
+
+            pane.SourceToggle.IsChecked = false;                  // the toggle still switches to the rendered view
+            Assert.Equal("count them\nn = 2", Rendered(pane));
+
+            pane.Show(answer);                                    // the window draws the view again at every keystroke in the note
+            pane.Show(answer with { Status = "This note is read-only" });
+            Assert.False(pane.ShowingSource);                     // the choice holds for that request
+            Assert.Equal("count them\nn = 2", Rendered(pane));
+
+            pane.SourceToggle.IsChecked = true;                   // and back
+            pane.Show(answer);
+            Assert.True(pane.ShowingSource);
+
+            pane.Show(Read);                                      // another request, which does not ask for it: rendered, as ever
+            Assert.False(pane.ShowingSource);
+            Assert.Equal("bold and code", Rendered(pane));
+
+            pane.Show(answer);                                    // and one that asks starts as text again
+            Assert.True(pane.ShowingSource);
+            Assert.Equal("# count them\n**n** = 2", Rendered(pane));
+        });
+
+        [Fact]
+        public void A_view_that_does_not_ask_for_Source_first_starts_rendered() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+
+            pane.Show(Read with { Title = "Ask AI…" });
+
+            Assert.False(pane.ShowingSource);
+            Assert.Equal("bold and code", Rendered(pane));
+
+            // A rewrite has no Source toggle to turn on, whatever its view says.
+            pane.Show(Done with { SourceFirst = true });
+            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+        });
+
+        [Fact]
+        public void A_reply_that_asks_for_Source_first_turns_Source_on_when_its_first_text_arrives_and_once_only() => UiThread.Run(() =>
+        {
+            var pane = new AiPane { RedrawInterval = TimeSpan.FromMilliseconds(1), PointerHeld = () => false };
+            AiPaneView waiting = Reading with { Title = "Ask AI…", Result = "", Activity = "Waiting for the model…", SourceFirst = true };
+
+            pane.Show(Asking with { Markdown = true, SourceFirst = true });   // the pane waits for the instruction
+            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+
+            pane.Show(waiting);                                   // sent: nothing to show yet, so no toggle
+            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+
+            pane.Show(waiting with { Result = "# count", Activity = "Writing…" });
+            Assert.True(pane.ShowingSource);
+            Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+            Assert.Equal("# count", Rendered(pane));
+
+            pane.SourceToggle.IsChecked = false;                  // turned off while it streams
+            Assert.Equal("count", Rendered(pane));
+            pane.Show(waiting with { Result = "# count\n\nx = 1", Activity = "Writing…" });
+            PumpUntil(() => pane.ResultBox.Shown.EndsWith("x = 1", StringComparison.Ordinal));
+            Assert.False(pane.ShowingSource);                     // more text does not turn it on again
+            pane.Show(Read with { Title = "Ask AI…", Result = "# count\n\nx = 1", SourceFirst = true, SourceLine = waiting.SourceLine });   // nor does its end
+            Assert.False(pane.ShowingSource);
+            Assert.Equal("count\nx = 1", Rendered(pane));
+
+            pane.Clear();                                         // a cleared pane starts over
+            pane.Show(Read with { Title = "Ask AI…", Result = "# count", SourceFirst = true });
+            Assert.True(pane.ShowingSource);
+        });
+
         /// <summary>A rendered view with no text: there is nothing Source could show.</summary>
         private static AiPaneView NothingToShow(string state) => state switch
         {

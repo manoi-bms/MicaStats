@@ -2361,7 +2361,15 @@ namespace Kil0bitSystemMonitor.Pad
             else PaneDragEnded(ShownPaneWidth());
         }
 
-        private void OnPaneSplitterDragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e) => StartPaneMove();
+        // True from an arrow key going down on the splitter until that move is ended: by the key coming
+        // up, or by the splitter losing the keyboard first. A drag is not a key move: it ends itself.
+        private bool _paneKeyMove;
+
+        private void OnPaneSplitterDragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e)
+        {
+            _paneKeyMove = false;   // from here it is a drag, ended by DragCompleted alone
+            StartPaneMove();
+        }
 
         private void OnPaneSplitterDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) =>
             EndPaneMove(e.Canceled);
@@ -2369,7 +2377,24 @@ namespace Kil0bitSystemMonitor.Pad
         // Tunnelling: the splitter moves itself on KeyDown, and the width has to be read before that.
         private void OnPaneSplitterPreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key is Key.Left or Key.Right && !e.IsRepeat) StartPaneMove();
+            if (e.Key is Key.Left or Key.Right && !e.IsRepeat)
+            {
+                StartPaneMove();
+                _paneKeyMove = true;
+            }
+        }
+
+        /// <summary>
+        /// The splitter lost the keyboard. With an arrow key still held (Alt+Tab, a click elsewhere)
+        /// its KeyUp never comes here, so the key move is ended now as that KeyUp would end it: the
+        /// width is saved if it changed, and the editor's temporary minimum goes. With no key move
+        /// under way nothing is done; a drag is ended by its own DragCompleted.
+        /// </summary>
+        private void OnPaneSplitterLostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (!_paneKeyMove) return;
+            _paneKeyMove = false;
+            EndPaneMove(canceled: false);
         }
 
         private void OnPaneSplitterDoubleClick(object sender, MouseButtonEventArgs e)
@@ -2380,7 +2405,9 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnPaneSplitterKeyUp(object sender, KeyEventArgs e)
         {
-            if (e.Key is Key.Left or Key.Right) EndPaneMove(canceled: false);
+            if (e.Key is not (Key.Left or Key.Right)) return;
+            _paneKeyMove = false;
+            EndPaneMove(canceled: false);
         }
 
         private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)

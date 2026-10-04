@@ -4305,6 +4305,79 @@ namespace Kil0bitSystemMonitor.Tests
             return Task.CompletedTask;
         }, config: new AppConfig { PadMarkdown = false });
 
+        // ---- Ask AI on a note that is not shown as Markdown starts as text (AI chat UI spec 3.2) ----
+
+        private const string CodeReply = "# count the words\nprint(len(text.split()))";
+
+        [Fact]
+        public Task Ask_AI_on_a_code_file_starts_with_Source_on_and_the_toggle_still_shows_it_rendered() => OnUiAsync(async h =>
+        {
+            PadLanguageWindowTests.OpenFile(h.Window, h.Env, "words.py", "text = 'a b'");
+            Assert.Equal("python", h.Window.ShownLanguage.Effective.Id);
+            Assert.DoesNotContain("Draw as diagram", Headers(AiMenu(h)));   // the same fact that leaves Draw as diagram out
+            h.Model.Reply(CodeReply);
+
+            h.Window.ToggleAi();                                  // Ask AI…, as the menu and Ctrl+Shift+A open it
+            Assert.True(h.Window.AiSessionNow!.SourceFirst);
+            Assert.False(h.Pane.ShowingSource);                   // nothing to show yet
+            h.Pane.InstructionBox.Text = "count the words";
+            Assert.True(h.Pane.HandleInstructionKey(Key.Enter, ModifierKeys.None));
+            await Finished(h);
+
+            Assert.True(h.Window.AiSessionNow!.SourceFirst);
+            Assert.True(h.Pane.ShowingSource);
+            Assert.Equal(Visibility.Visible, h.Pane.SourceToggle.Visibility);
+            Assert.Equal(CodeReply, Rendered(h.Pane));            // the comment is a comment, not a heading
+
+            h.Pane.SourceToggle.IsChecked = false;
+            Assert.Equal("count the words\nprint(len(text.split()))", Rendered(h.Pane));
+            Assert.Equal(CodeReply, h.Window.AiSessionNow!.ResultForNote);   // what Insert below would put in the note is the text, either way
+
+            // Try again is another request of the same kind on the same note: as text again.
+            h.Model.Reply(CodeReply);
+            Click(h.Pane.RetryButton);
+            await Finished(h);
+            Assert.True(h.Pane.ShowingSource);
+        });
+
+        [Fact]
+        public Task Every_other_action_on_a_code_file_and_Ask_AI_on_a_Markdown_note_start_rendered() => OnUiAsync(async h =>
+        {
+            PadLanguageWindowTests.OpenFile(h.Window, h.Env, "words.py", "text = 'a b'");
+            h.Model.Reply("**Counts** words").Reply("**Explains** it").Reply(CodeReply);
+
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Assert.False(h.Window.AiSessionNow!.SourceFirst);
+            Assert.False(h.Pane.ShowingSource);
+            Assert.Equal("Counts words", Rendered(h.Pane));
+
+            await h.Window.RunAiAsync(PadAiAction.Explain);
+            Assert.False(h.Window.AiSessionNow!.SourceFirst);
+            Assert.False(h.Pane.ShowingSource);
+
+            h.Window.NewTab();                                    // a note of MicaPad's own: Markdown
+            Write(h, "text = 'a b'");
+            Assert.Same(PadLanguages.Markdown, h.Window.ShownLanguage.Effective);
+            await h.Window.RunAiAsync(PadAiAction.Ask, "count the words");
+            Assert.False(h.Window.AiSessionNow!.SourceFirst);
+            Assert.False(h.Pane.ShowingSource);
+            Assert.Equal("count the words\nprint(len(text.split()))", Rendered(h.Pane));
+        });
+
+        [Fact]
+        public Task Ask_AI_on_a_plain_text_note_with_Markdown_formatting_off_starts_with_Source_on() => OnUiAsync(async h =>
+        {
+            Write(h, "text = 'a b'");
+            Assert.Same(PadLanguages.Plain, h.Window.ShownLanguage.Effective);
+            h.Model.Reply(CodeReply);
+
+            await h.Window.RunAiAsync(PadAiAction.Ask, "count the words");
+
+            Assert.True(h.Window.AiSessionNow!.SourceFirst);
+            Assert.True(h.Pane.ShowingSource);
+            Assert.Equal(CodeReply, Rendered(h.Pane));
+        }, config: new AppConfig { PadMarkdown = false });
+
         [Fact]
         public Task The_pane_offers_no_Insert_below_for_a_fix() => OnUiAsync(async h =>
         {

@@ -18,6 +18,32 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void The_session_carries_Source_first_into_every_view_and_it_is_off_unless_asked_for()
+        {
+            var waiting = new AiSession(PadAiAction.Ask, "def f(): pass", false, null, sourceFirst: true);
+            Assert.True(waiting.SourceFirst);
+            Assert.True(waiting.View(Ok).SourceFirst);            // while the pane waits for the instruction
+
+            var asked = new AiSession(PadAiAction.Ask, "def f(): pass", false, "add a comment", sourceFirst: true);
+            Assert.True(asked.View(Ok).SourceFirst);              // before it starts
+            asked.Start();
+            Assert.True(asked.View(Ok).SourceFirst);              // while it waits for the first text
+            asked.Append("# does nothing\ndef f(): pass");
+            Assert.True(asked.View(Ok).SourceFirst);              // while the reply streams in
+            asked.Complete(false);
+            AiPaneView view = asked.View(Ok);
+            Assert.True(view.SourceFirst);
+            Assert.True(view.Markdown);                           // still a result the pane can render: the toggle switches
+            Assert.Equal("# does nothing\ndef f(): pass", view.Result);
+            Assert.Equal("# does nothing\ndef f(): pass", asked.ResultForNote);   // what goes into the note does not depend on it
+
+            Assert.False(new AiSession(PadAiAction.Ask, "a", false, "explain").SourceFirst);
+            Assert.False(new AiSession(PadAiAction.Ask, "a", false, "explain").View(Ok).SourceFirst);
+            Assert.False(Done(PadAiAction.Summarize, "a", "b").View(Ok).SourceFirst);
+            Assert.False(Done(PadAiAction.Improve, "a", "b").View(Ok).SourceFirst);
+        }
+
+        [Fact]
         public void A_clean_rewrite_from_a_selection_can_replace()
         {
             var v = Done(PadAiAction.Improve, "hello", "\nHello.\n").View(Ok);

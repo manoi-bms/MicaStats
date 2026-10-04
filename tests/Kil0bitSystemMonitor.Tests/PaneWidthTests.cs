@@ -529,6 +529,85 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(900, c.PadPaneWidth);
         });
 
+        // ---- a key move that loses the keyboard before the key comes up (Alt+Tab) ----
+
+        private static void LostKeyboardFocus(MicaPadWindow w) =>
+            w.PaneSplitter.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, 0, w.PaneSplitter, null)
+            {
+                RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent,
+            });
+
+        private static ColumnDefinition EditorColumn(MicaPadWindow w) => w.EditorArea.ColumnDefinitions[0];
+
+        [Fact]
+        public Task A_key_move_that_loses_the_keyboard_is_ended_there_and_its_width_is_saved() => OnWindow((w, c) =>
+        {
+            var writes = new List<double>();
+            c.PropertyChanged += (s, e) => { if (e.PropertyName == nameof(AppConfig.PadPaneWidth)) writes.Add(c.PadPaneWidth); };
+            ShowAi(w);
+            LayOut(w, 1200);
+
+            KeyDown(w, System.Windows.Input.Key.Left);
+            Assert.Equal(320, EditorColumn(w).MinWidth);   // held while the pane is being moved
+            PaneColumn(w).Width = new GridLength(500);     // what the splitter's own arrow-key move leaves
+            LayOut(w, 1200);
+            LostKeyboardFocus(w);                          // Alt+Tab with the key held: its KeyUp never comes here
+
+            Assert.Equal(new[] { 500.0 }, writes);         // saved, as a KeyUp would have saved it
+            Assert.Equal(0, EditorColumn(w).MinWidth);     // and the temporary minimum is gone
+            Assert.Equal(500, PaneColumn(w).Width.Value);
+            Assert.True(PaneColumn(w).Width.IsAbsolute);
+
+            // The key coming up later, or the keyboard leaving again, ends nothing more.
+            PaneColumn(w).Width = new GridLength(450);
+            LostKeyboardFocus(w);
+            KeyUp(w, System.Windows.Input.Key.Left);
+            Assert.Equal(new[] { 500.0 }, writes);
+        });
+
+        [Fact]
+        public Task Losing_the_keyboard_with_no_key_move_under_way_writes_nothing_and_a_drag_is_left_to_end_itself() => OnWindow((w, c) =>
+        {
+            NarrowedWithSaved900(w, c);
+            var writes = new List<double>();
+            c.PropertyChanged += (s, e) => { if (e.PropertyName == nameof(AppConfig.PadPaneWidth)) writes.Add(c.PadPaneWidth); };
+
+            LostKeyboardFocus(w);                          // a click elsewhere, with nothing being moved
+            Assert.Empty(writes);
+            Assert.Equal(475, PaneColumn(w).Width.Value);
+
+            KeyDown(w, System.Windows.Input.Key.Left);     // a key move that moved nothing: ended, and nothing to save
+            Assert.Equal(320, EditorColumn(w).MinWidth);
+            LostKeyboardFocus(w);
+            Assert.Empty(writes);
+            Assert.Equal(900, c.PadPaneWidth);
+            Assert.Equal(0, EditorColumn(w).MinWidth);
+
+            // A drag is ended by its own DragCompleted: the keyboard leaving in the middle of it ends
+            // nothing here. (WPF's splitter gives the drag up by itself then, and puts its columns back.)
+            DragStarted(w);
+            PaneColumn(w).Width = new GridLength(400);
+            LostKeyboardFocus(w);
+            Assert.Empty(writes);
+            Assert.Equal(320, EditorColumn(w).MinWidth);   // the move is not ended: its DragCompleted is still to come
+            DragCompleted(w, -75, canceled: true);
+            Assert.Empty(writes);
+            Assert.Equal(900, c.PadPaneWidth);
+            Assert.Equal(0, EditorColumn(w).MinWidth);
+            Assert.Equal(475, PaneColumn(w).Width.Value);
+
+            // Nor does a drag that began while an arrow key was down.
+            KeyDown(w, System.Windows.Input.Key.Right);
+            DragStarted(w);
+            PaneColumn(w).Width = new GridLength(430);
+            LostKeyboardFocus(w);
+            Assert.Empty(writes);
+            Assert.Equal(320, EditorColumn(w).MinWidth);
+            DragCompleted(w, -45, canceled: true);
+            Assert.Empty(writes);
+            Assert.Equal(0, EditorColumn(w).MinWidth);
+        });
+
         [Fact]
         public Task A_drag_that_moved_the_pane_writes_the_new_width() => OnWindow((w, c) =>
         {

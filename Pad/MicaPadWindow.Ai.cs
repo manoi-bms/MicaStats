@@ -694,7 +694,10 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             CancelAi(_ai);   // a new action ends the one still running
-            var session = new AiSession(action, source, fromSelection, instruction, AiDestinationNow(), AiModelNow());
+            // Ask AI on a note that is not shown as Markdown (the fact that leaves Draw as diagram out
+            // of the menu) starts with Source on: its answer is often code, which rendering shows wrongly.
+            var session = new AiSession(action, source, fromSelection, instruction, AiDestinationNow(), AiModelNow(),
+                sourceFirst: ReferenceEquals(action, PadAiAction.Ask) && !ReferenceEquals(_resolved.Effective, PadLanguages.Markdown));
             var run = new AiRun(session, note, document, instruction);
             if (fromSelection)
             {

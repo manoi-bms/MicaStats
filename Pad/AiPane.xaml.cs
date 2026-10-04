@@ -39,7 +39,10 @@ namespace Kil0bitSystemMonitor.Pad
         private AiPaneView? _view;
         private bool _drawn;
         private bool _drawnRendered;
-        private bool _turningSourceOff;
+        private bool _settingSource;
+
+        /// <summary>True once the request on show had Source turned on because its view asked for it; a request is asked once.</summary>
+        private bool _sourceFirstDone;
         private string? _comparedOriginal;
         private string? _comparedResult;
 
@@ -123,7 +126,8 @@ namespace Kil0bitSystemMonitor.Pad
         /// held over it: <see cref="ScheduleDraw"/>), and at once when its first text arrives,
         /// when it ends or when the view belongs to another request.
         /// A result that is shown rendered and has text gets the Source toggle, which is off again
-        /// for another request. Showing a view never opens or closes the pane.
+        /// for another request; a request whose view asks for it (<c>SourceFirst</c>) starts with
+        /// the toggle on instead. Showing a view never opens or closes the pane.
         /// </summary>
         public void Show(AiPaneView view)
         {
@@ -133,6 +137,15 @@ namespace Kil0bitSystemMonitor.Pad
             bool offerSource = view.Markdown && !view.AskForInstruction && view.Result.Length > 0;
             bool sameRequest = SameRequest(view);
             if (!offerSource || !sameRequest) TurnSourceOff();
+            // A request that asks for it starts with Source on, when its text is first offered (Ask AI
+            // on a note that is not Markdown: its answer is often code). Once for a request: from
+            // then on the toggle is the user's, and turning it off holds like any other choice.
+            if (!sameRequest) _sourceFirstDone = false;
+            if (offerSource && view.SourceFirst && !_sourceFirstDone)
+            {
+                _sourceFirstDone = true;
+                SetSource(true);
+            }
             // Another request: what the last one's redraws cost says nothing about this one's, and nothing of it waits.
             if (!sameRequest) _redraw.Forget();
             bool streaming = sameRequest && Continues(view);   // asked once the toggle is settled: the form the text is drawn in counts
@@ -187,6 +200,7 @@ namespace Kil0bitSystemMonitor.Pad
             _redraw.Forget();
             _view = null;
             _drawn = false;
+            _sourceFirstDone = false;
             _comparedOriginal = null;
             _comparedResult = null;
             ChangesToggle.IsChecked = false;
@@ -286,17 +300,20 @@ namespace Kil0bitSystemMonitor.Pad
         /// Turns Source off without drawing: the caller draws the view it has, or has none left.
         /// A click on the toggle draws by itself (<see cref="OnSourceToggled"/>).
         /// </summary>
-        private void TurnSourceOff()
+        private void TurnSourceOff() => SetSource(false);
+
+        /// <summary>Sets the Source toggle without drawing; the caller draws.</summary>
+        private void SetSource(bool on)
         {
-            if (!ShowingSource) return;
-            _turningSourceOff = true;
+            if (ShowingSource == on) return;
+            _settingSource = true;
             try
             {
-                SourceToggle.IsChecked = false;
+                SourceToggle.IsChecked = on;
             }
             finally
             {
-                _turningSourceOff = false;
+                _settingSource = false;
             }
         }
 
@@ -382,7 +399,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         private void OnSourceToggled(object sender, RoutedEventArgs e)
         {
-            if (_turningSourceOff) return;
+            if (_settingSource) return;
             DrawNow();
             ResultScroller.ScrollToHome();
         }

@@ -280,6 +280,119 @@ namespace Kil0bitSystemMonitor.Tests
             }
         }
 
+        // ---- what the final review of the AI chat UI settled, in the guide and in both parts of the README ----
+
+        /// <summary>A file with every run of white space as one space: its bullets wrap, and a sentence is looked for whole.</summary>
+        private static string Flat(string text) => System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
+
+        /// <summary>A tag written bare is dropped by a Markdown renderer: <c>br</c> is always in backticks.</summary>
+        private static void AssertNoBareBreakTag(string name, string text) =>
+            Assert.False(System.Text.RegularExpressions.Regex.IsMatch(text, @"(?<!`)<br\s*/?>"), name + " writes a br tag outside backticks");
+
+        [Fact]
+        public void The_guide_says_what_the_final_review_of_the_ai_chat_ui_settled()
+        {
+            string guide = Read("GUIDE.md").Replace("\r\n", "\n", StringComparison.Ordinal);
+            string flat = Flat(guide);
+
+            foreach (string needle in new[]
+            {
+                // What an answer shows.
+                "more than 12 columns or 100 rows stays plain text",
+                "a ninth diagram is shown as code",
+                "while its block is still being written",
+                "under a numbered step",
+                "`<br>` in a table cell is a line break",
+                "need the Microsoft Edge WebView2 Runtime, as diagrams in notes do",
+                "is never loaded: it is shown as \"!\" and a link",
+                // The two Try again buttons.
+                "runs the request again",
+                "draws that diagram again",
+                // The splitter.
+                "the editor is held to 320",
+                "the pane keeps 260 and the editor gets the rest",
+                "has no splitter",
+                // Ask AI on a note that is not Markdown.
+                "starts with **Source** on",
+                // A credential stored from a note.
+                "ends an Ask MicaStats conversation that had read notes",
+                "This conversation was cleared: text from a note it had read was stored as a credential.",
+            })
+                Assert.Contains(needle, flat, StringComparison.Ordinal);
+
+            // The numbers stand with the splitter, in its own bullet.
+            string splitter = Assert.Single(GuideAiSection().Split('\n'), l => l.StartsWith("* **The pane has a splitter**", StringComparison.Ordinal));
+            foreach (string number in new[] { "260", "900", "320" }) Assert.Contains(number, splitter, StringComparison.Ordinal);
+
+            AssertNoBareBreakTag("GUIDE.md", guide);
+        }
+
+        [Fact]
+        public void The_readme_says_what_the_final_review_of_the_ai_chat_ui_settled_in_both_languages()
+        {
+            string readme = Read("README.md").Replace("\r\n", "\n", StringComparison.Ordinal);
+            int thai = readme.IndexOf("## เกี่ยวกับ MicaStats", StringComparison.Ordinal);
+            string english = readme.Substring(0, thai);
+            string thaiPart = readme.Substring(thai);
+
+            foreach (string part in new[] { english, thaiPart })
+            {
+                // Shown as it is on screen or as it is written, so the same in both languages.
+                foreach (string needle in new[] { "Waiting for claude-sonnet-5-5…", "`<br>`", "WebView2 Runtime", "**Source**", "**Try again**" })
+                    Assert.Contains(needle, part, StringComparison.Ordinal);
+
+                // The splitter's own bullet carries its three numbers.
+                Assert.Contains(part.Split('\n'), l => l.StartsWith("* ", StringComparison.Ordinal) && l.Contains("splitter", StringComparison.Ordinal)
+                    && l.Contains("260", StringComparison.Ordinal) && l.Contains("900", StringComparison.Ordinal) && l.Contains("320", StringComparison.Ordinal));
+                // The table limits stand together.
+                Assert.Contains(part.Split('\n'), l => l.Contains("12", StringComparison.Ordinal) && l.Contains("100", StringComparison.Ordinal)
+                    && l.Contains("`<br>`", StringComparison.Ordinal));
+            }
+
+            foreach (string needle in new[]
+            {
+                "more than 12 columns or 100 rows stays plain text",
+                "a ninth diagram in one answer is shown as code",
+                "while its block is still being written",
+                "under a numbered step",
+                "runs the request again",
+                "draws it again",
+                "the editor is held to 320",
+                "the pane keeps 260 and the editor gets the rest",
+                "has no splitter",
+                "starts with **Source** on",
+                "is never loaded: it is shown as a link",
+                "ends an Ask MicaStats conversation that had read notes",
+            })
+                Assert.Contains(needle, english, StringComparison.Ordinal);
+
+            foreach (string needle in new[]
+            {
+                "เกิน 12 คอลัมน์หรือ 100 แถวจะคงเป็นข้อความธรรมดา",
+                "แผนภาพที่เก้าในคำตอบเดียวจะแสดงเป็นโค้ด",
+                "ระหว่างที่บล็อกของมันยังเขียนไม่จบ",
+                "ใต้ขั้นตอนที่มีเลขกำกับ",
+                "ส่งคำขอใหม่อีกครั้ง",
+                "วาดแผนภาพนั้นใหม่",
+                "ตัวแก้ไขจะเหลืออย่างน้อย 320",
+                "แผงจะกว้าง 260 ส่วนที่เหลือเป็นของตัวแก้ไข",
+                "ไม่มีตัวแบ่งแผง",
+                "จะเริ่มโดยเปิด **Source** ไว้",
+                "ไม่ถูกโหลดเลย แต่แสดงเป็นลิงก์",
+                "จบบทสนทนาใน Ask MicaStats ที่เคยอ่านโน้ต",
+            })
+                Assert.Contains(needle, thaiPart, StringComparison.Ordinal);
+
+            // The Thai part says "(the model's name)" in Thai, in both places.
+            Assert.DoesNotContain("the model's name", thaiPart, StringComparison.Ordinal);
+            Assert.Equal(2, thaiPart.Split("\"Waiting for claude-sonnet-5-5…\" (ชื่อโมเดล)", StringSplitOptions.None).Length - 1);
+            Assert.Equal(2, english.Split("\"Waiting for claude-sonnet-5-5…\" (the model's name)", StringSplitOptions.None).Length - 1);
+
+            // No real service address, as in the guide.
+            Assert.DoesNotContain("api.openai.com", readme, StringComparison.Ordinal);
+            AssertNoBareBreakTag("README.md", readme);
+        }
+
         [Fact]
         public void The_guide_and_the_readme_keep_a_blank_line_before_every_heading()
         {

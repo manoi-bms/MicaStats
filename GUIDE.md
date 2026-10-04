@@ -297,15 +297,18 @@ sent while you type, when a note opens or in the background — only when you ru
   so a diagram is seen before it is inserted. **Source**, beside **Changes**, shows the exact text
   that **Insert below** and **Replace selection** put in the note: always the text, never the
   picture. A rewrite (Improve, Fix, Shorten, Translate, **Fix diagram**) is still shown as text,
-  with **Changes**.
+  with **Changes**. **Ask AI…** on a note that is not shown as Markdown (a code file, or plain text
+  while Markdown formatting is off) starts with **Source** on: its answer is often code, which
+  rendering would show wrongly. Click **Source** to see it rendered.
 * **What is going on.** While a request runs, three dots move with "Waiting for claude-sonnet-5-5…"
   (the model's name; "Waiting for the model…" without one) until the first words arrive, then
   "Writing…". When it ends, the pane says "Finished in 4 s" ("Finished in 1 min 5 s" over a
   minute). A stopped or failed request says what it already said.
 * **The pane has a splitter** between it and the editor, shared by the AI pane and Search notes.
   Drag it to resize, move it with the arrow keys, or double-click it to go back to the default.
-  The pane is between 260 and 900 wide, and the editor keeps at least 320. The width is
-  remembered and is the same in every MicaPad window. History keeps its own width.
+  The pane is between 260 and 900 wide. While you drag, the editor is held to 320; in a window
+  too narrow for both, the pane keeps 260 and the editor gets the rest. The width is remembered
+  and is the same in every MicaPad window. History keeps its own width and has no splitter.
 * **Replace selection** puts the result in place of your text, **Insert below** adds it as a new
   paragraph after the text, **Copy** copies it. Each edit is one **Ctrl+Z**, and undoing a Replace
   brings the button back. The reply takes the note's own line ending. Your note changes only when
@@ -315,9 +318,11 @@ sent while you type, when a note opens or in the background — only when you ru
   is still what it was, and every stored credential came back. Otherwise the status line says why.
   **Copy** works whenever there is text. **Insert below** works for a stopped or cut-short reply and
   when the text changed, but not for a failed reply, on another tab or on a read-only note.
-* **Try again** reruns on the text the pane names — the earlier selection, or the whole note — not
-  on whatever is selected now, and only while that note is shown. An instruction typed for
-  **Ask AI…** works the same way.
+* **Try again** in the pane runs the request again, on the text the pane names — the earlier
+  selection, or the whole note — not on whatever is selected now, and only while that note is
+  shown. An instruction typed for **Ask AI…** works the same way. The **Try again** under a
+  diagram that could not be drawn is another button: it draws that diagram again and sends
+  nothing.
 * **Ask in Search notes**: type a question and press **Ctrl+Enter**, or click **Ask** (**Enter**
   still only searches). The best 8 passages go to the model and the answer streams above the
   results; the status line says "Answering from 6 passages · api.anthropic.com", then
@@ -342,7 +347,8 @@ sent while you type, when a note opens or in the background — only when you ru
   a question, an instruction or a search goes as `[credential]` too. Your own words are not
   otherwise altered, so a rewrite does not rename anything in them. Storing selected text as a credential
   closes the AI pane for that note, empties an AI pane that was already closed and clears an answer
-  from notes, since each could still hold the value.
+  from notes, since each could still hold the value. It also ends an Ask MicaStats conversation
+  that had read notes (see [Notes in Ask MicaStats and MCP](#notes-in-ask-micastats-and-mcp)).
 * **The daily limit** is the one from **Settings → AI**, shared with Ask MicaStats: each action or
   answer counts one, even when it fails or is stopped. When it is reached, or no key is set, the
   pane says so and nothing is sent.
@@ -688,25 +694,31 @@ They appear only while the assistant is on.
 The Ask MicaStats window, MicaPad's AI pane and the Ask answer in Search notes draw an answer the
 same way, and the assistants are told what they can show, so they write for it.
 
-* **Tables.** A Markdown table is shown as a table, with its columns aligned as written. A very
-  large table in an answer that is still streaming updates less often while it streams.
+* **Tables.** A Markdown table is shown as a table, with its columns aligned as written. A table
+  of more than 12 columns or 100 rows stays plain text, as it was written. A line break written
+  `<br>` in a table cell is a line break. A very large table in an answer that is still streaming
+  updates less often while it streams.
 * **Code blocks** show their language and have a **Copy** button, which reads **Copied** for a
-  moment.
+  moment. A code block that is indented under a numbered step or a bullet is shown as a code
+  block too, and the list goes on counting after it.
 * **Diagrams.** A fenced `mermaid` block is drawn as a diagram once the answer has written it
-  through to its closing fence. It is drawn on this PC by the same offline engine MicaPad uses for
-  diagrams in notes: nothing is sent anywhere to draw it. Above the picture, **Source** shows the
-  Mermaid text and **Copy** copies it; right-click the picture for **Copy image** and
-  **Copy source**.
+  through to its closing fence; while its block is still being written, it is shown as code. It
+  is drawn on this PC by the same offline engine MicaPad uses for diagrams in notes: nothing is
+  sent anywhere to draw it. Above the picture, **Source** shows the Mermaid text and **Copy**
+  copies it; right-click the picture for **Copy image** and **Copy source**.
 * While a diagram is drawn it says "Drawing the diagram…". A diagram that cannot be drawn is shown
   as its source with the reason ("This diagram could not be drawn: …"). When the failure may pass,
-  such as the engine still starting, there is a **Try again** button; a mistake in the diagram's
-  own text has none.
+  such as the engine still starting, there is a **Try again** button, which draws that diagram
+  again; a mistake in the diagram's own text has none. (The **Try again** in MicaPad's AI pane is
+  another button: it runs the request again.)
 * Diagrams in answers follow **Settings → MicaPad → Draw diagrams**: while it is off, a Mermaid
-  block is shown as code. An answer draws at most 8 diagrams, and only Mermaid is drawn in an
-  answer.
-* **An answer never loads anything.** An image written as `![alt](address)` stays text, no HTML is
-  interpreted and no address is fetched. Links follow the rules above: in MicaPad they are never
-  clickable, and in Ask MicaStats they are not once it has read your notes.
+  block is shown as code. An answer draws at most 8 diagrams, so a ninth diagram is shown as code,
+  and only Mermaid is drawn in an answer. Diagrams in answers need the Microsoft Edge WebView2
+  Runtime, as diagrams in notes do; without it a diagram is shown as its source with the reason.
+* **An answer never loads anything.** An image written as `![alt](address)` is never loaded: it
+  is shown as "!" and a link, which follows the link rules like any other. No HTML is interpreted
+  (a `<br>` in a table cell apart) and no address is fetched. Links follow the rules above: in
+  MicaPad they are never clickable, and in Ask MicaStats they are not once it has read your notes.
 
 ### Suggestions, never actions
 
@@ -846,6 +858,12 @@ does not.
 * **Links are plain text.** Once Ask has read from the notes, links in its answers are shown as
   plain text for the rest of that conversation, until **New conversation**. An answer in a
   conversation that did not read notes keeps its links.
+* **Storing a credential ends the conversation.** A conversation that has read notes holds note
+  text, in what it shows and in what the next question would send. When text of a note is stored
+  as a credential in MicaPad, the open Ask window's conversation is cleared as
+  **New conversation** clears it, an answer still streaming is stopped, and the status line says
+  "This conversation was cleared: text from a note it had read was stored as a credential." A
+  conversation that never read notes is left alone.
 * **MicaStats must be running**, but not a MicaPad window: the first call starts the notes in the
   background, and that first call can take a moment. If MicaStats is not running, an MCP client is
   told "MicaStats is not running". If MicaPad's saved session is missing or cannot be read, the

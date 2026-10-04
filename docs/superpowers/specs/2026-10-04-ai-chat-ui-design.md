@@ -43,10 +43,12 @@ Not in scope: follow-up questions in MicaPad's AI pane (it stays one request at 
 - The picture is shown at its own size, and scaled down to the answer's width when it is wider. It is never enlarged.
 - While it is being drawn: "Drawing the diagram…" above the source.
 - When it cannot be drawn: the source as a code block, and under it "This diagram could not be drawn: " and the renderer's message. This covers a syntax error from the model, a missing WebView2 Runtime, and a draw that took too long. Nothing is thrown.
-- It follows the theme: a dark answer gets a dark diagram, and switching the theme draws it again.
-- **Limits (R):** at most 8 diagrams per answer; a source over the size MicaPad draws in a note is not drawn. Both are shown as code.
+- A failure is remembered and not tried again by itself, so a diagram that fails cannot make the answer redraw for ever. *(Added after Task 3's review.)* A failure that may pass (the engine was still starting, a draw took too long, the runtime was missing) has a **Try again** button; a syntax error has none.
+- It follows the theme: a dark answer gets a dark diagram, and switching the theme draws it again. An answer without a diagram is only repainted, as before.
+- **Limits (R):** at most 8 diagrams per answer; a source over the size MicaPad draws in a note is not drawn. A ninth diagram is shown as code; an over-size one as code with "Too large to draw".
 - **(R)** Diagrams in answers follow **Settings → MicaPad → Draw diagrams**. While it is off, a Mermaid block is code.
 - The pictures are kept in memory only, as MicaPad's are.
+- **Memory (R).** *(Added after Task 3's review.)* A picture is decoded no larger than the screen needs (its own size times the display scaling) and never over 1,600 by 2,400 pixels. Up to 64 MB of pictures are kept for redrawing, and always the eight used last, so one answer never loses its own. The pictures of answers still on screen stay with those answers until **New chat** or the window closes.
 
 ### 1.4 What an answer never does
 
@@ -61,6 +63,7 @@ Not in scope: follow-up questions in MicaPad's AI pane (it stays one request at 
 - A streaming answer is drawn again no sooner than 100 ms after the last time, and no sooner than four times what that redraw took, measured to the end of its layout; never longer than 2 s. So a heavy answer takes a fifth of the window's time, not all of it.
 - A redraw on the timer waits while the left mouse button is held over the answer. The document is rebuilt on every redraw, so without this a click that began on **Copy** or **Source** could end on the button's replacement and be lost.
 - The last redraw, when the answer ends, is immediate and waits for nothing.
+- A picture that arrives is drawn with the next paced redraw, and waits for the mouse in the same way; several pictures arriving together give one redraw.
 - This holds in the Ask MicaStats window, the AI pane and the Search notes answer.
 
 ## 2. The model is told
@@ -126,7 +129,7 @@ Nothing here sends anything new. What matters:
 - **No Kroki.** An answer's diagram is drawn only on this PC.
 - **Links.** `RemoveLinks` must leave no link anywhere in a document, tables included.
 - **Copy** goes through one replaceable hook, so a test never touches the real clipboard.
-- **The AI pane's Clear** (a credential was stored from the note) also drops the Source toggle, the diagrams shown and the answer pictures kept for redrawing.
+- **The AI pane's Clear** (a credential was stored from the note) also drops the Source toggle, the diagrams shown and the answer pictures kept for redrawing. The Search notes answer is dropped the same way.
 - **Consent.** No consent check in MicaPad's window files is moved, removed or reordered.
 
 Known limit: the drawing engine keeps the last 64 pictures in memory, as it does for a note's own diagrams. A picture drawn from a result that was later cleared stays there until it is pushed out or MicaStats exits. It is never shown again and never written to disk.

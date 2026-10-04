@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Models;
@@ -37,6 +38,8 @@ namespace Kil0bitSystemMonitor.Tests
         private const string Unreachable = "Could not reach the AI service. Check the network, or the base URL in Settings > AI, and try again.";
         private const string NoKey = "Add an API key in Settings > AI.";
         private const string BadUrl = "Enter a valid http or https base URL in Settings > AI.";
+        private const string Redirects = "The server redirects to another address, and the model list does not follow it.";
+        private const string AiOff = "AI is off.";
 
         // ----- Helpers ------------------------------------------------------------------------
 
@@ -355,6 +358,100 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { new AiModelInfo("good-1", 8192, 0), new AiModelInfo("good-2", 0, 0) }, ModelCatalog.ParseCompatible(json));
         }
 
+        // ----- Member names that are not text ------------------------------------------------------
+        // Half a surrogate pair, escaped, in a member NAME: System.Text.Json throws
+        // InvalidOperationException from a lookup that has to compare that name. None may get out.
+
+        /// <summary>A name every lookup has to compare: half a pair, then enough letters to be longer than any name looked for.</summary>
+        private static string BadName(int half = 0xD83D) => J(half) + new string('x', 30);
+
+        [Fact]
+        public void An_entry_with_a_member_name_that_is_not_text_does_not_make_the_parser_throw()
+        {
+            string json = "{\"data\":[{\"id\":\"m\",\"" + J(0xD83D) + "\":1}]}";
+
+            Assert.Empty(ModelCatalog.ParseCompatible(json));
+            // Still a list: one whose only entry cannot be read.
+            Assert.True(ModelCatalog.TryParseCompatible(Encoding.UTF8.GetBytes(json), out IReadOnlyList<AiModelInfo> models));
+            Assert.Empty(models);
+        }
+
+        [Fact]
+        public void A_root_with_a_member_name_that_is_not_text_is_not_a_list()
+        {
+            string json = "{\"data\":[],\"" + J(0xDC00) + "x\":1}";
+
+            Assert.Empty(ModelCatalog.ParseCompatible(json));
+            Assert.False(ModelCatalog.TryParseCompatible(Encoding.UTF8.GetBytes(json), out IReadOnlyList<AiModelInfo> models));
+            Assert.Empty(models);
+        }
+
+        [Fact]
+        public void An_entry_that_cannot_be_read_is_dropped_and_the_others_are_kept()
+        {
+            string json = Data(
+                Model("first", "\"context_length\":8192"),
+                "{\"id\":\"middle\",\"" + J(0xD83D) + "\":1}",
+                Model("last", "\"max_output_tokens\":4096"));
+
+            Assert.Equal(new[] { new AiModelInfo("first", 8192, 0), new AiModelInfo("last", 0, 4096) }, ModelCatalog.ParseCompatible(json));
+        }
+
+        [Theory]
+        [InlineData("meta")]
+        [InlineData("top_provider")]
+        public void A_name_that_is_not_text_inside_a_nested_member_drops_that_entry_only(string parent)
+        {
+            string json = Data(
+                Model("first"),
+                Model("odd", "\"" + parent + "\":{\"" + BadName() + "\":1}"),
+                Model("last", "\"" + parent + "\":{\"n_ctx_train\":8192,\"max_completion_tokens\":4096}"));
+
+            IReadOnlyList<AiModelInfo> models = ModelCatalog.ParseCompatible(json);
+
+            Assert.Equal(new[] { "first", "last" }, models.Select(m => m.Id));
+        }
+
+        [Fact]
+        public void No_place_or_spelling_of_such_a_name_makes_the_parser_throw()
+        {
+            // A lookup compares a name only when it has to, so where the name stands and how it
+            // starts decide which lookup meets it. Whichever does, nothing is thrown or invented.
+            string[] names =
+            {
+                J(0xD83D), J(0xDC00) + "x", "i" + J(0xD83D), "id" + J(0xD83D), "d" + J(0xD83D) + "ata", "da" + J(0xDC00) + "ta",
+                "ma" + J(0xDC00) + "x_model_len_and_more", "me" + J(0xD83D) + "ta", "top_" + J(0xD83D) + "provider_and_more",
+                "n_ctx_" + J(0xD83D) + "train_and_more", BadName(), BadName(0xDFFF), J(0xD83D) + J(0xD83D),
+            };
+            foreach (string name in names)
+            {
+                string member = "\"" + name + "\":1";
+                string[] bodies =
+                {
+                    "{" + member + ",\"data\":[" + Model("a") + "]}",
+                    "{\"data\":[" + Model("a") + "]," + member + "}",
+                    "[{" + member + ",\"id\":\"odd\"}," + Model("a") + "]",
+                    "[{\"id\":\"odd\"," + member + "}," + Model("a") + "]",
+                    "[{\"id\":\"odd\",\"max_model_len\":8192," + member + ",\"max_output_tokens\":4096}," + Model("a") + "]",
+                    "[{\"id\":\"odd\",\"meta\":{" + member + "},\"top_provider\":{" + member + "}}," + Model("a") + "]",
+                    "[{\"id\":\"odd\",\"meta\":{\"n_ctx_train\":8192," + member + "}}," + Model("a") + "]",
+                    "[" + Model("a") + ",{\"id\":\"odd\",\"top_provider\":{" + member + ",\"max_completion_tokens\":4096}}]",
+                };
+                foreach (string body in bodies)
+                {
+                    IReadOnlyList<AiModelInfo> models = Array.Empty<AiModelInfo>();
+                    Exception? thrown = Record.Exception(() => models = ModelCatalog.ParseCompatible(body));
+                    Assert.True(thrown == null, thrown?.GetType().Name + " for " + body);
+                    thrown = Record.Exception(() => ModelCatalog.TryParseCompatible(Encoding.UTF8.GetBytes(body), out _));
+                    Assert.True(thrown == null, thrown?.GetType().Name + " for " + body);
+
+                    Assert.All(models, m => Assert.Contains(m.Id, new[] { "a", "odd" }));
+                    // An answer that is itself the array has no root that could fail: "a" is always kept.
+                    if (body.StartsWith('[')) Assert.Contains(models, m => m.Id == "a");
+                }
+            }
+        }
+
         // ----- Numbers ---------------------------------------------------------------------------
 
         [Theory]
@@ -561,6 +658,85 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("model", OnlyModel(Data(Model("mo" + tags + "del"))).Id);
         }
 
+        [Theory]
+        [InlineData(0xE000)]     // private use: a font decides what it looks like
+        [InlineData(0xF8FF)]
+        [InlineData(0xF0000)]    // private use, plane 15
+        [InlineData(0x10FFFD)]   // private use, plane 16
+        [InlineData(0x0378)]     // not assigned to anything
+        [InlineData(0xFFFF)]     // a noncharacter
+        [InlineData(0xE0080)]    // not assigned, outside the basic plane
+        [InlineData(0x10FFFF)]
+        public void Private_use_and_unassigned_characters_are_removed_from_an_id(int codePoint) => AssertRemovedFromAnId(codePoint);
+
+        [Theory]
+        [InlineData(0x034F)]     // combining grapheme joiner
+        [InlineData(0x115F)]     // Hangul choseong filler
+        [InlineData(0x1160)]     // Hangul jungseong filler
+        [InlineData(0x2800)]     // braille pattern blank
+        [InlineData(0x3164)]     // Hangul filler
+        [InlineData(0xFFA0)]     // halfwidth Hangul filler
+        [InlineData(0x180B)]     // Mongolian free variation selectors
+        [InlineData(0x180C)]
+        [InlineData(0x180D)]
+        [InlineData(0x180F)]
+        [InlineData(0xFE00)]     // variation selectors 1 to 16
+        [InlineData(0xFE0E)]
+        [InlineData(0xFE0F)]
+        [InlineData(0xE0100)]    // variation selectors 17 to 256, outside the basic plane
+        [InlineData(0xE0142)]
+        [InlineData(0xE01EF)]
+        public void Characters_that_show_as_nothing_are_removed_from_an_id(int codePoint) => AssertRemovedFromAnId(codePoint);
+
+        private static void AssertRemovedFromAnId(int codePoint)
+        {
+            string c = char.ConvertFromUtf32(codePoint);
+
+            Assert.Equal("model-a", ModelCatalog.CleanId(c + "mod" + c + "el-a" + c));
+            Assert.Equal("model-a", OnlyModel(Data(Model("mod" + c + "el-a"))).Id);
+            // An id made of nothing else is empty, with or without white space around: that model is dropped.
+            Assert.Equal("", ModelCatalog.CleanId(c + c));
+            Assert.Equal("", ModelCatalog.CleanId(" " + c + " " + c + " "));
+            Assert.Equal("kept", Assert.Single(ModelCatalog.ParseCompatible(Data(Model(c), Model(" " + c + c + " "), Model("kept")))).Id);
+        }
+
+        [Theory]
+        [InlineData(0xFE10)]     // just past the variation selectors: a presentation form, text
+        [InlineData(0xFDFF)]
+        [InlineData(0x180A)]     // Mongolian nirugu, beside the free variation selectors
+        [InlineData(0x1810)]     // Mongolian digit zero
+        [InlineData(0xE01F0)]    // just past the second range: unassigned today, so removed by that rule, not this one
+        public void Only_the_named_blank_characters_are_removed(int codePoint)
+        {
+            string c = char.ConvertFromUtf32(codePoint);
+            bool assigned = Rune.GetUnicodeCategory(new Rune(codePoint)) != System.Globalization.UnicodeCategory.OtherNotAssigned;
+
+            Assert.Equal(assigned ? "mod" + c + "el" : "model", ModelCatalog.CleanId("mod" + c + "el"));
+        }
+
+        [Fact]
+        public void Thai_vowels_and_tone_marks_are_never_removed()
+        {
+            // They are non-spacing marks, the class most variation selectors are in too: only the
+            // code points named above go, never the class.
+            const string thai = "ที่นี่-ผู้ใช้-น้ำ-ก๊วยเตี๋ยว-สิ่ง-เป็ด-การันต์";
+            Assert.Equal(thai, ModelCatalog.CleanId(thai));
+            Assert.Equal(thai, OnlyModel(Data(Model(thai))).Id);
+
+            // Every Thai mark that sits above or below a consonant, one by one (ko kai, the mark, sara aa).
+            int[] marks = { 0x0E31, 0x0E34, 0x0E35, 0x0E36, 0x0E37, 0x0E38, 0x0E39, 0x0E3A, 0x0E47, 0x0E48, 0x0E49, 0x0E4A, 0x0E4B, 0x0E4C, 0x0E4D, 0x0E4E };
+            foreach (int mark in marks)
+            {
+                string id = "" + (char)0x0E01 + (char)mark + (char)0x0E32;
+                Assert.Equal(System.Globalization.UnicodeCategory.NonSpacingMark, char.GetUnicodeCategory((char)mark));
+                Assert.Equal(id, ModelCatalog.CleanId(id));
+            }
+
+            // And a combining accent of another script.
+            string accent = "cafe" + (char)0x0301 + "-mode" + (char)0x0300 + "le";
+            Assert.Equal(accent, ModelCatalog.CleanId(accent));
+        }
+
         [Fact]
         public void A_character_outside_the_basic_plane_that_is_text_is_kept()
         {
@@ -712,7 +888,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Answering(Data(Model("llama3.2")));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("http://localhost:11434/v1"), Secrets(env), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("http://localhost:11434/v1"), Secrets(env), ModelListReason.Settings, handler, CancellationToken.None);
 
             Recorder.Call call = Assert.Single(handler.Calls);
             Assert.Equal("GET", call.Method);
@@ -739,7 +915,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Answering(Data(Model("m")));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible(baseUrl), Secrets(env), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible(baseUrl), Secrets(env), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Equal(asked, Assert.Single(handler.Calls).Address.AbsoluteUri);
             Assert.Null(list.Problem);
@@ -751,7 +927,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Answering(Data(Model("m")));
 
-            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: "  " + Key + " \n"), handler, CancellationToken.None);
+            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: "  " + Key + " \n"), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Equal("Bearer " + Key, Assert.Single(handler.Calls).Header("Authorization"));
         }
@@ -763,7 +939,7 @@ namespace Kil0bitSystemMonitor.Tests
             var handler = Recorder.Answering(Data(Model("m")));
 
             // A Claude key is saved, and it is not this server's.
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("http://localhost:11434/v1"), Secrets(env, claudeKey: OtherKey), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("http://localhost:11434/v1"), Secrets(env, claudeKey: OtherKey), ModelListReason.Settings, handler, CancellationToken.None);
 
             Recorder.Call call = Assert.Single(handler.Calls);
             Assert.False(call.Headers.ContainsKey("Authorization"));     // not the chat client's placeholder "Bearer none" either
@@ -779,8 +955,8 @@ namespace Kil0bitSystemMonitor.Tests
             var withKey = Recorder.Answering(Data(Model("m")));
             var withoutKey = Recorder.Answering(Data(Model("m")));
 
-            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1", "some-model"), Secrets(env, compatibleKey: Key), withKey, CancellationToken.None);
-            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1", "some-model"), Secrets(noKeyEnv), withoutKey, CancellationToken.None);
+            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1", "some-model"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, withKey, CancellationToken.None);
+            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1", "some-model"), Secrets(noKeyEnv), ModelListReason.Settings, withoutKey, CancellationToken.None);
 
             Assert.Equal(new[] { "Accept", "Authorization" }, Assert.Single(withKey.Calls).Headers.Keys.OrderBy(k => k, StringComparer.Ordinal));
             Assert.Equal(new[] { "Accept" }, Assert.Single(withoutKey.Calls).Headers.Keys);
@@ -796,7 +972,7 @@ namespace Kil0bitSystemMonitor.Tests
             var handler = Recorder.Answering(Data(Model("m",
                 "\"root\":\"https://elsewhere.example.net/v1/models\",\"next\":\"https://elsewhere.example.net/v1/models?page=2\"")));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com:8443/v1"), Secrets(env, claudeKey: OtherKey, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com:8443/v1"), Secrets(env, claudeKey: OtherKey, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Recorder.Call call = Assert.Single(handler.Calls);
             Assert.Equal("https", call.Address.Scheme);
@@ -813,9 +989,34 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData(302)]
         [InlineData(307)]
         [InlineData(308)]
-        public async Task A_redirect_is_not_followed(int status)
+        public async Task A_redirect_is_not_followed_and_is_said_in_a_sentence_of_its_own(int status)
         {
             using var env = new AiTestEnv();
+            var lines = new List<string>();
+            var handler = new Recorder((_, _) =>
+            {
+                HttpResponseMessage response = Recorder.Reply("", (HttpStatusCode)status);
+                response.Headers.Location = new Uri("https://elsewhere.example.net/secret-path/models?token=abc");
+                return Task.FromResult(response);
+            });
+
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, lines.Add, CancellationToken.None);
+
+            Assert.Equal("llm.example.com", Assert.Single(handler.Calls).Address.Host);
+            AssertProblem(list, Redirects, "llm.example.com");
+            // The log has the status number, and never where the server pointed.
+            Assert.Equal("Listing the models of llm.example.com failed (HTTP " + N(status) + ")", Assert.Single(lines));
+        }
+
+        [Theory]
+        [InlineData(301)]
+        [InlineData(302)]
+        [InlineData(307)]
+        [InlineData(308)]
+        public async Task A_redirect_from_claude_s_address_is_not_followed_either(int status)
+        {
+            using var env = new AiTestEnv();
+            var lines = new List<string>();
             var handler = new Recorder((_, _) =>
             {
                 HttpResponseMessage response = Recorder.Reply("", (HttpStatusCode)status);
@@ -823,18 +1024,267 @@ namespace Kil0bitSystemMonitor.Tests
                 return Task.FromResult(response);
             });
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, lines.Add, CancellationToken.None);
 
-            Assert.Equal("llm.example.com", Assert.Single(handler.Calls).Address.Host);
-            AssertProblem(list, "The AI service said: HTTP " + N(status) + ".", "llm.example.com");
+            Assert.All(handler.Calls, call => Assert.Equal("api.anthropic.com", call.Address.Host));
+            AssertProblem(list, Redirects, "api.anthropic.com");
+            Assert.Equal("Listing the models of api.anthropic.com failed (HTTP " + N(status) + ")", Assert.Single(lines));
+        }
+
+        // ----- The handler chain of a list request ----------------------------------------------
+        // One method builds it, for the network as for a test's handler. Every test above passes
+        // a handler, and a redirect is followed (or not) inside the network handler, below any
+        // handler a test can pass: so the chain is looked at here, with nothing sent.
+
+        private static HttpMessageHandler Innermost(HttpMessageHandler handler)
+        {
+            while (handler is DelegatingHandler outer && outer.InnerHandler != null) handler = outer.InnerHandler;
+            return handler;
         }
 
         [Fact]
-        public void The_network_handler_of_a_list_request_follows_no_redirect()
+        public void The_chain_of_a_list_request_ends_in_a_network_that_follows_no_redirect()
         {
-            using HttpMessageHandler handler = ModelCatalog.NewNetworkHandler();
+            using HttpMessageHandler chain = ModelCatalog.NewListHandler(null, () => true);
 
-            Assert.False(Assert.IsType<SocketsHttpHandler>(handler).AllowAutoRedirect);
+            HttpMessageHandler network = Innermost(chain);
+
+            Assert.NotSame(chain, network);     // the catalog's own handler sits above the network
+            Assert.False(Assert.IsType<SocketsHttpHandler>(network).AllowAutoRedirect);
+        }
+
+        [Fact]
+        public void A_listing_has_no_other_way_to_the_network_than_that_chain()
+        {
+            // No test can send a request without a handler of its own, so none can see which
+            // network a listing would use without one. This reads the source instead: the catalog
+            // names a network handler once, in the method the test above looks at, and makes one
+            // HTTP client, over that method's chain.
+            string source = Regex.Replace(
+                File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "Services", "Ai", "ModelCatalog.cs")), @"\s+", " ");
+            int Count(string text) => Regex.Matches(source, Regex.Escape(text)).Count;
+
+            Assert.Equal(1, Count("SocketsHttpHandler"));
+            Assert.Contains("internal static HttpMessageHandler NewListHandler(HttpMessageHandler? handler, Func<bool> maySend) => " +
+                            "ListRequests.Over(handler ?? new SocketsHttpHandler { AllowAutoRedirect = false }, maySend);", source, StringComparison.Ordinal);
+            Assert.Equal(1, Count("ListRequests.Over("));
+            Assert.Equal(1, Count("NewHttpClient("));
+            Assert.Contains("AiProviderFactory.NewHttpClient(NewListHandler(handler, maySend), owned: handler == null, timeout)", source, StringComparison.Ordinal);
+            Assert.Equal(0, Count("new HttpClient("));
+            Assert.Equal(0, Count("HttpClientHandler"));
+            Assert.Equal(0, Count("WinHttpHandler"));
+            Assert.Equal(0, Count("new AnthropicClient"));      // Claude's client comes from the factory, over the same HTTP client
+        }
+
+        [Fact]
+        public void The_chain_wraps_a_handler_it_is_given_and_puts_nothing_below_it()
+        {
+            var given = Recorder.Answering("[]");
+
+            HttpMessageHandler chain = ModelCatalog.NewListHandler(given, () => true);
+
+            Assert.NotSame(given, chain);
+            Assert.Same(given, Innermost(chain));
+        }
+
+        [Fact]
+        public async Task The_chain_asks_before_every_request_and_sends_nothing_after_a_no()
+        {
+            var order = new List<string>();
+            bool allowed = true;
+            var given = new Recorder((_, _) =>
+            {
+                order.Add("sent");
+                return Task.FromResult(Recorder.Reply("[]"));
+            });
+            using var http = new HttpClient(ModelCatalog.NewListHandler(given, () =>
+            {
+                order.Add("asked");
+                return allowed;
+            }), disposeHandler: false);
+
+            await http.GetAsync("https://llm.example.com/v1/models");
+            await http.GetAsync("https://llm.example.com/v1/models");
+            allowed = false;
+            Exception? refused = await Record.ExceptionAsync(() => http.GetAsync("https://llm.example.com/v1/models"));
+
+            Assert.NotNull(refused);
+            Assert.Equal(new[] { "asked", "sent", "asked", "sent", "asked" }, order);
+            Assert.Equal(2, given.Calls.Count);
+        }
+
+        [Fact]
+        public async Task The_chain_reads_no_answer_past_4_MB()
+        {
+            var body = new EndlessSpaces();
+            var given = new Recorder((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(body) }));
+            using var http = new HttpClient(ModelCatalog.NewListHandler(given, () => true), disposeHandler: false);
+
+            Exception? refused = await Record.ExceptionAsync(() => http.GetAsync("https://llm.example.com/v1/models", HttpCompletionOption.ResponseHeadersRead));
+
+            Assert.NotNull(refused);
+            Assert.True(body.Given <= ModelCatalog.MaxAnswerBytes + 1024 * 1024, "read " + N(body.Given) + " bytes of an endless answer");
+        }
+
+        // ----- Asked for an AI request: never while every AI feature is off (spec 1.3) ------------
+
+        private static AppConfig Switched(AppConfig config, bool assistant, bool pad)
+        {
+            config.AiAssistantEnabled = assistant;
+            config.PadAiEnabled = pad;
+            return config;
+        }
+
+        private static AppConfig ConfigOf(bool claude) => claude ? new AppConfig() : Compatible("https://llm.example.com/v1");
+
+        private static string HostOf(bool claude) => claude ? "api.anthropic.com" : "llm.example.com";
+
+        private static Recorder AnsweringOneModel(bool claude) =>
+            Recorder.Answering(claude ? ClaudePage(false, "claude-a", "claude-a", ClaudeModel("claude-a")) : Data(Model("m")));
+
+        [Theory]
+        [InlineData(false)]     // a compatible server
+        [InlineData(true)]      // Claude
+        public async Task Asked_for_an_ai_request_while_ai_is_off_nothing_is_sent(bool claude)
+        {
+            using var env = new AiTestEnv();
+            var lines = new List<string>();
+            Recorder handler = AnsweringOneModel(claude);
+            AppConfig config = ConfigOf(claude);
+            Assert.False(config.AiAssistantEnabled);        // off is how the settings start
+            Assert.False(config.PadAiEnabled);
+
+            AiModelList list = await ModelCatalog.ListAsync(config, Secrets(env, claudeKey: Key, compatibleKey: Key), ModelListReason.AiRequest, handler, lines.Add, CancellationToken.None);
+
+            Assert.Empty(handler.Calls);
+            AssertProblem(list, AiOff, HostOf(claude));
+            Assert.Empty(lines);        // off is not a failure: the log is told nothing
+        }
+
+        [Theory]
+        [InlineData(false, true, false)]
+        [InlineData(false, false, true)]
+        [InlineData(false, true, true)]
+        [InlineData(true, true, false)]
+        [InlineData(true, false, true)]
+        [InlineData(true, true, true)]
+        public async Task Asked_for_an_ai_request_with_either_switch_on_the_list_is_asked_for(bool claude, bool assistant, bool pad)
+        {
+            using var env = new AiTestEnv();
+            Recorder handler = AnsweringOneModel(claude);
+
+            AiModelList list = await ModelCatalog.ListAsync(Switched(ConfigOf(claude), assistant, pad), Secrets(env, claudeKey: Key, compatibleKey: Key), ModelListReason.AiRequest, handler, CancellationToken.None);
+
+            Assert.Single(handler.Calls);
+            Assert.Null(list.Problem);
+            Assert.Single(list.Models);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task Asked_for_settings_the_list_is_asked_for_whatever_the_switches_say(bool claude)
+        {
+            using var env = new AiTestEnv();
+            Recorder handler = AnsweringOneModel(claude);
+
+            // The user is setting AI up: both switches are still off.
+            AiModelList list = await ModelCatalog.ListAsync(Switched(ConfigOf(claude), assistant: false, pad: false), Secrets(env, claudeKey: Key, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
+
+            Assert.Single(handler.Calls);
+            Assert.Null(list.Problem);
+            Assert.Single(list.Models);
+        }
+
+        [Fact]
+        public async Task Turned_off_between_two_claude_pages_the_second_page_is_never_asked_for()
+        {
+            using var env = new AiTestEnv();
+            var lines = new List<string>();
+            AppConfig config = Switched(new AppConfig(), assistant: true, pad: false);
+            var handler = new Recorder((_, _) =>
+            {
+                // The user turns AI off while the first page is on its way back.
+                config.AiAssistantEnabled = false;
+                return Task.FromResult(Recorder.Reply(ClaudePage(true, "claude-a", "claude-b", ClaudeModel("claude-a"), ClaudeModel("claude-b"))));
+            });
+
+            AiModelList list = await ModelCatalog.ListAsync(config, Secrets(env, claudeKey: Key), ModelListReason.AiRequest, handler, lines.Add, CancellationToken.None);
+
+            Assert.Single(handler.Calls);
+            // The page that was read is not given either: the result is the off result.
+            AssertProblem(list, AiOff, "api.anthropic.com");
+            Assert.Empty(lines);
+        }
+
+        [Fact]
+        public async Task The_switches_are_read_again_before_every_claude_page()
+        {
+            using var env = new AiTestEnv();
+            AppConfig config = Switched(new AppConfig(), assistant: false, pad: true);
+            int page = 0;
+            var handler = new Recorder((_, _) =>
+            {
+                string id = "claude-" + N(page++);
+                if (page == 3) config.PadAiEnabled = false;         // off while the third page is on its way back
+                return Task.FromResult(Recorder.Reply(ClaudePage(true, id, id, ClaudeModel(id))));
+            });
+
+            AiModelList list = await ModelCatalog.ListAsync(config, Secrets(env, claudeKey: Key), ModelListReason.AiRequest, handler, CancellationToken.None);
+
+            Assert.Equal(3, handler.Calls.Count);
+            AssertProblem(list, AiOff, "api.anthropic.com");
+        }
+
+        [Fact]
+        public async Task Turned_off_while_the_sdk_waits_to_try_again_the_next_try_is_never_sent()
+        {
+            using var env = new AiTestEnv();
+            var lines = new List<string>();
+            AppConfig config = Switched(new AppConfig(), assistant: false, pad: true);
+            var handler = new Recorder((_, _) =>
+            {
+                config.PadAiEnabled = false;
+                // Busy: the SDK would ask twice more.
+                return Task.FromResult(Recorder.Reply("{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}", (HttpStatusCode)529));
+            });
+
+            AiModelList list = await ModelCatalog.ListAsync(config, Secrets(env, claudeKey: Key), ModelListReason.AiRequest, handler, lines.Add, CancellationToken.None);
+
+            Assert.Single(handler.Calls);
+            AssertProblem(list, AiOff, "api.anthropic.com");
+            Assert.Empty(lines);
+        }
+
+        [Fact]
+        public async Task While_ai_is_off_the_answer_is_the_off_one_whatever_else_is_missing()
+        {
+            using var env = new AiTestEnv();
+            var handler = Recorder.Answering("[]");
+
+            // No Claude key is saved, and the base URL is no address: neither is looked at.
+            AiModelList claude = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env), ModelListReason.AiRequest, handler, CancellationToken.None);
+            AiModelList compatible = await ModelCatalog.ListAsync(Compatible("ftp://llm.example.com/v1"), Secrets(env), ModelListReason.AiRequest, handler, CancellationToken.None);
+
+            Assert.Empty(handler.Calls);
+            AssertProblem(claude, AiOff, "api.anthropic.com");
+            AssertProblem(compatible, AiOff, "");
+        }
+
+        [Fact]
+        public void A_switch_that_cannot_be_read_counts_as_off()
+        {
+            Assert.False(ModelCatalog.MayAsk(ModelListReason.AiRequest, () => throw new InvalidOperationException("the settings are gone")));
+            Assert.False(ModelCatalog.MayAsk(ModelListReason.AiRequest, () => false));
+            Assert.True(ModelCatalog.MayAsk(ModelListReason.AiRequest, () => true));
+
+            // For Settings the switches are not even read.
+            Assert.True(ModelCatalog.MayAsk(ModelListReason.Settings, () => throw new InvalidOperationException("never asked")));
+            Assert.True(ModelCatalog.MayAsk(ModelListReason.Settings, () => false));
+
+            // A reason this build does not know is not Settings: the careful side.
+            Assert.False(ModelCatalog.MayAsk((ModelListReason)7, () => false));
+            Assert.True(ModelCatalog.MayAsk((ModelListReason)7, () => true));
         }
 
         [Fact]
@@ -844,8 +1294,8 @@ namespace Kil0bitSystemMonitor.Tests
             var compatible = Recorder.Answering(Data(Model("m")));
             var claude = Recorder.Answering(ClaudePage(false, "claude-a", "claude-a", ClaudeModel("claude-a")));
 
-            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), compatible, CancellationToken.None);
-            await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), claude, CancellationToken.None);
+            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, compatible, CancellationToken.None);
+            await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, claude, CancellationToken.None);
 
             Assert.Single(compatible.Calls);
             Assert.Single(claude.Calls);
@@ -859,7 +1309,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Answering(Data(Model("model-a", "\"max_model_len\":262144"), Model("model-b")));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1", model: ""), Secrets(env), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1", model: ""), Secrets(env), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal(new[] { new AiModelInfo("model-a", 262_144, 0), new AiModelInfo("model-b", 0, 0) }, list.Models);
@@ -877,7 +1327,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Answering(Data(Model("m")));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible(baseUrl), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible(baseUrl), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Empty(handler.Calls);
             AssertProblem(list, BadUrl, "");
@@ -891,7 +1341,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Answering((char)0xFEFF + Data(Model("m", "\"context_length\":8192")));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal(new AiModelInfo("m", 8192, 0), Assert.Single(list.Models));
@@ -903,7 +1353,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Answering(Data(Model("m")), contentType: "text/plain");
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal("m", Assert.Single(list.Models).Id);
@@ -924,7 +1374,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Answering(body, contentType: body.StartsWith('<') ? "text/html" : "application/json");
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Single(handler.Calls);
             AssertProblem(list, NotAList, "llm.example.com");
@@ -936,7 +1386,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Answering("{\"object\":\"list\",\"data\":[]}");
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Empty(list.Models);
@@ -954,8 +1404,8 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(ModelCatalog.MaxAnswerBytes, Encoding.UTF8.GetByteCount(atTheLimit));
             Assert.Equal(4 * 1024 * 1024, ModelCatalog.MaxAnswerBytes);
 
-            AiModelList read = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), Recorder.Answering(atTheLimit), CancellationToken.None);
-            AiModelList refused = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), Recorder.Answering(over), CancellationToken.None);
+            AiModelList read = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, Recorder.Answering(atTheLimit), CancellationToken.None);
+            AiModelList refused = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, Recorder.Answering(over), CancellationToken.None);
 
             Assert.Null(read.Problem);
             Assert.Equal(new AiModelInfo("m", 8192, 0), Assert.Single(read.Models));
@@ -969,7 +1419,7 @@ namespace Kil0bitSystemMonitor.Tests
             var body = new EndlessSpaces();
             var handler = new Recorder((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(body) }));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             AssertProblem(list, TooLong, "llm.example.com");
             Assert.True(body.Given > 0, "the body was not read at all");
@@ -988,10 +1438,41 @@ namespace Kil0bitSystemMonitor.Tests
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
             });
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             AssertProblem(list, TooLong, "llm.example.com");
             Assert.Equal(0, body.Given);
+        }
+
+        [Fact]
+        public async Task An_answer_with_an_entry_that_cannot_be_read_still_gives_the_other_models()
+        {
+            using var env = new AiTestEnv();
+            var lines = new List<string>();
+            var handler = Recorder.Answering(Data(
+                Model("first", "\"max_model_len\":262144"),
+                "{\"id\":\"middle\",\"" + J(0xD83D) + "\":1}",
+                Model("odd", "\"meta\":{\"" + BadName() + "\":1}"),
+                Model("last")));
+
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, handler, lines.Add, CancellationToken.None);
+
+            Assert.Null(list.Problem);
+            Assert.Equal(new[] { new AiModelInfo("first", 262_144, 0), new AiModelInfo("last", 0, 0) }, list.Models);
+            Assert.Empty(lines);
+        }
+
+        [Fact]
+        public async Task An_answer_whose_root_cannot_be_read_is_not_a_list()
+        {
+            using var env = new AiTestEnv();
+            var lines = new List<string>();
+            var handler = Recorder.Answering("{\"data\":[" + Model("m") + "],\"" + J(0xDC00) + "x\":1}");
+
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, handler, lines.Add, CancellationToken.None);
+
+            AssertProblem(list, NotAList, "llm.example.com");
+            Assert.Equal("Listing the models of llm.example.com failed (not a list)", Assert.Single(lines));
         }
 
         // ----- Failures of a compatible server --------------------------------------------------
@@ -1013,7 +1494,7 @@ namespace Kil0bitSystemMonitor.Tests
             string body = "{\"error\":{\"message\":\"Incorrect API key provided: " + Key + ". <b>Visit</b> https://elsewhere.example.net/keys\",\"type\":\"invalid_request_error\"}}";
             var handler = Recorder.Answering(status == 204 ? "" : body, (HttpStatusCode)status);
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Single(handler.Calls);       // asked once: a list request is not retried
             AssertProblem(list, sentence, "llm.example.com");
@@ -1028,7 +1509,7 @@ namespace Kil0bitSystemMonitor.Tests
             var handler = Recorder.Failing(() => new HttpRequestException(
                 "No connection could be made because the target machine actively refused it. (llm.example.com:443) " + Key));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/secret-path/v1?token=abc"), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/secret-path/v1?token=abc"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             AssertProblem(list, Unreachable, "llm.example.com");
         }
@@ -1040,7 +1521,7 @@ namespace Kil0bitSystemMonitor.Tests
             var handler = new Recorder((_, _) => Task.FromResult(
                 new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new BrokenStream()) }));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             AssertProblem(list, Unreachable, "llm.example.com");
         }
@@ -1067,7 +1548,7 @@ namespace Kil0bitSystemMonitor.Tests
             var handler = Recorder.Failing(() => new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout.",
                 new TimeoutException("A task was canceled. " + Key)));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             AssertProblem(list, TimedOut, "llm.example.com");
             Assert.Equal(TimeSpan.FromSeconds(15), ModelCatalog.ListTimeout);
@@ -1086,7 +1567,7 @@ namespace Kil0bitSystemMonitor.Tests
             });
             var watch = Stopwatch.StartNew();
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler,
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler,
                 warn: null, timeout: TimeSpan.FromMilliseconds(300), CancellationToken.None);
 
             AssertProblem(list, TimedOut, "llm.example.com");
@@ -1102,7 +1583,7 @@ namespace Kil0bitSystemMonitor.Tests
                 new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StalledStream()) }));
             var watch = Stopwatch.StartNew();
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler,
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler,
                 warn: null, timeout: TimeSpan.FromMilliseconds(300), CancellationToken.None);
 
             AssertProblem(list, TimedOut, "llm.example.com");
@@ -1146,7 +1627,7 @@ namespace Kil0bitSystemMonitor.Tests
                 return Recorder.Reply(Data(Model("m")));
             });
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), handler, cancel.Token);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, cancel.Token);
 
             AssertProblem(list, Cancelled, "llm.example.com");
         }
@@ -1158,8 +1639,8 @@ namespace Kil0bitSystemMonitor.Tests
             var compatible = Recorder.Answering(Data(Model("m")));
             var claude = Recorder.Answering(ClaudePage(false, "claude-a", "claude-a", ClaudeModel("claude-a")));
 
-            AiModelList first = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), compatible, new CancellationToken(canceled: true));
-            AiModelList second = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), claude, new CancellationToken(canceled: true));
+            AiModelList first = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, compatible, new CancellationToken(canceled: true));
+            AiModelList second = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, claude, new CancellationToken(canceled: true));
 
             Assert.Empty(compatible.Calls);
             Assert.Empty(claude.Calls);
@@ -1173,7 +1654,7 @@ namespace Kil0bitSystemMonitor.Tests
             using var env = new AiTestEnv();
             var handler = Recorder.Failing(() => new InvalidOperationException("Something odd at https://llm.example.com/secret-path?token=abc with " + Key));
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/secret-path/v1?token=abc"), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/secret-path/v1?token=abc"), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             AssertProblem(list, Failed, "llm.example.com");
         }
@@ -1185,13 +1666,13 @@ namespace Kil0bitSystemMonitor.Tests
             var problems = new List<string?>();
             foreach (int status in new[] { 301, 400, 401, 403, 404, 418, 429, 500, 503, 529 })
             {
-                problems.Add((await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), Recorder.Answering("{}", (HttpStatusCode)status), CancellationToken.None)).Problem);
+                problems.Add((await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, Recorder.Answering("{}", (HttpStatusCode)status), CancellationToken.None)).Problem);
             }
-            problems.Add((await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), Recorder.Answering("<html>"), CancellationToken.None)).Problem);
-            problems.Add((await ModelCatalog.ListAsync(Compatible("ftp://llm.example.com"), Secrets(env), Recorder.Answering("[]"), CancellationToken.None)).Problem);
-            problems.Add((await ModelCatalog.ListAsync(new AppConfig(), Secrets(env), Recorder.Answering("[]"), CancellationToken.None)).Problem);
-            problems.Add((await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), Recorder.Failing(() => new HttpRequestException("x")), CancellationToken.None)).Problem);
-            problems.Add((await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), Recorder.Failing(() => new NotSupportedException("x")), CancellationToken.None)).Problem);
+            problems.Add((await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, Recorder.Answering("<html>"), CancellationToken.None)).Problem);
+            problems.Add((await ModelCatalog.ListAsync(Compatible("ftp://llm.example.com"), Secrets(env), ModelListReason.Settings, Recorder.Answering("[]"), CancellationToken.None)).Problem);
+            problems.Add((await ModelCatalog.ListAsync(new AppConfig(), Secrets(env), ModelListReason.Settings, Recorder.Answering("[]"), CancellationToken.None)).Problem);
+            problems.Add((await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, Recorder.Failing(() => new HttpRequestException("x")), CancellationToken.None)).Problem);
+            problems.Add((await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, Recorder.Failing(() => new NotSupportedException("x")), CancellationToken.None)).Problem);
 
             // The settings page puts "You can still type a model name." after it.
             Assert.All(problems, problem =>
@@ -1211,11 +1692,11 @@ namespace Kil0bitSystemMonitor.Tests
             var lines = new List<string>();
             AppConfig config = Compatible("https://user:pass@llm.example.com:8443/secret-path/v1?token=abc", "some-model");
 
-            await ModelCatalog.ListAsync(config, Secrets(env, compatibleKey: Key),
+            await ModelCatalog.ListAsync(config, Secrets(env, compatibleKey: Key), ModelListReason.Settings,
                 Recorder.Failing(() => new HttpRequestException("refused (llm.example.com:8443) " + Key)), lines.Add, CancellationToken.None);
-            await ModelCatalog.ListAsync(config, Secrets(env, compatibleKey: Key),
+            await ModelCatalog.ListAsync(config, Secrets(env, compatibleKey: Key), ModelListReason.Settings,
                 Recorder.Answering("{\"error\":\"" + Key + "\"}", HttpStatusCode.NotFound), lines.Add, CancellationToken.None);
-            await ModelCatalog.ListAsync(config, Secrets(env, compatibleKey: Key),
+            await ModelCatalog.ListAsync(config, Secrets(env, compatibleKey: Key), ModelListReason.Settings,
                 Recorder.Answering("<html>" + Key + "</html>"), lines.Add, CancellationToken.None);
 
             Assert.Equal(new[]
@@ -1234,10 +1715,10 @@ namespace Kil0bitSystemMonitor.Tests
             using var cancel = new CancellationTokenSource();
             cancel.Cancel();
 
-            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), Recorder.Answering(Data(Model("m"))), lines.Add, CancellationToken.None);
-            await ModelCatalog.ListAsync(Compatible("ftp://llm.example.com/v1"), Secrets(env), Recorder.Answering("[]"), lines.Add, CancellationToken.None);
-            await ModelCatalog.ListAsync(new AppConfig(), Secrets(env), Recorder.Answering("[]"), lines.Add, CancellationToken.None);
-            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), Recorder.Answering("[]"), lines.Add, cancel.Token);
+            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, Recorder.Answering(Data(Model("m"))), lines.Add, CancellationToken.None);
+            await ModelCatalog.ListAsync(Compatible("ftp://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, Recorder.Answering("[]"), lines.Add, CancellationToken.None);
+            await ModelCatalog.ListAsync(new AppConfig(), Secrets(env), ModelListReason.Settings, Recorder.Answering("[]"), lines.Add, CancellationToken.None);
+            await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings, Recorder.Answering("[]"), lines.Add, cancel.Token);
 
             Assert.Empty(lines);
         }
@@ -1247,7 +1728,7 @@ namespace Kil0bitSystemMonitor.Tests
         {
             using var env = new AiTestEnv();
 
-            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env),
+            AiModelList list = await ModelCatalog.ListAsync(Compatible("https://llm.example.com/v1"), Secrets(env), ModelListReason.Settings,
                 Recorder.Answering("", HttpStatusCode.NotFound), _ => throw new InvalidOperationException("the log is gone"), CancellationToken.None);
 
             AssertProblem(list, "The AI service said: HTTP 404.", "llm.example.com");
@@ -1264,7 +1745,7 @@ namespace Kil0bitSystemMonitor.Tests
                     ? ClaudePage(false, "claude-gamma", "claude-gamma", ClaudeModel("claude-gamma", 200_000, 8192))
                     : ClaudePage(true, "claude-alpha", "claude-beta", ClaudeModel("claude-alpha", 1_000_000, 128_000), ClaudeModel("claude-beta", 200_000, 64_000)))));
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key, compatibleKey: OtherKey), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key, compatibleKey: OtherKey), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal("api.anthropic.com", list.Host);
@@ -1299,7 +1780,7 @@ namespace Kil0bitSystemMonitor.Tests
             var handler = Recorder.Answering(ClaudePage(false, "claude-a", "claude-a", ClaudeModel("claude-a")));
 
             // The compatible server's key is not Claude's.
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, compatibleKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, compatibleKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Empty(handler.Calls);
             AssertProblem(list, NoKey, "api.anthropic.com");
@@ -1314,7 +1795,7 @@ namespace Kil0bitSystemMonitor.Tests
                 ClaudeModel("claude-half", window: 200_000, output: null),
                 ClaudeModel("claude-new", window: 200_000, output: 64_000)));
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal(new[]
@@ -1339,7 +1820,7 @@ namespace Kil0bitSystemMonitor.Tests
                 ClaudeModel(""),
                 ClaudeModel(new string('c', 5000))));
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal(new[]
@@ -1366,7 +1847,7 @@ namespace Kil0bitSystemMonitor.Tests
                           ClaudeModel("claude-good", 200_000, 64_000) +
                           "],\"has_more\":false,\"first_id\":\"a\",\"last_id\":\"z\"}";
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), Recorder.Answering(page), CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, Recorder.Answering(page), CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal(new[]
@@ -1389,7 +1870,7 @@ namespace Kil0bitSystemMonitor.Tests
                 return Task.FromResult(Recorder.Reply(ClaudePage(true, "claude-" + N(start), "claude-" + N(start + 99), models)));
             });
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal(500, list.Models.Count);
@@ -1405,7 +1886,7 @@ namespace Kil0bitSystemMonitor.Tests
             // The same page again and again: nothing new is learned and "has_more" stays true.
             var handler = Recorder.Answering(ClaudePage(true, "claude-a", "claude-b", ClaudeModel("claude-a"), ClaudeModel("claude-b")));
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal(new[] { "claude-a", "claude-b" }, list.Models.Select(m => m.Id));
@@ -1424,7 +1905,7 @@ namespace Kil0bitSystemMonitor.Tests
             string body = "{\"data\":[" + ClaudeModel("claude-a") + "]" + rest + (rest.EndsWith('}') ? "" : "}");
             var handler = Recorder.Answering(body);
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal(new AiModelInfo("claude-a", 200_000, 64_000), Assert.Single(list.Models));
@@ -1442,7 +1923,7 @@ namespace Kil0bitSystemMonitor.Tests
                 return Task.FromResult(Recorder.Reply(ClaudePage(true, id, id, ClaudeModel(id))));
             });
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Null(list.Problem);
             Assert.Equal(10, handler.Calls.Count);
@@ -1452,31 +1933,69 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public async Task Claude_ignores_gateway_variables_from_the_environment()
         {
-            string[] names = { "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_CUSTOM_HEADERS" };
-            string?[] before = names.Select(Environment.GetEnvironmentVariable).ToArray();
-            try
-            {
-                Environment.SetEnvironmentVariable("ANTHROPIC_BASE_URL", "https://proxy.invalid");
-                Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", "proxy-token");
-                Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", "x-api-key: " + OtherKey + "\nanthropic-version: 1999-01-01");
-                using var env = new AiTestEnv();
-                var handler = Recorder.Answering(ClaudePage(false, "claude-a", "claude-a", ClaudeModel("claude-a")));
+            using var saved = new SavedEnvironment("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_CUSTOM_HEADERS");
+            using var env = new AiTestEnv();
+            SecretStore secrets = Secrets(env, claudeKey: Key);
+            var handler = Recorder.Answering(ClaudePage(false, "claude-a", "claude-a", ClaudeModel("claude-a")));
+            Environment.SetEnvironmentVariable("ANTHROPIC_BASE_URL", "https://proxy.invalid");
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", "proxy-token");
+            // The SDK takes this one up once per process, with its first request, so the header can
+            // only show here in a run where this test sends that request. The test after this one
+            // is what pins the clear; the header is one that would do no harm for the rest of a run.
+            Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", "x-micastats-test: 1");
 
-                AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), secrets, ModelListReason.Settings, handler, CancellationToken.None);
 
-                Recorder.Call call = Assert.Single(handler.Calls);
-                Assert.Equal("api.anthropic.com", call.Address.Host);
-                Assert.Equal(Key, call.Header("x-api-key"));
-                Assert.False(call.Headers.ContainsKey("Authorization"));
-                Assert.NotEqual("1999-01-01", call.Header("anthropic-version"));
-                Assert.DoesNotContain("proxy-token", string.Concat(call.Headers.Values), StringComparison.Ordinal);
-                Assert.DoesNotContain(OtherKey, string.Concat(call.Headers.Values), StringComparison.Ordinal);
-                Assert.Null(list.Problem);
-            }
-            finally
-            {
-                for (int i = 0; i < names.Length; i++) Environment.SetEnvironmentVariable(names[i], before[i]);
-            }
+            Recorder.Call call = Assert.Single(handler.Calls);
+            Assert.Equal("api.anthropic.com", call.Address.Host);
+            Assert.Equal(Key, call.Header("x-api-key"));
+            Assert.False(call.Headers.ContainsKey("Authorization"));
+            Assert.False(call.Headers.ContainsKey("x-micastats-test"));
+            Assert.DoesNotContain("proxy-token", string.Concat(call.Headers.Values), StringComparison.Ordinal);
+            Assert.Null(list.Problem);
+        }
+
+        [Theory]
+        [InlineData("ANTHROPIC_BASE_URL")]
+        [InlineData("ANTHROPIC_AUTH_TOKEN")]
+        [InlineData("ANTHROPIC_CUSTOM_HEADERS")]
+        public async Task Listing_claude_s_models_clears_each_gateway_variable_of_the_process(string name)
+        {
+            using var saved = new SavedEnvironment("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_CUSTOM_HEADERS");
+            using var env = new AiTestEnv();
+            SecretStore secrets = Secrets(env, claudeKey: Key);
+            var handler = Recorder.Answering(ClaudePage(false, "claude-a", "claude-a", ClaudeModel("claude-a")));
+            Environment.SetEnvironmentVariable("ANTHROPIC_BASE_URL", "https://proxy.invalid");
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", "proxy-token");
+            Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", "x-micastats-test: 1");
+
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), secrets, ModelListReason.Settings, handler, CancellationToken.None);
+
+            Assert.Null(list.Problem);
+            Assert.Single(handler.Calls);
+            Assert.Null(Environment.GetEnvironmentVariable(name));
+        }
+
+        [Fact]
+        public async Task Claude_s_models_are_listed_whatever_profile_the_environment_names()
+        {
+            using var saved = new SavedEnvironment("ANTHROPIC_PROFILE", "ANTHROPIC_API_KEY", "ANTHROPIC_CONFIG_DIR");
+            using var env = new AiTestEnv();
+            SecretStore secrets = Secrets(env, claudeKey: Key);
+            var handler = Recorder.Answering(ClaudePage(false, "claude-a", "claude-a", ClaudeModel("claude-a")));
+            Environment.SetEnvironmentVariable("ANTHROPIC_PROFILE", "micastats-test-no-such-profile");
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            // An empty folder of this test, so the SDK does not look under %APPDATA%\Anthropic.
+            Environment.SetEnvironmentVariable("ANTHROPIC_CONFIG_DIR", env.PathOf("anthropic-config"));
+
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), secrets, ModelListReason.Settings, handler, CancellationToken.None);
+
+            Assert.Null(list.Problem);
+            Recorder.Call call = Assert.Single(handler.Calls);
+            Assert.Equal("api.anthropic.com", call.Address.Host);
+            Assert.Equal(Key, call.Header("x-api-key"));
+            Assert.False(call.Headers.ContainsKey("Authorization"));
+            Assert.False(call.Headers.ContainsKey("anthropic-workspace-id"));
         }
 
         [Theory]
@@ -1491,7 +2010,7 @@ namespace Kil0bitSystemMonitor.Tests
             var handler = Recorder.Answering(
                 "{\"type\":\"error\",\"error\":{\"type\":\"some_error\",\"message\":\"Server words about " + Key + "\"}}", (HttpStatusCode)status);
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             Assert.Equal(requests, handler.Calls.Count);
             AssertProblem(list, sentence, "api.anthropic.com");
@@ -1514,7 +2033,7 @@ namespace Kil0bitSystemMonitor.Tests
             var lines = new List<string>();
             var handler = Recorder.Answering(body);
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, lines.Add, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, lines.Add, CancellationToken.None);
 
             AssertProblem(list, NotAList, "api.anthropic.com");
             Assert.Single(handler.Calls);
@@ -1528,7 +2047,7 @@ namespace Kil0bitSystemMonitor.Tests
             var body = new EndlessSpaces();
             var handler = new Recorder((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(body) }));
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, CancellationToken.None);
 
             AssertProblem(list, TooLong, "api.anthropic.com");
             Assert.Single(handler.Calls);
@@ -1546,7 +2065,7 @@ namespace Kil0bitSystemMonitor.Tests
             });
             var watch = Stopwatch.StartNew();
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler,
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler,
                 warn: null, timeout: TimeSpan.FromMilliseconds(300), CancellationToken.None);
 
             AssertProblem(list, TimedOut, "api.anthropic.com");
@@ -1566,7 +2085,7 @@ namespace Kil0bitSystemMonitor.Tests
                 return Recorder.Reply(ClaudePage(true, id, id, ClaudeModel(id)));
             });
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler,
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler,
                 warn: null, timeout: TimeSpan.FromMilliseconds(700), CancellationToken.None);
 
             AssertProblem(list, TimedOut, "api.anthropic.com");
@@ -1580,7 +2099,7 @@ namespace Kil0bitSystemMonitor.Tests
             var lines = new List<string>();
             var handler = Recorder.Failing(() => new HttpRequestException("No such host is known. (api.anthropic.com:443) " + Key));
 
-            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), handler, lines.Add, CancellationToken.None);
+            AiModelList list = await ModelCatalog.ListAsync(new AppConfig(), Secrets(env, claudeKey: Key), ModelListReason.Settings, handler, lines.Add, CancellationToken.None);
 
             AssertProblem(list, Unreachable, "api.anthropic.com");
             Assert.Equal(3, handler.Calls.Count);       // retried twice by the SDK, as a question is

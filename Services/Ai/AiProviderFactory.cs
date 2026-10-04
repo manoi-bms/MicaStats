@@ -124,13 +124,23 @@ namespace Kil0bitSystemMonitor.Services.Ai
         internal static AnthropicClient NewAnthropicClient(string key, HttpClient http)
         {
             // MicaStats must talk only to api.anthropic.com with the user's own key. These variables
-            // belong to Claude Code gateways; the SDK would read them at construction and could
-            // redirect the traffic, add an Authorization header, or override anthropic-version.
+            // belong to Claude Code gateways, and the SDK could redirect the traffic, add an
+            // Authorization header, or override anthropic-version from them. They are cleared for
+            // the whole process, and it matters when: the SDK reads ANTHROPIC_CUSTOM_HEADERS once
+            // per process, the first time it makes the parameters of any request, and keeps what it
+            // read. The clear works because every Claude client is made here, before that client's
+            // first request: keep it so (a request's parameters made before this ran would fix
+            // the headers for the rest of the run).
             Environment.SetEnvironmentVariable("ANTHROPIC_BASE_URL", null);
             Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", null);
             Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", null);
 
-            return new AnthropicClient
+            // The options are whole before the client is made. A client made first and given its
+            // key afterwards (an object initializer) has no key while its constructor runs, so the
+            // SDK goes looking for credentials of its own: ANTHROPIC_PROFILE, ANTHROPIC_CONFIG_DIR,
+            // the federation variables, files under %APPDATA%\Anthropic. A profile that is not there
+            // then throws, and one that is adds its workspace header to every request.
+            return new AnthropicClient(new Anthropic.Core.ClientOptions
             {
                 ApiKey = key,
                 // The SDK would otherwise read ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN from the
@@ -140,7 +150,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 HttpClient = http,
                 // 429 and 529 are retried twice by the SDK before the Ask window says "busy".
                 MaxRetries = 2,
-            };
+            });
         }
 
         /// <summary>The HTTP client of a question: the network, or a test's handler in its place.</summary>

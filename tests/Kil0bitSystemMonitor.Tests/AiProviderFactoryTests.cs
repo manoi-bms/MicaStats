@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text.Json.Nodes;
@@ -13,6 +14,23 @@ namespace Kil0bitSystemMonitor.Tests
     [CollectionDefinition("AnthropicEnv", DisableParallelization = true)]
     public class AnthropicEnvCollection
     {
+    }
+
+    /// <summary>
+    /// Remembers environment variables of the process and puts them back when disposed: a test
+    /// that sets one leaves the process as it found it, whatever happens in between.
+    /// </summary>
+    internal sealed class SavedEnvironment : IDisposable
+    {
+        private readonly (string Name, string? Value)[] _saved;
+
+        public SavedEnvironment(params string[] names) =>
+            _saved = names.Select(name => (name, Environment.GetEnvironmentVariable(name))).ToArray();
+
+        public void Dispose()
+        {
+            foreach ((string name, string? value) in _saved) Environment.SetEnvironmentVariable(name, value);
+        }
     }
 
     [Collection("AnthropicEnv")]
@@ -263,6 +281,122 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("The key was rejected. Check it in Settings > AI.", AiErrorText.Describe(claudeError));
             Assert.Equal("The key was rejected. Check it in Settings > AI.", AiErrorText.Describe(openAiError));
             Assert.Single(claudeHandler.Requests);
+        }
+
+        // ----- What the environment of the process may not change ---------------------------------
+
+        /// <summary>
+        /// Making a Claude client clears the three gateway variables for the whole process. The SDK
+        /// reads ANTHROPIC_CUSTOM_HEADERS once per process, in the static constructor of its request
+        /// parameters, so a test that looks at a request cannot tell whether that clear is there
+        /// unless it happens to send the first request of the run. This one reads the variables.
+        /// </summary>
+        [Theory]
+        [InlineData("ANTHROPIC_BASE_URL")]
+        [InlineData("ANTHROPIC_AUTH_TOKEN")]
+        [InlineData("ANTHROPIC_CUSTOM_HEADERS")]
+        public void Making_a_claude_client_clears_each_gateway_variable_of_the_process(string name)
+        {
+            using var saved = new SavedEnvironment("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_CUSTOM_HEADERS");
+            using var env = new AiTestEnv();
+            SecretStore secrets = Secrets(env, claudeKey: "sk-ant-test");
+            var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.ClaudeText("Fine.")));
+            Environment.SetEnvironmentVariable("ANTHROPIC_BASE_URL", "https://proxy.invalid");
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", "proxy-token");
+            // A header that would do no harm if the SDK did take it up for the rest of the run.
+            Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", "x-micastats-test: 1");
+
+            AiClientResult result = AiProviderFactory.Create(new AppConfig(), secrets, handler);
+            using IChatClient? client = result.Client;
+
+            Assert.NotNull(client);
+            Assert.Null(Environment.GetEnvironmentVariable(name));
+            Assert.Empty(handler.Requests);
+        }
+
+        /// <summary>
+        /// A profile named in the environment is the SDK's own way to find credentials. MicaStats
+        /// gives the saved key and nothing else: a profile that does not exist must not stop a
+        /// question, and none may add to what is sent.
+        /// </summary>
+        [Fact]
+        public async Task Claude_uses_the_saved_key_whatever_profile_the_environment_names()
+        {
+            using var saved = new SavedEnvironment("ANTHROPIC_PROFILE", "ANTHROPIC_API_KEY", "ANTHROPIC_CONFIG_DIR");
+            using var env = new AiTestEnv();
+            SecretStore secrets = Secrets(env, claudeKey: "sk-ant-test");
+            var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.ClaudeText("Fine.")));
+            Environment.SetEnvironmentVariable("ANTHROPIC_PROFILE", "micastats-test-no-such-profile");
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            // The SDK looks for profiles under %APPDATA%\Anthropic unless told otherwise: an empty
+            // folder of this test, so nothing of the user's is looked at.
+            Environment.SetEnvironmentVariable("ANTHROPIC_CONFIG_DIR", env.PathOf("anthropic-config"));
+
+            AiClientResult result = AiProviderFactory.Create(new AppConfig(), secrets, handler);
+            Assert.Null(result.Problem);
+            using IChatClient client = result.Client!;
+            ChatResponse response = await client.GetResponseAsync("hi");
+
+            Assert.Equal("Fine.", response.Text);
+            ScriptedHttpHandler.Sent sent = Assert.Single(handler.Requests);
+            Assert.Equal("https://api.anthropic.com/v1/messages", sent.Url);
+            Assert.Equal("x-api-key=sk-ant-test", sent.Auth);
+            Assert.Equal("", sent.Authorization);
+            Assert.False(sent.Headers!.ContainsKey("anthropic-workspace-id"));
+        }
+
+        [Fact]
+        public async Task Claude_uses_the_saved_key_and_not_one_from_the_environment()
+        {
+            using var saved = new SavedEnvironment("ANTHROPIC_API_KEY");
+            using var env = new AiTestEnv();
+            SecretStore secrets = Secrets(env, claudeKey: "sk-ant-test");
+            var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.ClaudeText("Fine.")));
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-ant-from-the-environment");
+
+            using IChatClient client = AiProviderFactory.Create(new AppConfig(), secrets, handler).Client!;
+            await client.GetResponseAsync("hi");
+
+            ScriptedHttpHandler.Sent sent = Assert.Single(handler.Requests);
+            Assert.Equal("x-api-key=sk-ant-test", sent.Auth);
+            Assert.Equal("", sent.Authorization);
+            Assert.DoesNotContain("from-the-environment", string.Concat(sent.Headers!.Values), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// The same with a profile that does exist, in a folder of this test: its workspace, its
+        /// address and its token stay out of the request.
+        /// </summary>
+        [Fact]
+        public async Task A_profile_that_exists_adds_nothing_to_a_claude_request()
+        {
+            using var saved = new SavedEnvironment("ANTHROPIC_PROFILE", "ANTHROPIC_API_KEY", "ANTHROPIC_CONFIG_DIR");
+            using var env = new AiTestEnv();
+            SecretStore secrets = Secrets(env, claudeKey: "sk-ant-test");
+            var handler = new ScriptedHttpHandler(_ => (HttpStatusCode.OK, "application/json", ScriptedHttpHandler.ClaudeText("Fine.")));
+            string folder = env.PathOf("anthropic-config");
+            Directory.CreateDirectory(Path.Combine(folder, "configs"));
+            Directory.CreateDirectory(Path.Combine(folder, "credentials"));
+            File.WriteAllText(Path.Combine(folder, "configs", "micastats-test.json"),
+                "{\"authentication\":{\"type\":\"user_oauth\"},\"workspace_id\":\"wrkspc_micastats_test\",\"base_url\":\"https://proxy.invalid\"}");
+            File.WriteAllText(Path.Combine(folder, "credentials", "micastats-test.json"),
+                "{\"version\":\"1\",\"type\":\"oauth_token\",\"access_token\":\"profile-token\"}");
+            Environment.SetEnvironmentVariable("ANTHROPIC_PROFILE", "micastats-test");
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_CONFIG_DIR", folder);
+
+            AiClientResult result = AiProviderFactory.Create(new AppConfig(), secrets, handler);
+            Assert.Null(result.Problem);
+            using IChatClient client = result.Client!;
+            await client.GetResponseAsync("hi");
+
+            ScriptedHttpHandler.Sent sent = Assert.Single(handler.Requests);
+            Assert.Equal("https://api.anthropic.com/v1/messages", sent.Url);
+            Assert.Equal("x-api-key=sk-ant-test", sent.Auth);
+            Assert.Equal("", sent.Authorization);
+            Assert.False(sent.Headers!.ContainsKey("anthropic-workspace-id"));
+            Assert.DoesNotContain("profile-token", string.Concat(sent.Headers.Values), StringComparison.Ordinal);
+            Assert.DoesNotContain("wrkspc_micastats_test", string.Concat(sent.Headers.Values), StringComparison.Ordinal);
         }
     }
 }

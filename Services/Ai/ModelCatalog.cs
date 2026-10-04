@@ -20,7 +20,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
     /// <summary>
     /// One model of a provider's list, after cleaning: what a provider says is data, not trusted text.
     /// </summary>
-    /// <param name="Id">The model's id as plain text: at most 200 characters, no control or format characters, never empty.</param>
+    /// <param name="Id">The model's id as plain text: at most 200 characters, never empty, and without control, format, private-use or unassigned characters or any that show as nothing.</param>
     /// <param name="ContextTokens">Its context window in tokens, 1,024 to 2,000,000; 0 when the provider reported none.</param>
     /// <param name="MaxOutputTokens">Its largest output in tokens, 256 to 2,000,000 and never above the window; 0 when not reported.</param>
     public sealed record AiModelInfo(string Id, int ContextTokens, int MaxOutputTokens);
@@ -32,10 +32,27 @@ namespace Kil0bitSystemMonitor.Services.Ai
     public sealed record AiModelList(IReadOnlyList<AiModelInfo> Models, string? Problem, string Host);
 
     /// <summary>
-    /// Asks the provider of the AI settings for its models and their limits (spec 2026-10-05, 1.1 and
-    /// 1.2). The request goes only to the configured provider, with the saved key, and what comes
+    /// Why the provider is asked for its models. Listing sends the key to the provider, as a
+    /// question does, so the code that asks is told why and checks for itself (spec 1.3).
+    /// </summary>
+    public enum ModelListReason
+    {
+        /// <summary>The user is setting AI up in Settings → AI: asked whatever the AI switches say.</summary>
+        Settings,
+
+        /// <summary>
+        /// An AI request wants its model's limits: nothing is sent while every AI feature is off
+        /// (<see cref="AppConfig.AiAssistantEnabled"/> and <see cref="AppConfig.PadAiEnabled"/> both false).
+        /// </summary>
+        AiRequest,
+    }
+
+    /// <summary>
+    /// Asks the provider of the AI settings for its models and their limits (spec 2026-10-05, 1.1 to
+    /// 1.3). The request goes only to the configured provider, with the saved key, and what comes
     /// back is cleaned before anything else sees it: the server may be any machine the user pointed
-    /// the app at. Nothing here decides when to ask: the caller does, and never while AI is off.
+    /// the app at. The caller says why it asks (<see cref="ModelListReason"/>); asked for an AI
+    /// request, the catalog reads the AI switches itself, right before each request it sends.
     /// </summary>
     public static class ModelCatalog
     {
@@ -53,6 +70,10 @@ namespace Kil0bitSystemMonitor.Services.Ai
         internal const string TimedOut = "The AI service did not answer for 15 seconds. Try again.";
         internal const string Cancelled = "Loading the model list was cancelled.";
         internal const string Failed = "The model list could not be loaded.";
+        internal const string Redirects = "The server redirects to another address, and the model list does not follow it.";
+
+        /// <summary>The answer to <see cref="ModelListReason.AiRequest"/> while every AI feature is off: nothing was sent.</summary>
+        internal const string AiOff = "AI is off.";
 
         private const string ClaudeHost = "api.anthropic.com";
 
@@ -73,21 +94,24 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// Asks the provider of these settings for its models. Never throws for anything the settings,
         /// the network or the server do: a failure is a <see cref="AiModelList.Problem"/>. (A null
         /// <paramref name="config"/> or <paramref name="secrets"/> is the caller's mistake and throws.)
+        /// Asked for <see cref="ModelListReason.AiRequest"/> while every AI feature is off, nothing
+        /// is sent and the <see cref="AiModelList.Problem"/> is "AI is off.".
         /// <paramref name="handler"/> replaces the network for tests and is never disposed here.
         /// </summary>
-        public static Task<AiModelList> ListAsync(AppConfig config, SecretStore secrets, HttpMessageHandler? handler, CancellationToken ct) =>
-            ListAsync(config, secrets, handler, null, ListTimeout, ct);
+        public static Task<AiModelList> ListAsync(AppConfig config, SecretStore secrets, ModelListReason reason, HttpMessageHandler? handler, CancellationToken ct) =>
+            ListAsync(config, secrets, reason, handler, null, ListTimeout, ct);
 
         /// <summary>
         /// The same, and <paramref name="warn"/> is told of a failure in one line for the log: the
-        /// host and the kind of failure only, never a key, a path or query, or anything the server said.
+        /// host and the kind of failure only, never a key, a path or query, or anything the server
+        /// said. AI being off is not a failure: nothing is told then.
         /// </summary>
-        public static Task<AiModelList> ListAsync(AppConfig config, SecretStore secrets, HttpMessageHandler? handler,
+        public static Task<AiModelList> ListAsync(AppConfig config, SecretStore secrets, ModelListReason reason, HttpMessageHandler? handler,
                                                   Action<string>? warn, CancellationToken ct) =>
-            ListAsync(config, secrets, handler, warn, ListTimeout, ct);
+            ListAsync(config, secrets, reason, handler, warn, ListTimeout, ct);
 
         /// <summary>The same with another deadline, for tests.</summary>
-        internal static async Task<AiModelList> ListAsync(AppConfig config, SecretStore secrets, HttpMessageHandler? handler,
+        internal static async Task<AiModelList> ListAsync(AppConfig config, SecretStore secrets, ModelListReason reason, HttpMessageHandler? handler,
                                                           Action<string>? warn, TimeSpan timeout, CancellationToken ct)
         {
             ArgumentNullException.ThrowIfNull(config);
@@ -97,22 +121,26 @@ namespace Kil0bitSystemMonitor.Services.Ai
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             try
             {
-                // The settings and the key are read here, before the first wait, so one listing asks
-                // one provider even if the settings change while it runs.
+                // The provider, the address and the key are read here, before the first wait, so one
+                // listing asks one provider even if the settings change while it runs.
                 bool claude = config.AiProvider != AiProviders.OpenAiCompatible;
                 Uri? endpoint = null;
+                bool addressed = claude || AiProviderFactory.TryCompatibleEndpoint(config, out endpoint);
                 if (claude) host = ClaudeHost;
-                else if (AiProviderFactory.TryCompatibleEndpoint(config, out endpoint)) host = endpoint.Host;
-                else return new AiModelList(Array.Empty<AiModelInfo>(), AiProviderFactory.BadUrl, "");
+                else if (addressed) host = endpoint!.Host;
 
+                // The two switches are read anew each time this is asked: now, and by the handler
+                // chain right before each request. While AI is off not even the key is read.
+                Func<bool> maySend = () => MayAsk(reason, () => config.AiAssistantEnabled || config.PadAiEnabled);
+                if (!maySend()) return new AiModelList(Array.Empty<AiModelInfo>(), AiOff, host);
+
+                if (!addressed) return new AiModelList(Array.Empty<AiModelInfo>(), AiProviderFactory.BadUrl, "");
                 string? key = claude ? AiProviderFactory.ClaudeKey(secrets) : AiProviderFactory.CompatibleKey(secrets);
                 if (claude && key == null) return new AiModelList(Array.Empty<AiModelInfo>(), AiProviderFactory.NoKey, host);
                 if (ct.IsCancellationRequested) return new AiModelList(Array.Empty<AiModelInfo>(), Cancelled, host);
 
                 deadline.CancelAfter(timeout);
-                // Redirects are not followed, and no answer is read past MaxAnswerBytes, whoever reads it.
-                var capped = new CappedAnswers(handler ?? NewNetworkHandler());
-                using HttpClient http = AiProviderFactory.NewHttpClient(capped, owned: handler == null, timeout);
+                using HttpClient http = AiProviderFactory.NewHttpClient(NewListHandler(handler, maySend), owned: handler == null, timeout);
 
                 IReadOnlyList<AiModelInfo> models = claude
                     ? await ListClaudeAsync(key!, http, deadline.Token).ConfigureAwait(false)
@@ -121,6 +149,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
             }
             catch (Exception ex)
             {
+                // AI was turned off while the listing ran: what was read so far is not given, and it is no failure.
+                if (Find<AiOffException>(ex) != null) return new AiModelList(Array.Empty<AiModelInfo>(), AiOff, host);
                 if (ct.IsCancellationRequested) return new AiModelList(Array.Empty<AiModelInfo>(), Cancelled, host);
 
                 (string problem, string kind) = Explain(ex, deadline.IsCancellationRequested);
@@ -130,17 +160,35 @@ namespace Kil0bitSystemMonitor.Services.Ai
         }
 
         /// <summary>
-        /// The network for a list request: as a question's, except that no redirect is followed. A
-        /// redirect could carry the key to another host (Claude's travels in a header of its own,
-        /// which the handler would not drop), so one is a failure here.
+        /// Whether a listing may send a request now. For <see cref="ModelListReason.Settings"/>,
+        /// always: the switches are not read. For anything else, only while <paramref name="anyAiOn"/>
+        /// says an AI feature is on; a switch that cannot be read counts as off.
         /// </summary>
-        internal static HttpMessageHandler NewNetworkHandler() => new SocketsHttpHandler { AllowAutoRedirect = false };
+        internal static bool MayAsk(ModelListReason reason, Func<bool> anyAiOn)
+        {
+            if (reason == ModelListReason.Settings) return true;
+            try { return anyAiOn(); }
+            catch (Exception) { return false; }
+        }
+
+        /// <summary>
+        /// The whole handler chain of a list request, and the only place one is made: the network
+        /// (or <paramref name="handler"/>, a test's, in its place), and above it the handler every
+        /// request of a listing passes through. That one asks <paramref name="maySend"/> right before
+        /// each request and reads no answer past <see cref="MaxAnswerBytes"/>. The network follows no
+        /// redirect: one could carry the key to another host (Claude's travels in a header of its
+        /// own, which the network handler would not drop), so a redirect is a failure here.
+        /// </summary>
+        internal static HttpMessageHandler NewListHandler(HttpMessageHandler? handler, Func<bool> maySend) =>
+            ListRequests.Over(handler ?? new SocketsHttpHandler { AllowAutoRedirect = false }, maySend);
 
         // ----- Claude: through the SDK ------------------------------------------------------------
 
         private static async Task<IReadOnlyList<AiModelInfo>> ListClaudeAsync(string key, HttpClient http, CancellationToken ct)
         {
-            // The same client a question uses: this key, api.anthropic.com only, two retries.
+            // The same client a question uses: this key, api.anthropic.com only, two retries. It is
+            // made before the first request parameters below: making it clears the gateway variables,
+            // and the SDK reads one of them the first time any request parameters are made.
             using AnthropicClient client = AiProviderFactory.NewAnthropicClient(key, http);
             var kept = new List<AiModelInfo>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -196,7 +244,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             // The status alone decides: the body of a refusal is the server's own words, and none of it is used.
             if (!response.IsSuccessStatusCode) throw new HttpRequestException(null, null, response.StatusCode);
 
-            // Already whole and at most MaxAnswerBytes: CappedAnswers read it.
+            // Already whole and at most MaxAnswerBytes: the handler chain read it.
             byte[] body = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
             if (!TryParseCompatible(body, out IReadOnlyList<AiModelInfo> models)) throw new NotAListException();
             return models;
@@ -222,7 +270,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
         /// <summary>
         /// Reads a compatible server's answer. False when it is not a list of models at all (not
-        /// JSON, or JSON of another shape); true with what could be kept otherwise, which may be nothing.
+        /// JSON, JSON of another shape, or a root that cannot be read); true with what could be kept
+        /// otherwise, which may be nothing. Never throws, whatever the bytes are.
         /// </summary>
         internal static bool TryParseCompatible(ReadOnlyMemory<byte> utf8, out IReadOnlyList<AiModelInfo> models)
         {
@@ -246,9 +295,19 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 foreach (JsonElement item in list.EnumerateArray())
                 {
                     if (kept.Count >= MaxModels) break;
-                    if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("id", out JsonElement id)) continue;
-                    Keep(kept, seen, TextOf(id), FirstTokens(item, WindowFields, "meta", "n_ctx_train", MinWindow),
-                         FirstTokens(item, OutputFields, "top_provider", "max_completion_tokens", MinOutput));
+                    if (item.ValueKind != JsonValueKind.Object) continue;
+                    try
+                    {
+                        if (!item.TryGetProperty("id", out JsonElement id)) continue;
+                        Keep(kept, seen, TextOf(id), FirstTokens(item, WindowFields, "meta", "n_ctx_train", MinWindow),
+                             FirstTokens(item, OutputFields, "top_provider", "max_completion_tokens", MinOutput));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // A member name of this entry, or of its meta or top_provider, is not text:
+                        // half a surrogate pair, escaped. System.Text.Json throws from the lookup
+                        // that has to compare such a name. The entry is dropped, the others stay.
+                    }
                 }
                 models = kept;
                 return true;
@@ -256,6 +315,11 @@ namespace Kil0bitSystemMonitor.Services.Ai
             catch (JsonException)
             {
                 // Not JSON, or nested deeper than a model list ever is.
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                // A member name of the root is not text (see above): no "data" can be looked up in it.
                 return false;
             }
         }
@@ -317,10 +381,12 @@ namespace Kil0bitSystemMonitor.Services.Ai
         }
 
         /// <summary>
-        /// A model id as plain text for a list: control characters, format characters (the
-        /// right-to-left override is one), line and paragraph separators and halves of surrogate
-        /// pairs are removed, surrounding white space is trimmed, and at most
-        /// <see cref="MaxIdChars"/> characters are kept, never ending in half a pair. "" when nothing is left.
+        /// A model id as plain text for a list. Removed, by code point: control characters, format
+        /// characters (the right-to-left override is one), line and paragraph separators, private-use
+        /// characters, code points not assigned to anything, halves of surrogate pairs, and the
+        /// characters that show as nothing (<see cref="ShowsAsNothing"/>). Surrounding white space is
+        /// trimmed, and at most <see cref="MaxIdChars"/> characters are kept, never ending in half a
+        /// pair. "" when nothing is left, which drops the model.
         /// </summary>
         internal static string CleanId(string? raw)
         {
@@ -339,7 +405,9 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
                 UnicodeCategory category = Rune.GetUnicodeCategory(rune);
                 if (category is UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.LineSeparator
-                    or UnicodeCategory.ParagraphSeparator or UnicodeCategory.Surrogate) continue;
+                    or UnicodeCategory.ParagraphSeparator or UnicodeCategory.Surrogate or UnicodeCategory.PrivateUse
+                    or UnicodeCategory.OtherNotAssigned) continue;
+                if (ShowsAsNothing(rune.Value)) continue;
                 if (text.Length == 0 && Rune.IsWhiteSpace(rune)) continue;
                 // Whole characters only: one that does not fit is left out, and nothing after it is read.
                 if (text.Length + rune.Utf16SequenceLength > MaxIdChars) break;
@@ -351,6 +419,16 @@ namespace Kil0bitSystemMonitor.Services.Ai
             while (end > 0 && char.IsWhiteSpace(text[end - 1])) end--;
             return text.ToString(0, end);
         }
+
+        /// <summary>
+        /// Characters that are text to Unicode and nothing to the eye: the combining grapheme joiner,
+        /// the Hangul fillers, the blank braille pattern, and the variation selectors (Mongolian,
+        /// 1 to 16, and 17 to 256 outside the basic plane). Named one by one on purpose: most are
+        /// non-spacing marks, and so are the Thai vowels and tone marks, which are never removed.
+        /// </summary>
+        private static bool ShowsAsNothing(int codePoint) =>
+            codePoint is 0x034F or 0x115F or 0x1160 or 0x2800 or 0x3164 or 0xFFA0 or 0x180F
+                or (>= 0x180B and <= 0x180D) or (>= 0xFE00 and <= 0xFE0F) or (>= 0xE0100 and <= 0xE01EF);
 
         // ----- What limits belong to -------------------------------------------------------------
 
@@ -387,6 +465,11 @@ namespace Kil0bitSystemMonitor.Services.Ai
         {
         }
 
+        /// <summary>A request of a listing asked for an AI request was about to be sent while every AI feature is off: it was not.</summary>
+        private sealed class AiOffException : Exception
+        {
+        }
+
         /// <summary>
         /// The sentence for the user and the word for the log. Neither is built from an exception's
         /// message or a response body: those can quote an address, a key or the server's own text.
@@ -401,8 +484,11 @@ namespace Kil0bitSystemMonitor.Services.Ai
             HttpStatusCode? status = Find<AnthropicApiException>(ex)?.StatusCode ?? Find<HttpRequestException>(ex)?.StatusCode;
             if (status is HttpStatusCode code)
             {
+                string number = "HTTP " + ((int)code).ToString(CultureInfo.InvariantCulture);
+                // A redirect is not followed (see NewListHandler); where it points is never read or told.
+                if ((int)code is >= 300 and < 400) return (Redirects, number);
                 string said = AiErrorText.Describe(new HttpRequestException(null, null, code));
-                return (said.EndsWith('.') ? said : said + ".", "HTTP " + ((int)code).ToString(CultureInfo.InvariantCulture));
+                return (said.EndsWith('.') ? said : said + ".", number);
             }
 
             // Ours for a compatible server; the other two are the SDK failing to read a page of Claude's models.
@@ -442,18 +528,26 @@ namespace Kil0bitSystemMonitor.Services.Ai
         }
 
         /// <summary>
-        /// Reads every answer whole, up to <see cref="MaxAnswerBytes"/>, before anything else sees it:
-        /// a longer one is a failure and is not read further. It sits under the HTTP client, so the
-        /// Anthropic SDK is held to the same limit as the plain request.
+        /// The handler every request of a listing passes through, whoever sends it (the plain request
+        /// to a compatible server; the Anthropic SDK with its pages and its retries). It sits right
+        /// above the network, and does two things:
+        /// it asks whether the request may be sent, and sends nothing after a no;
+        /// it reads the answer whole, up to <see cref="MaxAnswerBytes"/>, before anything else sees
+        /// it: a longer one is a failure and is not read further.
+        /// Only <see cref="Over"/> makes one, so a listing cannot have a client without both.
         /// </summary>
-        private sealed class CappedAnswers : DelegatingHandler
+        private sealed class ListRequests : DelegatingHandler
         {
-            public CappedAnswers(HttpMessageHandler inner) : base(inner)
-            {
-            }
+            private readonly Func<bool> _maySend;
+
+            private ListRequests(HttpMessageHandler inner, Func<bool> maySend) : base(inner) => _maySend = maySend;
+
+            public static ListRequests Over(HttpMessageHandler inner, Func<bool> maySend) => new(inner, maySend);
 
             protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
+                // Asked and sent in one go: nothing is awaited between the answer and the send.
+                if (!_maySend()) throw new AiOffException();
                 HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
                 try
                 {

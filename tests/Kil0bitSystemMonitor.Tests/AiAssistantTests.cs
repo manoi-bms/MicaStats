@@ -126,6 +126,24 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void The_system_prompt_ends_its_rules_by_saying_what_an_answer_can_show()
+        {
+            string[] lines = AiPrompts.System.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            int rules = Array.IndexOf(lines, "Rules:");
+            string[] last = lines.Skip(rules + 1).Where(l => l.StartsWith("- ", StringComparison.Ordinal)).TakeLast(3).ToArray();
+
+            Assert.Equal("- Paths under the user's folder appear as %USERPROFILE%; the computer name, user name and network addresses are removed for privacy.", last[0]);
+            Assert.Equal("- Your answer is shown as rendered Markdown: headings, bold, lists, tables and fenced code blocks. "
+                         + "Use a table to compare numbers across several items (processes, disks, days), and a fenced code block with its language for commands or code. "
+                         + "No HTML and no images.", last[1]);
+            Assert.Equal("- A fenced code block that starts with ```mermaid is drawn as a diagram. "
+                         + "Use one only when a picture explains better than text: \"pie\" for shares of a whole, \"xychart-beta\" for a value over time, \"flowchart\" for steps or causes. "
+                         + "Keep it small (at most about 12 items), put labels that hold punctuation in double quotes, "
+                         + "and always give the key numbers in text or a table too, because a diagram that cannot be drawn is shown as its source.", last[2]);
+            Assert.Equal(3, System.Text.RegularExpressions.Regex.Match(AiPrompts.System, "`+mermaid").Value.Length - "mermaid".Length);   // exactly three backticks
+        }
+
+        [Fact]
         public async Task The_previous_exchange_is_sent_with_the_next_question()
         {
             _model.Reply("First.").Reply("Second.");

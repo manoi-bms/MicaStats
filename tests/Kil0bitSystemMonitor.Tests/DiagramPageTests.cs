@@ -154,6 +154,52 @@ namespace Kil0bitSystemMonitor.Tests
             }
         });
 
+        /// <summary>
+        /// Every Mermaid type the two system prompts name, with a small source shaped like what
+        /// models wrote when asked. "graph" is not named by a prompt: it is the older word for a
+        /// flowchart, which models still write.
+        /// </summary>
+        private static readonly (string Type, string Source)[] PromptedMermaidSamples =
+        {
+            ("pie", "pie showData\n    title Memory by process\n    \"Chrome\" : 4.2\n    \"Visual Studio\" : 2.8\n    \"Teams\" : 1.1\n    \"Other\" : 3.5"),
+            ("xychart-beta", "xychart-beta\n    title \"CPU temperature (" + (char)0xB0 + "C), last hour\"\n    x-axis [\"13:00\",\"13:10\",\"13:20\",\"13:30\",\"13:40\",\"13:50\",\"14:00\"]\n    y-axis \"deg C\" 55 --> 85\n    line [61,64,70,77,82,79,78]"),
+            ("flowchart", "flowchart TD\n    A[Slow PC] --> B{Disk at 100%?}\n    B -->|Yes| C[Check top processes]\n    B -->|No| D[Check memory]\n    C --> E[End the busy process]\n    D --> E"),
+            ("graph", "graph TD\n    A[Open PR] --> B[CI: Unit Tests & Linter]\n    B -- Fail --> A\n    B -- Pass --> C[Reviewer Approval]"),
+        };
+
+        [Fact]
+        public void Every_mermaid_type_a_prompt_names_draws_a_picture() => WithPage(async page =>
+        {
+            foreach (var (type, source) in PromptedMermaidSamples)
+            {
+                var drawing = await Draw(page, "mermaid", source);
+
+                Assert.True(drawing.Error == null, type + ": " + drawing.Error);
+                Assert.True(drawing.Width > 0 && drawing.Height > 0, type + " has no size");
+                var (width, height) = PngSize(drawing.Png!);
+                _output.WriteLine(type + ": " + width + " x " + height + " px");
+                Assert.True(width > 0 && height > 0, type + " has an empty picture");
+            }
+            Assert.Equal(0, page.RefusedRequests);   // drawing asked the network for nothing
+        });
+
+        [Fact]
+        public void Every_mermaid_type_the_prompts_quote_is_one_the_drawing_test_covers()
+        {
+            var covered = PromptedMermaidSamples.Select(s => s.Type).ToHashSet(StringComparer.Ordinal);
+            var quoted = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+            foreach (string prompt in new[] { Kil0bitSystemMonitor.Services.Ai.AiPrompts.System, Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrompts.System })
+                foreach (string line in prompt.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+                    if (line.Contains("```mermaid", StringComparison.Ordinal))
+                        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(line, "\"([a-z][a-z-]*)\""))
+                            quoted.Add(m.Groups[1].Value);
+
+            Assert.Contains("xychart-beta", quoted);   // the extraction finds the rule, so an empty set cannot pass
+            Assert.Contains("pie", quoted);
+            Assert.Contains("flowchart", quoted);
+            Assert.All(quoted, t => Assert.Contains(t, covered));
+        }
+
         [Fact]
         public void Syntax_errors_come_back_as_messages() => WithPage(async page =>
         {

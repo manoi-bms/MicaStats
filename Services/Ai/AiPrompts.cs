@@ -32,6 +32,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
             - Never suggest ending Windows system processes (System, csrss, wininit, services, smss, lsass, winlogon, svchost).
             - Keep answers short and practical: the likely cause first, then what to do. Use a short list when it helps.
             - Paths under the user's folder appear as %USERPROFILE%; the computer name, user name and network addresses are removed for privacy.
+            - Your answer is shown as rendered Markdown: headings, bold, lists, tables and fenced code blocks. Use a table to compare numbers across several items (processes, disks, days), and a fenced code block with its language for commands or code. No HTML and no images.
+            - A fenced code block that starts with ```mermaid is drawn as a diagram. Use one only when a picture explains better than text: "pie" for shares of a whole, "xychart-beta" for a value over time, "flowchart" for steps or causes. Keep it small (at most about 12 items), put labels that hold punctuation in double quotes, and always give the key numbers in text or a table too, because a diagram that cannot be drawn is shown as its source.
             """;
 
         /// <summary>

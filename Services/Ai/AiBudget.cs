@@ -67,7 +67,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             int ask = Math.Clamp(w / 8, 2000, 16000);
             int pad = Math.Clamp(w / 4, 2048, 32000);
             // A largest output the provider reported caps both; it never raises them, and may take them below their floor.
-            if (reportedOutput > 0)
+            if (reportedOutput >= 256)   // under 256 counts as not reported: 1 to 4 would make the rewrite input zero
             {
                 ask = Math.Min(ask, reportedOutput);
                 pad = Math.Min(pad, reportedOutput);

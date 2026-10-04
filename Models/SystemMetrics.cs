@@ -716,6 +716,10 @@ namespace Kil0bitSystemMonitor.Models
         private bool _aiNotesInMcp;
         private string _aiMcpMode = Kil0bitSystemMonitor.Services.Ai.AiMcpModes.Off;
         private int _aiMcpHttpPort = 47831;
+        private int _aiContextWindow;
+        private int _aiModelContext;
+        private int _aiModelOutput;
+        private string _aiModelLimitsOf = "";
 
         /// <summary>The Ask window, the Explain buttons and the AI hotkey.</summary>
         public bool AiAssistantEnabled { get => _aiAssistantEnabled; set { Set(ref _aiAssistantEnabled, value); } }
@@ -788,6 +792,67 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>Loopback port of the local HTTP MCP server; kept out of the privileged range.</summary>
         public int AiMcpHttpPort { get => _aiMcpHttpPort; set { Set(ref _aiMcpHttpPort, Math.Clamp(value, 1024, 65535)); } }
+
+        // ----- The model's limits (spec 2026-10-05) -----
+        // The names start with "Ai" on purpose, like every AI setting. Setting the provider, a model or
+        // the base URL does not clear the three learned values: whoever reads them ignores them while
+        // AiModelLimitsOf differs from ModelCatalog.KeyOf of the current settings.
+
+        private const int MinAiWindow = 1024;
+        private const int MinAiOutput = 256;
+        private const int MaxAiTokens = 2_000_000;
+        private const int MaxAiLimitsOfChars = 600;
+
+        /// <summary>
+        /// The context window the user set, in tokens. 0 is Auto (what the provider reported); any
+        /// other number is held within 1,024 and 2,000,000, and a negative one is Auto.
+        /// </summary>
+        public int AiContextWindow
+        {
+            get => _aiContextWindow;
+            set { Set(ref _aiContextWindow, value <= 0 ? 0 : Math.Clamp(value, MinAiWindow, MaxAiTokens)); }
+        }
+
+        /// <summary>
+        /// The window the provider last reported for the chosen model, in tokens; 0 when it reported
+        /// none. Under 1,024 is none, over 2,000,000 is 2,000,000.
+        /// </summary>
+        public int AiModelContext
+        {
+            get => _aiModelContext;
+            set { Set(ref _aiModelContext, value < MinAiWindow ? 0 : Math.Min(value, MaxAiTokens)); }
+        }
+
+        /// <summary>
+        /// The largest output the provider last reported for the chosen model, in tokens; 0 when it
+        /// reported none. Under 256 is none, over 2,000,000 is 2,000,000.
+        /// </summary>
+        public int AiModelOutput
+        {
+            get => _aiModelOutput;
+            set { Set(ref _aiModelOutput, value < MinAiOutput ? 0 : Math.Min(value, MaxAiTokens)); }
+        }
+
+        /// <summary>
+        /// What <see cref="AiModelContext"/> and <see cref="AiModelOutput"/> were learned for:
+        /// <c>ModelCatalog.KeyOf</c> at that time (provider, address and model; never a key). Empty
+        /// when nothing was learned. Trimmed, and at most 600 characters.
+        /// </summary>
+        public string AiModelLimitsOf
+        {
+            get => _aiModelLimitsOf;
+            set
+            {
+                string text = value?.Trim() ?? "";
+                if (text.Length > MaxAiLimitsOfChars)
+                {
+                    // Not through the middle of a surrogate pair: half of one is not text.
+                    int keep = char.IsHighSurrogate(text[MaxAiLimitsOfChars - 1]) ? MaxAiLimitsOfChars - 1 : MaxAiLimitsOfChars;
+                    text = text[..keep].Trim();
+                }
+                Set(ref _aiModelLimitsOf, text);
+            }
+        }
 
         /// <summary>
         /// The Ask MicaStats window's width, remembered from the last time it closed. Stored within

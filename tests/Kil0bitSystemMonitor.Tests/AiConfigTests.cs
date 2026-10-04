@@ -145,9 +145,215 @@ namespace Kil0bitSystemMonitor.Tests
             config.AiHistoryEnabled = true;
             config.AiMcpMode = AiMcpModes.Stdio;
             config.AiMcpHttpPort = 50000;
+            config.AiContextWindow = 32000;
+            config.AiModelContext = 262144;
+            config.AiModelOutput = 8192;
+            config.AiModelLimitsOf = "OpenAiCompatible|http://127.0.0.1:1234|llama3.2";
 
-            Assert.Equal(10, names.Distinct().Count());
+            Assert.Equal(14, names.Distinct().Count());
             Assert.All(names, name => Assert.StartsWith("Ai", name, StringComparison.Ordinal));
+        }
+
+        // ----- The model's limits (spec 2026-10-05, 1.3 and 2.3) ------------------------------
+
+        [Fact]
+        public void The_model_limit_settings_start_as_auto_and_never_learned()
+        {
+            var config = new AppConfig();
+
+            Assert.Equal(0, config.AiContextWindow);
+            Assert.Equal(0, config.AiModelContext);
+            Assert.Equal(0, config.AiModelOutput);
+            Assert.Equal("", config.AiModelLimitsOf);
+        }
+
+        [Fact]
+        public void An_older_config_without_the_model_limit_settings_gets_auto_and_never_learned()
+        {
+            var config = JsonSerializer.Deserialize<AppConfig>("{\"AiClaudeModel\": \"claude-sonnet-5-5\"}")!;
+
+            Assert.Equal("claude-sonnet-5-5", config.AiClaudeModel);
+            Assert.Equal(0, config.AiContextWindow);
+            Assert.Equal(0, config.AiModelContext);
+            Assert.Equal(0, config.AiModelOutput);
+            Assert.Equal("", config.AiModelLimitsOf);
+        }
+
+        [Theory]
+        [InlineData(0, 0)]                       // Auto
+        [InlineData(-1, 0)]
+        [InlineData(int.MinValue, 0)]
+        [InlineData(1, 1024)]
+        [InlineData(1023, 1024)]
+        [InlineData(1024, 1024)]
+        [InlineData(262_144, 262_144)]
+        [InlineData(2_000_000, 2_000_000)]
+        [InlineData(2_000_001, 2_000_000)]
+        [InlineData(int.MaxValue, 2_000_000)]
+        public void The_users_context_window_is_auto_or_from_1024_to_two_million(int set, int expected)
+        {
+            var config = new AppConfig { AiContextWindow = 64_000 };
+
+            config.AiContextWindow = set;
+
+            Assert.Equal(expected, config.AiContextWindow);
+        }
+
+        [Theory]
+        [InlineData(0, 0)]                       // not reported
+        [InlineData(-5, 0)]
+        [InlineData(int.MinValue, 0)]
+        [InlineData(1, 0)]
+        [InlineData(1023, 0)]
+        [InlineData(1024, 1024)]
+        [InlineData(262_144, 262_144)]
+        [InlineData(2_000_000, 2_000_000)]
+        [InlineData(2_000_001, 2_000_000)]
+        [InlineData(int.MaxValue, 2_000_000)]
+        public void A_learned_window_is_unknown_or_from_1024_to_two_million(int set, int expected)
+        {
+            var config = new AppConfig { AiModelContext = 64_000 };
+
+            config.AiModelContext = set;
+
+            Assert.Equal(expected, config.AiModelContext);
+        }
+
+        [Theory]
+        [InlineData(0, 0)]                       // not reported
+        [InlineData(-5, 0)]
+        [InlineData(int.MinValue, 0)]
+        [InlineData(1, 0)]
+        [InlineData(255, 0)]
+        [InlineData(256, 256)]
+        [InlineData(8192, 8192)]
+        [InlineData(2_000_000, 2_000_000)]
+        [InlineData(2_000_001, 2_000_000)]
+        [InlineData(int.MaxValue, 2_000_000)]
+        public void A_learned_output_is_unknown_or_from_256_to_two_million(int set, int expected)
+        {
+            var config = new AppConfig { AiModelOutput = 4096 };
+
+            config.AiModelOutput = set;
+
+            Assert.Equal(expected, config.AiModelOutput);
+        }
+
+        [Fact]
+        public void What_the_learned_limits_belong_to_is_trimmed_and_at_most_600_characters()
+        {
+            var config = new AppConfig();
+
+            config.AiModelLimitsOf = "  Claude|https://api.anthropic.com|claude-haiku-4-5 \r\n";
+            Assert.Equal("Claude|https://api.anthropic.com|claude-haiku-4-5", config.AiModelLimitsOf);
+
+            config.AiModelLimitsOf = null!;
+            Assert.Equal("", config.AiModelLimitsOf);
+
+            config.AiModelLimitsOf = "   ";
+            Assert.Equal("", config.AiModelLimitsOf);
+
+            config.AiModelLimitsOf = new string('k', 600);
+            Assert.Equal(600, config.AiModelLimitsOf.Length);
+
+            config.AiModelLimitsOf = new string('k', 5000);
+            Assert.Equal(new string('k', 600), config.AiModelLimitsOf);
+        }
+
+        [Fact]
+        public void A_cut_at_600_characters_never_leaves_half_a_surrogate_pair()
+        {
+            // U+1F600 is two UTF-16 units, here at 599 and 600: the cut at 600 would keep only the first.
+            string pair = char.ConvertFromUtf32(0x1F600);
+            var config = new AppConfig { AiModelLimitsOf = new string('k', 599) + pair + "tail" };
+
+            Assert.Equal(new string('k', 599), config.AiModelLimitsOf);
+            // What is kept must be writable to config.json and come back the same.
+            var back = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(config))!;
+            Assert.Equal(config.AiModelLimitsOf, back.AiModelLimitsOf);
+        }
+
+        [Fact]
+        public void The_model_limit_settings_survive_a_round_trip()
+        {
+            var config = new AppConfig
+            {
+                AiContextWindow = 128_000,
+                AiModelContext = 262_144,
+                AiModelOutput = 16_384,
+                AiModelLimitsOf = "OpenAiCompatible|https://llm.example.com:8443|org/Some-Model",
+            };
+
+            var back = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(config))!;
+
+            Assert.Equal(128_000, back.AiContextWindow);
+            Assert.Equal(262_144, back.AiModelContext);
+            Assert.Equal(16_384, back.AiModelOutput);
+            Assert.Equal("OpenAiCompatible|https://llm.example.com:8443|org/Some-Model", back.AiModelLimitsOf);
+        }
+
+        [Fact]
+        public void A_config_file_with_limits_out_of_range_is_read_as_the_nearest_valid_ones()
+        {
+            // config.json is a file people edit by hand; what is read goes through the same setters.
+            var config = JsonSerializer.Deserialize<AppConfig>(
+                "{\"AiContextWindow\": -7, \"AiModelContext\": 12, \"AiModelOutput\": 99999999, \"AiModelLimitsOf\": null}")!;
+
+            Assert.Equal(0, config.AiContextWindow);
+            Assert.Equal(0, config.AiModelContext);
+            Assert.Equal(2_000_000, config.AiModelOutput);
+            Assert.Equal("", config.AiModelLimitsOf);
+
+            var small = JsonSerializer.Deserialize<AppConfig>("{\"AiContextWindow\": 500, \"AiModelOutput\": 100}")!;
+            Assert.Equal(1024, small.AiContextWindow);
+            Assert.Equal(0, small.AiModelOutput);
+        }
+
+        [Fact]
+        public void Changing_the_provider_the_model_or_the_address_keeps_the_learned_limits()
+        {
+            // They are not cleared: whoever reads them compares AiModelLimitsOf with ModelCatalog.KeyOf.
+            var config = new AppConfig
+            {
+                AiContextWindow = 64_000,
+                AiModelContext = 262_144,
+                AiModelOutput = 16_384,
+                AiModelLimitsOf = "Claude|https://api.anthropic.com|claude-haiku-4-5",
+            };
+
+            config.AiProvider = AiProviders.OpenAiCompatible;
+            config.AiClaudeModel = "claude-sonnet-5-5";
+            config.AiCompatibleBaseUrl = "https://llm.example.com/v1";
+            config.AiCompatibleModel = "some-model";
+
+            Assert.Equal(64_000, config.AiContextWindow);
+            Assert.Equal(262_144, config.AiModelContext);
+            Assert.Equal(16_384, config.AiModelOutput);
+            Assert.Equal("Claude|https://api.anthropic.com|claude-haiku-4-5", config.AiModelLimitsOf);
+        }
+
+        [Fact]
+        public void A_limit_set_to_the_value_it_has_notifies_nobody()
+        {
+            // App re-applies the AI wiring on every Ai* notice; a refresh that learns the same numbers must cost nothing.
+            var config = new AppConfig
+            {
+                AiContextWindow = 64_000,
+                AiModelContext = 262_144,
+                AiModelOutput = 16_384,
+                AiModelLimitsOf = "Claude|https://api.anthropic.com|claude-haiku-4-5",
+            };
+            int notices = 0;
+            config.PropertyChanged += (s, e) => notices++;
+
+            config.AiContextWindow = 64_000;
+            config.AiModelContext = 262_144;
+            config.AiModelOutput = 16_384;
+            config.AiModelLimitsOf = " Claude|https://api.anthropic.com|claude-haiku-4-5 ";
+            config.AiModelContext = 5_000_000;      // clamps to two million: one notice
+            config.AiModelContext = 9_000_000;      // the same two million: none
+
+            Assert.Equal(1, notices);
         }
 
         [Fact]

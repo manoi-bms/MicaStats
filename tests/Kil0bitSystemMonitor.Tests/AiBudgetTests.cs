@@ -110,6 +110,29 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(800, b.RewriteInput);
         }
 
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(1)]
+        [InlineData(4)]
+        [InlineData(255)]
+        public void A_reported_output_under_256_counts_as_not_reported(int output)
+        {
+            // 1 to 4 would otherwise make the rewrite input zero.
+            Assert.Equal(AiBudget.For(8192, 0, 0), AiBudget.For(8192, output, 0));
+            Assert.Equal(AiBudget.For(262_144, 0, 0), AiBudget.For(262_144, output, 0));
+            Assert.True(AiBudget.For(8192, output, 0).RewriteInput > 0);
+        }
+
+        [Fact]
+        public void A_reported_output_of_256_is_the_smallest_that_caps()
+        {
+            AiBudget b = AiBudget.For(8192, 256, 0);
+
+            Assert.Equal(256, b.AskOutputTokens);
+            Assert.Equal(256, b.PadOutputTokens);
+            Assert.Equal(204, b.RewriteInput);                  // 256 * 4 / 5
+        }
+
         [Fact]
         public void The_read_input_has_a_floor_of_a_thousand()
         {

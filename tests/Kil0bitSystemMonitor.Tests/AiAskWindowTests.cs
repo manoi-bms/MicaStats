@@ -552,6 +552,115 @@ namespace Kil0bitSystemMonitor.Tests
             }
         });
 
+        // ---- the size is fitted to the screen the window opens on, which need not be the primary one ----
+
+        /// <summary>A window never shown, whose screen is the one a test names; the real screens are not read.</summary>
+        private static void OnScreen(double askWidth, double askHeight, Func<Rect> workArea, Action<AskWindow> test) => UiThread.Run(() =>
+        {
+            var window = new Harness().Build(config: new Kil0bitSystemMonitor.Models.AppConfig { AskWidth = askWidth, AskHeight = askHeight });
+            try
+            {
+                window.WorkAreaOfScreen = workArea;
+                test(window);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        [Fact]
+        public void A_large_saved_size_is_fitted_to_the_smaller_screen_the_window_opens_on_and_centred_there() =>
+            // A second screen left of the primary one, with 1,283 by 687 of work area (sizes no real screen has,
+            // so the constructor's fit against the primary screen never gives the same).
+            OnScreen(9000, 500, () => new Rect(-1283, 40, 1283, 687), window =>
+            {
+                window.FitToScreen();   // what runs once the window has its handle
+
+                Assert.Equal(1283, window.Width);                 // as wide as that screen's work area, not the primary one's
+                Assert.Equal(500, window.Height);
+                Assert.Equal(-1283, window.Left);
+                Assert.Equal(40 + (687 - 500) / 2.0, window.Top); // centred in that work area
+
+                var both = new Harness().Build(config: new Kil0bitSystemMonitor.Models.AppConfig { AskWidth = 9000, AskHeight = 9000 });
+                try
+                {
+                    both.WorkAreaOfScreen = () => new Rect(1920, 0, 1021, 731);
+                    both.FitToScreen();
+                    Assert.Equal((1021d, 731d), (both.Width, both.Height));
+                    Assert.Equal((1920d, 0d), (both.Left, both.Top));
+                }
+                finally
+                {
+                    both.Close();
+                }
+            });
+
+        [Fact]
+        public void On_a_screen_larger_than_the_primary_one_the_configured_size_is_kept_and_centred_there() =>
+            OnScreen(9000, 8000, () => new Rect(3000, -200, 10000, 9000), window =>
+            {
+                Assert.True(window.Width < 9000);                 // the constructor's first fit, against the primary work area
+                Assert.True(window.Height < 8000);
+
+                window.FitToScreen();
+
+                Assert.Equal(9000, window.Width);
+                Assert.Equal(8000, window.Height);
+                Assert.Equal(3000 + (10000 - 9000) / 2.0, window.Left);
+                Assert.Equal(-200 + (9000 - 8000) / 2.0, window.Top);
+            });
+
+        [Fact]
+        public void A_size_that_already_fits_its_screen_is_left_where_WPF_centres_it() =>
+            OnScreen(420, 420, () => new Rect(0, 0, 5000, 5000), window =>
+            {
+                window.FitToScreen();
+
+                Assert.Equal((420d, 420d), (window.Width, window.Height));
+                Assert.True(double.IsNaN(window.Left));           // not placed here: CenterScreen places it
+                Assert.True(double.IsNaN(window.Top));
+            });
+
+        [Fact]
+        public void A_screen_that_cannot_be_read_leaves_the_size_the_constructor_gave()
+        {
+            Func<Rect>[] unreadable =
+            {
+                () => throw new InvalidOperationException("no screen"),
+                () => Rect.Empty,
+                () => new Rect(0, 0, 0, 0),
+                () => new Rect(0, 0, double.NaN, 700),
+                () => new Rect(double.NaN, 0, 800, 700),
+                () => new Rect(0, 0, double.PositiveInfinity, 700),
+            };
+            foreach (Func<Rect> screen in unreadable)
+            {
+                OnScreen(9000, 9000, screen, window =>
+                {
+                    (double width, double height) = (window.Width, window.Height);
+
+                    window.FitToScreen();   // must not throw: it runs while the window is being opened
+
+                    Assert.Equal((width, height), (window.Width, window.Height));
+                    Assert.True(double.IsNaN(window.Left));
+                    Assert.True(double.IsNaN(window.Top));
+                });
+            }
+        }
+
+        [Fact]
+        public void The_window_is_fitted_to_its_screen_once_it_has_a_handle_and_asks_Windows_for_that_screen()
+        {
+            string code = System.Text.RegularExpressions.Regex.Replace(
+                System.IO.File.ReadAllText(System.IO.Path.Combine(PadWindowTests.RepoRoot(), "Ai", "AskWindow.xaml.cs")), @"\s+", " ");
+
+            // Tests never give the window a handle, so this is read: SourceInitialized runs the fit.
+            Assert.Matches(@"SourceInitialized \+= \(s, e\) => \{[^}]*FitToScreen\(\);[^}]*\}", code);
+            // The seam's default is the real lookup, by the window's own handle.
+            Assert.Contains("WorkAreaOfScreen = WorkAreaOfOwnScreen;", code, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void The_window_writes_its_size_to_the_config_when_it_closes() => UiThread.Run(() =>
         {

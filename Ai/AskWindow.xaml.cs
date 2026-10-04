@@ -94,14 +94,21 @@ namespace Kil0bitSystemMonitor.Ai
             _config = config ?? new AppConfig();
             _usage = usage;
 
-            // The size it was closed with, kept between its minimum and the screen's work area.
+            // The size it was closed with, kept between its minimum and a screen's work area. Here the
+            // primary screen's, so the size is sane before the window has a handle; once it has one,
+            // the screen it really opens on (FitToScreen).
             Rect work = SystemParameters.WorkArea;
             (Width, Height) = FitSize(_config.AskWidth, _config.AskHeight, MinWidth, MinHeight, work.Width, work.Height);
+            WorkAreaOfScreen = WorkAreaOfOwnScreen;
 
             AskMenus.Install(QuestionBox, editable: true);
             ApplyTheme();
             _config.PropertyChanged += OnConfigChanged;
-            SourceInitialized += (s, e) => PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
+            SourceInitialized += (s, e) =>
+            {
+                PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
+                FitToScreen();
+            };
 
             foreach (string question in PromptQuestions)
             {
@@ -575,6 +582,93 @@ namespace Kil0bitSystemMonitor.Ai
                 ? HintBase + " · " + u.Used.ToString(CultureInfo.InvariantCulture) + " of " + u.Limit.ToString(CultureInfo.InvariantCulture) + " today"
                 : HintBase;
         }
+
+        /// <summary>
+        /// The work area (the screen without the taskbar) of the screen the window is on, in the
+        /// units the window's own <see cref="Window.Left"/> and <see cref="FrameworkElement.Width"/>
+        /// are in. An empty one says it is not known. The window's own by default
+        /// (<see cref="WorkAreaOfOwnScreen"/>, which needs its handle); tests replace it, so they
+        /// name a screen and never read the real ones.
+        /// </summary>
+        internal Func<Rect> WorkAreaOfScreen { get; set; }
+
+        /// <summary>
+        /// Fits the window to the screen it opens on, once it has a handle. The constructor fitted
+        /// the saved size to the primary screen, which is all it could know; but the window opens
+        /// centred on the screen under the pointer, and that one may be smaller (the window would
+        /// reach off it) or larger (the saved size was cut for nothing). The saved size is fitted
+        /// again, to that screen's work area; when that gives another size the window takes it
+        /// and is centred in that work area. A size that already fits is left where it is. A
+        /// screen that cannot be read leaves everything as the constructor made it. Never throws.
+        /// </summary>
+        internal void FitToScreen()
+        {
+            try
+            {
+                Rect work = WorkAreaOfScreen();
+                if (work.IsEmpty || !IsLength(work.Width) || !IsLength(work.Height) || !double.IsFinite(work.Left) || !double.IsFinite(work.Top)) return;
+
+                (double width, double height) = FitSize(_config.AskWidth, _config.AskHeight, MinWidth, MinHeight, work.Width, work.Height);
+                if (width == Width && height == Height) return;
+                Width = width;
+                Height = height;
+                Left = work.Left + (work.Width - width) / 2;
+                Top = work.Top + (work.Height - height) / 2;
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Fitting Ask MicaStats to its screen failed (" + ex.GetType().Name + ")");
+            }
+        }
+
+        private static bool IsLength(double value) => double.IsFinite(value) && value > 0;
+
+        /// <summary>
+        /// The real <see cref="WorkAreaOfScreen"/>. Which screen: the one that holds the centre of
+        /// the window's rectangle. WPF has just centred the window in the work area of the screen
+        /// under the pointer (CenterScreen), so that centre is on that screen even when the
+        /// window is larger than it and reaches into the next one, where the largest overlap
+        /// could name the wrong screen. Windows gives the work area in pixels; the window's own
+        /// DPI scaling (the app is per-monitor DPI aware) turns them into the units WPF sizes and
+        /// places the window in. Empty when there is no handle yet or Windows does not say.
+        /// </summary>
+        private Rect WorkAreaOfOwnScreen()
+        {
+            IntPtr handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (handle == IntPtr.Zero || !Kil0bitSystemMonitor.Helpers.Win32Helper.GetWindowRect(handle, out var bounds)) return Rect.Empty;
+
+            var centre = new Kil0bitSystemMonitor.Helpers.Win32Helper.POINT
+            {
+                X = bounds.Left + bounds.Width / 2,
+                Y = bounds.Top + bounds.Height / 2,
+            };
+            IntPtr monitor = MonitorFromPoint(centre, MonitorDefaultToNearest);
+            var info = new MonitorInfo { Size = System.Runtime.InteropServices.Marshal.SizeOf<MonitorInfo>() };
+            if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return Rect.Empty;
+
+            DpiScale dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+            if (!IsLength(dpi.DpiScaleX) || !IsLength(dpi.DpiScaleY)) return Rect.Empty;
+            return new Rect(info.Work.Left / dpi.DpiScaleX, info.Work.Top / dpi.DpiScaleY,
+                            info.Work.Width / dpi.DpiScaleX, info.Work.Height / dpi.DpiScaleY);
+        }
+
+        private const uint MonitorDefaultToNearest = 2;
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct MonitorInfo
+        {
+            public int Size;
+            public Kil0bitSystemMonitor.Helpers.Win32Helper.RECT Monitor;
+            public Kil0bitSystemMonitor.Helpers.Win32Helper.RECT Work;
+            public uint Flags;
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromPoint(Kil0bitSystemMonitor.Helpers.Win32Helper.POINT point, uint flags);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
 
         /// <summary>
         /// The size to open with: the saved one, never below the window's minimum and never larger

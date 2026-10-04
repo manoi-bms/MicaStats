@@ -3181,6 +3181,109 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Empty(h.Copied);
         });
 
+        // ---- a pane closed before the credential is stored still held its last result, unseen (AI chat UI spec 6) ----
+
+        [Theory]
+        [InlineData(false)]   // closed with its own button
+        [InlineData(true)]    // closed by Search notes taking its column
+        public Task Storing_a_credential_clears_an_AI_pane_that_was_closed_before_and_a_new_request_shows_only_its_own_result(bool bySearch) => OnUiAsync(async h =>
+        {
+            NewVault(h);
+            FakeChatDiagrams diagrams = WithPictures(h);
+            Write(h, "the login is hunter2 today");
+            h.Model.Reply("The login is **hunter2**.\n\n" + DrawnReply).Reply("**One** login, stored.");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Assert.Contains("hunter2", Rendered(h.Pane), StringComparison.Ordinal);
+            Assert.Single(InResult<System.Windows.Controls.Image>(h.Pane));
+
+            if (bySearch) h.Window.ToggleSearch();
+            else Click(h.Pane.CloseButton);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);                       // no request is left to say which note the result came from
+            Assert.Equal(0, diagrams.Cleared);                        // and closing empties nothing
+
+            string id = Store(h, h.Window, "hunter2");
+
+            Assert.Equal("the login is " + SecretTokens.Format(id) + " today", h.Editor.Document.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);    // it stays closed
+            Assert.Equal("", h.Pane.ResultBox.Shown);                 // and holds nothing of the result, rendered or as text
+            Assert.Equal("", Rendered(h.Pane));
+            Assert.Empty(InResult<System.Windows.Controls.Image>(h.Pane));
+            Assert.Empty(InResult<System.Windows.Controls.TextBox>(h.Pane));
+            Assert.Equal(1, diagrams.Cleared);                        // nor a picture kept for drawing it again
+            // Its last view is gone: its lines are empty, and turning Source, forced, draws nothing back.
+            Assert.Equal("", h.Pane.TitleText.Text);
+            Assert.Equal("", h.Pane.SourceText.Text);
+            Assert.Equal("", h.Pane.InfoText.Text);
+            Assert.False(h.Pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, h.Pane.SourceToggle.Visibility);
+            h.Pane.SourceToggle.IsChecked = true;
+            Assert.Equal("", Rendered(h.Pane));
+            h.Pane.SourceToggle.IsChecked = false;
+            Assert.Equal("", Rendered(h.Pane));
+            Assert.Equal("", h.Pane.ResultBox.Shown);
+            Click(h.Pane.InsertButton);                               // forced clicks: there is nothing to put back or to copy
+            Click(h.Pane.CopyButton);
+            Assert.DoesNotContain("hunter2", h.Editor.Document.Text, StringComparison.Ordinal);
+            Assert.Empty(h.Copied);
+
+            // A new request on that note still works, and shows only its own result.
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal(2, h.Model.Requests.Count);
+            Assert.DoesNotContain("hunter2", h.Sent(1), StringComparison.Ordinal);   // the note holds the credential's marker now, sent as a placeholder
+            Assert.Equal("**One** login, stored.", h.Pane.ResultBox.Shown);
+            Assert.Equal("One login, stored.", Rendered(h.Pane));
+            Assert.Empty(InResult<System.Windows.Controls.Image>(h.Pane));
+            Assert.Equal("Summarize", h.Pane.TitleText.Text);
+        });
+
+        [Fact]
+        public Task Storing_a_credential_clears_the_Changes_view_of_an_AI_pane_that_was_closed_before() => OnUiAsync(async h =>
+        {
+            NewVault(h);
+            const string text = "the login is hunter2 today";
+            Write(h, text, text);
+            h.Model.Reply("Today the login is hunter2.");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            h.Pane.ChangesToggle.IsChecked = true;                    // the Changes view holds the value twice
+            Assert.NotEmpty(h.Pane.ChangesList.Items);
+
+            Click(h.Pane.CloseButton);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+
+            Store(h, h.Window, "hunter2");
+
+            Assert.Empty(h.Pane.ChangesList.Items);
+            Assert.Equal("", h.Pane.ChangesSummary.Text);
+            Assert.False(h.Pane.ShowingChanges);
+            Assert.Equal("", h.Pane.ResultBox.Shown);
+            Assert.Equal("", Rendered(h.Pane));
+            h.Pane.ChangesToggle.IsChecked = true;                    // forced: with no view left there is nothing to compare
+            Assert.Empty(h.Pane.ChangesList.Items);
+            Assert.Equal("", h.Pane.ChangesSummary.Text);
+        });
+
+        [Fact]
+        public Task A_closed_AI_pane_names_no_note_so_a_credential_stored_in_any_note_clears_it() => OnUiAsync(async h =>
+        {
+            NewVault(h);
+            Write(h, "the login is hunter2 today");
+            h.Model.Reply("The login is **hunter2**.");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Click(h.Pane.CloseButton);
+            Assert.Equal("The login is **hunter2**.", h.Pane.ResultBox.Shown);   // closed, it still holds its result
+
+            h.Window.NewTab();                                        // the value is stored from another note that holds it too
+            Write(h, "also hunter2 here");
+            Store(h, h.Window, "hunter2");
+
+            Assert.Equal("", h.Pane.ResultBox.Shown);                 // nothing says the result came from another note: it goes
+            Assert.Equal("", Rendered(h.Pane));
+        });
+
         [Fact]
         public Task Draw_as_diagram_with_no_selection_takes_the_whole_note_and_offers_Insert_below_but_not_Replace() => OnUiAsync(async h =>
         {

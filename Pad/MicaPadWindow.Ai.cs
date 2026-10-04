@@ -937,8 +937,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// A credential was just stored from <paramref name="note"/>: its plain value is out of
         /// the note, so it must not stay in what AI holds of it. The AI pane's request for that
         /// note is closed (its original, its result and its Changes view may hold the value, and
-        /// Insert below would put it back), and an answer from notes, which may quote it, is
-        /// cleared. In every window of the workspace: a tab may have moved since its request.
+        /// Insert below would put it back), a pane that was closed before is emptied of what it
+        /// still held, and an answer from notes, which may quote it, is cleared. In every window
+        /// of the workspace: a tab may have moved since its request.
         /// </summary>
         private void DropAiTextAfterStore(OpenNote note)
         {
@@ -949,10 +950,21 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
-        /// <summary>Closes the pane and empties it when its request ran on <paramref name="note"/>; a running request is cancelled.</summary>
+        /// <summary>
+        /// Closes the pane and empties it when its request ran on <paramref name="note"/>; a running
+        /// request is cancelled. A pane that was closed before is emptied too, whatever the note:
+        /// closed, it still holds its last result, unseen (the text, the Changes rows, the pictures
+        /// kept for drawing it again), and with no request left nothing says which note that came
+        /// from. Emptying a pane nobody sees loses nothing.
+        /// </summary>
         private void DropAiOf(OpenNote note)
         {
-            if (_ai is not { } run || !ReferenceEquals(run.Note, note)) return;
+            if (_ai is not { } run)
+            {
+                AiPanel.Clear();
+                return;
+            }
+            if (!ReferenceEquals(run.Note, note)) return;
             CloseAi(focusEditor: false);
             AiPanel.Clear();
         }

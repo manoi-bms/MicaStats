@@ -272,6 +272,7 @@ sent while you type, when a note opens or in the background — only when you ru
   shown as plain text or as code does not have it. **Insert below** puts the Mermaid block under
   your text, and MicaPad draws it as a picture there while **Settings → MicaPad → Draw diagrams**
   is on (it is, until you turn it off). **Replace selection** is offered when you selected text.
+  The pane draws the result as a diagram first, so you see it before anything is inserted.
 * **Fix with AI** is on the red error box of a diagram or math block that fails with an error
   about its own source, such as a syntax error: right-click the box. In the **AI** menu the entry
   for the same job is **Fix diagram**, there while the caret is in that block. Neither appears for
@@ -284,11 +285,27 @@ sent while you type, when a note opens or in the background — only when you ru
   is read again when you click, so that holds after you edit the fences too. With AI off it sends
   nothing.
 * **The AI pane** opens on the right, where History and Search notes open. It shows the text it
-  runs on and where that goes ("Selection, 412 characters · to api.anthropic.com", or "· to this
-  PC" for a server on this PC) and the result as it arrives. **Stop**, beside the close button, ends
-  it and keeps what came. For a rewrite, **Changes** shows a line diff of your text against the
-  result. Size limits: 8,000 characters for a rewrite, 24,000 for the rest; over that, the pane
-  says so and nothing is sent.
+  runs on and where that goes ("Selection, 412 characters · to api.anthropic.com (claude-sonnet-5-5)",
+  "· to llm.example.com (your-model)" for a server of your own, or "· to this PC" for a server on
+  this PC; the line wraps, so the destination is always
+  readable) and the result as it arrives. **Stop**, beside the close button, ends it and keeps what
+  came. For a rewrite, **Changes** shows a line diff of your text against the result. Size limits:
+  8,000 characters for a rewrite, 24,000 for the rest; over that, the pane says so and nothing is
+  sent.
+* **Rendered, with a Source toggle.** **Summarize**, **Explain**, **Draw as diagram** and
+  **Ask AI…** show their result as Markdown (see [What an answer can show](#what-an-answer-can-show)),
+  so a diagram is seen before it is inserted. **Source**, beside **Changes**, shows the exact text
+  that **Insert below** and **Replace selection** put in the note: always the text, never the
+  picture. A rewrite (Improve, Fix, Shorten, Translate, **Fix diagram**) is still shown as text,
+  with **Changes**.
+* **What is going on.** While a request runs, three dots move with "Waiting for claude-sonnet-5-5…"
+  (the model's name; "Waiting for the model…" without one) until the first words arrive, then
+  "Writing…". When it ends, the pane says "Finished in 4 s" ("Finished in 1 min 5 s" over a
+  minute). A stopped or failed request says what it already said.
+* **The pane has a splitter** between it and the editor, shared by the AI pane and Search notes.
+  Drag it to resize, move it with the arrow keys, or double-click it to go back to the default.
+  The pane is between 260 and 900 wide, and the editor keeps at least 320. The width is
+  remembered and is the same in every MicaPad window. History keeps its own width.
 * **Replace selection** puts the result in place of your text, **Insert below** adds it as a new
   paragraph after the text, **Copy** copies it. Each edit is one **Ctrl+Z**, and undoing a Replace
   brings the button back. The reply takes the note's own line ending. Your note changes only when
@@ -309,7 +326,8 @@ sent while you type, when a note opens or in the background — only when you ru
   search, a new question or closing the pane clears the answer. Holding **Ctrl+Enter**, or asking
   the question that is being answered, does not send it again. With no match, nothing is sent.
   With AI off, **Ask** runs the normal search and the answer area says
-  "Turn on Settings → MicaPad → AI to get answers".
+  "Turn on Settings → MicaPad → AI to get answers". The answer is drawn like any other (see
+  [What an answer can show](#what-an-answer-can-show)).
 * **Links in an answer are never clickable.** They show as text, "label (address)", so text pasted
   into a note cannot steer the model into handing you a link to click.
 * **What is sent**: For an action on text, a fixed instruction, the task, and the text it runs on
@@ -323,8 +341,8 @@ sent while you type, when a note opens or in the background — only when you ru
   that cuts through a credential takes the whole credential, and a half-typed credential marker in
   a question, an instruction or a search goes as `[credential]` too. Your own words are not
   otherwise altered, so a rewrite does not rename anything in them. Storing selected text as a credential
-  closes the AI pane for that note and clears an answer from notes, since both could still hold
-  the value.
+  closes the AI pane for that note, empties an AI pane that was already closed and clears an answer
+  from notes, since each could still hold the value.
 * **The daily limit** is the one from **Settings → AI**, shared with Ask MicaStats: each action or
   answer counts one, even when it fails or is stopped. When it is reached, or no key is set, the
   pane says so and nothing is sent.
@@ -634,8 +652,18 @@ The window works like a chat app: your question appears on the right, the answer
 formatted (headings, lists, bold, code blocks, links). Above the answer, a chip for each lookup
 says what MicaStats checked (*Read live status*, *Checked top processes*…); hover a chip to see
 the exact call, such as `get_top_processes {"by":"cpu","count":5}`. Three dots show while the
-answer is on its way. Under a finished answer, **Copy** copies it as Markdown, next to the time it
-arrived. The line under the title names the model in use.
+answer is on its way, with a line beside them that says what it is doing: "Thinking…", and while a
+lookup runs "Reading live status…", "Checking top processes…", "Looking at history…", "Listing
+slowdown reports…", "Reading a slowdown report…", "Checking alerts…", "Reading hardware info…",
+"Checking the battery…", "Checking startup times…", "Searching notes…" or "Reading a note…". The
+line goes when the answer's text starts. Under a finished answer, **Copy** copies it as Markdown,
+next to the time it arrived and how long it took ("14:32 · 4 s"). The line under the title names
+the model in use. Tables, code blocks and diagrams in an answer are described in
+[What an answer can show](#what-an-answer-can-show).
+
+The hint under the question box ends with the day's count ("Enter to send · Shift+Enter for a new
+line · 12 of 100 today"). When you have scrolled up, a round button at the lower right of the chat
+jumps to the latest text. The window remembers its size.
 
 The send button turns into **Stop** while an answer streams (**Esc** stops too); the **+** at
 the top right starts a new chat; the sun or moon button beside it switches the window between
@@ -654,6 +682,31 @@ fails, the question stays in the box and **Retry** sends it again; a missing key
 - **Processes**: select one process and press **Explain**
 
 They appear only while the assistant is on.
+
+### What an answer can show
+
+The Ask MicaStats window, MicaPad's AI pane and the Ask answer in Search notes draw an answer the
+same way, and the assistants are told what they can show, so they write for it.
+
+* **Tables.** A Markdown table is shown as a table, with its columns aligned as written. A very
+  large table in an answer that is still streaming updates less often while it streams.
+* **Code blocks** show their language and have a **Copy** button, which reads **Copied** for a
+  moment.
+* **Diagrams.** A fenced `mermaid` block is drawn as a diagram once the answer has written it
+  through to its closing fence. It is drawn on this PC by the same offline engine MicaPad uses for
+  diagrams in notes: nothing is sent anywhere to draw it. Above the picture, **Source** shows the
+  Mermaid text and **Copy** copies it; right-click the picture for **Copy image** and
+  **Copy source**.
+* While a diagram is drawn it says "Drawing the diagram…". A diagram that cannot be drawn is shown
+  as its source with the reason ("This diagram could not be drawn: …"). When the failure may pass,
+  such as the engine still starting, there is a **Try again** button; a mistake in the diagram's
+  own text has none.
+* Diagrams in answers follow **Settings → MicaPad → Draw diagrams**: while it is off, a Mermaid
+  block is shown as code. An answer draws at most 8 diagrams, and only Mermaid is drawn in an
+  answer.
+* **An answer never loads anything.** An image written as `![alt](address)` stays text, no HTML is
+  interpreted and no address is fetched. Links follow the rules above: in MicaPad they are never
+  clickable, and in Ask MicaStats they are not once it has read your notes.
 
 ### Suggestions, never actions
 

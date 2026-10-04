@@ -245,6 +245,58 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void The_guide_describes_what_an_ai_answer_shows_and_the_pane_and_window_changes()
+        {
+            string guide = Read("GUIDE.md").Replace("\r\n", "\n", StringComparison.Ordinal);
+
+            foreach (string needle in new[]
+            {
+                "**Try again**", "**Source**", "**Copy image**", "**Copy source**", "Drawing the diagram…", "This diagram could not be drawn",
+                "splitter", "double-click", "Finished in", "Waiting for", "Writing…", "Thinking…", "Reading live status…",
+                "of 100 today", "latest text", "remembers its size", "Draw diagrams", "at most 8 diagrams", "Drawing the diagram…", "llm.example.com",
+            })
+                Assert.Contains(needle, guide, StringComparison.Ordinal);
+            Assert.DoesNotContain("api.openai.com", guide, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_readme_describes_what_an_ai_answer_shows_and_the_pane_changes_in_both_languages()
+        {
+            string readme = Read("README.md").Replace("\r\n", "\n", StringComparison.Ordinal);
+            int thai = readme.IndexOf("## เกี่ยวกับ MicaStats", StringComparison.Ordinal);
+
+            foreach (string part in new[] { readme.Substring(0, thai), readme.Substring(thai) })
+            {
+                foreach (string needle in new[] { "**Try again**", "**Source**", "**Copy image**", "Drawing the diagram…", "splitter", "Finished in", "**Draw diagrams**" })
+                    Assert.Contains(needle, part, StringComparison.Ordinal);
+
+                // The new items are in the "Since v1.14.0" block, which ends where v1.14.0 starts.
+                int since = part.IndexOf("Since v1.14.0", StringComparison.Ordinal) >= 0 ? part.IndexOf("Since v1.14.0", StringComparison.Ordinal) : part.IndexOf("หลัง v1.14.0", StringComparison.Ordinal);
+                int end = part.IndexOf("**v1.14.0** —", since, StringComparison.Ordinal);
+                string block = part.Substring(since, end - since);
+                Assert.Contains("splitter", block, StringComparison.Ordinal);
+                Assert.Contains("Finished in", block, StringComparison.Ordinal);
+                Assert.Contains("Mermaid", block, StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
+        public void The_guide_and_the_readme_keep_a_blank_line_before_every_heading()
+        {
+            foreach (string file in new[] { "GUIDE.md", "README.md" })
+            {
+                string[] lines = Read(file).Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+                bool fenced = false;
+                for (int i = 1; i < lines.Length; i++)
+                {
+                    if (lines[i].StartsWith("```", StringComparison.Ordinal)) fenced = !fenced;
+                    if (!fenced && lines[i].StartsWith("#", StringComparison.Ordinal))
+                        Assert.True(lines[i - 1].Length == 0, file + " line " + (i + 1) + ": no blank line before the heading");
+                }
+            }
+        }
+
+        [Fact]
         public void The_readme_announces_ai_and_lists_the_shortcuts_in_both_languages()
         {
             string readme = Read("README.md");

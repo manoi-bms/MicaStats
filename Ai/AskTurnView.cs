@@ -50,6 +50,9 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>This turn's redraw, the same delegate at every render, so a draw tells it once.</summary>
         private readonly Action _invalidate;
         private bool _dark = true;
+
+        /// <summary>True when the document last built asked for a diagram's picture: only then does a theme change mean building it again.</summary>
+        private bool _picturesAsked;
         private bool _released;
         private bool _rendered;
         private bool _renderFailed;
@@ -58,7 +61,18 @@ namespace Kil0bitSystemMonitor.Ai
         public AskTurnView(string question)
         {
             _invalidate = RedrawOf(this);
-            BuildDocument = raw => ChatDocument.Build(ChatMarkdown.Parse(raw), NewRender());
+            BuildDocument = raw =>
+            {
+                ChatRender render = NewRender();
+                try
+                {
+                    return ChatDocument.Build(ChatMarkdown.Parse(raw), render);
+                }
+                finally
+                {
+                    _picturesAsked = render.PicturesAsked;
+                }
+            };
 
             Question = new TextBox
             {
@@ -269,14 +283,16 @@ namespace Kil0bitSystemMonitor.Ai
 
         /// <summary>
         /// The window's theme changed (or, for a new turn, is told for the first time). The brushes
-        /// repaint by themselves, but a diagram is a bitmap drawn for one theme, so an answer that
-        /// has been rendered is built again and asks for its pictures in the new theme.
+        /// repaint by themselves, and for an answer without a diagram that is all: the theme is
+        /// only recorded, for whatever is rendered next. A diagram is a bitmap drawn for one theme,
+        /// so an answer whose last build asked for a picture is built again and asks for its
+        /// pictures in the new theme.
         /// </summary>
         internal void ApplyTheme(bool dark)
         {
             if (_dark == dark) return;
             _dark = dark;
-            if (_rendered && !_released) RenderNow();
+            if (_rendered && !_released && _picturesAsked) RenderNow();
         }
 
         /// <summary>

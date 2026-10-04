@@ -43,13 +43,27 @@ namespace Kil0bitSystemMonitor.Pad
         private readonly Action _invalidate;
         private bool _dark = true;
         private bool _markdown;
+
+        /// <summary>True when the document last built asked for a diagram's picture: only then does a theme change mean building it again.</summary>
+        private bool _picturesAsked;
         private bool _warned;
 
         /// <summary>Builds the box empty and dark; <see cref="ApplyTheme"/> switches it.</summary>
         public PadAnswerBox()
         {
             _invalidate = RedrawOf(this);
-            BuildDocument = raw => ChatDocument.Build(ChatMarkdown.Parse(raw), NewRender());
+            BuildDocument = raw =>
+            {
+                ChatRender render = NewRender();
+                try
+                {
+                    return ChatDocument.Build(ChatMarkdown.Parse(raw), render);
+                }
+                finally
+                {
+                    _picturesAsked = render.PicturesAsked;
+                }
+            };
             Style = ChatStyles.Get("ChatAnswer");
             GiveMenu(this);
             ApplyTheme(dark: true);
@@ -111,9 +125,10 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// Paints the box for the pad's dark or light theme: the <c>Ask.*</c> brushes the chat
         /// renderer reads go into this box's own resources, so the text already shown repaints,
-        /// and the menus follow. A diagram is a bitmap drawn for one theme, so when the theme
-        /// really changes a rendered answer is built again: its pictures are asked for in the new
-        /// theme, and its menus are new ones in the new look.
+        /// and the menus follow. For an answer without a diagram that is all. A diagram is a
+        /// bitmap drawn for one theme, so when the theme really changes an answer whose last build
+        /// asked for a picture is built again: its pictures are asked for in the new theme, and
+        /// its menus are new ones in the new look.
         /// </summary>
         public void ApplyTheme(bool dark)
         {
@@ -121,7 +136,13 @@ namespace Kil0bitSystemMonitor.Pad
             _dark = dark;
             AskThemeApplier.ApplyResources(Resources, dark ? AskPalette.Dark : AskPalette.Light);
             if (ContextMenu is { } own) Paint(own);
-            if (changed && _markdown) Display(Shown, markdown: true);
+            if (changed && _markdown && _picturesAsked)
+            {
+                Display(Shown, markdown: true);
+                return;
+            }
+            foreach (TextBoxBase code in ChatDocument.All<TextBoxBase>(Document))
+                if (code.ContextMenu is { } menu) Paint(menu);
         }
 
         /// <summary>WPF gives the document a 5 px page padding when the box builds its view; the answer has none.</summary>
@@ -174,6 +195,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (!raw.StartsWith(Shown, StringComparison.Ordinal)) _sourceShown.Clear();
             Shown = raw;
             _markdown = markdown;
+            _picturesAsked = false;   // a Markdown build says so again; plain text asks for none
             if (markdown)
             {
                 try

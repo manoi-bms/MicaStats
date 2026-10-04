@@ -127,6 +127,9 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly Kept _failures = new();
         private readonly Dictionary<string, List<Action>> _waiting = new(StringComparer.Ordinal);
 
+        /// <summary>True once a failure to read the setting or the engine was reported; it is not reported again.</summary>
+        private bool _unreadableSaid;
+
         /// <param name="renderer">The drawing engine, made on first use; null when there is none.</param>
         /// <param name="enabled">Settings → MicaPad → Draw diagrams, read at every call.</param>
         /// <param name="scale">
@@ -203,9 +206,22 @@ namespace Kil0bitSystemMonitor.Ai
             catch (Exception ex)
             {
                 // The type only: the message could quote the source.
-                Report("Asking for a diagram in an answer failed (" + ex.GetType().Name + ")");
+                string message = "Asking for a diagram in an answer failed (" + ex.GetType().Name + ")";
                 ChatDiagramState failed = Failed(DiagramText.Failed, canRetry: true);   // it may well work the next time
-                if (key == null) return failed;
+                if (key == null)
+                {
+                    // The setting or the engine could not be read. Nothing is kept for that (there
+                    // is no key yet), so every build of the answer comes here again, ten times a
+                    // second while it streams: it is said once.
+                    if (!_unreadableSaid)
+                    {
+                        _unreadableSaid = true;
+                        Report(message);
+                    }
+                    return failed;
+                }
+
+                Report(message);   // kept under its key below, so this is once for each draw
                 _waiting.Remove(key);
                 return Keep(key, failed);
             }

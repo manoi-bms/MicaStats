@@ -554,6 +554,14 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2, warnings.Count);
             Assert.Contains("InvalidOperationException", warnings[0], StringComparison.Ordinal);
             Assert.Contains("NotSupportedException", warnings[1], StringComparison.Ordinal);
+
+            // An answer is built ten times a second while it streams: each adapter says it once, not at every build.
+            for (int i = 0; i < 20; i++)
+            {
+                Assert.Equal(ChatDiagramStatus.Failed, noSetting.Get(Flow, true, null).Status);
+                Assert.Equal(ChatDiagramStatus.Failed, noRenderer.Get("pie", false, null).Status);
+            }
+            Assert.Equal(2, warnings.Count);
         });
 
         [Fact]

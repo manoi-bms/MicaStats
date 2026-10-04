@@ -59,10 +59,11 @@ namespace Kil0bitSystemMonitor.Ai
         public bool Dark { get; init; } = true;
 
         /// <summary>
-        /// Builds the view's document again: called when a picture the document waits for has
-        /// arrived or failed. A picture never reaches a document already shown; it comes with the
-        /// next build. The view hands in the same delegate at every build, so it is told once
-        /// however often it asked.
+        /// Asks the view to build its document again: called when a picture the document waits for
+        /// has arrived or failed, and by Try again. It is only a request. The view decides when it
+        /// draws, and nothing that calls this relies on the document being new when it returns. A
+        /// picture never reaches a document already shown; it comes with the next build. The view
+        /// hands in the same delegate at every build, so it is told once however often it asked.
         /// </summary>
         public Action? Invalidate { get; init; }
 
@@ -71,5 +72,13 @@ namespace Kil0bitSystemMonitor.Ai
         /// and every button in it, is new at each build, so the choice cannot live on a button.
         /// </summary>
         public ISet<string> SourceShown { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Set by <see cref="ChatDocument.Build"/>: true once the document asked
+        /// <see cref="Diagrams"/> for a picture. A view reads it after a build: only such a
+        /// document holds something drawn for one theme, and has to be built again when the theme
+        /// changes. Every other document is repainted by its brushes.
+        /// </summary>
+        public bool PicturesAsked { get; internal set; }
     }
 }

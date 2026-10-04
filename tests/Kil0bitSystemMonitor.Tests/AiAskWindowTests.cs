@@ -679,34 +679,62 @@ namespace Kil0bitSystemMonitor.Tests
             new AssistantUpdate(AssistantUpdateKind.Done),
         };
 
+        /// <summary>
+        /// Runs a test over a window whose turns draw through <paramref name="diagrams"/>, as the
+        /// app's own would. The app-wide adapter is replaced inside the <c>try</c> and put back
+        /// first of all in the <c>finally</c>, before closing the window or anything else that can
+        /// throw, so no other test ever finds it replaced.
+        /// </summary>
+        private static Task WithDiagrams(IChatDiagrams diagrams, Func<Harness, AskWindow> build, Func<AskWindow, Harness, Task> test) =>
+            UiThread.RunAsync(async () =>
+            {
+                var before = ChatDiagrams.Current;
+                AskWindow? window = null;
+                bool closed = false;
+                try
+                {
+                    ChatDiagrams.Current = diagrams;   // what the app sets at startup; a turn takes it when it is made
+                    var h = new Harness();
+                    window = build(h);
+                    window.Closed += (s, e) => closed = true;
+                    await test(window, h);
+                }
+                finally
+                {
+                    ChatDiagrams.Current = before;
+                    if (window != null && !closed) window.Close();
+                }
+            });
+
         [Fact]
-        public void A_turn_draws_in_the_windows_theme_and_a_theme_change_draws_every_turn_again() => UiThread.Run(() =>
+        public Task A_turn_draws_in_the_windows_theme_and_a_theme_change_draws_every_turn_that_has_a_diagram_again()
         {
             const string pie = "pie\n  \"a\" : 1";
             var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
-            var before = ChatDiagrams.Current;
-            ChatDiagrams.Current = diagrams;   // what the app sets at startup; a turn takes it when it is made
-            var h = new Harness();
             var config = new Kil0bitSystemMonitor.Models.AppConfig { AskTheme = "Light" };
-            var window = new AskWindow(() => h.Setups.Dequeue(), () => { }, _ => "", null, config);
-            try
+            return WithDiagrams(diagrams, h => new AskWindow(() => h.Setups.Dequeue(), () => { }, _ => "", null, config), (window, h) =>
             {
                 h.Setups.Enqueue(h.Answer(AnswerWith(ChatDiagramFakes.Block())));
+                h.Setups.Enqueue(h.Answer(AnswerWith("| a | b |\n|---|---|\n| 1 | 2 |")));
                 h.Setups.Enqueue(h.Answer(AnswerWith(ChatDiagramFakes.Block(pie))));
                 Send(window, "One?");
                 Send(window, "Two?");
+                Send(window, "Three?");
 
                 Assert.NotEmpty(diagrams.Gets);
                 Assert.All(diagrams.Gets, g => Assert.False(g.Dark));   // a new turn has the window's theme before it first renders
-                Assert.All(window.Turns, t => Assert.Single(ChatDocument.All<System.Windows.Controls.Image>(t.Answer.Document)));
+                Assert.Single(ChatDocument.All<System.Windows.Controls.Image>(window.Turns[0].Answer.Document));
+                Assert.Single(ChatDocument.All<System.Windows.Controls.Image>(window.Turns[2].Answer.Document));
+                var table = window.Turns[1].Answer.Document;
                 diagrams.Gets.Clear();
 
                 config.AskTheme = "Dark";
 
-                // A diagram is a bitmap drawn for one theme: every turn builds its document again.
+                // A diagram is a bitmap drawn for one theme: a turn that has one builds its document again.
                 Assert.Equal(new[] { (ChatDiagramFakes.Flow, true), (pie, true) }, diagrams.Gets.Select(g => (g.Source, g.Dark)));
                 var menu = ChatDocument.All<System.Windows.Controls.Image>(window.Turns[0].Answer.Document).Single().ContextMenu!;
                 Assert.Equal(ModernWpf.ElementTheme.Dark, ModernWpf.ThemeManager.GetRequestedTheme(menu));
+                Assert.Same(table, window.Turns[1].Answer.Document);    // the turn with only a table is repainted, not built again
                 diagrams.Gets.Clear();
 
                 window.ToggleTheme();
@@ -714,24 +742,17 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.Equal(new[] { (ChatDiagramFakes.Flow, false), (pie, false) }, diagrams.Gets.Select(g => (g.Source, g.Dark)));
                 menu = ChatDocument.All<System.Windows.Controls.Image>(window.Turns[0].Answer.Document).Single().ContextMenu!;
                 Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(menu));
-            }
-            finally
-            {
-                window.Close();
-                ChatDiagrams.Current = before;
-            }
-        });
+                Assert.Same(table, window.Turns[1].Answer.Document);
+                return Task.CompletedTask;
+            });
+        }
 
         [Fact]
-        public Task New_conversation_drops_its_turns_and_a_picture_that_arrives_later_redraws_none_of_them() => UiThread.RunAsync(async () =>
+        public Task New_conversation_drops_its_turns_and_a_picture_that_arrives_later_redraws_none_of_them()
         {
             var renderer = new FakeRenderer();
             var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
-            var before = ChatDiagrams.Current;
-            ChatDiagrams.Current = diagrams;
-            var h = new Harness();
-            var window = h.Build();
-            try
+            return WithDiagrams(diagrams, h => h.Build(), async (window, h) =>
             {
                 h.Setups.Enqueue(h.Answer(AnswerWith(ChatDiagramFakes.Block())));
                 Send(window, "One?");
@@ -750,25 +771,15 @@ namespace Kil0bitSystemMonitor.Tests
                 Send(window, "Two?");
                 Assert.Single(ChatDocument.All<System.Windows.Controls.Image>(window.Turns[0].Answer.Document));
                 Assert.Single(renderer.Calls);
-            }
-            finally
-            {
-                window.Close();
-                ChatDiagrams.Current = before;
-            }
-        });
+            });
+        }
 
         [Fact]
-        public Task A_closed_window_is_not_drawn_again_when_a_picture_arrives() => UiThread.RunAsync(async () =>
+        public Task A_closed_window_is_not_drawn_again_when_a_picture_arrives()
         {
             var renderer = new FakeRenderer();
             var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
-            var before = ChatDiagrams.Current;
-            ChatDiagrams.Current = diagrams;
-            var h = new Harness();
-            var window = h.Build();
-            bool closed = false;
-            try
+            return WithDiagrams(diagrams, h => h.Build(), async (window, h) =>
             {
                 h.Setups.Enqueue(h.Answer(AnswerWith(ChatDiagramFakes.Block())));
                 Send(window, "One?");
@@ -776,16 +787,10 @@ namespace Kil0bitSystemMonitor.Tests
                 var shown = turn.Answer.Document;
 
                 window.Close();
-                closed = true;
                 await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
 
                 Assert.Same(shown, turn.Answer.Document);
-            }
-            finally
-            {
-                if (!closed) window.Close();
-                ChatDiagrams.Current = before;
-            }
-        });
+            });
+        }
     }
 }

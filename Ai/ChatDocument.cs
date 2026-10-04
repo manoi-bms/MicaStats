@@ -386,6 +386,7 @@ namespace Kil0bitSystemMonitor.Ai
                 return CodeBlock(block, render);
 
             diagrams++;
+            render.PicturesAsked = true;   // what the view reads to know that a theme change means building again
             ChatDiagramState state;
             try
             {

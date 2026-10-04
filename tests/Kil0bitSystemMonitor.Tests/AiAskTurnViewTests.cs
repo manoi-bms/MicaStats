@@ -440,6 +440,59 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains("This diagram could not be drawn: " + DiagramText.TookTooLong, Lines(turn));
         });
 
+        [Fact]
+        public void A_theme_change_builds_nothing_for_an_answer_without_a_diagram_and_the_theme_is_kept_for_the_next_render() => UiThread.Run(() =>
+        {
+            var (turn, _, renderer) = DiagramTurn();
+            turn.AppendText("| a | b |\n|---|---|\n| 1 | 2 |\n\n```cs\nint x;\n```\n\n```mermaid\nflowchart LR");   // the fence is still open: nothing was asked for
+            var builds = CountBuilds(turn);
+            var shown = turn.Answer.Document;
+
+            turn.ApplyTheme(false);
+            turn.ApplyTheme(true);
+            turn.ApplyTheme(false);
+
+            // Before diagrams a theme switch was a swap of brushes. For an answer that asked for no picture it still is.
+            Assert.Equal(0, builds());
+            Assert.Same(shown, turn.Answer.Document);
+            Assert.Empty(renderer.Calls);
+
+            turn.AppendText("\n  a --> b\n```");   // the theme was recorded: the diagram that closes now is drawn for it
+            Assert.False(Assert.Single(renderer.Calls).Request.Dark);
+            int before = builds();
+
+            turn.ApplyTheme(true);                 // and now there is a picture to ask for again
+            Assert.Equal(before + 1, builds());
+            Assert.Equal(2, renderer.Calls.Count);
+            Assert.True(renderer.Calls[1].Request.Dark);
+        });
+
+        [Fact]
+        public Task A_Clear_while_a_turn_waits_for_its_picture_tells_the_turn_once_and_it_asks_again_once() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, renderer) = DiagramTurn();
+            turn.AppendText(ChatDiagramFakes.Block());
+            var builds = CountBuilds(turn);
+
+            diagrams.Clear();   // MicaPad stored a credential: the pictures kept for every answer are forgotten, this turn's draw too
+            renderer.Calls[0].Done.TrySetResult(DiagramFakes.Picture());   // the draw ends; not through Finish, so the fake engine keeps nothing
+            await ChatDiagramFakes.Until(() => builds() > 0, "the turn to be told");
+
+            Assert.Equal(1, builds());                         // told once
+            Assert.Equal(2, renderer.Calls.Count);             // the cleared draw's picture was not kept: the turn asked again, once
+            Assert.Equal(0, diagrams.PicturesKept);
+            Assert.Contains("Drawing the diagram…", Lines(turn));
+
+            await Task.Delay(100);                             // and nothing more by itself
+            Assert.Equal(1, builds());
+            Assert.Equal(2, renderer.Calls.Count);
+
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramFakes.Picture());
+            Assert.NotNull(Picture(turn));
+            Assert.Equal(2, builds());
+            Assert.Equal(2, renderer.Calls.Count);
+        });
+
         private static Button? TryAgain(AskTurnView turn) =>
             ChatDocument.All<Button>(turn.Answer.Document).SingleOrDefault(b => Equals(b.Content, "Try again"));
 

@@ -127,17 +127,11 @@ namespace Kil0bitSystemMonitor.Tests
 
             box.ApplyTheme(true);
 
-            // A rendered answer is built again for the new theme (a diagram is a bitmap drawn for
-            // one theme), so the code block and its menu are new ones: the menus the box has now.
-            code = Assert.Single(AiAskWindowTests.Descendants<TextBox>(box.Document));
-            menus = new[] { Assert.IsType<ContextMenu>(box.ContextMenu), Assert.IsType<ContextMenu>(code.ContextMenu) };
             foreach (var menu in menus)
             {
                 Assert.Equal(ModernWpf.ElementTheme.Dark, ModernWpf.ThemeManager.GetRequestedTheme(menu));
                 Assert.Equal(Wpf(PadPalette.Dark.Popup), BrushColor(menu.Resources["Pad.Popup"]));
             }
-            Assert.Equal(new[] { ApplicationCommands.Copy, ApplicationCommands.SelectAll },
-                code.ContextMenu!.Items.OfType<MenuItem>().Select(item => item.Command));
         });
 
         [Fact]
@@ -530,12 +524,14 @@ namespace Kil0bitSystemMonitor.Tests
             diagrams.Get(Flow, true, () => told = true);   // behind the box's own waiter: when this one is told, the box was
 
             box.Clear();
-            renderer.Finish(0, DiagramResult.Failure(DiagramText.TookTooLong, lasting: false));
+            renderer.Calls[0].Done.TrySetResult(DiagramFakes.Picture());   // the picture arrives; not through Finish, so the fake engine keeps nothing either
             await ChatDiagramFakes.Until(() => told, "the end of the draw");
 
             Assert.Equal(0, builds());
             Assert.Equal("", Rendered(box));
-            Assert.Equal(ChatDiagramStatus.Drawing, diagrams.Get(Flow, true, null).Status);   // the cleared draw's outcome was not kept
+            Assert.Equal(0, diagrams.PicturesKept);                                           // the cleared draw's picture was not kept
+            Assert.Equal(ChatDiagramStatus.Drawing, diagrams.Get(Flow, true, null).Status);   // so asking for it means drawing it again
+            Assert.Equal(2, renderer.Calls.Count);
         });
 
         [Fact]
@@ -580,6 +576,32 @@ namespace Kil0bitSystemMonitor.Tests
             box.ApplyTheme(false);
             Assert.Same(plain, box.Document);
             Assert.Equal(2, renderer.Calls.Count);
+        });
+
+        [Fact]
+        public void A_theme_change_builds_nothing_for_an_answer_without_a_diagram_and_the_theme_is_kept_for_the_next_one() => UiThread.Run(() =>
+        {
+            var (box, _, renderer) = DiagramBox();
+            const string text = "Some **text**.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```cs\nint x;\n```";
+            box.ShowMarkdown(text);
+            var builds = CountBuilds(box);
+            var shown = box.Document;
+
+            box.ApplyTheme(false);
+
+            // Before diagrams a theme switch was a swap of brushes. For an answer that asked for no picture it still is.
+            Assert.Equal(0, builds());
+            Assert.Same(shown, box.Document);
+            Assert.Equal(Wpf(AskPalette.Light.Ink), BrushColor(box.Document.Foreground));   // repainted all the same
+            Assert.Empty(renderer.Calls);
+
+            box.ShowMarkdown(text + "\n\n" + ChatDiagramFakes.Block());   // the theme was recorded: a diagram that comes later is drawn for it
+            Assert.False(Assert.Single(renderer.Calls).Request.Dark);
+            int before = builds();
+
+            box.ApplyTheme(true);                                         // and now there is a picture to ask for again
+            Assert.Equal(before + 1, builds());
+            Assert.True(renderer.Calls[1].Request.Dark);
         });
 
         [Fact]

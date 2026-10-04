@@ -514,6 +514,21 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Theory]
+        [InlineData("```mermaid title")]
+        [InlineData("```mermaid   showLineNumbers {1,3}")]
+        [InlineData("~~~Mermaid the first word names the language")]
+        public void A_fence_whose_first_word_is_mermaid_is_drawn_whatever_follows_the_word(string opening) => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            string closing = opening.StartsWith("~", StringComparison.Ordinal) ? "~~~" : "```";
+
+            var document = BuildWith(opening + "\n" + Flow + "\n" + closing, new ChatRender { Diagrams = diagrams });
+
+            Assert.Equal(Flow, Assert.Single(diagrams.Gets).Source);
+            Assert.Single(ChatDocument.All<Image>(document));
+        });
+
+        [Theory]
         [InlineData("dot")]
         [InlineData("graphviz")]
         [InlineData("markmap")]

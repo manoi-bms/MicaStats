@@ -634,6 +634,7 @@ namespace Kil0bitSystemMonitor.Pad
             _occurrenceTimer?.Stop();
             _statusTimer?.Stop();
             _config.PropertyChanged -= OnConfigChanged;
+            DetachPaneSplitter();
             _workspace.Open.CollectionChanged -= OnOpenChanged;
             foreach (var (document, changed) in _docHandlers) document.Changed -= changed;
             _docHandlers.Clear();
@@ -2251,11 +2252,28 @@ namespace Kil0bitSystemMonitor.Pad
 
         private const double SplitterWidth = 5;
 
+        // The descriptor is cached statically and holds each handler (and so this window) strongly:
+        // Detach removes them.
+        private static readonly System.ComponentModel.DependencyPropertyDescriptor PaneVisibilityDescriptor =
+            System.ComponentModel.DependencyPropertyDescriptor.FromProperty(UIElement.VisibilityProperty, typeof(UIElement));
+
+        private EventHandler? _paneVisibilityChanged;
+
+        private UIElement[] PaneElements() => new UIElement[] { SearchPanel, AiPanel, HistoryPanel };
+
+        private void DetachPaneSplitter()
+        {
+            if (_paneVisibilityChanged == null) return;
+            foreach (UIElement pane in PaneElements())
+                PaneVisibilityDescriptor.RemoveValueChanged(pane, _paneVisibilityChanged);
+            _paneVisibilityChanged = null;
+        }
+
         private void InitPaneSplitter()
         {
-            var descriptor = System.ComponentModel.DependencyPropertyDescriptor.FromProperty(UIElement.VisibilityProperty, typeof(UIElement));
-            foreach (UIElement pane in new UIElement[] { SearchPanel, AiPanel, HistoryPanel })
-                descriptor.AddValueChanged(pane, (s, args) => ApplyPaneLayout());
+            _paneVisibilityChanged = (s, args) => ApplyPaneLayout();
+            foreach (UIElement pane in PaneElements())
+                PaneVisibilityDescriptor.AddValueChanged(pane, _paneVisibilityChanged);
             EditorArea.SizeChanged += (s, args) => ApplyPaneLayout();
             ApplyPaneLayout();
         }

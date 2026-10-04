@@ -391,5 +391,72 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(columns[0].Width.IsStar && columns[0].Width.Value == 1);
             Assert.True(columns[1].Width.IsAuto);
         });
+
+        // ---- a closed window ----
+
+        [Fact]
+        public Task After_the_window_is_closed_a_pane_visibility_no_longer_moves_the_splitter() => OnWindow((w, c) =>
+        {
+            w.CloseForExit();
+            w.AiPanel.Visibility = Visibility.Visible;
+            Assert.Equal(Visibility.Collapsed, w.PaneSplitter.Visibility);
+        });
+
+        // ---- the handlers, called the way the routed events would ----
+
+        private sealed class NoSource : PresentationSource
+        {
+            public override System.Windows.Media.Visual? RootVisual { get; set; }
+
+            public override bool IsDisposed => false;
+
+            protected override System.Windows.Media.CompositionTarget? GetCompositionTargetCore() => null;
+        }
+
+        private static void KeyUp(MicaPadWindow w, System.Windows.Input.Key key) =>
+            w.PaneSplitter.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, new NoSource(), 0, key)
+            {
+                RoutedEvent = System.Windows.Input.Keyboard.KeyUpEvent,
+            });
+
+        [Fact]
+        public Task KeyUp_of_Left_or_Right_on_the_splitter_writes_the_fitted_width_and_another_key_writes_nothing() => OnWindow((w, c) =>
+        {
+            var writes = new List<double>();
+            c.PropertyChanged += (s, e) => { if (e.PropertyName == nameof(AppConfig.PadPaneWidth)) writes.Add(c.PadPaneWidth); };
+            ShowAi(w);
+            LayOut(w, 1200);
+
+            KeyUp(w, System.Windows.Input.Key.A);
+            KeyUp(w, System.Windows.Input.Key.Up);
+            Assert.Empty(writes);
+
+            PaneColumn(w).Width = new GridLength(500);   // what the splitter's own arrow-key move leaves
+            LayOut(w, 1200);
+            KeyUp(w, System.Windows.Input.Key.Left);
+            Assert.Equal(new[] { 500.0 }, writes);
+
+            PaneColumn(w).Width = new GridLength(540);
+            LayOut(w, 1200);
+            KeyUp(w, System.Windows.Input.Key.Right);
+            Assert.Equal(new[] { 500.0, 540.0 }, writes);
+            Assert.Equal(540, PaneColumn(w).Width.Value);
+        });
+
+        [Fact]
+        public Task A_double_click_on_the_splitter_resets_the_width_and_marks_the_event_handled() => OnWindow((w, c) =>
+        {
+            c.PadPaneWidth = 700;
+            ShowAi(w);
+            LayOut(w, 1200);
+            var args = new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+            {
+                RoutedEvent = System.Windows.Controls.Control.MouseDoubleClickEvent,
+            };
+            w.PaneSplitter.RaiseEvent(args);
+            Assert.True(args.Handled);
+            Assert.Equal(360, c.PadPaneWidth);
+            Assert.Equal(360, PaneColumn(w).Width.Value);
+        });
     }
 }

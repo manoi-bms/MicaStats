@@ -1291,6 +1291,108 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(window.SendButton.IsEnabled);
         });
 
+        /// <summary>An answer that is under way and has read nothing yet: its first note tool may be reading right now.</summary>
+        private static async IAsyncEnumerable<AssistantUpdate> HangBeforeAnyNote(
+            TaskCompletionSource reached, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            reached.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+            yield return new AssistantUpdate(AssistantUpdateKind.Done);
+        }
+
+        /// <summary>
+        /// The gap both final reviewers found: a conversation is marked as having read notes only
+        /// when a note tool hands its result over. A credential stored while the first note tool
+        /// is still reading found the mark unset, left the conversation alone, and the tool then
+        /// handed the old text to the model. So an answer under way is ended too, while Ask is
+        /// allowed to read notes.
+        /// </summary>
+        [Theory]
+        [InlineData(true, true)]      // Ask may read notes: the answer under way is ended
+        [InlineData(false, false)]    // it may not: no note can be on its way, the answer goes on
+        public void A_credential_stored_while_an_answer_is_under_way_ends_it_when_Ask_may_read_notes(bool notesInAsk, bool ended) => UiThread.Run(() =>
+        {
+            var harness = new Harness();
+            var config = new Kil0bitSystemMonitor.Models.AppConfig { AiNotesInAsk = notesInAsk };
+            var window = harness.Build(config: config);
+            try
+            {
+                var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                bool cancelled = false;
+                harness.Setups.Enqueue(new AskSetup((conversation, question, ct) =>
+                {
+                    ct.Register(() => cancelled = true);
+                    return HangBeforeAnyNote(reached, ct);
+                }, null));
+                window.QuestionBox.Text = "What is the vpn login?";
+                Click(window.SendButton);
+                var answer = window.Pending!;
+                UiPump.Wait(reached.Task);
+                Assert.True(window.IsBusy);
+
+                window.ClearAfterCredentialStored();
+
+                Assert.Equal(ended, cancelled);
+                if (ended)
+                {
+                    UiPump.Wait(answer);
+                    Assert.False(window.IsBusy);
+                    Assert.Empty(window.Turns);
+                    Assert.Equal(AskWindow.ClearedWhileAnswering, window.StatusText.Text);
+                }
+                else
+                {
+                    Assert.True(window.IsBusy);
+                    Assert.Single(window.Turns);
+                    Assert.Equal("", window.StatusText.Text);
+                    window.Stop();
+                    UiPump.Wait(answer);
+                }
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        /// <summary>The Ask window forgets the pictures itself: it does not lean on a MicaPad pane having been cleared first.</summary>
+        [Fact]
+        public void Clearing_for_a_stored_credential_also_forgets_the_pictures_kept_for_answers() => WithWindow((window, h) =>
+        {
+            var diagrams = new CountingDiagrams();
+            IChatDiagrams? before = ChatDiagrams.Current;
+            try
+            {
+                ChatDiagrams.Current = diagrams;
+                var seen = new List<AiConversation>();
+                h.Setups.Enqueue(AnswerFromNotes(h, seen, AnswerWith("The vpn login is hunter2.")));
+                Send(window, "What is the vpn login?");
+
+                window.ClearAfterCredentialStored();
+
+                Assert.Equal(1, diagrams.Cleared);
+                Assert.Empty(window.Turns);
+            }
+            finally
+            {
+                ChatDiagrams.Current = before;
+            }
+        });
+
+        private sealed class CountingDiagrams : IChatDiagrams
+        {
+            public int Cleared { get; private set; }
+
+            public ChatDiagramState Get(string source, bool dark, Action? whenDone) => new(ChatDiagramStatus.Off);
+
+            public void Forget(string source, bool dark)
+            {
+            }
+
+            public void Clear() => Cleared++;
+        }
+
         [Fact]
         public void The_hook_for_a_stored_credential_is_safe_with_no_window_and_from_another_thread() => WithWindow((window, h) =>
         {

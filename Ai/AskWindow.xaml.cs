@@ -257,25 +257,51 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>The status line after a conversation was ended because text of a note it had read was stored as a credential.</summary>
         internal const string ClearedForCredential = "This conversation was cleared: text from a note it had read was stored as a credential.";
 
+        /// <summary>The status line when the answer under way was ended for the same reason, before it was known to have read a note.</summary>
+        internal const string ClearedWhileAnswering = "This conversation was cleared: text of a note was stored as a credential while an answer that may read notes was under way.";
+
         /// <summary>
         /// Text of a note was stored as a credential. A conversation that read notes holds note
         /// text, and so perhaps that value, in its tool results and its answers: on screen, and in
         /// what the next question would send. It is ended as New chat ends one (an answer still
         /// streaming is cancelled), and the status line says why. A conversation that never read
-        /// notes holds none and is left alone. On the UI thread; never throws.
+        /// notes holds none and is left alone.
+        ///
+        /// <para>
+        /// An answer under way is ended too while Ask may read notes, though the conversation is
+        /// not marked yet: the mark is set only when a note tool hands its result over, and a tool
+        /// that is reading right now would hand the old text to the model after this returned.
+        /// The pictures kept for answers are forgotten here as well, whatever a MicaPad pane did
+        /// before. On the UI thread; never throws.
+        /// </para>
         /// </summary>
         internal void ClearAfterCredentialStored()
         {
             try
             {
-                if (!_conversation.NotesEverRead) return;
+                bool read = _conversation.NotesEverRead;
+                if (!read && !(IsBusy && NotesMayBeRead())) return;
                 NewConversation();
-                SetStatus(ClearedForCredential);
+                ChatDiagrams.Current?.Clear();
+                SetStatus(read ? ClearedForCredential : ClearedWhileAnswering);
             }
             catch (Exception ex)
             {
                 // The type only. It may run as a queued call, where a throw would end MicaStats.
                 Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Clearing Ask MicaStats after a credential was stored failed (" + ex.GetType().Name + ")");
+            }
+        }
+
+        /// <summary>True while Ask MicaStats is allowed to read notes; a setting that cannot be read counts as allowed, the strict side here.</summary>
+        private bool NotesMayBeRead()
+        {
+            try
+            {
+                return _config.AiNotesInAsk;
+            }
+            catch (Exception)
+            {
+                return true;
             }
         }
 

@@ -180,7 +180,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// A result of one of the two tools made shorter, in the tool's own shape, for a caller
         /// that may keep only so much of it: a <c>get_note</c> result with fewer whole lines (its
         /// <c>lastLine</c> the last one it still holds, <c>truncated</c> true, and
-        /// <c>cutInLine</c> when not even its first line fits whole), a <c>search_notes</c> result
+        /// <c>cutInLine</c> when not even its first line fits whole; its title cut too when the
+        /// title alone is too long), a <c>search_notes</c> result
         /// with fewer passages from the end (the only one left with its text cut). It stays valid
         /// JSON and ends with <see cref="About"/>, where cutting its text in the middle would
         /// lose both.
@@ -212,7 +213,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         private static JsonObject? ShortenedNote(JsonElement result, JsonElement written, int lose, int maxChars)
         {
             string text = written.GetString() ?? "";
-            int first = result.TryGetProperty("firstLine", out JsonElement line) && line.TryGetInt32(out int n) ? n : 1;
+            int first = 1;
+            if (result.TryGetProperty("firstLine", out JsonElement line) &&
+                (line.ValueKind != JsonValueKind.Number || !line.TryGetInt32(out first))) return null;   // not a line number: not this tool's result
+
+            // A note can be renamed to anything, so the title is the one other field that can be
+            // over the cap by itself. It is cut only once no text is left and the result is still too long.
+            string? title = result.TryGetProperty("title", out JsonElement named) && named.ValueKind == JsonValueKind.String ? named.GetString() : null;
 
             for (int keep = CharsLeft(written, lose); ; )
             {
@@ -239,6 +246,9 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                         case "lastLine":
                             shorter["lastLine"] = first - 1 + Math.Max(count, 1);
                             break;
+                        case "title" when title != null:
+                            shorter["title"] = title;
+                            break;
                         case "truncated":
                         case "cutInLine":
                         case "text":
@@ -256,8 +266,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
                 int over = ToolJson.ToText(shorter).Length - maxChars;
                 if (over <= 0) return shorter;
-                if (keep == 0) return null;   // even with no text it is too long
-                keep = Math.Max(0, Math.Min(keep, end) - over);
+                if (keep > 0)
+                {
+                    keep = Math.Max(0, Math.Min(keep, end) - over);
+                    continue;
+                }
+                if (string.IsNullOrEmpty(title)) return null;   // even with no text and no title it is too long
+                title = title.Substring(0, WholeChars(title, title.Length - over));   // a character is at least one character as written
             }
         }
 

@@ -1224,6 +1224,50 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.InRange(keptText.Length, before - 40, before);
         }
 
+        /// <summary>A note can be renamed to anything, so the title alone can be over the cap: then the title is what is cut.</summary>
+        [Fact]
+        public void A_note_whose_title_alone_is_over_the_cap_is_kept_as_valid_json_with_the_title_cut()
+        {
+            string title = new string('T', 21_000);
+            JsonElement given = NoteJson(new JsonObject
+            {
+                ["noteId"] = "a1", ["title"] = title, ["lines"] = 1, ["firstLine"] = 1, ["lastLine"] = 1, ["truncated"] = false,
+                ["text"] = "x",
+                ["about"] = Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About,
+            });
+
+            JsonElement kept = Assert.IsType<JsonElement>(KeptOf(ToolNames.GetNote, given).Result);
+
+            Assert.True(kept.GetRawText().Length <= ToolHistory.MaxResultChars, "kept " + kept.GetRawText().Length + " characters");
+            Assert.Equal("about", kept.EnumerateObject().Last().Name);           // still closed by the line that says it is data
+            Assert.True(kept.GetProperty("truncated").GetBoolean());
+            string keptTitle = kept.GetProperty("title").GetString()!;
+            Assert.StartsWith(keptTitle, title, StringComparison.Ordinal);
+            Assert.InRange(keptTitle.Length, 1, ToolHistory.MaxResultChars);
+            Assert.Equal("", kept.GetProperty("text").GetString());              // the text went first
+            // No more of the note than the plain cut kept: that one held the start of the title and nothing else.
+            Assert.True(keptTitle.Length <= ToolHistory.Cap(given.GetRawText()).Length);
+        }
+
+        /// <summary>A first line that is no number is not the tool's shape: the result is cut to text, and nothing throws.</summary>
+        [Fact]
+        public void A_note_shaped_result_whose_first_line_is_no_number_is_cut_to_text_as_before()
+        {
+            foreach (JsonNode? firstLine in new JsonNode?[] { JsonValue.Create("1"), null, JsonValue.Create(1.5), JsonValue.Create(true) })
+            {
+                JsonElement given = NoteJson(new JsonObject
+                {
+                    ["noteId"] = "a1", ["title"] = "T", ["lines"] = 1, ["firstLine"] = firstLine, ["lastLine"] = 1, ["truncated"] = false,
+                    ["text"] = new string('x', 30_000),
+                    ["about"] = Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About,
+                });
+
+                string kept = Assert.IsType<string>(KeptOf(ToolNames.GetNote, given).Result);
+
+                Assert.Equal(ToolHistory.Cap(given.GetRawText()), kept);
+            }
+        }
+
         /// <summary>The nine PC tools are cut as before, whatever their result looks like; so is a note tool's result of a shape it never gives.</summary>
         [Fact]
         public void Every_other_result_over_the_cap_is_cut_to_text_as_before()

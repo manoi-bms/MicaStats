@@ -247,6 +247,54 @@ namespace Kil0bitSystemMonitor.Ai
             SetStatus("");
         }
 
+        /// <summary>The status line after a conversation was ended because text of a note it had read was stored as a credential.</summary>
+        internal const string ClearedForCredential = "This conversation was cleared: text from a note it had read was stored as a credential.";
+
+        /// <summary>
+        /// Text of a note was stored as a credential. A conversation that read notes holds note
+        /// text, and so perhaps that value, in its tool results and its answers: on screen, and in
+        /// what the next question would send. It is ended as New chat ends one (an answer still
+        /// streaming is cancelled), and the status line says why. A conversation that never read
+        /// notes holds none and is left alone. On the UI thread; never throws.
+        /// </summary>
+        internal void ClearAfterCredentialStored()
+        {
+            try
+            {
+                if (!_conversation.NotesEverRead) return;
+                NewConversation();
+                SetStatus(ClearedForCredential);
+            }
+            catch (Exception ex)
+            {
+                // The type only. It may run as a queued call, where a throw would end MicaStats.
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Clearing Ask MicaStats after a credential was stored failed (" + ex.GetType().Name + ")");
+            }
+        }
+
+        /// <summary>
+        /// <see cref="ClearAfterCredentialStored()"/> for <paramref name="window"/>, from any
+        /// thread: on the window's own thread it is done before this returns, from another it is
+        /// queued there (the caller is never made to wait for the UI thread). No window, nothing
+        /// to do. Never throws.
+        /// </summary>
+        internal static void ClearAfterCredentialStored(AskWindow? window)
+        {
+            if (window == null) return;
+            try
+            {
+                if (window.Dispatcher.CheckAccess()) window.ClearAfterCredentialStored();
+                else window.Dispatcher.BeginInvoke(new Action(window.ClearAfterCredentialStored));
+            }
+            catch (Exception ex)
+            {
+                Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Reaching Ask MicaStats after a credential was stored failed (" + ex.GetType().Name + ")");
+            }
+        }
+
+        /// <summary>What the app hands MicaPad as its hook for a stored credential: the open Ask window, if there is one.</summary>
+        internal static void ClearCurrentAfterCredentialStored() => ClearAfterCredentialStored(s_current);
+
         /// <summary>True when the transcript is within <see cref="FollowDistance"/> of its end.</summary>
         internal static bool IsNearEnd(double verticalOffset, double scrollableHeight) =>
             scrollableHeight - verticalOffset <= FollowDistance;

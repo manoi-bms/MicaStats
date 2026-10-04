@@ -47,6 +47,15 @@ namespace Kil0bitSystemMonitor.Pad
         private CredentialVault? Vault => _workspace.Vault;
 
         /// <summary>
+        /// Raised once each time text of a note is stored as a credential, after MicaPad's own AI
+        /// panes were emptied of it: whoever else may hold note text drops it too. The app sets it
+        /// to the Ask MicaStats window, whose conversation holds note text once it read notes.
+        /// Null in tests. It carries nothing (no value, no note), and it may throw: it is raised
+        /// under a guard.
+        /// </summary>
+        internal static Action? CredentialStored { get; set; }
+
+        /// <summary>
         /// Pills in the note editor and the history preview, repainted whenever the vault changes (a
         /// label, a deletion); and the card hands the keyboard back to the editor when it closes.
         /// </summary>

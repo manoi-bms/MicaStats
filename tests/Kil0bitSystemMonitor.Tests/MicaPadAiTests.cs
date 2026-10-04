@@ -2179,6 +2179,81 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         /// <summary>
+        /// Stores with <paramref name="hook"/> as the app's hook for a stored credential, and puts
+        /// the one that was there back. With no await in between: the UI tests of other classes
+        /// share this thread and that static.
+        /// </summary>
+        private static string StoreWithHook(Harness h, MicaPadWindow window, string value, Action? hook)
+        {
+            Action? others = MicaPadWindow.CredentialStored;
+            MicaPadWindow.CredentialStored = hook;
+            try
+            {
+                return Store(h, window, value);
+            }
+            finally
+            {
+                MicaPadWindow.CredentialStored = others;
+            }
+        }
+
+        [Fact]
+        public Task Storing_a_credential_raises_the_hook_once_however_many_windows_the_workspace_has() => OnUiWithTwoWindows((h, second) =>
+        {
+            NewVault(h);
+            const string text = "the login is hunter2 today";
+            Write(h, text);
+            int raised = 0;
+
+            // A store that stores nothing raises nothing: the note changed while the card waited.
+            Action? others = MicaPadWindow.CredentialStored;
+            MicaPadWindow.CredentialStored = () => raised++;
+            try
+            {
+                h.Editor.Select(text.IndexOf("hunter2", StringComparison.Ordinal), "hunter2".Length);
+                h.Window.StoreSelection();
+                h.Editor.Document.Text = "nothing of it is left";
+                Click(h.Window.VaultCard.PrimaryButton);
+            }
+            finally
+            {
+                MicaPadWindow.CredentialStored = others;
+            }
+            Assert.Empty(h.Env.Vault.Credentials);
+            Assert.Equal(0, raised);
+
+            h.Editor.Document.Text = text;
+            StoreWithHook(h, h.Window, "hunter2", () => raised++);
+
+            Assert.Equal(1, raised);                              // once for the store, not once for each window
+            Assert.Null(MicaPadWindow.CredentialStored);          // tests run with no hook
+            return Task.CompletedTask;
+        });
+
+        [Fact]
+        public Task A_hook_that_throws_does_not_stop_the_panes_from_being_cleared_or_the_store_from_finishing() => OnUiAsync(async h =>
+        {
+            NewVault(h);
+            const string text = "the login is hunter2 today";
+            Write(h, text, text);
+            h.Model.Reply("Today the login is hunter2.");
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+            Assert.Equal("Today the login is hunter2.", h.Pane.ResultBox.Shown);
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+
+            string id = StoreWithHook(h, h.Window, "hunter2", () => throw new InvalidOperationException("the login is hunter2"));
+
+            Assert.Equal("the login is " + SecretTokens.Format(id) + " today", h.Editor.Document.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.Visibility);
+            Assert.Null(h.Window.AiSessionNow);
+            Assert.Equal("", h.Pane.ResultBox.Shown);                                              // the pane was emptied
+            Assert.StartsWith("Stored as " + id, h.Window.StatusMessage.Text, StringComparison.Ordinal);   // and the rest of the store ran
+            string warning = Assert.Single(warned);
+            Assert.Equal("Clearing Ask MicaStats after a credential was stored failed (InvalidOperationException)", warning);
+        });
+
+        /// <summary>
         /// Runs a test over the harness's window and a second window of the same workspace, which
         /// has one note of its own and the same fakes. Neither is ever shown.
         /// </summary>

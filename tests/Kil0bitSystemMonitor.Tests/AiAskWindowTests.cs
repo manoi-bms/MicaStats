@@ -1052,6 +1052,172 @@ namespace Kil0bitSystemMonitor.Tests
             }
         });
 
+        // ---- text of a note stored as a credential ends a conversation that read notes -------------
+
+        private const string ClearedForCredential =
+            "This conversation was cleared: text from a note it had read was stored as a credential.";
+
+        /// <summary>
+        /// A setup whose answer rests on a note tool: the conversation is marked as the tool itself
+        /// marks it, before anything is shown. Every conversation it is handed is recorded.
+        /// </summary>
+        private static AskSetup AnswerFromNotes(Harness h, List<AiConversation> seen, params AssistantUpdate[] updates) =>
+            new((conversation, question, ct) =>
+            {
+                h.Questions.Add(question);
+                seen.Add(conversation);
+                conversation.MarkNotesRead("this PC");
+                return Play(updates, ct);
+            }, null);
+
+        private static AskSetup PlainAnswer(Harness h, List<AiConversation> seen, string text) =>
+            new((conversation, question, ct) =>
+            {
+                h.Questions.Add(question);
+                seen.Add(conversation);
+                return Play(AnswerWith(text), ct);
+            }, null);
+
+        [Fact]
+        public void A_conversation_that_read_notes_is_cleared_when_a_credential_is_stored_and_the_status_says_why() => WithWindow((window, h) =>
+        {
+            var seen = new List<AiConversation>();
+            h.Setups.Enqueue(AnswerFromNotes(h, seen,
+                new AssistantUpdate(AssistantUpdateKind.ToolUsed, ToolName: "read_note", ToolArgs: "{}"),
+                new AssistantUpdate(AssistantUpdateKind.Text, "The vpn login is hunter2."),
+                new AssistantUpdate(AssistantUpdateKind.Done)));
+            Send(window, "What is the vpn login?");
+            Assert.Equal("The vpn login is hunter2.", Assert.Single(window.Turns).RawText);
+            Assert.Equal(Visibility.Collapsed, window.EmptyState.Visibility);
+
+            window.ClearAfterCredentialStored();
+
+            Assert.Empty(window.Turns);                           // nothing of it on screen
+            Assert.Empty(window.TranscriptPanel.Children);
+            Assert.Equal(Visibility.Visible, window.EmptyState.Visibility);
+            Assert.Equal(ClearedForCredential, window.StatusText.Text);
+            Assert.Equal(ClearedForCredential, AskWindow.ClearedForCredential);
+            Assert.Equal(Visibility.Visible, window.StatusRow.Visibility);
+
+            // And nothing of it in what the next question sends: that one gets a new conversation.
+            h.Setups.Enqueue(PlainAnswer(h, seen, "Fine."));
+            Send(window, "And now?");
+            Assert.Equal(2, seen.Count);
+            Assert.NotSame(seen[0], seen[1]);
+            Assert.True(seen[0].NotesEverRead);
+            Assert.False(seen[1].NotesEverRead);
+            Assert.False(Assert.Single(window.Turns).PlainLinks);  // links are links again: this one read no notes
+            Assert.Equal("", window.StatusText.Text);
+        });
+
+        [Fact]
+        public void A_conversation_that_never_read_notes_is_left_alone_when_a_credential_is_stored() => WithWindow((window, h) =>
+        {
+            var seen = new List<AiConversation>();
+            h.Setups.Enqueue(PlainAnswer(h, seen, "The CPU is at 12%."));
+            Send(window, "How busy is it?");
+
+            window.ClearAfterCredentialStored();
+            window.ClearAfterCredentialStored();
+
+            Assert.Equal("The CPU is at 12%.", Assert.Single(window.Turns).RawText);
+            Assert.Equal(Visibility.Collapsed, window.EmptyState.Visibility);
+            Assert.Equal("", window.StatusText.Text);
+
+            h.Setups.Enqueue(PlainAnswer(h, seen, "Still 12%."));
+            Send(window, "And now?");
+            Assert.Same(seen[0], seen[1]);                        // the same conversation goes on
+            Assert.Equal(2, window.Turns.Count);
+
+            // A window that was never asked anything has nothing to clear either.
+            var empty = new Harness().Build();
+            try
+            {
+                empty.ClearAfterCredentialStored();
+                Assert.Equal("", empty.StatusText.Text);
+            }
+            finally
+            {
+                empty.Close();
+            }
+        });
+
+        private static async IAsyncEnumerable<AssistantUpdate> NotesThenHang(
+            AiConversation conversation, TaskCompletionSource reached, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            conversation.MarkNotesRead("this PC");
+            yield return new AssistantUpdate(AssistantUpdateKind.ToolUsed, ToolName: "search_notes", ToolArgs: "{}");
+            yield return new AssistantUpdate(AssistantUpdateKind.Text, "The vpn login is hunter");
+            reached.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+            yield return new AssistantUpdate(AssistantUpdateKind.Done);
+        }
+
+        [Fact]
+        public void An_answer_from_notes_that_still_streams_is_cancelled_when_a_credential_is_stored() => WithWindow((window, h) =>
+        {
+            var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            bool cancelled = false;
+            h.Setups.Enqueue(new AskSetup((conversation, question, ct) =>
+            {
+                ct.Register(() => cancelled = true);
+                return NotesThenHang(conversation, reached, ct);
+            }, null));
+            window.QuestionBox.Text = "What is the vpn login?";
+            Click(window.SendButton);
+            var answer = window.Pending!;
+            UiPump.Wait(reached.Task);
+            Assert.True(window.IsBusy);
+
+            window.ClearAfterCredentialStored();
+            UiPump.Wait(answer);
+
+            Assert.True(cancelled);
+            Assert.False(window.IsBusy);
+            Assert.Empty(window.Turns);
+            Assert.Empty(window.TranscriptPanel.Children);
+            Assert.Equal(ClearedForCredential, window.StatusText.Text);   // not "Stopped": the answer is gone, not ended
+            Assert.Equal(Visibility.Collapsed, window.RetryButton.Visibility);
+            Assert.True(window.SendButton.IsEnabled);
+        });
+
+        [Fact]
+        public void The_hook_for_a_stored_credential_is_safe_with_no_window_and_from_another_thread() => WithWindow((window, h) =>
+        {
+            var seen = new List<AiConversation>();
+            h.Setups.Enqueue(AnswerFromNotes(h, seen, AnswerWith("The vpn login is hunter2.")));
+            Send(window, "What is the vpn login?");
+
+            AskWindow.ClearAfterCredentialStored(null);           // no Ask window is open
+            AskWindow.ClearCurrentAfterCredentialStored();        // none was opened by the app in a test
+            Assert.Single(window.Turns);
+
+            // MicaPad raises it on the UI thread, but nothing here may depend on that.
+            UiPump.Wait(Task.Run(() => AskWindow.ClearAfterCredentialStored(window)));
+            UiPump.Wait(window.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background).Task);
+
+            Assert.Empty(window.Turns);
+            Assert.Equal(ClearedForCredential, window.StatusText.Text);
+
+            // On the UI thread it is done before the call comes back.
+            h.Setups.Enqueue(AnswerFromNotes(h, seen, AnswerWith("It is hunter2.")));
+            Send(window, "Again?");
+            Assert.Single(window.Turns);
+            AskWindow.ClearAfterCredentialStored(window);
+            Assert.Empty(window.Turns);
+        });
+
+        [Fact]
+        public void The_app_hands_a_stored_credential_to_the_Ask_window()
+        {
+            string ai = System.Text.RegularExpressions.Regex.Replace(
+                System.IO.File.ReadAllText(System.IO.Path.Combine(PadWindowTests.RepoRoot(), "App.Ai.cs")), @"\s+", " ");
+
+            Assert.Contains("Kil0bitSystemMonitor.Pad.MicaPadWindow.CredentialStored = Kil0bitSystemMonitor.Ai.AskWindow.ClearCurrentAfterCredentialStored;",
+                            ai, StringComparison.Ordinal);
+        }
+
         // ---- Mermaid diagrams in answers ------------------------------------------------------------
 
         private static AssistantUpdate[] AnswerWith(string text) => new[]

@@ -104,6 +104,12 @@ public partial class App
         AppConfig diagramSettings = config.Config;
         Kil0bitSystemMonitor.Ai.ChatDiagrams.Current =
             new Kil0bitSystemMonitor.Ai.ChatDiagrams(DiagramRendererOnFirstUse, () => diagramSettings.PadDiagrams, PrimaryScreenScale);
+
+        // Text of a note stored as a credential must not stay in what AI holds of the notes.
+        // MicaPad empties its own panes; an Ask MicaStats conversation that read notes holds note
+        // text too (its tool results and its answers), so MicaPad tells the Ask window, which ends
+        // that conversation. Safe with no Ask window open and from any thread.
+        Kil0bitSystemMonitor.Pad.MicaPadWindow.CredentialStored = Kil0bitSystemMonitor.Ai.AskWindow.ClearCurrentAfterCredentialStored;
         // AI anchor: start
     }
 

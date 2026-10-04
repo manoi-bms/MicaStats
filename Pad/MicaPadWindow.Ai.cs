@@ -948,6 +948,7 @@ namespace Kil0bitSystemMonitor.Pad
                 window.GuardAi("Closing the AI pane after a credential was stored", () => window.DropAiOf(note));
                 window.GuardAi("Clearing an answer after a credential was stored", window.SearchPanel.DropAnswer);
             }
+            GuardAi("Clearing Ask MicaStats after a credential was stored", () => CredentialStored?.Invoke());
         }
 
         /// <summary>

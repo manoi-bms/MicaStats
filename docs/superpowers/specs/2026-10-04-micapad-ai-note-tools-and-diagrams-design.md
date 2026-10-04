@@ -71,7 +71,7 @@ Two read-only tools join the nine PC tools.
 ```
 
 - The text is cut at 16,000 characters, on a line boundary; `truncated` says more remains. *(Revised after the final review: a full result must fit, whole, in what Ask keeps of a tool result.)*
-- *(Added after the re-check.)* Ask keeps 20,000 characters of a tool result, counted as JSON, and text with many emoji or quotes takes more room there. A note result over that is kept as valid JSON with less of the note, never cut in the middle: `get_note` with fewer whole lines (`lastLine` moved, `truncated` true), `search_notes` with fewer passages from the end. Never more of the note is kept than a plain cut would keep.
+- *(Added after the re-check.)* Ask keeps 20,000 characters of a tool result, counted as JSON, and text with many emoji or quotes takes more room there. A note result over that is kept as valid JSON with less of the note, never cut in the middle: `get_note` with fewer whole lines (`lastLine` moved, `truncated` true), `search_notes` with fewer passages from the end. A title that is over the cap by itself is cut once no text is left. Never more of the note is kept than a plain cut would keep.
 - An unknown id gives the error "No note with that id".
 
 Rules for both:

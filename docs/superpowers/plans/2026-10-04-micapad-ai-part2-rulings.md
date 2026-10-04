@@ -6,9 +6,9 @@ Branch `feat/micapad-ai`, on top of part 1 (which ends at cf9335f). It was execu
 - four tasks, each with a task review and its fix rounds;
 - a whole-branch review by Claude opus and Codex in parallel;
 - one fix wave, re-checked by both;
-- one small residual wave.
+- one small residual wave, checked by Codex.
 
-The final suite has 4,711 tests passing (six full runs in a row at the end), and the app builds with 0 warnings.
+The final suite has 4,713 tests passing, and the app builds with 0 warnings.
 
 The owner chose "ok do 1+2 then 3+4". This part is 3 (notes as tools for Ask MicaStats and for MCP clients) and 4 (diagram help: **Draw as diagram** and **Fix with AI**). Part 1's rulings are in `2026-10-03-micapad-ai-part1-rulings.md`; its privacy rules bind this part too.
 
@@ -24,7 +24,7 @@ Each ends with what it costs if wrong.
 4. **The first note-tool call starts the notes without a window.** It restores the saved session first, so the exit flush cannot overwrite it, and reconciles the index once. "Search my notes from Claude Code right after a restart" is the main use. Cost: a start path to maintain beside `OpenPad`.
 5. **That start goes ahead only when the saved session loads normally.** A missing or unreadable `session.json` gives "Notes are not ready: open MicaPad once" and starts nothing. Cost: one manual open after an upgrade.
 6. **The start's `Restore` keeps the normal loaders.** It is the app starting its notes, with the same writes the next MicaPad open would make. "Reading never writes" binds the lookups and the index build. Cost: a repair happens earlier than the user opened MicaPad.
-7. **`get_note` returns up to 16,000 characters per call** (24,000 as first built), so a result of plain text kept in a conversation fits the kept-result cap of 20,000 characters. Text that grows when written as JSON (emoji, quotes) can still be over. A note result over the cap is then kept as valid JSON with fewer whole lines or passages, never cut in the middle, and never with more of the note than a plain cut would keep. Cost: more calls for a long note.
+7. **`get_note` returns up to 16,000 characters per call** (24,000 as first built), so a result of plain text kept in a conversation fits the kept-result cap of 20,000 characters. Text that grows when written as JSON (emoji, quotes) can still be over. A note result over the cap is then kept as valid JSON with fewer whole lines or passages, never cut in the middle, and never with more of the note than a plain cut would keep. A title that is over the cap by itself is cut too. Cost: more calls for a long note.
 8. **Draw as diagram produces Mermaid only.** It is drawn offline, and it is what models write best. Cost: one instruction string.
 9. **Draw as diagram and Fix diagram are offered only where a diagram is drawn** (Markdown notes, and `.txt` while Markdown formatting is on). Cost: one condition.
 10. **Fix with AI selects the block's source and runs through part 1's `RunAiAsync` path.** One consent path, and the user sees what will be sent and replaced. Cost: the selection changes on a click.
@@ -50,7 +50,9 @@ Each ends with what it costs if wrong.
 
 21. **The fix wave was one dispatch to a fresh fixer**, then a re-check by both reviewers, then one small residual wave of five items. Cost: none seen.
 22. **The UI test harness now runs one test body at a time.** About 50 UI test classes share one dispatcher; sync tests entered at a higher priority and pumped nested frames, so async tests could wait 40 seconds to start and then hit their own time limit. As shipped, 2 of 4 full runs failed. A test's time limit now counts from when its body starts. The product has no such race. Cost: a UI test body that hangs holds up the ones behind it.
-23. **One test read a note's file while the writer thread was still saving it** (`The_live_reader_finds_and_reads_a_closed_note_and_an_open_note_with_unsaved_text`). A probe showed the writer still busy at that line in 3 of 6 runs. The test now waits for the writer first. The product's own lookups already treat a file that cannot be read right now as unknown.
+23. **A UI test past its time limit gives the turn back while its body may still be running.** Codex asked for the turn to be held until the body ends. Not done: a body that never ends would then stop every UI test behind it, and the suite would hang with no result. Cost: after a timeout, the next test can overlap the failed one, as every test could before rule 22.
+24. **The residual wave got its own read-only Codex check.** The controller wrote that brief, and one line of it was wrong on a privacy point. Codex found no leak and three smaller items; two were fixed with a failing test first, one is rule 23. Cost: one more wait.
+25. **One test read a note's file while the writer thread was still saving it** (`The_live_reader_finds_and_reads_a_closed_note_and_an_open_note_with_unsaved_text`). A probe showed the writer still busy at that line in 3 of 6 runs. The test now waits for the writer first. The product's own lookups already treat a file that cannot be read right now as unknown.
 
 ## Who found what in the final review
 
@@ -58,7 +60,10 @@ Each ends with what it costs if wrong.
   - an answer that quoted a note stayed in the conversation after the Ask switch went off (P1);
   - a file opened in a tab after the first lookup was not found until edited;
   - the block's fence was read once and reused, so a shortened fence let a reply close the block;
-  - with a finished fix shown, every edit re-read the whole document (re-check).
+  - with a finished fix shown, every edit re-read the whole document (re-check);
+  - a note renamed to a title over the cap still cut mid-JSON (check of the residual wave);
+  - a note-shaped result with a first line that is no number throwing before the fallback (check of the residual wave);
+  - a timed-out UI test giving its turn back while still running (check of the residual wave; ruled on, not changed).
 - **Claude:**
   - a credential id reaching the provider in a renderer's message with one brace or none;
   - a marker cut at its end coming back from the note tools;

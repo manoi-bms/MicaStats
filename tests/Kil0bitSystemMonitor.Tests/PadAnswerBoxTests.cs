@@ -8,6 +8,7 @@ using System.Windows.Media;
 using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Ai;
 using Xunit;
 
 using Color = System.Windows.Media.Color;
@@ -280,6 +281,101 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.InRange(box.DesiredSize.Width, 1, 300);
             Assert.True(box.DesiredSize.Height > 100, "the height follows the text: " + box.DesiredSize.Height);
+        });
+
+        [Fact]
+        public void A_table_with_a_link_in_a_cell_leaves_no_hyperlink() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+
+            box.ShowMarkdown("| Name | Count |\n|---|---|\n| [site](https://example.com/a) | 2 |");
+
+            Assert.Empty(ChatDocument.All<Hyperlink>(box.Document));
+            Assert.Contains("https://example.com/a", Rendered(box), StringComparison.Ordinal);
+            Assert.Single(box.Document.Blocks.OfType<Table>());
+        });
+
+        [Fact]
+        public void A_code_block_keeps_one_menu_on_its_text_box_and_none_on_its_Copy_button() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+
+            box.ShowMarkdown("```csharp\nint x;\n```");
+
+            var text = Assert.Single(ChatDocument.All<System.Windows.Controls.TextBox>(box.Document));
+            Assert.NotNull(text.ContextMenu);
+            var copy = Assert.Single(ChatDocument.All<System.Windows.Controls.Button>(box.Document));
+            Assert.Null(copy.ContextMenu);
+            Assert.True(box.IsDocumentEnabled);   // without it a button in the document is disabled
+            Assert.True(copy.IsEnabled);
+        });
+
+        [Fact]
+        public void The_Copy_button_of_a_code_block_copies_through_the_shared_hook() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+            box.ShowMarkdown("```\nint x;\n```");
+            var copy = Assert.Single(ChatDocument.All<System.Windows.Controls.Button>(box.Document));
+
+            var copied = new List<string>();
+            var previous = ChatClipboard.SetText;
+            ChatClipboard.SetText = copied.Add;
+            try
+            {
+                copy.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            }
+            finally
+            {
+                ChatClipboard.SetText = previous;
+            }
+
+            Assert.Equal(new[] { "int x;" }, copied);
+        });
+
+        /// <summary>
+        /// True when a mouse at the middle of <paramref name="button"/>, in <paramref name="box"/>
+        /// shown in a real (off screen) window, would reach the button: the button is laid out,
+        /// enabled, and hit testing there finds it or something inside it. A click handler alone
+        /// proves nothing about the box letting the mouse through.
+        /// </summary>
+        internal static bool MouseReaches(System.Windows.Controls.RichTextBox box, System.Windows.Controls.Button button)
+        {
+            var window = new Window
+            {
+                Width = 600,
+                Height = 400,
+                Left = -20000,
+                Top = -20000,
+                ShowInTaskbar = false,
+                ShowActivated = false,
+                Content = box,
+            };
+            try
+            {
+                window.Show();
+                window.UpdateLayout();
+                if (!button.IsLoaded || !button.IsEnabled || button.ActualWidth <= 0) return false;
+                var middle = new System.Windows.Point(button.ActualWidth / 2, button.ActualHeight / 2);
+                var hit = VisualTreeHelper.HitTest(window, button.TranslatePoint(middle, window))?.VisualHit;
+                for (DependencyObject? at = hit; at != null; at = VisualTreeHelper.GetParent(at))
+                    if (ReferenceEquals(at, button)) return true;
+                return false;
+            }
+            finally
+            {
+                window.Content = null;
+                window.Close();
+            }
+        }
+
+        [Fact]
+        public void A_mouse_reaches_the_Copy_button_of_a_code_block_in_the_pad_box() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+            box.ShowMarkdown("```cs\nint x;\n```");
+            var copy = Assert.Single(ChatDocument.All<System.Windows.Controls.Button>(box.Document));
+
+            Assert.True(MouseReaches(box, copy));
         });
     }
 }

@@ -5,8 +5,10 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Documents;
 using Kil0bitSystemMonitor.Ai;
+using Kil0bitSystemMonitor.Services.Ai;
 using Xunit;
 
+using Button = System.Windows.Controls.Button;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 
 namespace Kil0bitSystemMonitor.Tests
@@ -200,6 +202,72 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Visibility.Visible, turn.Footer.Visibility);
             var warning = Assert.Single(warnings);
             Assert.Contains("InvalidOperationException", warning, StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public void With_plain_links_a_table_cell_link_is_text_and_without_them_it_stays_a_link() => UiThread.Run(() =>
+        {
+            const string table = "| Name |\n|---|\n| [site](https://example.com/a) |";
+
+            var plain = new AskTurnView("q") { PlainLinks = true };
+            plain.AppendText(table);
+            plain.Complete(DateTime.Now);
+            Assert.Empty(ChatDocument.All<Hyperlink>(plain.Answer.Document));
+            Assert.Contains("https://example.com/a", Rendered(plain), StringComparison.Ordinal);
+
+            var open = new AskTurnView("q");
+            open.AppendText(table);
+            open.Complete(DateTime.Now);
+            Assert.Single(ChatDocument.All<Hyperlink>(open.Answer.Document));
+        });
+
+        [Fact]
+        public void A_note_tool_after_a_table_with_a_link_turns_the_link_into_text() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");
+            turn.AppendText("| Name |\n|---|\n| [site](https://example.com/a) |");
+            Assert.Single(ChatDocument.All<Hyperlink>(turn.Answer.Document));
+
+            turn.AddTool("search_notes", null);
+
+            Assert.Empty(ChatDocument.All<Hyperlink>(turn.Answer.Document));
+        });
+
+        [Fact]
+        public void The_answers_code_Copy_button_is_enabled_and_uses_the_one_clipboard_hook() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");
+            turn.AppendText("```sh\nls -la\n```");
+            var copy = Assert.Single(ChatDocument.All<Button>(turn.Answer.Document));
+            Assert.True(turn.Answer.IsDocumentEnabled);
+            Assert.True(copy.IsEnabled);
+
+            var copied = new List<string>();
+            var previous = AskTurnView.SetClipboard;
+            AskTurnView.SetClipboard = copied.Add;
+            try
+            {
+                Assert.Same(AskTurnView.SetClipboard, ChatClipboard.SetText);
+                copy.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            }
+            finally
+            {
+                AskTurnView.SetClipboard = previous;
+            }
+
+            Assert.Equal(new[] { "ls -la" }, copied);
+        });
+
+        [Fact]
+        public void A_mouse_reaches_the_Copy_button_of_a_code_block_in_the_Ask_answer() => UiThread.Run(() =>
+        {
+            // The turn's own box sits in its transcript; a box built the way the turn builds it is shown in the test window.
+            var answer = new AnswerBox { Style = ChatStyles.Get("ChatAnswer") };
+            AskThemeApplier.ApplyResources(answer.Resources, AskPalette.Dark);   // the Ask window supplies these
+            answer.Show(ChatDocument.Build(ChatMarkdown.Parse("```cs\nint x;\n```"), ChatRender.Default));
+            var copy = Assert.Single(ChatDocument.All<Button>(answer.Document));
+
+            Assert.True(PadAnswerBoxTests.MouseReaches(answer, copy));
         });
     }
 }

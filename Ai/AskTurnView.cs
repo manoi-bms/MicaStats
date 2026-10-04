@@ -31,20 +31,14 @@ namespace Kil0bitSystemMonitor.Ai
     internal sealed class AskTurnView
     {
         /// <summary>
-        /// Puts text on the clipboard; Copy calls it with the answer's Markdown. Failures are
-        /// logged, never thrown. Tests replace it so the real clipboard is never touched.
+        /// Puts text on the clipboard; Copy calls it with the answer's Markdown. It is
+        /// <see cref="ChatClipboard.SetText"/>: one hook for every Copy in an answer.
         /// </summary>
-        internal static Action<string> SetClipboard { get; set; } = text =>
+        internal static Action<string> SetClipboard
         {
-            try
-            {
-                System.Windows.Clipboard.SetText(text);
-            }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Warn("ai", "Copying an answer failed (" + ex.GetType().Name + ")");
-            }
-        };
+            get => ChatClipboard.SetText;
+            set => ChatClipboard.SetText = value;
+        }
 
         private readonly StringBuilder _raw = new();
         private readonly Dictionary<string, ToolChip> _chipsByTool = new(StringComparer.Ordinal);
@@ -249,7 +243,7 @@ namespace Kil0bitSystemMonitor.Ai
         public TextBlock TimeText { get; }
 
         /// <summary>Turns the answer's Markdown into the document shown. Tests replace it to make rendering fail.</summary>
-        internal Func<string, FlowDocument> BuildDocument { get; set; } = raw => ChatDocument.Build(ChatMarkdown.Parse(raw));
+        internal Func<string, FlowDocument> BuildDocument { get; set; } = raw => ChatDocument.Build(ChatMarkdown.Parse(raw), ChatRender.Default);
 
         /// <summary>Where a render failure is reported, once per answer. Tests replace it so nothing reaches the real log.</summary>
         internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("ai", message);

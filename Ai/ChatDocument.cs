@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad;
@@ -12,7 +13,9 @@ using Kil0bitSystemMonitor.Services.Pad;
 // UseWindowsForms puts System.Windows.Forms and System.Drawing in scope; these names exist in both.
 using Cursors = System.Windows.Input.Cursors;
 using List = System.Windows.Documents.List;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using TextBox = System.Windows.Controls.TextBox;
+using Button = System.Windows.Controls.Button;
 
 namespace Kil0bitSystemMonitor.Ai
 {
@@ -25,6 +28,9 @@ namespace Kil0bitSystemMonitor.Ai
     internal static class ChatDocument
     {
         private static readonly Thickness ParagraphSpacing = new(0, 0, 0, 8);
+
+        /// <summary>How long a code block's Copy button reads "Copied". Tests shorten it.</summary>
+        internal static TimeSpan CopiedFor { get; set; } = TimeSpan.FromSeconds(1.5);
 
         /// <summary>
         /// Opens an allowed link in the default browser or mail program. Failures are logged,
@@ -58,8 +64,9 @@ namespace Kil0bitSystemMonitor.Ai
         }
 
         /// <summary>The document for <paramref name="blocks"/>, styled for the chat.</summary>
-        public static FlowDocument Build(IReadOnlyList<ChatBlock> blocks)
+        public static FlowDocument Build(IReadOnlyList<ChatBlock> blocks, ChatRender? render = null)
         {
+            render ??= ChatRender.Default;
             var document = NewDocument();
             var lists = new List<(List List, int Depth, ChatBlockKind Kind)>();
             foreach (ChatBlock block in blocks)
@@ -75,7 +82,8 @@ namespace Kil0bitSystemMonitor.Ai
                 {
                     ChatBlockKind.Heading => Heading(block),
                     ChatBlockKind.Quote => Quote(block),
-                    ChatBlockKind.Code => CodeBlock(block),
+                    ChatBlockKind.Code => CodeBlock(block, render),
+                    ChatBlockKind.Table when block.Table is { } table => TableBlock(table),
                     ChatBlockKind.Rule => Rule(),
                     _ => Paragraph(block.Runs, ParagraphSpacing),
                 });
@@ -209,8 +217,11 @@ namespace Kil0bitSystemMonitor.Ai
             return quote;
         }
 
-        /// <summary>A rounded box with the code, selectable and wrapped, in a monospace font.</summary>
-        private static BlockUIContainer CodeBlock(ChatBlock block)
+        /// <summary>
+        /// A rounded box with a header (the language on the left, a flat Copy button on the right)
+        /// above the code, which is selectable and wrapped, in a monospace font.
+        /// </summary>
+        private static BlockUIContainer CodeBlock(ChatBlock block, ChatRender render)
         {
             var text = new TextBox
             {
@@ -219,15 +230,148 @@ namespace Kil0bitSystemMonitor.Ai
                 FontFamily = ChatPalette.MonoFont,
                 FontSize = ChatPalette.CodeSize,
             };
+            AskMenus.Install(text, editable: false);
+
+            var copy = new Button
+            {
+                Style = ChatStyles.Get("ChatFlatButton"),
+                Content = CopyLabel,
+                ToolTip = "Copy code",
+                FontSize = 11.5,
+                Padding = new Thickness(6, 2, 6, 2),
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+            string code = block.Code;
+            CopyTimer? timer = null;
+            copy.Click += (s, e) => timer = Copied(copy, render, code, timer);
+
+            var header = new Grid { Margin = new Thickness(0, -4, -4, 4) };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            if (block.Language.Length > 0)
+            {
+                var language = new TextBlock
+                {
+                    Text = block.Language,
+                    FontSize = 11.5,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                };
+                language.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Muted");
+                header.Children.Add(language);
+            }
+            Grid.SetColumn(copy, 1);
+            header.Children.Add(copy);
+
+            var inside = new StackPanel();
+            inside.Children.Add(header);
+            inside.Children.Add(text);
             var box = new Border
             {
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(10),
-                Child = text,
+                Child = inside,
             };
             box.SetResourceReference(Border.BackgroundProperty, "Ask.CodeBack");
-            AskMenus.Install(text, editable: false);
             return new BlockUIContainer(box) { Margin = ParagraphSpacing };
+        }
+
+        private const string CopyLabel = "Copy";
+
+        /// <summary>
+        /// A Copy click: the code goes to <see cref="ChatRender.Copy"/>, the button reads "Copied"
+        /// and a one-shot timer sets it back. A hook that throws is logged by type and the button
+        /// keeps its label. The timer holds the button only weakly: the answer is rebuilt ten times
+        /// a second while it streams, and a timer still pending must not keep the old document
+        /// alive, or throw when the button is gone.
+        /// </summary>
+        private static CopyTimer? Copied(Button copy, ChatRender render, string code, CopyTimer? previous)
+        {
+            try
+            {
+                render.Copy(code);
+            }
+            catch (Exception ex)
+            {
+                // The type only: the message could quote the code.
+                DiagnosticsLog.Warn("ai", "Copying code failed (" + ex.GetType().Name + ")");
+                return previous;
+            }
+
+            previous?.Stop();
+            copy.Content = "Copied";
+            return CopyTimer.Start(copy, CopiedFor);
+        }
+
+        /// <summary>The one-shot timer behind "Copied". It references its button through a <see cref="WeakReference{T}"/> only.</summary>
+        private sealed class CopyTimer
+        {
+            private readonly DispatcherTimer _timer;
+
+            private CopyTimer(DispatcherTimer timer) => _timer = timer;
+
+            public static CopyTimer Start(Button button, TimeSpan after)
+            {
+                var weak = new WeakReference<Button>(button);
+                var timer = new DispatcherTimer(DispatcherPriority.Normal, button.Dispatcher) { Interval = after };
+                timer.Tick += (s, e) =>
+                {
+                    timer.Stop();
+                    if (weak.TryGetTarget(out Button? target)) target.Content = CopyLabel;
+                };
+                timer.Start();
+                return new CopyTimer(timer);
+            }
+
+            public void Stop() => _timer.Stop();
+        }
+
+        /// <summary>
+        /// A table: a header row, then the body rows, in one row group. The columns share the
+        /// width equally and the cells wrap. A cell is built like a paragraph, so a link in it works
+        /// (or is taken out) like any other. The brushes are Ask.* references, so a theme switch repaints.
+        /// </summary>
+        private static Table TableBlock(ChatTable chat)
+        {
+            var table = new Table { Margin = ParagraphSpacing, CellSpacing = 0 };
+            for (int c = 0; c < chat.Aligns.Count; c++)
+                table.Columns.Add(new TableColumn { Width = new GridLength(1, GridUnitType.Star) });
+
+            var group = new TableRowGroup();
+            table.RowGroups.Add(group);
+            group.Rows.Add(TableRowOf(chat.Header, chat.Aligns, header: true));
+            foreach (IReadOnlyList<ChatCell> row in chat.Rows)
+                group.Rows.Add(TableRowOf(row, chat.Aligns, header: false));
+            return table;
+        }
+
+        private static TableRow TableRowOf(IReadOnlyList<ChatCell> cells, IReadOnlyList<ChatAlign> aligns, bool header)
+        {
+            var row = new TableRow();
+            for (int c = 0; c < cells.Count; c++)
+            {
+                var content = new Paragraph { Margin = new Thickness(0) };
+                AddInlines(content.Inlines, cells[c].Runs);
+                var cell = new TableCell(content)
+                {
+                    Padding = new Thickness(8, 4, 8, 4),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    TextAlignment = c < aligns.Count ? aligns[c] switch
+                    {
+                        ChatAlign.Center => TextAlignment.Center,
+                        ChatAlign.Right => TextAlignment.Right,
+                        _ => TextAlignment.Left,
+                    } : TextAlignment.Left,
+                };
+                cell.SetResourceReference(Block.BorderBrushProperty, "Ask.Divider");
+                if (header)
+                {
+                    cell.FontWeight = FontWeights.SemiBold;
+                    cell.SetResourceReference(TextElement.BackgroundProperty, "Ask.CodeBack");
+                }
+                row.Cells.Add(cell);
+            }
+            return row;
         }
 
         private static BlockUIContainer Rule()

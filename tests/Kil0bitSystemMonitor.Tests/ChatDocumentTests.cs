@@ -7,6 +7,8 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Services.Ai;
+using System.Windows.Threading;
+using Button = System.Windows.Controls.Button;
 using Xunit;
 
 using Border = System.Windows.Controls.Border;
@@ -171,7 +173,8 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new CornerRadius(8), box.CornerRadius);
             Assert.Equal(new Thickness(10), box.Padding);
             Assert.Equal(Color.FromRgb(0x16, 0x16, 0x1C), ColorOf(box.Background));
-            var text = Assert.IsType<TextBox>(box.Child);
+            var inside = Assert.IsType<StackPanel>(box.Child);   // the header (language, Copy), then the code
+            var text = Assert.IsType<TextBox>(inside.Children[1]);
             Assert.Equal("Get-Process\n  | Sort CPU", text.Text);
             Assert.True(text.IsReadOnly);
             Assert.Equal(TextWrapping.Wrap, text.TextWrapping);
@@ -211,6 +214,243 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var document = Build("[a](file:///C:/x.exe) [b](javascript:alert(1)) [c](http://ok.example) mailto:me@example.com");
             Assert.Equal(new[] { "c", "mailto:me@example.com" }, All<Hyperlink>(document).Select(l => string.Concat(All<Run>(l).Select(r => r.Text))));
+        });
+
+        private const string TableWithLink =
+            "| Name | Count |\n|:---|---:|\n| [site](https://example.com/a) | 2 |\n| plain | 3 |";
+
+        private static string CellText(TableCell cell) => new TextRange(cell.ContentStart, cell.ContentEnd).Text.Trim();
+
+        [Fact]
+        public void A_table_block_builds_a_table_with_its_rows_cells_alignment_and_header_weight() => UiThread.Run(() =>
+        {
+            var document = Build("| Name | Count | Note |\n|:---|:---:|---:|\n| a | 1 | x |\n| b | 2 | y |");
+
+            var table = Assert.IsType<Table>(Assert.Single(document.Blocks));
+            Assert.Equal(3, table.Columns.Count);
+            Assert.All(table.Columns, c => Assert.Equal(new GridLength(1, GridUnitType.Star), c.Width));
+            var group = Assert.Single(table.RowGroups);
+            Assert.Equal(3, group.Rows.Count);   // the header, then two body rows
+
+            var header = group.Rows[0].Cells;
+            Assert.Equal(new[] { "Name", "Count", "Note" }, header.Select(CellText));
+            Assert.All(header, c => Assert.Equal(FontWeights.SemiBold, c.FontWeight));
+            Assert.Equal(new[] { TextAlignment.Left, TextAlignment.Center, TextAlignment.Right }, header.Select(c => c.TextAlignment));
+            Assert.Equal(new Thickness(8, 4, 8, 4), header[0].Padding);
+            Assert.Equal(new Thickness(0, 0, 0, 1), header[0].BorderThickness);
+            Assert.Equal(Color.FromRgb(0x16, 0x16, 0x1C), ColorOf(header[0].Background));
+
+            var body = group.Rows[2].Cells;
+            Assert.Equal(new[] { "b", "2", "y" }, body.Select(CellText));
+            Assert.Equal(new[] { TextAlignment.Left, TextAlignment.Center, TextAlignment.Right }, body.Select(c => c.TextAlignment));
+            Assert.NotEqual(FontWeights.SemiBold, body[0].FontWeight);
+            Assert.Null(body[0].Background);
+            Assert.Equal(new Thickness(0, 0, 0, 1), body[0].BorderThickness);
+        });
+
+        [Fact]
+        public void A_table_with_no_body_rows_and_an_empty_cell_builds() => UiThread.Run(() =>
+        {
+            var document = Build("| a | b |\n|---|---|\n|  | x |");
+            var table = Assert.IsType<Table>(Assert.Single(document.Blocks));
+            Assert.Equal(2, Assert.Single(table.RowGroups).Rows.Count);
+
+            var headerOnly = Build("| a | b |\n|---|---|");
+            Assert.Single(Assert.IsType<Table>(Assert.Single(headerOnly.Blocks)).RowGroups[0].Rows);
+        });
+
+        [Fact]
+        public void A_link_in_a_table_cell_is_found_and_RemoveLinks_turns_it_into_text() => UiThread.Run(() =>
+        {
+            var document = Build(TableWithLink);
+
+            var link = Assert.Single(ChatDocument.All<Hyperlink>(document));   // the walk must reach into the table
+            Assert.Equal("https://example.com/a", link.ToolTip);
+
+            ChatDocument.RemoveLinks(document);
+
+            Assert.Empty(ChatDocument.All<Hyperlink>(document));
+            var table = Assert.IsType<Table>(Assert.Single(document.Blocks));
+            string cell = CellText(table.RowGroups[0].Rows[1].Cells[0]);
+            Assert.Contains("site", cell, StringComparison.Ordinal);
+            Assert.Contains("https://example.com/a", cell, StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public void A_link_in_the_header_cell_and_in_a_table_after_a_list_goes_too() => UiThread.Run(() =>
+        {
+            var document = Build("1. item\n\n| [h](https://example.com/h) | b |\n|---|---|\n| [x](https://example.com/q) | y |\n\n- after [z](https://example.com/z)");
+
+            Assert.Equal(3, ChatDocument.All<Hyperlink>(document).Count);
+            ChatDocument.RemoveLinks(document);
+            Assert.Empty(ChatDocument.All<Hyperlink>(document));
+        });
+
+        [Fact]
+        public void A_table_of_100_rows_by_12_columns_builds() => UiThread.Run(() =>
+        {
+            var cells = Enumerable.Range(0, 12).Select(c => "c" + c.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            string row = "| " + string.Join(" | ", cells) + " |";
+            string delimiter = "|" + string.Concat(Enumerable.Repeat("---|", 12));
+            string markdown = row + "\n" + delimiter + "\n" + string.Join("\n", Enumerable.Repeat(row, 100));
+
+            var document = Build(markdown);
+
+            var table = Assert.IsType<Table>(Assert.Single(document.Blocks));
+            Assert.Equal(101, table.RowGroups[0].Rows.Count);
+            Assert.Equal(12, table.Columns.Count);
+        });
+
+        private static (Button Copy, TextBlock? Label) CodeHeader(FlowDocument document)
+        {
+            var copy = Assert.Single(ChatDocument.All<Button>(document));
+            var label = ChatDocument.All<TextBlock>(document).FirstOrDefault();
+            return (copy, label);
+        }
+
+        private static void RaiseClick(Button button) =>
+            button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+
+        /// <summary>Clicks with the shared hook replaced, so the real clipboard is never touched.</summary>
+        private static List<string> Click(Button button)
+        {
+            var copied = new List<string>();
+            var previous = ChatClipboard.SetText;
+            ChatClipboard.SetText = copied.Add;
+            try
+            {
+                RaiseClick(button);
+            }
+            finally
+            {
+                ChatClipboard.SetText = previous;
+            }
+            return copied;
+        }
+
+        [Fact]
+        public void A_code_block_has_its_language_and_a_Copy_button_and_a_click_copies_the_code_exactly() => UiThread.Run(() =>
+        {
+            var document = Build("```csharp\nint x = 1;\n  return x;\n```");
+            var (copy, label) = CodeHeader(document);
+
+            Assert.Equal("csharp", label!.Text);
+            Assert.Equal("Copy", copy.Content);
+            Assert.Equal("Copy code", copy.ToolTip);
+            Assert.Equal(new[] { "int x = 1;\n  return x;" }, Click(copy));
+            Assert.Equal("Copied", copy.Content);
+
+            var text = Assert.Single(ChatDocument.All<TextBox>(document));
+            Assert.Equal("int x = 1;\n  return x;", text.Text);
+        });
+
+        [Fact]
+        public void A_code_block_without_a_language_has_the_button_and_no_label() => UiThread.Run(() =>
+        {
+            var document = Build("```\nplain\n```");
+            var (copy, label) = CodeHeader(document);
+
+            Assert.Null(label);
+            Assert.Equal("Copy", copy.Content);
+        });
+
+        [Fact]
+        public void The_Copied_label_goes_back_to_Copy_when_the_timer_fires() => UiThread.Run(() =>
+        {
+            var previousFor = ChatDocument.CopiedFor;
+            ChatDocument.CopiedFor = TimeSpan.FromMilliseconds(1);
+            try
+            {
+                var (copy, _) = CodeHeader(Build("```\nx\n```"));
+                Click(copy);
+                Assert.Equal("Copied", copy.Content);
+
+                // Event driven, not timed: pump until the label changes (the cap only stops a hang).
+                var frame = new DispatcherFrame();
+                var watch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(5) };
+                int polls = 0;
+                watch.Tick += (s, e) =>
+                {
+                    if (!Equals(copy.Content, "Copied") || ++polls > 2000) frame.Continue = false;
+                };
+                watch.Start();
+                Dispatcher.PushFrame(frame);
+                watch.Stop();
+
+                Assert.Equal("Copy", copy.Content);
+            }
+            finally
+            {
+                ChatDocument.CopiedFor = previousFor;
+            }
+        });
+
+        [Fact]
+        public void A_Copy_timer_that_fires_after_its_document_is_gone_does_not_throw_or_keep_it_alive() => UiThread.Run(() =>
+        {
+            var previousFor = ChatDocument.CopiedFor;
+            ChatDocument.CopiedFor = TimeSpan.FromMilliseconds(1);
+            try
+            {
+                WeakReference weak = ClickAndDrop();
+                for (int i = 0; i < 3; i++)
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+                Assert.False(weak.IsAlive);   // the pending timer does not hold the button
+
+                // Let the orphaned timer fire: nothing is thrown.
+                var frame = new DispatcherFrame();
+                var watch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+                watch.Tick += (s, e) => frame.Continue = false;
+                watch.Start();
+                Dispatcher.PushFrame(frame);
+                watch.Stop();
+            }
+            finally
+            {
+                ChatDocument.CopiedFor = previousFor;
+            }
+        });
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static WeakReference ClickAndDrop()
+        {
+            var (copy, _) = CodeHeader(Build("```\nx\n```"));
+            Click(copy);
+            return new WeakReference(copy);
+        }
+
+        [Fact]
+        public void A_failing_clipboard_hook_does_not_throw_out_of_the_click() => UiThread.Run(() =>
+        {
+            var (copy, _) = CodeHeader(Build("```\nx\n```"));
+            var previous = ChatClipboard.SetText;
+            ChatClipboard.SetText = _ => throw new InvalidOperationException("busy");
+            try
+            {
+                RaiseClick(copy);
+            }
+            finally
+            {
+                ChatClipboard.SetText = previous;
+            }
+
+            Assert.Equal("Copy", copy.Content);   // a copy that failed does not claim "Copied"
+        });
+
+        [Fact]
+        public void A_render_with_its_own_Copy_is_used_instead_of_the_shared_hook() => UiThread.Run(() =>
+        {
+            var copied = new List<string>();
+            var host = new System.Windows.Controls.RichTextBox();
+            AskThemeApplier.ApplyResources(host.Resources, AskPalette.Dark);
+            var document = ChatDocument.Build(ChatMarkdown.Parse("```\ncode\n```"), new ChatRender { Copy = copied.Add });
+            host.Document = document;
+
+            Assert.Empty(Click(Assert.Single(ChatDocument.All<Button>(document))));   // the shared hook is not called
+            Assert.Equal(new[] { "code" }, copied);
         });
     }
 }

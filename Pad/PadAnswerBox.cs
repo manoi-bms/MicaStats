@@ -50,7 +50,7 @@ namespace Kil0bitSystemMonitor.Pad
         public string Shown { get; private set; } = "";
 
         /// <summary>Turns Markdown into the document shown. Tests replace it to make rendering fail.</summary>
-        internal Func<string, FlowDocument> BuildDocument { get; set; } = raw => ChatDocument.Build(ChatMarkdown.Parse(raw));
+        internal Func<string, FlowDocument> BuildDocument { get; set; } = raw => ChatDocument.Build(ChatMarkdown.Parse(raw), ChatRender.Default);
 
         /// <summary>Where a render failure is reported, once per box. Tests replace it so nothing reaches the real log.</summary>
         internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("pad", message);

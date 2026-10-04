@@ -45,6 +45,11 @@ So I used [Claude Code](https://claude.com/claude-code) to recreate that UX/UI o
 
 ## What's New
 
+**Since v1.14.0** — coming in the next release:
+
+* **AI in MicaPad.** Improve, fix, shorten, translate, summarize or explain selected text from the right-click **AI** menu, give your own instruction with **Ask AI…** (**Ctrl+Shift+A**), and press **Ctrl+Enter** in **Search notes** to get an answer from your notes with numbered sources. It uses the provider you set in **Settings → AI**, is off until you turn on **Settings → MicaPad → AI**, and sends nothing until you run an action. Stored credentials are never sent. [More below](#ai)
+* **Notes as tools, and diagram help.** Two new switches in **Settings → MicaPad → AI**, **Let Ask MicaStats search your notes** and **Let MCP clients search your notes**, each off until you turn it on, give Ask MicaStats and MCP programs such as Claude Code two read-only tools, `search_notes` and `get_note`. Stored credentials come back as `[credential]`. In MicaPad's **AI** menu, **Draw as diagram** turns text into a Mermaid diagram. **Fix with AI**, on the error box of a diagram or math block that fails to draw, repairs it; the **AI** menu's entry for that is **Fix diagram**. [More below](#ai)
+
 **v1.14.0** — search every note, capture a whole scrolling page, and zoom in the capture editor:
 
 * **Search every note.** MicaPad's new **Search notes** pane (**Ctrl+Shift+F**) finds passages in every note, open or closed. It searches by words, offline and with Thai, and, once you turn it on, by meaning through your own embedding server, reordered by your own reranker. [More below](#search-notes)
@@ -201,6 +206,22 @@ Open it from the overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, 
   * Keys are kept encrypted for your Windows account.
   * The vectors are stored encrypted beside your notes and deleted when you turn meaning search off.
 
+#### AI
+
+* Off by default: turn on **Settings → MicaPad → AI → Use AI in MicaPad**. It uses the provider, model and key from **Settings → AI** (Claude, or an OpenAI-compatible server such as Ollama), and the same daily limit as Ask MicaStats. The line under the switch says where text goes
+* Right-click → **AI**: **Improve writing**, **Fix spelling and grammar**, **Make shorter**, **Translate to English** or **Thai**, **Summarize**, **Explain**, **Draw as diagram**, or **Ask AI…** with your own instruction (**Ctrl+Shift+A** opens **Ask AI…**)
+* **Draw as diagram** turns the selection, or the whole note when nothing is selected, into a Mermaid diagram. It is offered in Markdown notes. **Insert below** puts the block under the text, where it is drawn while **Draw diagrams** is on (the default); **Replace selection** is offered for a selection
+* **Fix with AI** is on the error box of a diagram or math block that fails with an error about its own source, such as a syntax error; the **AI** menu's entry for it is **Fix diagram**. It does not appear for a block that is too large, a missing runtime, a server that cannot be reached or a timeout. It sends that block's source and the renderer's message, and **Replace selection** replaces only that source. A reply in a code fence is unwrapped, a reply that would close the block cannot replace it, and there is no **Insert below** for a fix
+* **Notes as tools** (both off by default, each its own switch under **Use AI in MicaPad**): **Let Ask MicaStats search your notes** and **Let MCP clients search your notes** give two read-only tools, `search_notes` and `get_note`. Files open in MicaPad tabs count as notes. Nothing they do changes a note, and stored credentials come back as `[credential]`
+* The AI pane shows the result as it streams, with **Stop**, **Changes** (a line diff), **Replace selection**, **Insert below**, **Copy** and **Try again**. Your note changes only when you click Replace or Insert, and each is one undo step. **Try again** reruns on the text the pane names, not on a new selection
+* In **Search notes**, **Ctrl+Enter** or **Ask** answers a question from the best 8 passages. The answer cites them as [1], [2]… matching the numbered result rows, and the status line shows "Answering from n passages", then "Answered from n passages". With AI off, **Ask** runs the normal search and says how to turn it on
+* **Private**:
+  * An action sends only the text it runs on, wrapped as data the model must not obey: never a title, another note or a file path.
+  * A question sends the question and up to 8 passages from your notes, each with its note's title, heading and line numbers.
+  * The AI pane and the Search notes status name where the text goes ("· to api.anthropic.com" in the pane, "· api.anthropic.com" in the status, or "this PC" for a local server).
+  * Stored credentials are never sent: each goes as a placeholder and is put back in the result.
+  * Links in an answer are shown as text and are never clickable.
+
 #### Markdown, code and diagrams
 
 * **Markdown the way Wiki.js shows it**: headings, tables (with **Format table** to line them up), callouts, footnotes, `:emoji:`, `<kbd>` keys and more, styled in place with the markers still visible. Prose is in a reading font while code and tables keep the editor font, and fenced code is colored by its language, with a **Copy** button at the top-right of the block under the mouse
@@ -233,6 +254,7 @@ Open it from the overlay's right-click menu, with **Ctrl+Alt+N** from anywhere, 
 * **Suggestions, never actions**: an answer can offer a button such as *End chrome.exe (PID 1234)* or *Record a slowdown now*; nothing happens until you click, and the usual checks apply (same process and start time, core Windows processes refused)
 * **Private by design**: your profile folder, computer name and user name (when 3 or more characters long), IP and MAC addresses are removed before anything is sent; window titles, command lines and environment variables are never collected; keys are stored encrypted for your Windows account (DPAPI) and never shown again
 * **Claude Desktop and Claude Code** can read the same data through **MCP**, with no key or cost inside MicaStats: a stdio bridge (`MicaStats.exe --mcp`) or a token-protected local HTTP endpoint on `127.0.0.1`. Read-only
+* **Your MicaPad notes, only if you allow it**: besides the nine PC tools, Ask MicaStats and MCP clients get two read-only note tools, `search_notes` and `get_note`, each behind its own switch in **Settings → MicaPad → AI**, off by default. Files open in MicaPad tabs count as notes. One `get_note` call returns up to 400 lines and 16,000 characters. MicaStats must be running, but not a MicaPad window. Stored credentials come back as `[credential]`. Turning the Ask switch off, or changing the AI provider, takes back what was read and the answers that used it. Changing the AI provider takes them back when the host changes; another model, port or path on the same host does not
 * Everything is **off until you turn it on** in **Settings → AI**; a daily question limit (100 by default) keeps the cost predictable, and the assistant only runs when you press Send or Explain
 
 ### Windows 11 interface
@@ -338,6 +360,8 @@ Inside MicaPad:
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | Open file · save to its file · save as |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | Find · replace · next / previous |
 | **Ctrl+Shift+F** | Search every note |
+| **Ctrl+Shift+A** | **Ask AI…** on the selection or the whole note (while **Use AI in MicaPad** is on) |
+| **Ctrl+Enter** | In Search notes: answer the question from your notes |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | Go to line · word wrap · history |
 | **F11** | Full screen |
 | **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | Duplicate line · move lines · join lines |
@@ -775,6 +799,11 @@ MicaStats เป็นโปรแกรมมอนิเตอร์ระบ�
 
 ## มีอะไรใหม่
 
+**หลัง v1.14.0** (จะมาในรีลีสถัดไป):
+
+* **AI ใน MicaPad** ปรับปรุง แก้ ย่อ แปล สรุป หรืออธิบายข้อความที่เลือกได้จากเมนูคลิกขวา **AI** พิมพ์คำสั่งของคุณเองด้วย **Ask AI…** (**Ctrl+Shift+A**) และกด **Ctrl+Enter** ใน **Search notes** เพื่อรับคำตอบจากโน้ตของคุณพร้อมแหล่งที่มาเป็นหมายเลข ใช้ผู้ให้บริการที่ตั้งไว้ใน **Settings → AI** ปิดไว้จนกว่าจะเปิด **Settings → MicaPad → AI** และไม่ส่งอะไรจนกว่าคุณจะสั่งทำ รหัสลับที่เก็บไว้ไม่ถูกส่งเลย [อ่านต่อด้านล่าง](#ai-1)
+* **โน้ตเป็นเครื่องมือ และตัวช่วยแผนภาพ** สวิตช์ใหม่สองตัวใน **Settings → MicaPad → AI** คือ **Let Ask MicaStats search your notes** และ **Let MCP clients search your notes** ปิดไว้จนกว่าจะเปิด ให้ Ask MicaStats และโปรแกรม MCP เช่น Claude Code ใช้เครื่องมืออ่านอย่างเดียวสองตัว คือ `search_notes` และ `get_note` รหัสลับที่เก็บไว้จะกลับมาเป็น `[credential]` ในเมนู **AI** ของ MicaPad คำสั่ง **Draw as diagram** เปลี่ยนข้อความเป็นแผนภาพ Mermaid ส่วน **Fix with AI** อยู่บนกล่องข้อผิดพลาดของบล็อกแผนภาพหรือสมการที่วาดไม่ขึ้น ใช้แก้บล็อกนั้น และในเมนู **AI** รายการเดียวกันนี้ชื่อ **Fix diagram** [อ่านต่อด้านล่าง](#ai-1)
+
 **v1.14.0** — ค้นหาทุกโน้ต จับภาพหน้าที่เลื่อนได้ทั้งหน้า และซูมในหน้าต่างมาร์กอัป:
 
 * **ค้นหาทุกโน้ต** แผง **Search notes** ใหม่ของ MicaPad (**Ctrl+Shift+F**) ค้นหาข้อความในทุกโน้ตทั้งที่เปิดอยู่และปิดไปแล้ว
@@ -910,6 +939,22 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
   * คีย์ถูกเข้ารหัสสำหรับบัญชี Windows ของคุณ
   * เวกเตอร์ถูกเก็บแบบเข้ารหัสไว้ข้างโน้ต และถูกลบเมื่อปิดการค้นหาตามความหมาย
 
+#### AI
+
+* ปิดไว้เป็นค่าเริ่มต้น เปิดได้ที่ **Settings → MicaPad → AI → Use AI in MicaPad** ใช้ผู้ให้บริการ โมเดล และคีย์จาก **Settings → AI** (Claude หรือเซิร์ฟเวอร์ที่เข้ากับ OpenAI เช่น Ollama) และใช้โควตารายวันเดียวกับ Ask MicaStats บรรทัดใต้สวิตช์บอกว่าข้อความถูกส่งไปที่ไหน
+* คลิกขวา → **AI**: **Improve writing**, **Fix spelling and grammar**, **Make shorter**, **Translate to English** หรือ **Thai**, **Summarize**, **Explain**, **Draw as diagram** หรือ **Ask AI…** พร้อมคำสั่งของคุณเอง (**Ctrl+Shift+A** เปิด **Ask AI…**)
+* **Draw as diagram** เปลี่ยนข้อความที่เลือก หรือทั้งโน้ตเมื่อไม่ได้เลือกอะไรไว้ ให้เป็นแผนภาพ Mermaid มีให้ใช้ในโน้ตที่เป็น Markdown ปุ่ม **Insert below** วางบล็อกไว้ใต้ข้อความ และบล็อกจะถูกวาดเป็นภาพตราบที่ **Draw diagrams** เปิดอยู่ (ค่าเริ่มต้น) ส่วน **Replace selection** มีให้เมื่อเลือกข้อความไว้
+* **Fix with AI** อยู่บนกล่องข้อผิดพลาดของบล็อกแผนภาพหรือสมการที่ขึ้นข้อผิดพลาดเกี่ยวกับซอร์สของบล็อกเอง เช่น ไวยากรณ์ผิด ส่วนรายการในเมนู **AI** ชื่อ **Fix diagram** ทั้งสองจะไม่ปรากฏเมื่อบล็อกใหญ่เกินไป ไม่มีรันไทม์ ติดต่อเซิร์ฟเวอร์ไม่ได้ หรือหมดเวลา ระบบส่งซอร์สของบล็อกนั้นกับข้อความจากตัววาด และ **Replace selection** แทนที่เฉพาะซอร์สนั้น คำตอบที่ห่อมาในบล็อกโค้ดจะถูกแกะออกให้ คำตอบที่มีบรรทัดซึ่งจะปิดบล็อกก่อนกำหนดใช้แทนที่ไม่ได้ และการแก้ไม่มีปุ่ม **Insert below**
+* **โน้ตเป็นเครื่องมือ** (ปิดไว้ทั้งคู่ เป็นสวิตช์แยกกันใต้ **Use AI in MicaPad**): **Let Ask MicaStats search your notes** และ **Let MCP clients search your notes** ให้เครื่องมืออ่านอย่างเดียวสองตัว คือ `search_notes` และ `get_note` ไฟล์ที่เปิดอยู่ในแท็บของ MicaPad นับเป็นโน้ตด้วย สิ่งที่เครื่องมือทำไม่เปลี่ยนโน้ตเลย และรหัสลับที่เก็บไว้จะกลับมาเป็น `[credential]`
+* แผง AI แสดงผลลัพธ์ขณะที่ไหลเข้ามา พร้อม **Stop**, **Changes** (ต่างกันทีละบรรทัด), **Replace selection**, **Insert below**, **Copy** และ **Try again** โน้ตเปลี่ยนก็ต่อเมื่อคุณกด Replace หรือ Insert และแต่ละครั้งเป็นหนึ่งขั้นของ Undo **Try again** ทำซ้ำกับข้อความที่แผงระบุไว้ ไม่ใช่ข้อความที่เลือกใหม่
+* ใน **Search notes** กด **Ctrl+Enter** หรือ **Ask** เพื่อตอบคำถามจาก 8 ข้อความที่เกี่ยวข้องที่สุด คำตอบอ้างอิงเป็น [1], [2]… ตรงกับหมายเลขของผลลัพธ์ และบรรทัดสถานะแสดง "Answering from n passages" แล้วเป็น "Answered from n passages" เมื่อปิด AI อยู่ **Ask** จะค้นตามปกติและบอกวิธีเปิด
+* **เป็นส่วนตัว**:
+  * การสั่งทำกับข้อความส่งเฉพาะข้อความนั้น โดยห่อไว้เป็นข้อมูลที่โมเดลต้องไม่ทำตาม ไม่ส่งชื่อโน้ต โน้ตอื่น หรือพาธไฟล์
+  * คำถามส่งคำถามกับข้อความจากโน้ตของคุณไม่เกิน 8 ช่วง แต่ละช่วงมีชื่อโน้ต หัวข้อ และเลขบรรทัดกำกับ
+  * แผง AI และบรรทัดสถานะของ Search notes บอกว่าข้อความถูกส่งไปที่ไหน ("· to api.anthropic.com" ในแผง, "· api.anthropic.com" ในบรรทัดสถานะ หรือ "this PC" สำหรับเซิร์ฟเวอร์ในเครื่อง)
+  * รหัสลับที่เก็บไว้ไม่ถูกส่งเลย แต่ละตัวถูกส่งเป็นตัวแทนและใส่กลับในผลลัพธ์
+  * ลิงก์ในคำตอบแสดงเป็นข้อความและคลิกไม่ได้
+
 #### Markdown โค้ด และแผนภาพ
 
 * **Markdown แบบที่ Wiki.js แสดง**: หัวข้อ ตาราง (พร้อมคำสั่ง **Format table** จัดคอลัมน์ให้ตรง) callout เชิงอรรถ `:emoji:` ปุ่ม `<kbd>` และอื่น ๆ แสดงผลตามรูปแบบทันทีโดยยังเห็นเครื่องหมาย เนื้อความใช้ฟอนต์สำหรับอ่าน ส่วนโค้ดและตารางใช้ฟอนต์ของตัวแก้ไข และบล็อกโค้ดมีสีตามภาษา พร้อมปุ่ม **Copy** ที่มุมขวาบนของบล็อกเมื่อชี้เมาส์
@@ -942,6 +987,7 @@ MicaStats จะไม่นำเซ็นเซอร์ตัวอื่น�
 * **แนะนำเท่านั้น ไม่ลงมือเอง**: คำตอบอาจมีปุ่มอย่าง *End chrome.exe (PID 1234)* หรือ *Record a slowdown now* แต่จะไม่มีอะไรเกิดขึ้นจนกว่าคุณจะกด และยังผ่านการตรวจสอบแบบเดิมทุกครั้ง (ต้องเป็นโปรเซสเดิมที่เวลาเริ่มทำงานตรงกัน และไม่ยอมปิดโปรเซสหลักของ Windows)
 * **ความเป็นส่วนตัวมาก่อน**: ลบโฟลเดอร์โปรไฟล์ ชื่อเครื่องและชื่อผู้ใช้ (ที่ยาวตั้งแต่ 3 ตัวอักษรขึ้นไป) ที่อยู่ IP และ MAC ออกก่อนส่งทุกครั้ง ไม่เก็บชื่อหน้าต่าง คำสั่งที่ใช้เรียกโปรแกรม หรือตัวแปรสภาพแวดล้อม และคีย์ถูกเข้ารหัสด้วยบัญชี Windows ของคุณ (DPAPI) ไม่แสดงให้เห็นอีกหลังบันทึก
 * **Claude Desktop และ Claude Code** อ่านข้อมูลชุดเดียวกันได้ผ่าน **MCP** โดยไม่ต้องใช้คีย์หรือเสียค่าใช้จ่ายใน MicaStats เลือกได้ระหว่าง stdio bridge (`MicaStats.exe --mcp`) หรือ HTTP ภายในเครื่องที่ `127.0.0.1` ซึ่งต้องใช้โทเคน ทั้งสองแบบอ่านข้อมูลได้อย่างเดียว
+* **โน้ต MicaPad ของคุณ เฉพาะเมื่อคุณอนุญาต**: นอกจากเครื่องมือเกี่ยวกับเครื่องเก้าตัว Ask MicaStats และโปรแกรม MCP ใช้เครื่องมืออ่านโน้ตอย่างเดียวได้อีกสองตัว คือ `search_notes` และ `get_note` โดยแต่ละตัวมีสวิตช์ของตัวเองใน **Settings → MicaPad → AI** ปิดไว้เป็นค่าเริ่มต้น ไฟล์ที่เปิดอยู่ในแท็บของ MicaPad นับเป็นโน้ตด้วย การเรียก `get_note` หนึ่งครั้งคืนได้ไม่เกิน 400 บรรทัดและ 16,000 ตัวอักษร MicaStats ต้องกำลังทำงานอยู่ แต่ไม่ต้องมีหน้าต่าง MicaPad รหัสลับที่เก็บไว้จะกลับมาเป็น `[credential]` เมื่อปิดสวิตช์ของ Ask หรือเปลี่ยนผู้ให้บริการ AI สิ่งที่อ่านไปแล้วและคำตอบที่ใช้สิ่งนั้นจะถูกถอนออกจากบทสนทนา การเปลี่ยนผู้ให้บริการ AI จะถอนเมื่อโฮสต์เปลี่ยน ส่วนการเปลี่ยนโมเดล พอร์ต หรือพาธบนโฮสต์เดิมจะไม่ถอน
 * ทุกอย่าง **ปิดไว้จนกว่าคุณจะเปิด** ใน **Settings → AI** มีเพดานจำนวนคำถามต่อวัน (ค่าเริ่มต้น 100) เพื่อคุมค่าใช้จ่าย และผู้ช่วยจะทำงานเฉพาะเมื่อคุณกด Send หรือ Explain เท่านั้น
 
 ### หน้าตาแบบ Windows 11
@@ -1047,6 +1093,8 @@ Windows วัดเวลาบูต วัดว่าโปรแกรม�
 | **Ctrl+O** · **Ctrl+S** · **Ctrl+Shift+S** | เปิดไฟล์ · บันทึกลงไฟล์ · บันทึกเป็น |
 | **Ctrl+F** · **Ctrl+H** · **F3** / **Shift+F3** | ค้นหา · แทนที่ · ถัดไป / ก่อนหน้า |
 | **Ctrl+Shift+F** | ค้นหาทุกโน้ต |
+| **Ctrl+Shift+A** | **Ask AI…** กับข้อความที่เลือกหรือทั้งโน้ต (เมื่อเปิด **Use AI in MicaPad**) |
+| **Ctrl+Enter** | ใน Search notes: ตอบคำถามจากโน้ตของคุณ |
 | **Ctrl+G** · **Alt+Z** · **Ctrl+Shift+H** | ไปยังบรรทัด · ตัดบรรทัดอัตโนมัติ · ประวัติ |
 | **F11** | เต็มจอ |
 | **Ctrl+D** · **Ctrl+Shift+↑/↓** · **Ctrl+J** | ทำซ้ำบรรทัด · ย้ายบรรทัด · รวมบรรทัด |

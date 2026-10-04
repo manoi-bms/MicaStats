@@ -62,10 +62,30 @@ public partial class App
         {
             // Live readings go through the UI dispatcher, process rankings take a short lease on the
             // shared sampler, and the alert and battery monitors are looked up on each call.
+            //
+            // The note tools read MicaPad's workspace, search and feeder. No MicaPad window is needed,
+            // and MicaPad need not have been opened: a note tool call that passed its switch starts
+            // them itself (PadHost, on the UI thread), the same ones a MicaPad window would get. That
+            // first start goes ahead only when the saved session loads as it is: otherwise the call
+            // answers that the notes are not ready, and nothing is started or written.
+            // Each surface has its own switch, read at every call: off by default, and either one
+            // can be turned off while a question or an MCP client is in the middle of its work.
+            AppConfig settings = config.Config;
             AiTools = new Services.Ai.Tools.MicaTools(
                 new Services.Ai.Tools.LiveMicaData(history, ui, SharedProcessSampler, History,
                     () => AlertMonitorForAi, () => Battery, () => DateTime.UtcNow),
-                Services.Ai.Tools.Redactor.ForCurrentUser());
+                Services.Ai.Tools.Redactor.ForCurrentUser())
+            {
+                Notes = new Services.Ai.Tools.NoteAccess(
+                    new Services.Pad.Ai.NoteTools(
+                        new Kil0bitSystemMonitor.Pad.LiveNoteReader(
+                            () => PadHostIfStarted?.Workspace, () => PadHostIfStarted?.Search, () => PadHostIfStarted?.Feeder,
+                            ui, start: () => PadHost.StartForNoteTools())),
+                    () => settings.AiNotesInAsk,
+                    () => settings.AiNotesInMcp),
+                // The tool, the surface and counts: never a query, a title or note text.
+                NoteLog = line => DiagnosticsLog.Log("ai", line),
+            };
         }
         catch (Exception ex)
         {
@@ -110,27 +130,7 @@ public partial class App
     /// </summary>
     internal static void StopAi()
     {
-        // Guarded here because this runs before StopAi's own try: a throw would skip the rest
-        // of App.OnExit's teardown, including the config flush.
-        try
-        {
-            s_toolPipe?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping the tool pipe failed", ex);
-        }
-        s_toolPipe = null;
-        // Guarded for the same reason as the tool pipe above: StopAi must never throw.
-        try
-        {
-            s_mcpHttp?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping local HTTP MCP failed", ex);
-        }
-        s_mcpHttp = null;
+        StopMcpServers();
         // AI anchor: stop
         try
         {
@@ -145,6 +145,35 @@ public partial class App
         {
             DiagnosticsLog.Error("ai", "Stopping the history failed", ex);
         }
+    }
+
+    /// <summary>
+    /// Stops the two ways in from outside, the tool pipe and local HTTP. On exit this comes first,
+    /// before MicaPad's search and workspace are disposed, so no note call from an MCP client runs
+    /// against what is being taken down; <see cref="StopAi"/> calls it again, which does nothing
+    /// more. Never throws: a throw here would skip the rest of App.OnExit's teardown, including
+    /// the config flush.
+    /// </summary>
+    internal static void StopMcpServers()
+    {
+        try
+        {
+            s_toolPipe?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping the tool pipe failed", ex);
+        }
+        s_toolPipe = null;
+        try
+        {
+            s_mcpHttp?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("mcp", "Stopping local HTTP MCP failed", ex);
+        }
+        s_mcpHttp = null;
     }
 
     private static HistoryStore CreateHistoryStore() =>
@@ -267,10 +296,14 @@ public partial class App
             EnsureMcpHttpToken();
             string version = Kil0bitSystemMonitor.Services.Ai.Mcp.McpToolSet.CurrentVersion;
             Kil0bitSystemMonitor.Services.Ai.Mcp.ToolInvoker invoke = tools.InvokeAsync;
+            // The note tools are listed while the user lets MCP clients read notes; asked at each
+            // list request. A call is checked again by the tools themselves (tools.Notes.ForMcp).
+            AppConfig settings = config!;
+            Func<bool> notesListed = () => settings.AiNotesInMcp;
             var host = new Kil0bitSystemMonitor.Services.Ai.Mcp.McpHttpHost(
                 port,
                 ReadMcpHttpToken,
-                () => Kil0bitSystemMonitor.Services.Ai.Mcp.McpToolSet.CreateOptions(invoke, version),
+                () => Kil0bitSystemMonitor.Services.Ai.Mcp.McpToolSet.CreateOptions(invoke, version, notesListed),
                 message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("mcp", message));
             if (host.TryStart(out string? problem))
             {
@@ -393,6 +426,10 @@ public partial class App
         Kil0bitSystemMonitor.Services.Ai.AiClientResult? result = null;
         try
         {
+            // Where this question goes, from the same settings the client is built from right after
+            // (both on the UI thread, with nothing in between). A conversation that read notes
+            // remembers it, and a question that goes somewhere else first takes back what was read.
+            string destination = Kil0bitSystemMonitor.Services.Pad.Ai.PadAiPrivacy.Destination(config.AiProvider, config.AiCompatibleBaseUrl);
             result = Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets);
             if (result.Client == null)
                 return new Kil0bitSystemMonitor.Ai.AskSetup(null,
@@ -400,7 +437,11 @@ public partial class App
 
             var assistant = new Kil0bitSystemMonitor.Services.Ai.AiAssistant(
                 result.Client, result.IsClaude, tools, AiUsage,
-                new Kil0bitSystemMonitor.Services.Ai.AiAssistantOptions { DailyLimit = () => config.AiDailyLimit });
+                new Kil0bitSystemMonitor.Services.Ai.AiAssistantOptions
+                {
+                    DailyLimit = () => config.AiDailyLimit,
+                    Destination = destination,
+                });
             return new Kil0bitSystemMonitor.Ai.AskSetup(assistant.AskAsync, null, result.Client);
         }
         catch (Exception ex)
@@ -411,6 +452,18 @@ public partial class App
             Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Setting up the provider failed (" + ex.GetType().Name + ")");
             return new Kil0bitSystemMonitor.Ai.AskSetup(null, Kil0bitSystemMonitor.Services.Ai.AiErrorText.Describe(ex));
         }
+    }
+
+    /// <summary>
+    /// The runner for MicaPad's AI actions: the provider of Settings > AI, the shared key store
+    /// and the shared daily count. Built per request, so a settings change applies at once.
+    /// </summary>
+    internal static Kil0bitSystemMonitor.Services.Pad.Ai.PadAiRunner? CreatePadAiRunner()
+    {
+        AppConfig? config = ConfigService?.Config;
+        if (config == null) return null;
+        return new Kil0bitSystemMonitor.Services.Pad.Ai.PadAiRunner(
+            () => Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets), AiUsage, () => config.AiDailyLimit);
     }
 
     // AI anchor: members

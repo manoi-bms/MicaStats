@@ -1238,6 +1238,57 @@
 
                         <TextBlock Text="Search" FontSize="18" FontWeight="SemiBold" Margin="0,24,0,4"/>
                         <pad:SearchSettingsPanel x:Name="PadSearchPanel"/>
+
+                        <TextBlock Text="AI" FontSize="18" FontWeight="SemiBold" Margin="0,24,0,4"/>
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE99A;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Use AI in MicaPad" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Improve, translate, summarize or explain selected text, and get answers from your notes in Search notes. Nothing is sent until you run an action." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="PadAiToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <TextBlock x:Name="PadAiPrivacyText" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" Margin="4,0,0,8"/>
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE721;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Let Ask MicaStats search your notes" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Ask MicaStats can look up passages and read notes to answer a question." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="AiNotesInAskToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <TextBlock x:Name="AiNotesInAskText" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" Margin="4,0,0,8"/>
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="20,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE721;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Let MCP clients search your notes" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="Programs such as Claude Code, connected through MCP, get two read-only tools: search_notes and get_note." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="2" x:Name="AiNotesInMcpToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <TextBlock x:Name="AiNotesInMcpText" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" Margin="4,0,0,8"/>
+                        <Button x:Name="PadAiProviderButton" Content="AI provider settings…" Click="OnPadAiProviderSettings" Margin="0,0,0,12"/>
                     </StackPanel>
 
                     <!-- AI -->

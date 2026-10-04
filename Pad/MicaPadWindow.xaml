@@ -114,7 +114,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Row 0: tabs. Row 1: info bar. Row 2: find bar. Row 3: editor, and history or search. Row 4: status. -->
+        <!-- Row 0: tabs. Row 1: info bar. Row 2: find bar. Row 3: editor, and history, search or AI. Row 4: status. -->
         <DockPanel Grid.Row="0" Background="{DynamicResource Pad.Chrome}" LastChildFill="True">
             <Button x:Name="MenuButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
                     Content="&#xE700;" ToolTip="Menu" Click="OnMenuButtonClick" Margin="0,4,6,0" />
@@ -193,8 +193,10 @@
                                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
             </DockPanel>
 
+            <!-- One of the three at a time: they share the column. -->
             <local:HistoryPane x:Name="HistoryPanel" Grid.Column="1" />
             <local:SearchPane x:Name="SearchPanel" Grid.Column="1" />
+            <local:AiPane x:Name="AiPanel" Grid.Column="1" Visibility="Collapsed" />
 
             <Border x:Name="GoToLineBox" Grid.Column="0" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Margin="0,8,24,0" Padding="10,6" Background="{DynamicResource Pad.Popup}" BorderBrush="{DynamicResource Pad.PopupBorder}"

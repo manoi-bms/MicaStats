@@ -109,7 +109,7 @@ public class McpBridgeTests : IDisposable
         });
         ToolInvoker forward = McpBridge.CreateForwarder(name, () => AiMcpModes.Off, OfflineTools(), TenSeconds);
 
-        foreach (string tool in ToolNames.ReadOnly)
+        foreach (string tool in ToolNames.ReadOnly.Concat(ToolNames.Notes))
         {
             JsonNode result = await forward(tool, null, CancellationToken.None);
             Assert.Equal("MCP is turned off in MicaStats Settings", (string?)result["error"]);
@@ -205,5 +205,98 @@ public class McpBridgeTests : IDisposable
         Assert.Equal(ToolNames.ReadOnly.Count, tools.Count);
         Assert.Equal("MCP is turned off in MicaStats Settings", (string?)JsonNode.Parse(off)!["error"]);
         Assert.Equal("{\"cpu\":7}", on);
+    }
+
+    // ---- the note tools over the bridge -------------------------------------------------------
+
+    [Theory]
+    [InlineData("{\"AiNotesInMcp\":true}", true)]
+    [InlineData("{\"AiMcpMode\":\"Stdio\",\"AiNotesInMcp\":true,\"AiNotesInAsk\":false}", true)]
+    [InlineData("{\"AiNotesInMcp\":false}", false)]
+    [InlineData("{\"AiNotesInAsk\":true}", false)]
+    [InlineData("{\"AiNotesInMcp\":\"true\"}", false)]
+    [InlineData("{\"AiNotesInMcp\":1}", false)]
+    [InlineData("{\"AiNotesInMcp\":null}", false)]
+    [InlineData("{}", false)]
+    [InlineData("[]", false)]
+    [InlineData("not json", false)]
+    [InlineData("", false)]
+    public void Notes_over_mcp_come_from_config_json_and_anything_unclear_is_off(string configText, bool expected)
+    {
+        string config = _env.PathOf("config.json");
+        File.WriteAllText(config, configText);
+
+        Assert.Equal(expected, McpBridge.ReadNotesInMcp(config));
+    }
+
+    [Fact]
+    public void Notes_over_mcp_are_off_for_a_missing_config_and_read_while_the_app_holds_it_open()
+    {
+        string config = _env.PathOf("config.json");
+        Assert.False(McpBridge.ReadNotesInMcp(config));
+
+        File.WriteAllText(config, "{\"AiNotesInMcp\":true}");
+        using var writer = new FileStream(config, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
+
+        Assert.True(McpBridge.ReadNotesInMcp(config));
+    }
+
+    [Fact]
+    public async Task The_bridge_server_lists_the_note_tools_while_config_json_allows_them_and_follows_it_between_lists()
+    {
+        string config = _env.PathOf("config.json");
+        File.WriteAllText(config, "{\"AiMcpMode\":\"Stdio\"}");
+        await using McpInMemory mcp = await McpInMemory.ConnectAsync(
+            McpBridge.CreateBridgeOptions(config, TestPipeName(), OfflineTools(), TenSeconds));
+
+        IList<McpClientTool> before = await mcp.Client.ListToolsAsync();
+        File.WriteAllText(config, "{\"AiMcpMode\":\"Stdio\",\"AiNotesInMcp\":true}");
+        IList<McpClientTool> on = await mcp.Client.ListToolsAsync();
+        File.WriteAllText(config, "{\"AiMcpMode\":\"Stdio\",\"AiNotesInMcp\":false}");
+        IList<McpClientTool> off = await mcp.Client.ListToolsAsync();
+
+        Assert.Equal(ToolNames.ReadOnly.Count, before.Count);
+        Assert.Equal(ToolNames.ReadOnly.Count + ToolNames.Notes.Count, on.Count);
+        Assert.Equal(ToolNames.Notes, on.Select(t => t.Name).Skip(ToolNames.ReadOnly.Count));
+        Assert.Equal(ToolNames.ReadOnly.Count, off.Count);
+        Assert.DoesNotContain(off, t => ToolNames.Notes.Contains(t.Name));
+    }
+
+    [Fact]
+    public async Task Without_the_app_a_note_tool_says_MicaStats_is_not_running()
+    {
+        ToolInvoker forward = McpBridge.CreateForwarder(TestPipeName(), () => AiMcpModes.Stdio, OfflineTools(), TenSeconds);
+
+        JsonNode search = await forward(ToolNames.SearchNotes, new JsonObject { ["query"] = "vpn" }, CancellationToken.None);
+        JsonNode get = await forward(ToolNames.GetNote, new JsonObject { ["noteId"] = "a1" }, CancellationToken.None);
+
+        Assert.Equal("{\"error\":\"MicaStats is not running\"}", search.ToJsonString());
+        Assert.Equal("{\"error\":\"MicaStats is not running\"}", get.ToJsonString());
+    }
+
+    [Fact]
+    public async Task With_the_app_running_a_note_tool_is_answered_by_the_app_which_follows_its_own_switch()
+    {
+        var reader = new FakeNoteReader();
+        bool allowed = true;
+        var app = new MicaTools(new FakeMicaData(), new Redactor(_env.Root, "tester", "TESTPC"))
+        {
+            Notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(reader), () => false, () => allowed),
+        };
+        string name = TestPipeName();
+        using ToolPipeServer server = StartServer(name, app.InvokeAsync);
+        ToolInvoker forward = McpBridge.CreateForwarder(name, () => AiMcpModes.Stdio, OfflineTools(), TenSeconds);
+
+        JsonNode search = await forward(ToolNames.SearchNotes, new JsonObject { ["query"] = "vpn", ["limit"] = 3 }, CancellationToken.None);
+        JsonNode get = await forward(ToolNames.GetNote, new JsonObject { ["noteId"] = "a1", ["firstLine"] = 2, ["lineCount"] = 1 }, CancellationToken.None);
+        allowed = false;
+        JsonNode refused = await forward(ToolNames.SearchNotes, new JsonObject { ["query"] = "vpn" }, CancellationToken.None);
+
+        Assert.Equal("a1", (string?)search["results"]![0]!["noteId"]);
+        Assert.Equal("vpn", reader.Query);
+        Assert.Equal("line two", (string?)get["text"]);   // numbers survive the pipe as numbers
+        Assert.Equal(2, (int?)get["firstLine"]);
+        Assert.Equal("Notes access is off in Settings → MicaPad → AI", (string?)refused["error"]);
+        Assert.Equal(1, reader.Searches);
     }
 }

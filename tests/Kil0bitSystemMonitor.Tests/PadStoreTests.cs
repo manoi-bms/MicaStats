@@ -282,6 +282,162 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(_store.SaveNote(meta, "reopened", _store.NextVersion()));
         }
 
+        // ---- reads that must never write (the start for a note tool) ------------------------------
+
+        /// <summary>Every file under the root with its bytes: two of these are equal only when nothing was written.</summary>
+        private static System.Collections.Generic.Dictionary<string, string> Everything(string root) =>
+            Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                     .ToDictionary(f => Path.GetRelativePath(root, f), f => Convert.ToHexString(File.ReadAllBytes(f)));
+
+        [Fact]
+        public void The_saved_session_is_peeked_as_it_would_load_without_a_store_and_without_writing()
+        {
+            var a = Note("a");
+            var b = Note("b");
+            _store.SaveSession(new SessionState { OpenNoteIds = { a.Id, "gone", b.Id }, ActiveNoteId = b.Id, Zoom = 1.5 });
+            var before = Everything(_dir.Root);
+
+            SessionState? peeked = NoteStore.PeekSessionAt(_dir.Root);
+
+            Assert.Equal(before, Everything(_dir.Root));
+            SessionState loaded = Reopened().LoadSession();
+            Assert.NotNull(peeked);
+            Assert.Equal(new[] { a.Id, b.Id }, peeked.OpenNoteIds);               // a note whose folder is gone is dropped
+            Assert.Equal(loaded.OpenNoteIds, peeked.OpenNoteIds);
+            var window = Assert.Single(peeked.Windows!);                          // always at least one window, as LoadSession gives
+            Assert.Equal(Assert.Single(loaded.Windows!).NoteIds, window.NoteIds);
+            Assert.Equal(b.Id, window.ActiveNoteId);
+            Assert.Equal(1.5, window.Zoom);
+        }
+
+        [Fact]
+        public void A_session_waiting_as_a_finished_write_is_peeked_where_it_lies()
+        {
+            var older = Note("older");
+            var newer = Note("newer");
+            string ready = _store.SessionPath + AtomicFile.ReadySuffix;
+            _store.SaveSession(new SessionState { OpenNoteIds = { older.Id } });
+            byte[] olderBytes = File.ReadAllBytes(_store.SessionPath);
+            _store.SaveSession(new SessionState { OpenNoteIds = { newer.Id } });
+            File.Move(_store.SessionPath, ready);                                 // the newer save finished, and was not swapped in
+            File.WriteAllBytes(_store.SessionPath, olderBytes);                   // session.json is still the save before it
+
+            SessionState? peeked = NoteStore.PeekSessionAt(_dir.Root);
+
+            Assert.Equal(new[] { newer.Id }, peeked!.OpenNoteIds);                // the finished write is the saved session
+            Assert.True(File.Exists(ready));                                      // and it was not swapped in
+            Assert.Equal(olderBytes, File.ReadAllBytes(_store.SessionPath));
+        }
+
+        [Fact]
+        public void No_session_is_peeked_when_it_is_missing_locked_damaged_or_holds_none()
+        {
+            Assert.Null(NoteStore.PeekSessionAt(_dir.Root));                       // none saved yet
+            Assert.Null(NoteStore.PeekSessionAt(Path.Combine(_dir.Root, "nowhere")));
+
+            var a = Note("a");
+            _store.SaveSession(new SessionState { OpenNoteIds = { a.Id } });
+            Assert.NotNull(NoteStore.PeekSessionAt(_dir.Root));
+
+            using (new FileStream(_store.SessionPath, FileMode.Open, FileAccess.Read, FileShare.None))
+                Assert.Null(NoteStore.PeekSessionAt(_dir.Root));
+
+            byte[] good = File.ReadAllBytes(_store.SessionPath);
+            byte[] damaged = (byte[])good.Clone();
+            damaged[^1] ^= 0xFF;
+            File.WriteAllBytes(_store.SessionPath, damaged);
+            Assert.Null(NoteStore.PeekSessionAt(_dir.Root));                       // encrypted, and it does not decrypt
+
+            File.WriteAllText(_store.SessionPath, "{ not json");
+            Assert.Null(NoteStore.PeekSessionAt(_dir.Root));
+            File.WriteAllText(_store.SessionPath, "null");
+            Assert.Null(NoteStore.PeekSessionAt(_dir.Root));
+
+            File.WriteAllBytes(_store.SessionPath, good);
+            Assert.NotNull(NoteStore.PeekSessionAt(_dir.Root));
+        }
+
+        [Fact]
+        public void A_session_is_not_peeked_without_its_key_and_no_key_is_made_or_repaired_for_it()
+        {
+            var a = Note("a");
+            _store.SaveSession(new SessionState { OpenNoteIds = { a.Id } });
+            string key = Path.Combine(_dir.Root, NotesKey.FileName), copy = Path.Combine(_dir.Root, NotesKey.BackupFileName);
+            byte[] copyBytes = File.ReadAllBytes(copy);
+            File.Delete(key);
+            File.Delete(copy);
+
+            Assert.Null(NoteStore.PeekSessionAt(_dir.Root));
+            Assert.False(File.Exists(key));                                        // no new key: that would lock the notes out
+
+            File.WriteAllBytes(copy, copyBytes);                                   // only the second copy is there
+
+            Assert.NotNull(NoteStore.PeekSessionAt(_dir.Root));                    // read from it,
+            Assert.False(File.Exists(key));                                        // and key.bin was not rewritten from it
+        }
+
+        [Fact]
+        public void A_session_an_earlier_version_wrote_plain_is_peeked_without_a_key()
+        {
+            using var old = new PadTempDir();
+            const string id = "0123456789abcdef0123456789abcdef";
+            Directory.CreateDirectory(Path.Combine(old.Root, "notes", id));
+            File.WriteAllText(Path.Combine(old.Root, "session.json"), "{\"WindowOpen\":true,\"OpenNoteIds\":[\"" + id + "\"]}");
+
+            SessionState? peeked = NoteStore.PeekSessionAt(old.Root);
+
+            Assert.Equal(new[] { id }, peeked!.OpenNoteIds);
+            Assert.True(Assert.Single(peeked.Windows!).Open);
+            Assert.False(File.Exists(Path.Combine(old.Root, NotesKey.FileName)));  // nothing was made
+        }
+
+        [Fact]
+        public void A_store_says_whether_it_holds_notes_without_being_made()
+        {
+            using var other = new PadTempDir();
+            Assert.False(NoteStore.HasNotesAt(other.Root));                        // no notes folder
+            Directory.CreateDirectory(Path.Combine(other.Root, "notes"));
+            Assert.False(NoteStore.HasNotesAt(other.Root));                        // an empty one
+            Assert.Equal(new[] { "notes" }, Directory.EnumerateFileSystemEntries(other.Root).Select(Path.GetFileName));
+
+            Note("a");
+            Assert.True(NoteStore.HasNotesAt(_dir.Root));
+        }
+
+        [Fact]
+        public void Peeking_all_metas_names_a_locked_record_as_unknown_and_leaves_out_what_is_no_note()
+        {
+            var readable = Note("a");
+            var locked = Note("b");
+            var bare = Note("c");
+            File.Delete(_store.MetaPath(bare.Id));
+            Directory.CreateDirectory(Path.Combine(_store.NotesDir, "not-an-id"));
+
+            System.Collections.Generic.IReadOnlyList<NoteMeta> metas;
+            System.Collections.Generic.IReadOnlyList<string> unknown;
+            using (new FileStream(_store.MetaPath(locked.Id), FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                metas = _store.PeekAllMetas(out unknown);
+            }
+
+            Assert.Equal(new[] { readable.Id }, metas.Select(m => m.Id));
+            Assert.Equal(new[] { locked.Id }, unknown);                            // not readable right now is not "no such note"
+            Assert.False(File.Exists(_store.MetaPath(bare.Id)));                   // nothing was rebuilt
+
+            Assert.Equal(2, _store.PeekAllMetas(out unknown).Count);
+            Assert.Empty(unknown);
+        }
+
+        [Fact]
+        public void Peeking_all_metas_throws_when_the_notes_cannot_be_listed()
+        {
+            Note("a");
+            Directory.Delete(_store.NotesDir, recursive: true);
+
+            // Not an empty list: that would read as "every note is gone".
+            Assert.ThrowsAny<IOException>(() => _store.PeekAllMetas(out _));
+        }
+
         [Fact]
         public void A_source_write_replaces_the_file_and_leaves_no_temporary_file()
         {

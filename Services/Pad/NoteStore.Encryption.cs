@@ -142,7 +142,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         /// <summary>
         /// Like <see cref="ReadStoreText"/> but never commits a finished write: a <c>.ready</c> is read
-        /// where it lies. For readers that run without the note's lock.
+        /// where it lies. For readers that must not change the store. It takes no lock itself:
+        /// <see cref="PeekMeta"/> and the in-place text reads call it under the note's lock, so a
+        /// save in progress is waited for.
         /// </summary>
         private string? ReadStoreTextInPlace(string path)
         {

@@ -11,7 +11,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
     /// Cuts a note into passages (spec 3.1): at Markdown headings and blank lines, packed up to
     /// about <see cref="TargetChars"/>, never over <see cref="MaxChars"/>. A fenced code block stays
     /// whole when it fits; anything longer is cut at line boundaries, and a single longer line at
-    /// <see cref="MaxChars"/>. Only the first <see cref="MaxNoteChars"/> of a note are read.
+    /// <see cref="MaxChars"/>. Only the first <see cref="MaxNoteChars"/> of a note are read, counted
+    /// once its credential references are taken out.
     /// </summary>
     public static class NotePassages
     {
@@ -24,10 +25,107 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         public const int MaxHeadingChars = 200;
 
         private const string HeadingSeparator = " › ";
+        private const string Cleaned = "[credential]";
         private static readonly Regex Secret = new(SecretTokens.Pattern, RegexOptions.CultureInvariant);
 
+        /// <summary>The start of a reference that is not whole: <c>{{secret:</c> and as much of the id as there is.</summary>
+        private const string Opening = @"\{\{secret:" + SecretTokens.IdClass + "{0,8}";
+
+        /// <summary>
+        /// A reference cut short at the end of a text: <c>{{secret:</c> and as much of the id as
+        /// was left. An automatic title is the first 30 characters of a note's first line
+        /// (<see cref="NoteTitle.FromText"/>), which can end inside a reference.
+        /// </summary>
+        private static readonly Regex CutSecret = new(Opening + @"\}?\z", RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// A reference cut at its end, anywhere in a text: <c>{{secret:</c>, as much of the id as
+        /// there is, and what is there of the closing braces. Whole references are gone before
+        /// this is used, so it never meets one.
+        /// </summary>
+        private static readonly Regex CutAtEnd = new(Opening + @"\}{0,2}", RegexOptions.CultureInvariant);
+
+        /// <summary>What a cut at its start leaves of a reference: maybe the end of its opening, then the last 1 to 8 characters of the id and the closing braces.</summary>
+        private const string StartCut = @"(?:\{secret:|secret:|ecret:|cret:|ret:|et:|t:|:)?" + SecretTokens.IdClass + @"{1,8}\}\}";
+
+        /// <summary>
+        /// A reference cut at its start, where a cut leaves it: at the very start of a text.
+        /// What is left of the opening (<c>ecret:</c> and shorter) may come first, then the last
+        /// 1 to 8 characters of the id and the closing braces. The same characters in the middle
+        /// of a text are not a cut reference: <c>{{NAME}}</c>, <c>x^{2^{3}}</c> and nested JSON
+        /// end the same way, and cleaning them would change what the user searches for or asks.
+        /// </summary>
+        private static readonly Regex CutAtStart = new(@"\A" + StartCut, RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// The same cut reference wherever it stands, for text a renderer quoted
+        /// (<see cref="WithoutSecretPartsAnywhere"/>): there a window of the source can begin
+        /// inside a reference in the middle of the message.
+        /// </summary>
+        private static readonly Regex CutAtStartAnywhere = new(StartCut, RegexOptions.CultureInvariant);
+
         /// <summary>Credential references replaced by <c>[credential]</c>; the vault is never read.</summary>
-        public static string WithoutSecrets(string text) => Secret.Replace(text, "[credential]");
+        public static string WithoutSecrets(string text) => Secret.Replace(text, Cleaned);
+
+        /// <summary>
+        /// A title with its credential references replaced by <c>[credential]</c>, a reference
+        /// cut short at its end too: half a reference is not a reference, so it would not be
+        /// cleaned, and part of the credential's id would be indexed and sent.
+        /// </summary>
+        public static string TitleWithoutSecrets(string title) => CutSecret.Replace(WithoutSecrets(title), Cleaned);
+
+        /// <summary>
+        /// Text of a note as a note tool gives it out (a title, a heading, a line, a passage): its
+        /// credential references replaced by <c>[credential]</c>, and a reference cut at its end
+        /// too, wherever it stands (<c>Login {{secret:K7Q2M9 prod</c>). A reference that lost its
+        /// end is not a reference any more, so <see cref="WithoutSecrets"/> leaves what remains of
+        /// its id. The rule needs the literal <c>{{secret:</c>, so it cannot touch ordinary text.
+        /// Not what the search index stores: that, and so every passage's hash, is as it was.
+        /// </summary>
+        public static string WithoutSecretsAndCutEnds(string text) => CutAtEnd.Replace(WithoutSecrets(text), Cleaned);
+
+        /// <summary>
+        /// <paramref name="text"/> with every occurrence of each of <paramref name="ids"/>
+        /// replaced by <c>[credential]</c>, in whatever letter case it stands. For text a program
+        /// quoted from a note whose references are known (a diagram renderer's message about a
+        /// block): a renderer that reads the source token by token names a reference its own
+        /// way, with one brace, none, or as the bare id, and no pattern for references matches
+        /// that. Anything among <paramref name="ids"/> that is not an id is skipped.
+        /// </summary>
+        public static string WithoutIds(string text, IEnumerable<string>? ids)
+        {
+            if (ids == null) return text;
+            foreach (string id in ids)
+                if (SecretTokens.IsId(id)) text = text.Replace(id, Cleaned, StringComparison.OrdinalIgnoreCase);
+            return text;
+        }
+
+        /// <summary>
+        /// Text a user typed or selected (a question, an instruction, a search query) with its
+        /// credential references replaced by <c>[credential]</c>, and a reference cut by a
+        /// selection too: cut at its end (<c>{{secret:K7Q2</c>, anywhere in the text) or at its
+        /// start (<c>M9XD}}</c>, which a selection leaves at the very start of the text). Text
+        /// that holds no part of a reference comes back as it is, templates and JSON included.
+        /// </summary>
+        public static string WithoutSecretParts(string text) =>
+            CutAtStart.Replace(CutAtEnd.Replace(WithoutSecrets(text), Cleaned), Cleaned);
+
+        /// <summary>
+        /// Text that a program quoted from a note (a diagram renderer's message) with every part of
+        /// a credential reference replaced by <c>[credential]</c>: whole references, one cut at
+        /// its end, and one cut at its start <b>anywhere</b> in the text. A renderer quotes a
+        /// window of the source around an error (Mermaid: the last 20 characters before it), so a
+        /// reference can arrive without its start in the middle of a message, as
+        /// <c>...et:K7Q2M9XD}}</c>.
+        ///
+        /// <para>
+        /// Not for what a user typed: there <see cref="WithoutSecretParts"/> cleans a cut start
+        /// only at the very start of the text, so <c>{{NAME}}</c> and JSON stay as they are. Here
+        /// such text loses its last characters before <c>}}</c> too, which only blurs a hint.
+        /// </para>
+        /// </summary>
+        public static string WithoutSecretPartsAnywhere(string text) =>
+            CutAtStartAnywhere.Replace(CutAtEnd.Replace(WithoutSecrets(text), Cleaned), Cleaned);
 
         /// <summary>Lowercase hex SHA-256 of the UTF-8 text.</summary>
         public static string HashOf(string sentText) =>
@@ -36,9 +134,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         /// <summary>The note's passages in order. Blank text has none. Credential references become <c>[credential]</c> in the title too.</summary>
         public static IReadOnlyList<Passage> Cut(string noteId, string title, string text)
         {
-            if (text.Length > MaxNoteChars) text = text.Substring(0, MaxNoteChars);
+            // Cleaned before it is cut: a reference across the limit would be cut in half, and half
+            // a reference is not cleaned, so part of the credential's id would be indexed and sent.
             text = WithoutSecrets(text);
-            title = WithoutSecrets(title);
+            if (text.Length > MaxNoteChars) text = text.Substring(0, MaxNoteChars);
+            title = TitleWithoutSecrets(title);
             string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
             var passages = new List<Passage>();

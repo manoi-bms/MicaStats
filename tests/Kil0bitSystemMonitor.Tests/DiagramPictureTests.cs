@@ -247,5 +247,140 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(new[] { "copy", "png", "svg" }, done);
         });
+
+        // ---- Fix with AI on the error box (MicaPad AI part 2, spec 2.2) ----------------------------
+
+        /// <summary>An error box whose view can ask for a fix; the counts say which of its two actions ran.</summary>
+        private sealed class Fixable
+        {
+            public bool AiOn { get; set; } = true;
+            public int Fixes { get; private set; }
+            public int SetUps { get; private set; }
+
+            public DiagramView View(DiagramResult? result, bool menu = true) => new()
+            {
+                Result = result,
+                Palette = PadPalette.Dark,
+                Menu = menu,
+                FixWithAi = () => Fixes++,
+                AiOn = () => AiOn,
+                SetUpAi = () => SetUps++,
+            };
+        }
+
+        private static readonly DiagramResult SyntaxError = DiagramResult.Failure("Parse error on line 3:\n---^", lasting: true);
+
+        private static List<MenuItem> ItemsOf(ContextMenu menu) => menu.Items.OfType<MenuItem>().ToList();
+
+        private static void Click(MenuItem item) => item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+
+        [Fact]
+        public void The_error_box_menu_holds_Fix_with_AI_and_a_click_asks_for_the_fix() => UiThread.Run(() =>
+        {
+            var box = new Fixable();
+            var picture = new DiagramPicture(box.View(SyntaxError));
+
+            ContextMenu menu = picture.ContextMenu!;
+            var items = ItemsOf(menu);
+            Assert.Equal("Fix with AI", items[0].Header);
+            Assert.True(items[0].IsEnabled);
+            // A right-click on the message itself opens the same menu, not the text box's own Cut, Copy, Paste.
+            Assert.Same(menu, picture.ErrorText!.ContextMenu);
+            // The message stays selectable, so the menu keeps the one item of the text box's own that works on it.
+            Assert.Same(ApplicationCommands.Copy, items[1].Command);
+            Assert.Same(picture.ErrorText, items[1].CommandTarget);
+            Assert.Equal(2, items.Count);
+
+            Click(items[0]);
+
+            Assert.Equal(1, box.Fixes);
+            Assert.Equal(0, box.SetUps);
+        });
+
+        [Fact]
+        public void While_AI_is_off_the_entry_reads_Set_up_AI_and_asks_for_no_fix() => UiThread.Run(() =>
+        {
+            var box = new Fixable { AiOn = false };
+            var picture = new DiagramPicture(box.View(SyntaxError));
+            MenuItem entry = ItemsOf(picture.ContextMenu!)[0];
+
+            Assert.Equal("Set up AI…", entry.Header);
+            Click(entry);
+
+            Assert.Equal(0, box.Fixes);
+            Assert.Equal(1, box.SetUps);
+        });
+
+        [Fact]
+        public void The_entry_follows_the_setting_as_the_menu_opens() => UiThread.Run(() =>
+        {
+            var box = new Fixable { AiOn = false };
+            var picture = new DiagramPicture(box.View(SyntaxError));   // drawn while AI was off
+            ContextMenu menu = picture.ContextMenu!;
+            MenuItem entry = ItemsOf(menu)[0];
+
+            box.AiOn = true;                                            // turned on in Settings; the line is not drawn again
+            menu.RaiseEvent(new RoutedEventArgs(ContextMenu.OpenedEvent));
+            Assert.Equal("Fix with AI", entry.Header);
+            Click(entry);
+            Assert.Equal(1, box.Fixes);
+
+            box.AiOn = false;
+            menu.RaiseEvent(new RoutedEventArgs(ContextMenu.OpenedEvent));
+            Assert.Equal("Set up AI…", entry.Header);
+            Click(entry);
+            Assert.Equal(1, box.Fixes);                                 // nothing more was asked for
+            Assert.Equal(1, box.SetUps);
+        });
+
+        [Fact]
+        public void A_setting_that_cannot_be_read_counts_as_off_on_the_error_box() => UiThread.Run(() =>
+        {
+            int fixes = 0, setUps = 0;
+            var warned = new List<string>();
+            Action<string> before = EditorMenus.Warn;
+            EditorMenus.Warn = warned.Add;
+            try
+            {
+                var picture = new DiagramPicture(new DiagramView
+                {
+                    Result = SyntaxError,
+                    Palette = PadPalette.Dark,
+                    FixWithAi = () => fixes++,
+                    AiOn = () => throw new InvalidOperationException("no settings"),
+                    SetUpAi = () => setUps++,
+                });
+                MenuItem entry = ItemsOf(picture.ContextMenu!)[0];
+
+                Assert.Equal("Set up AI…", entry.Header);
+                picture.ContextMenu!.RaiseEvent(new RoutedEventArgs(ContextMenu.OpenedEvent));   // nothing is thrown into the menu opening
+                Click(entry);
+
+                Assert.Equal(0, fixes);
+                Assert.Equal(1, setUps);
+                Assert.NotEmpty(warned);
+            }
+            finally
+            {
+                EditorMenus.Warn = before;
+            }
+        });
+
+        [Fact]
+        public void Without_a_fix_the_error_box_has_no_menu_and_a_picture_keeps_its_own() => UiThread.Run(() =>
+        {
+            var plain = new DiagramPicture(View(SyntaxError));
+            Assert.Null(plain.ContextMenu);
+            Assert.Null(plain.ErrorText!.ContextMenu);
+
+            var box = new Fixable();
+            var imagePreview = new DiagramPicture(box.View(SyntaxError, menu: false));   // image previews have no menu at all
+            Assert.Null(imagePreview.ContextMenu);
+            Assert.Null(imagePreview.ErrorText!.ContextMenu);
+
+            var drawn = new DiagramPicture(box.View(DiagramFakes.Picture()));
+            Assert.Equal(new[] { "Copy picture", "Save as PNG…", "Save as SVG…" }, ItemsOf(drawn.ContextMenu!).Select(i => (string)i.Header));
+            Assert.Null(new DiagramPicture(box.View(null)).ContextMenu);                  // still drawing
+        });
     }
 }

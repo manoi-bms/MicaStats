@@ -48,6 +48,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// </summary>
         public Func<string> TextProvider { get; set; }
 
+        /// <summary>
+        /// The title the note would have if it were saved now, with <paramref name="text"/> as its
+        /// text: a file's name or a custom title as it is, an automatic one worked out from the
+        /// text. <see cref="Title"/> is only refreshed when the note is saved, so a reader of
+        /// unsaved text (the search index, a note tool) asks here and never gets the old first line.
+        /// </summary>
+        public string LiveTitle(string text) =>
+            Meta.IsFileBacked || Meta.TitleIsCustom ? Title : NoteTitle.FromText(text, Meta.UntitledNumber);
+
         /// <summary>The tab title; kept in step with <see cref="NoteMeta.Title"/>.</summary>
         public string Title
         {

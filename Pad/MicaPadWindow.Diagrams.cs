@@ -51,6 +51,11 @@ namespace Kil0bitSystemMonitor.Pad
                 AskSavePath = (name, filter) => AskSavePath(name, filter),
                 ShowStatus = ShowStatus,
                 Warn = message => Warn(message),
+                // Fix with AI on an error box (MicaPad AI part 2, spec 2.2). The entry is only named
+                // here; FixDiagramAsync asks the AI setting itself before it reads or sends anything.
+                FixWithAi = (openLine, closeLine, kind, message) => _ = FixDiagramAsync(openLine, closeLine, kind, message),
+                AiOn = AiOnInMenus,
+                SetUpAi = () => OpenPadSettings(),
             };
         }
 

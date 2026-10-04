@@ -98,6 +98,8 @@ namespace Kil0bitSystemMonitor.Tests
         [InlineData("get_hardware", "Read hardware info")]
         [InlineData("get_battery", "Checked the battery")]
         [InlineData("get_boot_summary", "Checked startup times")]
+        [InlineData("search_notes", "Searched notes")]
+        [InlineData("get_note", "Read a note")]
         [InlineData("something_new", "something_new")]
         public void Every_tool_has_its_chip_label(string tool, string label)
         {

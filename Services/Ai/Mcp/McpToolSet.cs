@@ -6,11 +6,15 @@ using Kil0bitSystemMonitor.Services.Ai.Tools;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
+// A tool as a list result names it; Tool here is the method that builds one.
+using ListedTool = ModelContextProtocol.Protocol.Tool;
+
 namespace Kil0bitSystemMonitor.Services.Ai.Mcp;
 
 /// <summary>
-/// The MCP face of the nine read-only data tools, shared by the stdio bridge and the local
-/// HTTP host. <c>suggest_action</c> is in-app only and never listed here: MCP stays read-only.
+/// The MCP face of the nine read-only data tools and the two note tools, shared by the stdio
+/// bridge and the local HTTP host. <c>suggest_action</c> is in-app only and never listed here:
+/// MCP stays read-only.
 ///
 /// <para>
 /// Each tool is a typed method, so MCP clients see a proper input schema, and each forwards to
@@ -28,7 +32,8 @@ public static class McpToolSet
     public const string Instructions =
         "MicaStats is a system monitor running on this Windows PC. Every tool is read-only and returns compact JSON. " +
         "A reading the PC does not provide is reported as unavailable with a reason, never as 0. Times are UTC. " +
-        "Paths under the user's profile folder are shown as %USERPROFILE%.";
+        "In what the PC tools return, paths under the user's profile folder are shown as %USERPROFILE%. " +
+        "Note text (search_notes, get_note, when the user allowed them) is returned as written, with stored credentials as [credential].";
 
     /// <summary>The MicaStats version, for <c>serverInfo</c>.</summary>
     public static string CurrentVersion => typeof(McpToolSet).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
@@ -42,11 +47,20 @@ public static class McpToolSet
     /// Fresh server options listing the nine read-only tools, all annotated read-only,
     /// non-destructive and closed-world. Fresh each call because the SDK may adjust the options
     /// object of the server it creates, and the HTTP host creates one server per request.
+    ///
+    /// <para>
+    /// The list follows the notes setting: the two note tools come after the nine while
+    /// <paramref name="notesAllowed"/> says yes, and it is asked each time a client asks for the
+    /// list, so a server that lives as long as its client (the stdio bridge) follows the switch
+    /// without a restart. Null, or a switch that cannot be read, lists the nine only. A client
+    /// that holds an older list can still call a note tool: the call goes to
+    /// <paramref name="invoke"/> like any other, and the app refuses it there.
+    /// </para>
     /// </summary>
-    public static McpServerOptions CreateOptions(ToolInvoker invoke, string serverVersion)
+    public static McpServerOptions CreateOptions(ToolInvoker invoke, string serverVersion, Func<bool>? notesAllowed = null)
     {
         var handlers = new Handlers(invoke);
-        return new McpServerOptions
+        var options = new McpServerOptions
         {
             ServerInfo = new Implementation { Name = ServerName, Version = serverVersion },
             ServerInstructions = Instructions,
@@ -70,8 +84,50 @@ public static class McpToolSet
                     "Battery charge, health, wear, design and full-charge capacity and cycle count. Unavailable on a desktop."),
                 Tool(handlers.GetBootSummary, ToolNames.GetBootSummary,
                     "Recent Windows boot durations, their trend, and the apps, drivers and services that slowed startup."),
+                Tool(handlers.SearchNotes, ToolNames.SearchNotes,
+                    "Search the user's MicaPad notes (open and closed) and return matching passages with their note id, title, heading and line numbers."),
+                Tool(handlers.GetNote, ToolNames.GetNote,
+                    "Read lines of one MicaPad note by the noteId from search_notes."),
             },
         };
+        options.Filters.Request.ListToolsFilters.Add(next => async (request, ct) =>
+            ListedTools(await next(request, ct).ConfigureAwait(false), NotesAllowed(notesAllowed)));
+        return options;
+    }
+
+    /// <summary>The switch as it is now. None given, or one that cannot be read, counts as off.</summary>
+    private static bool NotesAllowed(Func<bool>? notesAllowed)
+    {
+        try
+        {
+            return notesAllowed != null && notesAllowed();
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The list a client gets: every other tool as the SDK listed it, then the note tools in
+    /// <see cref="ToolNames.Notes"/> order when they are allowed, and not at all when they are not.
+    /// </summary>
+    private static ListToolsResult ListedTools(ListToolsResult result, bool notesAllowed)
+    {
+        var listed = new List<ListedTool>(result.Tools.Count);
+        foreach (ListedTool tool in result.Tools)
+            if (!ToolNames.Notes.Contains(tool.Name)) listed.Add(tool);
+
+        if (notesAllowed)
+        {
+            foreach (string name in ToolNames.Notes)
+                foreach (ListedTool tool in result.Tools)
+                    if (tool.Name == name) listed.Add(tool);
+        }
+
+        // A new list, never a change to the one handed in: that one may be the SDK's own.
+        result.Tools = listed;
+        return result;
     }
 
     private static McpServerTool Tool(Delegate method, string name, string description) =>
@@ -140,6 +196,24 @@ public static class McpToolSet
 
         public Task<string> GetBootSummary(CancellationToken cancellationToken) =>
             CallAsync(ToolNames.GetBootSummary, null, cancellationToken);
+
+        public Task<string> SearchNotes(
+            [Description("Words or a short question to look for in the notes.")] string query,
+            [Description("Most passages to return, 1 to 20.")] int limit = 8,
+            CancellationToken cancellationToken = default) =>
+            CallAsync(ToolNames.SearchNotes, new JsonObject { ["query"] = query, ["limit"] = limit }, cancellationToken);
+
+        public Task<string> GetNote(
+            [Description("The noteId of a search_notes result.")] string noteId,
+            [Description("The first line to read, from 1.")] int firstLine = 1,
+            [Description("How many lines to read, 1 to 400; truncated in the result says more remain.")] int lineCount = 200,
+            CancellationToken cancellationToken = default) =>
+            CallAsync(ToolNames.GetNote, new JsonObject
+            {
+                ["noteId"] = noteId,
+                ["firstLine"] = firstLine,
+                ["lineCount"] = lineCount,
+            }, cancellationToken);
 
         private async Task<string> CallAsync(string tool, JsonObject? args, CancellationToken ct)
         {

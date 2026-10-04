@@ -30,5 +30,22 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>Logs a warning; it names an engine and an exception type, never a diagram's text.</summary>
         public Action<string> Warn { get; init; } = _ => { };
+
+        /// <summary>
+        /// Fix with AI on an error box (MicaPad AI part 2, spec 2.2): the block's opening and closing
+        /// fence lines (1-based, as they are at the click), its fence word and the message the box
+        /// shows. Null: error boxes have no such entry (the tests of pictures alone).
+        /// </summary>
+        public Action<int, int, string, string>? FixWithAi { get; init; }
+
+        /// <summary>
+        /// True while Settings → MicaPad → AI is on: the entry reads Fix with AI; while it is off, or
+        /// cannot be read, it reads Set up AI…. It only names the entry: the window asks the setting
+        /// again before anything is read or sent.
+        /// </summary>
+        public Func<bool> AiOn { get; init; } = () => false;
+
+        /// <summary>Set up AI…: opens Settings → MicaPad.</summary>
+        public Action SetUpAi { get; init; } = () => { };
     }
 }

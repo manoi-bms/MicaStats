@@ -293,6 +293,29 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public async Task Part_of_a_credential_reference_in_the_query_goes_out_as_credential()
+        {
+            var embedder = new FakeEmbedder();
+            var reranker = new FakeReranker();
+            var (search, indexer) = await Build(embedder, reranker);
+            using (indexer)
+            {
+                // A query made from a selection that cut two references: the end of one, the start of another.
+                var outcome = await search.SearchAsync("M9XD}} noodles and {{secret:K7Q2", default);
+
+                const string cleaned = "[credential] noodles and [credential]";
+                Assert.Equal(cleaned, outcome.Query);
+                Assert.Contains(cleaned, embedder.Texts);
+                Assert.Equal(cleaned, Assert.Single(reranker.Queries));
+                foreach (string part in new[] { "K7Q2", "M9XD", "{{secret", "}}" })
+                {
+                    Assert.DoesNotContain(embedder.Texts, t => t.Contains(part, StringComparison.Ordinal));
+                    Assert.DoesNotContain(reranker.Queries, q => q.Contains(part, StringComparison.Ordinal));
+                }
+            }
+        }
+
+        [Fact]
         public async Task The_query_vector_is_cached()
         {
             var embedder = new FakeEmbedder();

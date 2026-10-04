@@ -18,6 +18,13 @@ using Kil0bitSystemMonitor.Services.Pad;
 namespace Kil0bitSystemMonitor.Pad
 {
     /// <summary>
+    /// A block whose error box shows an error a corrected source can cure (MicaPad AI part 2, spec
+    /// 2.2): its opening and closing fence lines (1-based, as they are when asked), the word that
+    /// names its language (<see cref="DiagramBlocks.WordOf"/>) and the message the box shows.
+    /// </summary>
+    internal sealed record DiagramFailure(int OpenLine, int CloseLine, string Kind, string Message);
+
+    /// <summary>
     /// The diagram pictures of one Markdown document in one editor (spec section 4): each block's
     /// shown result and pending draw (kept per closing fence line), the pause after typing (R8),
     /// Hide code through the editor's folding, and the exports (R1). Nothing here waits on a draw:
@@ -138,6 +145,64 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>
+        /// The failure the diagram or math block around line <paramref name="lineNumber"/> (1-based)
+        /// shows now; its two fence lines are part of it. Null when the line is in no such block,
+        /// the block shows its picture or is still being drawn, or its error is one no corrected
+        /// source cures (<see cref="Fixable"/>). The AI menu asks it for the caret's line.
+        /// </summary>
+        internal DiagramFailure? FailureAt(int lineNumber)
+        {
+            if (!_attached || lineNumber < 1 || lineNumber > _document.LineCount) return null;
+            int close = lineNumber;                                         // a closing fence, when it has an opening line
+            if (_cache.OpeningLineOf(_document, lineNumber) == 0)
+            {
+                int inside = _cache.BlockOpeningOf(_document, lineNumber);  // 0 on an opening fence, and outside every block
+                close = _cache.ClosingLineOf(_document, inside != 0 ? inside : lineNumber);
+            }
+            return close == 0 ? null : FailureOf(_document.GetLineByNumber(close));
+        }
+
+        /// <summary>
+        /// The failure shown under the closing fence line <paramref name="closing"/>, with the
+        /// block's lines and word as they are now, not as they were when its box was drawn; null
+        /// when the line closes no diagram block any more, or its block shows no failure to fix.
+        /// The line object follows its block through edits, so a menu built earlier asks with it
+        /// at the click and gets the block where it is then.
+        /// </summary>
+        internal DiagramFailure? FailureOf(DocumentLine closing)
+        {
+            if (BlockClosedBy(closing) is not { } block) return null;
+            if (!_states.TryGetValue(closing, out var state) || state.Shown is not { } shown || !Fixable(shown)) return null;
+            return new DiagramFailure(block.OpenLine, block.CloseLine, DiagramBlocks.WordOf(TextOf, block.OpenLine), shown.Error ?? DiagramText.Failed);
+        }
+
+        /// <summary>
+        /// True for an error about the block's own source, which a corrected source can cure: what
+        /// the engine, or the Kroki server, said of it. Such an error is lasting (the same text
+        /// fails the same way). Not the board's own notices (too large to draw, Kroki is off), and
+        /// not a passing failure (no WebView2 Runtime, a server out of reach, a timeout): sending
+        /// the source to AI would fix none of those.
+        ///
+        /// <para>
+        /// A notice is known by the flag it was made with, not by asking the block and the
+        /// settings as they are now: a notice stays in its box until the block is drawn again, and
+        /// in between the block may have been made smaller, or Kroki turned on.
+        /// </para>
+        /// </summary>
+        private static bool Fixable(DiagramResult? shown) => shown is { IsPicture: false, Lasting: true, IsNotice: false };
+
+        /// <summary>
+        /// Fix with AI on the error box under <paramref name="closing"/>. The window is told the
+        /// block as it is at the click; a block that is gone by then, or shows no such error any
+        /// more, asks for nothing.
+        /// </summary>
+        private void Fix(DocumentLine closing)
+        {
+            if (FailureOf(closing) is { } failure)
+                _services.FixWithAi?.Invoke(failure.OpenLine, failure.CloseLine, failure.Kind, failure.Message);
+        }
+
+        /// <summary>
         /// What goes under <paramref name="closing"/>: the picture, the error, or "Drawing…". Asks
         /// for a drawing when one is due: not while typing, and not again for a text whose drawing
         /// already ended (R6).
@@ -150,11 +215,11 @@ namespace Kil0bitSystemMonitor.Pad
             DiagramResult? result;
             if (block.TooLarge)
             {
-                result = state.Shown = DiagramResult.Failure(DiagramText.TooLarge, lasting: true);
+                result = state.Shown = DiagramResult.Notice(DiagramText.TooLarge);
             }
             else if (block.Kind.NeedsKroki && server == null)
             {
-                result = state.Shown = DiagramResult.Failure(DiagramText.NeedsKroki(block.Kind), lasting: true);
+                result = state.Shown = DiagramResult.Notice(DiagramText.NeedsKroki(block.Kind));
             }
             else
             {
@@ -204,8 +269,10 @@ namespace Kil0bitSystemMonitor.Pad
             _editor.TextArea.TextView.Redraw(closing, DispatcherPriority.Normal);
         }
 
-        private DiagramBlock? Read(int open, int close) =>
-            DiagramBlocks.Read(n => _document.GetText(_document.GetLineByNumber(n)), open, close);
+        private DiagramBlock? Read(int open, int close) => DiagramBlocks.Read(TextOf, open, close);
+
+        /// <summary>The text of line <paramref name="number"/> (1-based).</summary>
+        private string TextOf(int number) => _document.GetText(_document.GetLineByNumber(number));
 
         private static DiagramRequest RequestFor(DiagramBlock block, PadPalette palette, string? server) =>
             new(block.Kind, block.Source, palette.Name, DiagramRequest.Css(palette.Text), DiagramRequest.Css(palette.Background),
@@ -264,6 +331,10 @@ namespace Kil0bitSystemMonitor.Pad
                 SavePng = () => _ = ExportAsync(closing, DiagramExport.Png),
                 SaveSvg = () => _ = ExportAsync(closing, DiagramExport.Svg),
                 OpenLink = _services.OpenLink,
+                // Only on an error a corrected source can cure, and only where something takes the request.
+                FixWithAi = _services.FixWithAi != null && Fixable(result) ? () => Fix(closing) : null,
+                AiOn = _services.AiOn,
+                SetUpAi = _services.SetUpAi,
             };
         }
 

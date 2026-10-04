@@ -46,6 +46,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>True when the same request would give the same result again.</summary>
         public bool Lasting { get; private init; }
 
+        /// <summary>
+        /// True for a notice MicaPad made itself (the block is too large to draw, Kroki is off): it
+        /// says nothing about the block's source, so no corrected source cures it. The flag stays
+        /// with the notice for as long as it is shown, whatever the block or the settings have
+        /// become since.
+        /// </summary>
+        public bool IsNotice { get; private init; }
+
         /// <summary>True when a newer request for the same block took this one's place before it was drawn.</summary>
         public bool IsReplaced { get; private init; }
 
@@ -68,6 +76,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         public static DiagramResult Failure(string error, bool lasting, Uri? helpLink = null) =>
             new() { Error = error, Lasting = lasting, HelpLink = helpLink };
+
+        /// <summary>
+        /// A notice of MicaPad's own, shown in the error box: lasting (the same block and settings
+        /// give it again) and flagged <see cref="IsNotice"/>, so it is never taken for what an
+        /// engine said of the source.
+        /// </summary>
+        public static DiagramResult Notice(string text) => new() { Error = text, Lasting = true, IsNotice = true };
 
         public static DiagramResult Replaced { get; } = new() { IsReplaced = true };
     }

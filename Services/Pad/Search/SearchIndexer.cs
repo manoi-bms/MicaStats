@@ -67,6 +67,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         private readonly Task _worker;
         private readonly object _idleGate = new();
         private readonly List<TaskCompletionSource> _idleWaiters = new();   // under _idleGate
+        private readonly List<TaskCompletionSource> _appliedWaiters = new(); // under _idleGate
         private bool _stopped;                                              // under _idleGate
         private int _disposed;
 
@@ -146,12 +147,18 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
         /// are expected next: until each has been indexed or removed, saves keep every stored vector,
         /// since those notes' vectors are still in the store with no passage to claim them.
         /// </summary>
-        public void Reconcile(IReadOnlyCollection<string> existingIds)
+        /// <param name="unknownIds">
+        /// Notes of which the caller cannot say right now whether they exist (a record that is
+        /// locked). Unknown is not absent: what the index has for them stays, and nothing is
+        /// expected for them.
+        /// </param>
+        public void Reconcile(IReadOnlyCollection<string> existingIds, IReadOnlyCollection<string>? unknownIds = null)
         {
             var keep = new HashSet<string>(existingIds, StringComparer.Ordinal);
+            var unknown = new HashSet<string>(unknownIds ?? Array.Empty<string>(), StringComparer.Ordinal);
             Enqueue(() =>
             {
-                foreach (string id in _notes.Keys.Where(id => !keep.Contains(id)).ToList()) Forget(id);
+                foreach (string id in _notes.Keys.Where(id => !keep.Contains(id) && !unknown.Contains(id)).ToList()) Forget(id);
                 _unfed.Clear();
                 _unfed.UnionWith(keep.Where(id => !_notes.ContainsKey(id)));
                 _unsaved = true;
@@ -185,6 +192,24 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             return waiter.Task;
         }
 
+        /// <summary>
+        /// Completes once the worker has applied everything queued before this call: every note
+        /// handed over so far is in the keyword index as it was handed over. Unlike
+        /// <see cref="WhenIdle"/> it does not wait for vectors, so a slow or absent embedding
+        /// server never holds it up. Completes at once after <see cref="Dispose"/>.
+        /// </summary>
+        public Task WhenApplied()
+        {
+            var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_idleGate)
+            {
+                if (_stopped || Volatile.Read(ref _disposed) != 0) return Task.CompletedTask;
+                _appliedWaiters.Add(waiter);
+            }
+            _signal.Release();
+            return waiter.Task;
+        }
+
         private void Enqueue(Action work)
         {
             _work.Enqueue(work);
@@ -205,13 +230,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
                     while (_signal.Wait(0)) { }
                     ArmIdleWaiters();
 
-                    bool didWork = false;
-                    while (_work.TryDequeue(out var work))
-                    {
-                        RunWork(work);
-                        didWork = true;
-                    }
-                    if (didWork) Publish();
+                    if (ApplyQueuedWork()) Publish();
                     if (!_work.IsEmpty) continue;
 
                     var settings = _settings();
@@ -248,6 +267,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
                 _stopped = true;
                 _armed.AddRange(_idleWaiters);
                 _idleWaiters.Clear();
+                _armed.AddRange(_appliedWaiters);   // no worker is left to apply anything: nobody waits for ever
+                _appliedWaiters.Clear();
             }
             ReleaseArmedWaiters();
         }
@@ -259,6 +280,42 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
             {
                 _warn("Search indexing failed (" + ex.GetType().Name + ").");
             }
+        }
+
+        /// <summary>
+        /// Runs the queued work; true when there was any. The waiters of <see cref="WhenApplied"/>
+        /// are taken before the queue is drained, so the work queued ahead of each has run when it
+        /// is released; one that arrives later waits for the next pass. They are released whatever
+        /// happens while the work runs: a throw here (work that fails and cannot even be reported)
+        /// must not leave a question waiting for the index for ever.
+        /// </summary>
+        private bool ApplyQueuedWork()
+        {
+            List<TaskCompletionSource>? waiters = null;
+            lock (_idleGate)
+            {
+                if (_appliedWaiters.Count > 0)
+                {
+                    waiters = new List<TaskCompletionSource>(_appliedWaiters);
+                    _appliedWaiters.Clear();
+                }
+            }
+
+            bool didWork = false;
+            try
+            {
+                while (_work.TryDequeue(out var work))
+                {
+                    RunWork(work);
+                    didWork = true;
+                }
+            }
+            finally
+            {
+                if (waiters != null)
+                    foreach (var waiter in waiters) waiter.TrySetResult();
+            }
+            return didWork;
         }
 
         private void ArmIdleWaiters()
@@ -538,13 +595,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Search
                 }
                 token.ThrowIfCancellationRequested();
 
-                bool didWork = false;
-                while (_work.TryDequeue(out var work))
-                {
-                    RunWork(work);
-                    didWork = true;
-                }
-                if (didWork) Publish();
+                if (ApplyQueuedWork()) Publish();
             }
             return await request.ConfigureAwait(false);
         }

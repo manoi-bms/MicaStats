@@ -254,6 +254,83 @@ results** then puts the most relevant first with a reranker in the Cohere/Jina `
 * When a server cannot be reached, refuses the key or times out, the status line under the query
   says so and the search falls back to words (or to the order before reranking).
 
+### AI in MicaPad
+
+MicaPad can improve, translate, summarize or explain text, and answer a question from your notes,
+through the provider you set in **Settings → AI** (Claude, or any OpenAI-compatible server such as
+Ollama). It is off at first: turn on **Settings → MicaPad → AI → Use AI in MicaPad**. The line under
+the switch says where text goes, and **AI provider settings…** opens **Settings → AI**. Nothing is
+sent while you type, when a note opens or in the background — only when you run an action.
+
+* **On a selection**: right-click → **AI** → **Improve writing**, **Fix spelling and grammar**,
+  **Make shorter**, **Translate to English**, **Translate to Thai**, **Summarize**, **Explain**,
+  **Draw as diagram** or **Ask AI…** (type your own instruction). **Ctrl+Shift+A** opens the pane on
+  **Ask AI…**. Summarize, Explain, Draw as diagram and Ask AI use the whole note when nothing is
+  selected; the rewrites need a selection. While AI is off, the menu holds one item, **Set up AI…**.
+* **Draw as diagram** sends the selection, or the whole note when nothing is selected, and asks
+  for a Mermaid diagram of it. It is offered in Markdown notes, where a diagram is drawn; a note
+  shown as plain text or as code does not have it. **Insert below** puts the Mermaid block under
+  your text, and MicaPad draws it as a picture there while **Settings → MicaPad → Draw diagrams**
+  is on (it is, until you turn it off). **Replace selection** is offered when you selected text.
+* **Fix with AI** is on the red error box of a diagram or math block that fails with an error
+  about its own source, such as a syntax error: right-click the box. In the **AI** menu the entry
+  for the same job is **Fix diagram**, there while the caret is in that block. Neither appears for
+  a block that is too large, a missing runtime, a server that cannot be reached or a timeout: a
+  rewrite cannot cure those. It sends that block's source and the renderer's message, and
+  **Replace selection** replaces only that source, not the fences or any other block. A fix offers
+  **Replace selection** and **Copy**; there is no **Insert below** for a fix, which would land
+  inside the block. A reply in a code fence is unwrapped; a reply that still holds a line that
+  would close the block cannot replace the source, and the status line says so. The block's fence
+  is read again when you click, so that holds after you edit the fences too. With AI off it sends
+  nothing.
+* **The AI pane** opens on the right, where History and Search notes open. It shows the text it
+  runs on and where that goes ("Selection, 412 characters · to api.anthropic.com", or "· to this
+  PC" for a server on this PC) and the result as it arrives. **Stop**, beside the close button, ends
+  it and keeps what came. For a rewrite, **Changes** shows a line diff of your text against the
+  result. Size limits: 8,000 characters for a rewrite, 24,000 for the rest; over that, the pane
+  says so and nothing is sent.
+* **Replace selection** puts the result in place of your text, **Insert below** adds it as a new
+  paragraph after the text, **Copy** copies it. Each edit is one **Ctrl+Z**, and undoing a Replace
+  brings the button back. The reply takes the note's own line ending. Your note changes only when
+  you click one of these two buttons.
+* **Replace selection** is offered only when the reply finished (not stopped, cut short or ended
+  early by the provider), you selected text, its note is the one shown and not read-only, the text
+  is still what it was, and every stored credential came back. Otherwise the status line says why.
+  **Copy** works whenever there is text. **Insert below** works for a stopped or cut-short reply and
+  when the text changed, but not for a failed reply, on another tab or on a read-only note.
+* **Try again** reruns on the text the pane names — the earlier selection, or the whole note — not
+  on whatever is selected now, and only while that note is shown. An instruction typed for
+  **Ask AI…** works the same way.
+* **Ask in Search notes**: type a question and press **Ctrl+Enter**, or click **Ask** (**Enter**
+  still only searches). The best 8 passages go to the model and the answer streams above the
+  results; the status line says "Answering from 6 passages · api.anthropic.com", then
+  "Answered from 6 passages · api.anthropic.com" once it ends well. A citation such as [2] is a
+  number matching result row 2, not a link, and the first 8 rows carry their numbers. A new
+  search, a new question or closing the pane clears the answer. Holding **Ctrl+Enter**, or asking
+  the question that is being answered, does not send it again. With no match, nothing is sent.
+  With AI off, **Ask** runs the normal search and the answer area says
+  "Turn on Settings → MicaPad → AI to get answers".
+* **Links in an answer are never clickable.** They show as text, "label (address)", so text pasted
+  into a note cannot steer the model into handing you a link to click.
+* **What is sent**: For an action on text, a fixed instruction, the task, and the text it runs on
+  (the selection, or the whole note): no title, no other note, no file path. For a question, a
+  fixed instruction, the question, and up to 8 passages found by Search notes, which can come from
+  any note, open or closed; each passage goes with its note's title (the file name, for a note
+  opened from a file), its heading and its line numbers. Note text is wrapped as data the model
+  must not obey.
+* **Stored credentials are never sent**: in text for an action each one goes as `[[CREDENTIAL_1]]`
+  and is put back in the result; in a question and passages it goes as `[credential]`. A selection
+  that cuts through a credential takes the whole credential, and a half-typed credential marker in
+  a question, an instruction or a search goes as `[credential]` too. Your own words are not
+  otherwise altered, so a rewrite does not rename anything in them. Storing selected text as a credential
+  closes the AI pane for that note and clears an answer from notes, since both could still hold
+  the value.
+* **The daily limit** is the one from **Settings → AI**, shared with Ask MicaStats: each action or
+  answer counts one, even when it fails or is stopped. When it is reached, or no key is set, the
+  pane says so and nothing is sent.
+* The diagnostics log records the kind of action, character counts and the outcome, never your
+  text, question or answer.
+
 ### Real files
 
 Opening a file (Ctrl+O, or Open with) edits a *copy*: your changes are saved continuously, but the
@@ -408,7 +485,8 @@ Every other type is drawn by a **Kroki** server, which stays off until you turn 
 `bpmn`, `excalidraw`, `vega`, `vegalite`, `vega-lite`, `wavedrom`, `ditaa`, `structurizr`,
 `nomnoml`, `pikchr`, `svgbob`, `dbml`, `erd`, `bytefield`, `blockdiag`, `seqdiag`, `actdiag`,
 `nwdiag`, `packetdiag`, `rackdiag`, `tikz`, `umlet`, `symbolator`, `wireviz`. Only that block's
-text is sent, to `https://kroki.io` unless you enter your own server. For private notes run Kroki
+text is sent, with every stored credential in it as `[credential]`, to `https://kroki.io` unless
+you enter your own server. For private notes run Kroki
 yourself (`docker run -d -p 8000:8000 yuzutech/kroki`) and enter `http://localhost:8000`. Kroki
 pictures sit on a white card in both themes.
 
@@ -563,7 +641,9 @@ The send button turns into **Stop** while an answer streams (**Esc** stops too);
 the top right starts a new chat; the sun or moon button beside it switches the window between
 dark and light at once (its own setting, also in **Settings → AI → Theme**, and separate from
 MicaPad's theme). An empty chat offers a few starter questions to click. Links in
-an answer open in your browser, and only `http`, `https` and `mailto` links work. If something
+an answer open in your browser, and only `http`, `https` and `mailto` links work. The exception
+is a conversation in which Ask has read from your notes: there links are shown as plain text (see
+[Notes in Ask MicaStats and MCP](#notes-in-ask-micastats-and-mcp)). If something
 fails, the question stays in the box and **Retry** sends it again; a missing key or model offers
 **Open Settings > AI**.
 
@@ -583,7 +663,8 @@ and its PID, whatever the AI suggested calling it. Nothing happens until you cli
 process goes through the same checks as the process window: the PID must still belong to the same
 program with the same start time, core Windows processes are refused, and MicaStats never ends
 itself. A process that needs administrator rights is left to the process window's **Retry as
-administrator**. Buttons from a cleared conversation do nothing.
+administrator**. Buttons from a cleared conversation do nothing. In a conversation in which Ask
+has read from your notes, no button to end a process is offered; the other buttons still are.
 
 ### Limits and cost
 
@@ -600,7 +681,12 @@ administrator**. Buttons from a cleared conversation do nothing.
 Sent: readings, hardware model names, process names and their paths. Removed first: your profile
 folder (shown as `%USERPROFILE%`), other users' folder names, the computer name and your user name
 (when 3 or more characters long), IP and MAC addresses. Never collected by any tool: window titles, command lines, environment
-variables. The diagnostics log records failures only — never questions, answers or data.
+variables. Text from your notes is the exception: what the two note tools return is not redacted,
+so a name or an address written in a note comes back as written, and only stored credentials are
+replaced (see [Notes in Ask MicaStats and MCP](#notes-in-ask-micastats-and-mcp)). A credential
+marker pasted into a question goes as `[credential]`. The diagnostics log records failures, and
+one line for every note-tool call with the tool's name and counts — never questions, answers or
+data.
 
 ### 7-day history
 
@@ -666,6 +752,58 @@ If the port is taken, **Settings → AI** says so and the diagnostics log record
 
 Setting MCP to **Off** stops the pipe and the HTTP server; an AI app that still calls MicaStats is
 told "MCP is turned off in MicaStats Settings".
+
+### Notes in Ask MicaStats and MCP
+
+Besides its nine lookups about this PC, Ask MicaStats and MCP can search and read your MicaPad
+notes through two **read-only** tools. Each surface has its own switch in **Settings → MicaPad →
+AI**, both off until you turn them on:
+
+* **Let Ask MicaStats search your notes** — Ask MicaStats can look up passages and read notes to
+  answer a question. The line under it says where they go: to the provider's host, or "stay on
+  this PC" for a local server.
+* **Let MCP clients search your notes** — programs such as Claude Code, connected through MCP, get
+  `search_notes` and `get_note`. It only matters while MCP is on in **Settings → AI**. What a
+  program does with the text is up to it.
+
+The two switches are independent of **Use AI in MicaPad** and of each other. While a switch is
+off, its tools are not offered or listed, and a call that arrives anyway is refused ("Notes
+access is off in Settings → MicaPad → AI").
+
+Turning the Ask switch off, or changing the AI provider in **Settings → AI**, takes back what was
+already read and the answers that used it. Before the next question of that conversation goes
+out, the earlier note results are replaced with the refusal, and every answer given after a note
+was read with "(Removed: this answer used your notes, and notes access has changed.)". So notes
+read through a server on this PC do not follow the conversation to another provider. Changing the
+AI provider takes them back when the host changes; another model, port or path on the same host
+does not.
+
+* **`search_notes`** takes `query` and `limit` (1 to 20; 8 if you leave it out) and returns the
+  best passages, each with its note id, title, heading and line numbers. The query is cut at 500
+  characters. `searchedBy` in the result is "words" or "words and meaning".
+* **`get_note`** takes `noteId`, `firstLine` (1 if you leave it out) and `lineCount` (200 if you
+  leave it out, up to 400) and returns that part of the note, at most 16,000 characters per call.
+  It says `truncated` when more remains, so ask again from a later line. A line longer than that
+  cap is cut, with `cutInLine`; the rest of such a line cannot be read.
+* **Notes are every note MicaPad has**: open tabs, closed notes, and files open in MicaPad tabs.
+* **Nothing they do changes a note.**
+* **Credentials come back as `[credential]`**, in text, titles and headings, and a query is
+  cleaned the same way. Names and IP addresses in notes are not removed: the tools return the note
+  text as it is.
+* **Links are plain text.** Once Ask has read from the notes, links in its answers are shown as
+  plain text for the rest of that conversation, until **New conversation**. An answer in a
+  conversation that did not read notes keeps its links.
+* **MicaStats must be running**, but not a MicaPad window: the first call starts the notes in the
+  background, and that first call can take a moment. If MicaStats is not running, an MCP client is
+  told "MicaStats is not running". If MicaPad's saved session is missing or cannot be read, the
+  tools answer "Notes are not ready: open MicaPad once" and start nothing; opening MicaPad puts
+  that right.
+
+To use it from Claude Code, connect it as described in [MCP for Claude Desktop and Claude
+Code](#mcp-for-claude-desktop-and-claude-code), turn on **Let MCP clients search your notes**,
+and ask, for example, "Use MicaStats: search my notes for the VPN setup steps". The diagnostics
+log records one line for every note-tool call, with the tool's name and counts, never a query or
+note text.
 
 ---
 

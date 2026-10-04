@@ -33,10 +33,10 @@ public class McpHttpHostTests
 
     private static string Endpoint(int port) => "http://127.0.0.1:" + port.ToString(CultureInfo.InvariantCulture) + "/mcp";
 
-    private static McpHttpHost StartHost(int port, Func<string?>? token = null)
+    private static McpHttpHost StartHost(int port, Func<string?>? token = null, Func<bool>? notes = null)
     {
         ToolInvoker tools = (tool, args, ct) => Task.FromResult<JsonNode>(new JsonObject { ["tool"] = tool });
-        var host = new McpHttpHost(port, token ?? (() => Token), () => McpToolSet.CreateOptions(tools, "1.0.0"));
+        var host = new McpHttpHost(port, token ?? (() => Token), () => McpToolSet.CreateOptions(tools, "1.0.0", notes));
         Assert.True(host.TryStart(out string? problem), problem);
         return host;
     }
@@ -76,6 +76,35 @@ public class McpHttpHostTests
         Assert.True(host.IsRunning);
         Assert.Equal(ToolNames.ReadOnly.OrderBy(n => n, StringComparer.Ordinal), tools.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
         Assert.Equal("{\"tool\":\"get_battery\"}", string.Concat(result.Content.OfType<TextContentBlock>().Select(b => b.Text)));
+    }
+
+    [Fact]
+    public async Task With_notes_allowed_an_mcp_client_lists_and_calls_the_note_tools_and_the_list_follows_the_switch()
+    {
+        int port = FreePort();
+        bool allowed = true;
+        using McpHttpHost host = StartHost(port, notes: () => allowed);
+        var transport = new HttpClientTransport(new HttpClientTransportOptions
+        {
+            Endpoint = new Uri(Endpoint(port)),
+            TransportMode = HttpTransportMode.StreamableHttp,
+            EnableStandaloneGetStream = false,
+            AdditionalHeaders = new Dictionary<string, string> { ["Authorization"] = "Bearer " + Token },
+        });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        await using McpClient client = await McpClient.CreateAsync(transport, cancellationToken: cts.Token);
+        IList<McpClientTool> on = await client.ListToolsAsync(cancellationToken: cts.Token);
+        CallToolResult result = await client.CallToolAsync(ToolNames.SearchNotes,
+            new Dictionary<string, object?> { ["query"] = "vpn" }, cancellationToken: cts.Token);
+        allowed = false;
+        IList<McpClientTool> off = await client.ListToolsAsync(cancellationToken: cts.Token);
+
+        Assert.Equal(ToolNames.ReadOnly.Concat(ToolNames.Notes).OrderBy(n => n, StringComparer.Ordinal),
+            on.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(ToolNames.Notes, on.Select(t => t.Name).Skip(ToolNames.ReadOnly.Count));
+        Assert.Equal("{\"tool\":\"search_notes\"}", string.Concat(result.Content.OfType<TextContentBlock>().Select(b => b.Text)));
+        Assert.Equal(ToolNames.ReadOnly.OrderBy(n => n, StringComparer.Ordinal), off.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
     }
 
     [Theory]

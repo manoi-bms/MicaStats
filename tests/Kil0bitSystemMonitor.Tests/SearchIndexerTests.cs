@@ -237,6 +237,30 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { "s" }, indexer.Keywords.NoteIds().ToArray());
         }
 
+        /// <summary>
+        /// A note whose record cannot be read right now is unknown, not absent: a reconcile keeps
+        /// what the index has for it. And nothing is expected for it, so the vectors of notes
+        /// that really are gone are still dropped.
+        /// </summary>
+        [Fact]
+        public async Task A_reconcile_keeps_what_it_has_for_a_note_named_unknown_and_expects_nothing_for_it()
+        {
+            using var indexer = NewIndexer(new FakeEmbedder());
+            indexer.SetNote("known", "t", "alpha words", DateTime.UtcNow);
+            indexer.SetNote("locked", "t", "beta words here", DateTime.UtcNow);
+            indexer.SetNote("gone", "t", "gamma words there now", DateTime.UtcNow);
+            await indexer.WhenIdle();
+            Assert.Equal(3, indexer.Vectors.Count);
+
+            indexer.Reconcile(new[] { "known" }, new[] { "locked", "never-indexed" });
+            await indexer.WhenIdle();
+
+            Assert.Equal(new[] { "known", "locked" }, indexer.Keywords.NoteIds().OrderBy(id => id, StringComparer.Ordinal));
+            Assert.Single(indexer.Keywords.Search("beta", 10));
+            Assert.Empty(indexer.Keywords.Search("gamma", 10));
+            Assert.Equal(2, indexer.Vectors.Count);          // the gone note's vector went: no unknown note holds the eviction up
+        }
+
         [Fact]
         public async Task WhenIdle_never_completes_before_the_work_queued_ahead_of_it()
         {
@@ -247,6 +271,123 @@ namespace Kil0bitSystemMonitor.Tests
                 indexer.SetNote("n" + i, "t", "word" + i, DateTime.UtcNow);
                 await indexer.WhenIdle();
                 Assert.Equal(i + 1, indexer.Keywords.NoteCount);
+            }
+        }
+
+        [Fact]
+        public async Task WhenApplied_never_completes_before_the_work_queued_ahead_of_it()
+        {
+            _settings = SearchSettings.Off;
+            using var indexer = NewIndexer(new FakeEmbedder());
+            for (int i = 0; i < 2000; i++)
+            {
+                indexer.SetNote("n" + i, "t", "word" + i, DateTime.UtcNow);
+                await indexer.WhenApplied();
+                Assert.Equal(i + 1, indexer.Keywords.NoteCount);
+            }
+        }
+
+        [Fact]
+        public async Task WhenApplied_does_not_wait_for_the_embedding_server()
+        {
+            var embedder = new FakeEmbedder();
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource();
+            embedder.Gate = () => { started.TrySetResult(); return release.Task; };
+            using var indexer = NewIndexer(embedder);
+            try
+            {
+                indexer.SetNote("a", "t", "alpha words", DateTime.UtcNow);
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(10));   // the batch is out, and held
+
+                indexer.SetNote("a", "t", "beta words", DateTime.UtcNow);
+                await indexer.WhenApplied().WaitAsync(TimeSpan.FromSeconds(5));
+
+                Assert.Empty(indexer.Keywords.Search("alpha", 10));       // the note as it was handed over last
+                Assert.Single(indexer.Keywords.Search("beta", 10));
+                lock (embedder.Batches) Assert.Single(embedder.Batches);  // and the server has still not answered
+            }
+            finally
+            {
+                release.TrySetResult();
+            }
+            await indexer.WhenIdle();
+        }
+
+        [Fact]
+        public async Task WhenApplied_completes_at_once_after_Dispose()
+        {
+            var indexer = NewIndexer(new FakeEmbedder());
+            indexer.Dispose();
+
+            await indexer.WhenApplied().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        [Fact]
+        public async Task A_waiter_for_applied_work_is_released_when_the_indexer_stops()
+        {
+            // The worker is held inside a piece of work, so the waiter cannot be released by a later pass: only by the stop.
+            _settings = SearchSettings.Off;
+            var inside = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var hold = new ManualResetEventSlim();
+            var indexer = new SearchIndexer(
+                new VectorStore(Path.Combine(_dir.Root, "search"), b => b.ToArray(), (byte[] d, out byte[] p) => { p = d; return true; }),
+                new FakeEmbedder(),
+                () => _settings,
+                _ => { inside.TrySetResult(); hold.Wait(); return null; });
+            try
+            {
+                indexer.IndexStored("s", "t", DateTime.UtcNow);
+                await inside.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                Task waiter = indexer.WhenApplied();
+                Assert.False(waiter.IsCompleted);
+
+                await Task.Run(indexer.Dispose);   // gives up on the held worker after its 2 s
+                Assert.False(waiter.IsCompleted);
+                hold.Set();
+
+                await waiter.WaitAsync(TimeSpan.FromSeconds(5));   // not left hanging
+            }
+            finally
+            {
+                hold.Set();
+                indexer.Dispose();
+            }
+        }
+
+        [Fact]
+        public async Task A_waiter_for_applied_work_is_released_when_the_worker_throws_while_applying()
+        {
+            // Work that fails is reported and the worker goes on; here reporting it throws too, once,
+            // so the exception leaves the pass that had already taken the waiter.
+            _settings = SearchSettings.Off;
+            int warnings = 0;
+            Task? waiter = null;
+            var queued = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var indexer = new SearchIndexer(
+                new VectorStore(Path.Combine(_dir.Root, "search"), b => b.ToArray(), (byte[] d, out byte[] p) => { p = d; return true; }),
+                new FakeEmbedder(),
+                () => _settings,
+                _ => throw new InvalidOperationException("the stored text cannot be read"),
+                warn: _ =>
+                {
+                    if (Interlocked.Increment(ref warnings) == 1) throw new InvalidOperationException("the log is broken");
+                });
+            using (indexer)
+            {
+                indexer.ProgressChanged += () =>
+                {
+                    if (waiter != null) return;
+                    // On the worker, between two passes: the next pass takes this waiter, then runs the work that throws.
+                    indexer.IndexStored("s", "t", DateTime.UtcNow);
+                    waiter = indexer.WhenApplied();
+                    queued.TrySetResult();
+                };
+                indexer.SetNote("a", "t", "some words", DateTime.UtcNow);
+                await queued.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+                await waiter!.WaitAsync(TimeSpan.FromSeconds(5));   // Ask waits on this: it must not wait for ever
+                Assert.True(Volatile.Read(ref warnings) >= 1);
             }
         }
 

@@ -179,7 +179,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 if (now != request.KrokiServer) return DiagramResult.Replaced;   // the board asks again for the new server
             }
 
-            var kroki = await _kroki.DrawAsync(request.KrokiServer, request.Kind.KrokiType!, request.Source, _shutdown.Token);
+            // The source leaves the PC here, and only here: every credential reference in it goes as
+            // [credential], so no part of a stored credential's id is posted. The blocks drawn on
+            // this PC get their source as it is written.
+            var kroki = await _kroki.DrawAsync(request.KrokiServer, request.Kind.KrokiType!,
+                                               Search.NotePassages.WithoutSecrets(request.Source), _shutdown.Token);
             if (kroki.Svg == null) return DiagramResult.Failure(kroki.Error ?? DiagramText.Failed, kroki.Lasting);
 
             // Kroki's colors cannot follow the theme: the picture goes on a light card in both (spec 3).

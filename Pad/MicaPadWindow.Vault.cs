@@ -388,6 +388,7 @@ namespace Kil0bitSystemMonitor.Pad
                 document.EndUpdate();
             }
             document.UndoStack.ClearAll();
+            DropAiTextAfterStore(note);   // the AI pane and an answer from notes may hold the value too
 
             // The note on disk and its versions. A version of the old text still queued (a pause, a
             // replace, a close) can land after this scrub while the writer is behind, and a version

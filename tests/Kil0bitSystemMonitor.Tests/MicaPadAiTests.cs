@@ -3141,6 +3141,43 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public Task Source_is_offered_only_once_a_rendered_result_has_text_not_for_a_refusal_a_failure_with_nothing_or_before_the_first_text() => OnUiAsync(async h =>
+        {
+            // Refused: the text is over the limit, and nothing was sent.
+            Write(h, new string('x', PadAiAction.ReadMaxChars + 1));
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Assert.Equal("Select less text: at most 24,000 characters", h.Pane.StatusText.Text);
+            Assert.Equal("", h.Pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Collapsed, h.Pane.SourceToggle.Visibility);
+
+            // Failed with nothing: the provider has no key.
+            Write(h, "The cat sat.");
+            h.Client = null;
+            h.Problem = "Add an API key in Settings > AI.";
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Assert.Equal("Add an API key in Settings > AI.", h.Pane.StatusText.Text);
+            Assert.Equal("", h.Pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Collapsed, h.Pane.SourceToggle.Visibility);
+
+            // Running, before the first text: the pane waits for the model. With the first text Source is there.
+            var model = new GatedModel("", "- a **cat** sat");
+            h.Client = model;
+            h.Problem = null;
+            Task run = h.Window.RunAiAsync(PadAiAction.Summarize);
+            await Reached(model);
+            Assert.True(h.Window.AiSessionNow!.Running);
+            Assert.Equal("Waiting for the model…", h.Pane.ActivityText.Text);
+            Assert.Equal(Visibility.Collapsed, h.Pane.SourceToggle.Visibility);
+
+            model.Gate.SetResult();
+            await run;
+
+            Assert.Equal("- a **cat** sat", h.Pane.ResultBox.Shown);
+            Assert.Equal(Visibility.Visible, h.Pane.SourceToggle.Visibility);
+            Assert.False(h.Pane.ShowingSource);
+        });
+
+        [Fact]
         public Task Storing_a_credential_while_a_rendered_result_shows_its_source_leaves_nothing_of_it_in_the_pane() => OnUiAsync(async h =>
         {
             NewVault(h);

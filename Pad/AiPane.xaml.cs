@@ -88,14 +88,15 @@ namespace Kil0bitSystemMonitor.Pad
         /// Draws <paramref name="view"/>. The title, the lines, the buttons and the status change
         /// at once. The result text redraws at most every <see cref="RedrawInterval"/> while one
         /// reply streams in, and at once when it ends or when the view belongs to another request.
-        /// A result that is shown rendered gets the Source toggle, which is off again for another
-        /// request. Showing a view never opens or closes the pane.
+        /// A result that is shown rendered and has text gets the Source toggle, which is off again
+        /// for another request. Showing a view never opens or closes the pane.
         /// </summary>
         public void Show(AiPaneView view)
         {
-            // Source is for a result shown rendered, and there is none to show while the pane waits for an
-            // instruction. The choice is made for one request: it does not carry over to the next.
-            bool offerSource = view.Markdown && !view.AskForInstruction;
+            // Source is for a result shown rendered that has text to show: not while the pane waits for an
+            // instruction, and not for a request that was refused, failed with nothing, or whose first
+            // text has not arrived. The choice is made for one request: it does not carry over to the next.
+            bool offerSource = view.Markdown && !view.AskForInstruction && view.Result.Length > 0;
             if (!offerSource || !SameRequest(view)) TurnSourceOff();
             bool streaming = Continues(view);   // asked once the toggle is settled: the form the text is drawn in counts
             _view = view;

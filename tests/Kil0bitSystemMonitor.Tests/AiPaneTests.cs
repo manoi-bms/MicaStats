@@ -921,7 +921,7 @@ namespace Kil0bitSystemMonitor.Tests
         private static List<T> InResult<T>(AiPane pane) where T : DependencyObject => ChatDocument.All<T>(pane.ResultBox.Document);
 
         [Fact]
-        public void The_Source_toggle_is_offered_for_a_rendered_result_and_not_while_an_instruction_is_awaited() => UiThread.Run(() =>
+        public void The_Source_toggle_is_offered_for_a_rendered_result_with_text_to_show_and_not_while_an_instruction_is_awaited() => UiThread.Run(() =>
         {
             var pane = new AiPane();
             Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);   // built hidden, as Changes is
@@ -942,6 +942,65 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
 
             pane.Show(Asking with { Markdown = true });           // Ask AI before its instruction: nothing was asked yet
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+
+            pane.Show(Asking with { Markdown = true, Result = "left over" });   // and not for whatever a view that asks for one may hold
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+        });
+
+        /// <summary>A rendered view with no text: there is nothing Source could show.</summary>
+        private static AiPaneView NothingToShow(string state) => state switch
+        {
+            // Text over the limit: nothing was sent.
+            "refused" => Read with { Result = "", Info = "", Status = "Select less text: at most 24,000 characters", CanInsert = false, CanCopy = false, CanRetry = false },
+            // The request failed before any text came.
+            "failed" => Read with { Result = "", Info = "", Status = "Add an API key in Settings > AI.", CanInsert = false, CanCopy = false },
+            // It runs, and the first text has not arrived.
+            "waiting" => Reading with { Result = "", Activity = "Waiting for the model…" },
+            _ => throw new ArgumentOutOfRangeException(nameof(state)),
+        };
+
+        [Theory]
+        [InlineData("refused")]
+        [InlineData("failed")]
+        [InlineData("waiting")]
+        public void Source_is_not_offered_while_a_rendered_result_has_no_text_to_show(string state) => UiThread.Run(() =>
+        {
+            AiPaneView empty = NothingToShow(state);
+            Assert.True(empty.Markdown);
+            Assert.False(empty.AskForInstruction);
+            var pane = new AiPane();
+
+            pane.Show(empty);
+
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+            Assert.False(pane.ShowingSource);
+
+            // With text it is offered; and when the text is gone again, which only another request does, it goes, on as it was.
+            pane.Show(Read);
+            Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+            pane.SourceToggle.IsChecked = true;
+
+            pane.Show(empty);
+
+            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+            Assert.Equal("", Rendered(pane));
+        });
+
+        [Fact]
+        public void Source_is_offered_from_the_first_text_of_a_reply_on() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.Show(NothingToShow("waiting"));
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
+
+            pane.Show(Reading);                                   // the first words are in
+
+            Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+            Assert.False(pane.ShowingSource);
+
+            pane.Show(Read with { Result = "", Info = "", Status = "Stopped", CanInsert = false, CanCopy = false });   // hand-built: an end with no text
             Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
         });
 
@@ -1029,9 +1088,18 @@ namespace Kil0bitSystemMonitor.Tests
 
             pane.Show(Reading with { Result = "", Activity = "Waiting for the model…" });   // Try again: the same action on the same text, running anew
             Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);               // and with nothing to show yet
+            pane.Show(Reading);                                   // its first text: offered again, and off
             Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+            Assert.False(pane.ShowingSource);
             pane.Show(Read);
             Assert.Equal("bold and code", Rendered(pane));        // its answer is shown rendered
+
+            pane.SourceToggle.IsChecked = true;
+            pane.Show(Reading with { Result = "**bold** and `code` and more" });             // a request that starts to run after one that ended is another,
+            Assert.False(pane.ShowingSource);                     // even when its text goes on from the old one
+            Assert.Equal(Visibility.Visible, pane.SourceToggle.Visibility);
+            pane.Show(Read);
 
             pane.SourceToggle.IsChecked = true;
             pane.Show(Read with { Title = "Explain", Result = "It is **text**." });          // another action, finished
@@ -1046,10 +1114,7 @@ namespace Kil0bitSystemMonitor.Tests
             pane.SourceToggle.IsChecked = true;
             pane.Show(Read with { Title = "Explain", Result = "", Original = "Other text.", CanCopy = false });   // a new request before it starts
             Assert.False(pane.ShowingSource);
-
-            pane.SourceToggle.IsChecked = true;                   // on, with no text yet
-            pane.Show(Reading with { Title = "Explain", Result = "", Original = "Other text." });               // and as it starts to run
-            Assert.False(pane.ShowingSource);
+            Assert.Equal(Visibility.Collapsed, pane.SourceToggle.Visibility);
 
             pane.Show(Read);
             pane.SourceToggle.IsChecked = true;

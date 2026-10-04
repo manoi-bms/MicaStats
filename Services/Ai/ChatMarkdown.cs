@@ -427,6 +427,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         private static List<ChatAlign>? Delimiter(string line)
         {
+            if (line.IndexOf('|') < 0) return null;   // asked for the line after every paragraph line: most hold no pipe, and are not split
             List<string> cells = SplitRow(line, MaxTableColumns + 1, out _, out bool splits);
             if (!splits) return null;   // a line of only dashes is a rule, not a delimiter row
             var aligns = new List<ChatAlign>(cells.Count);

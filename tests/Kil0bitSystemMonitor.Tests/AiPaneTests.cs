@@ -1246,6 +1246,248 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("bold and code", Rendered(pane));
         });
 
+        // ---- keeping up while a reply streams (AI chat UI spec 1.5) ---------------------------------
+
+        private static TimeSpan Ms(double ms) => TimeSpan.FromMilliseconds(ms);
+
+        /// <summary>
+        /// A pane in the middle of a streaming reply, after a costly redraw and with the mouse
+        /// button held over the result: a redraw of the stream waits, and would wait again.
+        /// </summary>
+        private static AiPane HeldMidStream()
+        {
+            var pane = new AiPane { RedrawInterval = TimeSpan.FromSeconds(30), PointerHeld = () => true };
+            pane.Show(Reading with { Result = "**bo" });
+            pane.LastRedrawCost = TimeSpan.FromSeconds(1);
+            pane.Show(Reading with { Result = "**bold** and" });
+            Assert.Equal("**bo", pane.ResultBox.Shown);
+            Assert.NotNull(pane.PendingRedraw);
+            return pane;
+        }
+
+        [Fact]
+        public void After_a_draw_that_cost_300_ms_the_next_streamed_text_waits_1200_ms() => UiThread.Run(() =>
+        {
+            var pane = new AiPane { PointerHeld = () => false };
+            var clock = Stopwatch.StartNew();
+            pane.Show(Reading with { Result = "**bo" });          // the first text draws at once
+            pane.LastRedrawCost = Ms(300);
+
+            pane.Show(Reading with { Result = "**bold** and" });
+
+            Assert.Equal("**bo", pane.ResultBox.Shown);           // not at once, though the plain 100 ms may have passed
+            RedrawWaits.AssertWaits(pane.PendingRedraw, Ms(1200), clock);
+        });
+
+        [Fact]
+        public void A_tick_while_the_pointer_is_held_draws_nothing_and_waits_the_plain_interval_and_the_next_tick_draws() => UiThread.Run(() =>
+        {
+            bool held = true;
+            int asked = 0;
+            var pane = new AiPane { RedrawInterval = Ms(20), PointerHeld = () => { asked++; return held; } };
+            pane.Show(Reading with { Result = "one" });
+            pane.LastRedrawCost = Ms(15);                         // the next redraw is due 60 ms after this one
+            pane.Show(Reading with { Result = "one two" });
+
+            PumpUntil(() => asked > 0);
+
+            Assert.True(asked > 0, "the redraw timer fired");
+            Assert.Equal("one", pane.ResultBox.Shown);            // a click that began on a button in the result is not lost
+            Assert.Equal(Ms(20), pane.PendingRedraw);             // the timer runs again: for the plain interval, not the paced one
+
+            held = false;
+            PumpUntil(() => pane.PendingRedraw is null);
+            Assert.Equal("one two", pane.ResultBox.Shown);
+        });
+
+        [Fact]
+        public void Text_that_is_due_at_once_is_not_drawn_while_the_pointer_is_held() => UiThread.Run(() =>
+        {
+            bool held = true;
+            var pane = new AiPane { RedrawInterval = TimeSpan.Zero, PointerHeld = () => held };
+            pane.Show(Reading with { Result = "one" });
+
+            pane.Show(Reading with { Result = "one two" });       // nothing to wait for but the pointer
+
+            Assert.Equal("one", pane.ResultBox.Shown);
+            Assert.Equal(TimeSpan.Zero, pane.PendingRedraw);
+
+            held = false;
+            PumpUntil(() => pane.PendingRedraw is null);
+            Assert.Equal("one two", pane.ResultBox.Shown);
+        });
+
+        [Fact]
+        public void The_first_text_of_a_reply_draws_at_once_while_the_pointer_is_held_and_whatever_a_redraw_cost() => UiThread.Run(() =>
+        {
+            var pane = new AiPane { RedrawInterval = TimeSpan.FromSeconds(30), PointerHeld = () => true };
+            pane.Show(Reading with { Result = "", Activity = "Waiting for the model…" });   // the request starts: nothing to show yet
+            pane.LastRedrawCost = TimeSpan.FromSeconds(1);
+
+            pane.Show(Reading);                                   // its first words
+
+            Assert.Equal("**bo", pane.ResultBox.Shown);
+            Assert.Null(pane.PendingRedraw);
+        });
+
+        [Fact]
+        public void A_finished_view_draws_at_once_while_the_pointer_is_held_and_whatever_the_last_redraw_cost() => UiThread.Run(() =>
+        {
+            AiPane pane = HeldMidStream();
+
+            pane.Show(Read);                                      // the stream ends
+
+            Assert.Equal("**bold** and `code`", pane.ResultBox.Shown);
+            Assert.Equal("bold and code", Rendered(pane));
+            Assert.Null(pane.PendingRedraw);
+        });
+
+        [Fact]
+        public void Another_requests_view_draws_at_once_while_the_pointer_is_held_even_when_its_text_goes_on_from_the_one_shown() => UiThread.Run(() =>
+        {
+            AiPane pane = HeldMidStream();
+
+            pane.Show(Reading with { Title = "Explain", Result = "**bold** and more" });   // another action took over
+
+            Assert.Equal("**bold** and more", pane.ResultBox.Shown);
+            Assert.Null(pane.PendingRedraw);
+            Assert.Equal(TimeSpan.Zero, pane.LastRedrawCost);     // and a heavy last reply does not slow the first redraws of this one
+        });
+
+        [Fact]
+        public void Turning_Source_draws_at_once_while_the_pointer_is_held_and_whatever_the_last_redraw_cost() => UiThread.Run(() =>
+        {
+            AiPane pane = HeldMidStream();
+
+            pane.SourceToggle.IsChecked = true;
+
+            Assert.Equal("**bold** and", pane.ResultBox.Shown);   // with the text that was waiting
+            Assert.Equal("**bold** and", Rendered(pane));
+            Assert.Null(pane.PendingRedraw);
+
+            pane.LastRedrawCost = TimeSpan.FromSeconds(1);
+            pane.SourceToggle.IsChecked = false;
+            Assert.Equal("bold and", Rendered(pane));
+        });
+
+        [Fact]
+        public void Clear_empties_the_pane_at_once_while_the_pointer_is_held_and_stops_every_wait() => UiThread.Run(() =>
+        {
+            AiPane pane = HeldMidStream();
+
+            pane.Clear();
+
+            Assert.Equal("", pane.ResultBox.Shown);
+            Assert.Equal("", Rendered(pane));
+            Assert.Null(pane.PendingRedraw);
+            Assert.Null(pane.ResultBox.PendingRedraw);
+            Assert.Equal(TimeSpan.Zero, pane.LastRedrawCost);
+        });
+
+        [Fact]
+        public void A_PointerHeld_that_throws_counts_as_not_held_and_is_reported_once_by_its_type() => UiThread.Run(() =>
+        {
+            var warnings = new List<string>();
+            var pane = new AiPane
+            {
+                RedrawInterval = TimeSpan.Zero,
+                Warn = warnings.Add,
+                PointerHeld = () => throw new InvalidOperationException("the reply says hunter2"),
+            };
+
+            pane.Show(Reading with { Result = "one" });
+            pane.Show(Reading with { Result = "one two" });
+            pane.Show(Reading with { Result = "one two three" });
+
+            Assert.Equal("one two three", pane.ResultBox.Shown);  // each drawn at once: nothing held it back
+            string warning = Assert.Single(warnings);
+            Assert.Contains("InvalidOperationException", warning, StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", warning, StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public void A_draw_stores_what_it_cost_once_the_dispatcher_reaches_Loaded() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+
+            pane.Show(Read with { Result = "| a | b |\n|---|---|\n| 1 | 2 |" });
+
+            Assert.Equal(TimeSpan.Zero, pane.LastRedrawCost);     // not when the draw returns: its layout is still to come
+            RedrawWaits.ToLoaded();
+            Assert.True(pane.LastRedrawCost > TimeSpan.Zero, "the cost of the draw is stored");
+        });
+
+        [Fact]
+        public void A_pane_cleared_before_its_draw_was_measured_stores_no_cost() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.Show(Read);
+
+            pane.Clear();
+            RedrawWaits.ToLoaded();
+
+            Assert.Equal(TimeSpan.Zero, pane.LastRedrawCost);
+            Assert.Equal(TimeSpan.Zero, pane.ResultBox.LastRedrawCost);
+        });
+
+        [Fact]
+        public void A_pane_unloaded_before_its_draw_was_measured_stores_no_cost() => UiThread.Run(() =>
+        {
+            var pane = new AiPane();
+            pane.Show(Read);
+
+            pane.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));   // the window closed
+            RedrawWaits.ToLoaded();
+
+            Assert.Equal(TimeSpan.Zero, pane.LastRedrawCost);
+        });
+
+        [Fact]
+        public void A_picture_that_arrives_after_the_reply_ended_is_drawn_by_the_box_though_the_pane_has_no_new_text() => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams();
+            var pane = new AiPane { PointerHeld = () => false };
+            pane.ResultBox.Diagrams = diagrams;
+            pane.ResultBox.PointerHeld = () => false;
+            pane.Show(Read with { Title = "Draw as diagram", Result = ChatDiagramFakes.Block() });   // finished: the pane draws no more
+            Assert.Empty(InResult<Image>(pane));
+            diagrams.Answer = (_, _) => ChatDiagramFakes.Drawn();
+
+            diagrams.Gets[0].WhenDone!();                         // the picture arrives
+
+            Assert.Empty(InResult<Image>(pane));                  // not inside whatever ended the draw
+            Assert.NotNull(pane.ResultBox.PendingRedraw);         // the box's own timer draws it
+            Assert.Null(pane.PendingRedraw);
+            PumpUntil(() => pane.ResultBox.PendingRedraw is null);
+            Assert.Single(InResult<Image>(pane));
+            Assert.Equal(ChatDiagramFakes.Block(), pane.ResultBox.Shown);
+        });
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static WeakReference PaneWithARedrawWaiting()
+        {
+            var pane = new AiPane { PointerHeld = () => false };
+            pane.Show(Reading with { Result = "**bo" });
+            pane.LastRedrawCost = Ms(500);                        // the next redraw waits two seconds: its timer runs through the collections
+            pane.Show(Reading with { Result = "**bold** and" });
+            Assert.NotNull(pane.PendingRedraw);
+            return new WeakReference(pane);
+        }
+
+        [Fact]
+        public void A_redraw_that_waits_does_not_keep_its_pane_alive() => UiThread.Run(() =>
+        {
+            WeakReference pane = PaneWithARedrawWaiting();
+
+            for (int i = 0; i < 3; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+
+            Assert.False(pane.IsAlive);   // a MicaPad window that closed mid-reply is not held by its pane's timer
+        });
+
         [Fact]
         public void The_theme_paints_the_pane_and_the_answer() => UiThread.Run(() =>
         {

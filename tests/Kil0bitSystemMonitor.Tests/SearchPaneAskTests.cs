@@ -835,6 +835,201 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(TimeSpan.FromMilliseconds(100), new SearchPane().RedrawInterval);
         });
 
+        // ---- keeping up while an answer streams (AI chat UI spec 1.5) ----------------------------------
+
+        private static TimeSpan Ms(double ms) => TimeSpan.FromMilliseconds(ms);
+
+        [Fact]
+        public Task After_a_draw_that_cost_300_ms_the_next_streamed_text_waits_1200_ms() => OnUi(async f =>
+        {
+            f.Pane.PointerHeld = () => false;
+            Task ask = Ask(f);
+            var clock = Stopwatch.StartNew();
+            f.Feed(Text("one"));
+            await Handled(f, 1);
+            Assert.Equal("one", f.Pane.AnswerBox.Shown);          // the first text draws at once
+            f.Pane.LastRedrawCost = Ms(300);
+
+            f.Feed(Text(" two"));
+            await Handled(f, 2);
+
+            Assert.Equal("one", f.Pane.AnswerBox.Shown);          // not at once, though the plain 100 ms may have passed
+            RedrawWaits.AssertWaits(f.Pane.PendingRedraw, Ms(1200), clock);
+
+            f.End();
+            await ask;
+            Assert.Equal("one two", f.Pane.AnswerBox.Shown);
+        });
+
+        [Fact]
+        public Task A_tick_while_the_pointer_is_held_draws_nothing_and_waits_the_plain_interval_and_the_next_tick_draws() => OnUi(async f =>
+        {
+            bool held = true;
+            int asked = 0;
+            f.Pane.RedrawInterval = Ms(20);
+            f.Pane.PointerHeld = () => { asked++; return held; };
+            Task ask = Ask(f);
+            f.Feed(Text("one"));
+            await Handled(f, 1);
+            f.Pane.LastRedrawCost = Ms(15);                       // the next redraw is due 60 ms after this one
+            f.Feed(Text(" two"));
+            await Handled(f, 2);
+
+            await Until(() => asked > 0, "the redraw timer");
+
+            Assert.Equal("one", f.Pane.AnswerBox.Shown);          // a click that began on a button in the answer is not lost
+            Assert.Equal(Ms(20), f.Pane.PendingRedraw);           // the timer runs again: for the plain interval, not the paced one
+
+            held = false;
+            await Until(() => f.Pane.PendingRedraw is null, "the next tick");
+            Assert.Equal("one two", f.Pane.AnswerBox.Shown);
+            Assert.Equal(Visibility.Visible, f.Pane.AnswerStop.Visibility);   // drawn by the timer: the answer still runs
+            f.End();
+            await ask;
+        });
+
+        [Fact]
+        public Task Text_that_is_due_at_once_is_not_drawn_while_the_pointer_is_held() => OnUi(async f =>
+        {
+            bool held = true;
+            f.Pane.RedrawInterval = TimeSpan.Zero;
+            f.Pane.PointerHeld = () => held;
+            Task ask = Ask(f);
+            f.Feed(Text("one"));
+            await Handled(f, 1);
+            f.Pane.LastRedrawCost = TimeSpan.Zero;                // nothing to wait for but the pointer
+
+            f.Feed(Text(" two"));
+            await Handled(f, 2);
+
+            Assert.Equal("one", f.Pane.AnswerBox.Shown);
+            Assert.Equal(TimeSpan.Zero, f.Pane.PendingRedraw);
+
+            held = false;
+            await Until(() => f.Pane.PendingRedraw is null, "the next tick");
+            Assert.Equal("one two", f.Pane.AnswerBox.Shown);
+            f.End();
+            await ask;
+        });
+
+        [Fact]
+        public Task The_first_text_draws_at_once_while_the_pointer_is_held_and_whatever_a_redraw_cost() => OnUi(async f =>
+        {
+            f.Pane.RedrawInterval = TimeSpan.FromSeconds(30);
+            f.Pane.PointerHeld = () => true;
+            Task ask = Ask(f);
+            f.Pane.LastRedrawCost = TimeSpan.FromSeconds(1);
+
+            f.Feed(Text("one"));
+            await Handled(f, 1);
+
+            Assert.Equal("one", f.Pane.AnswerBox.Shown);
+            Assert.Null(f.Pane.PendingRedraw);
+            f.End();
+            await ask;
+        });
+
+        [Fact]
+        public Task The_end_of_the_stream_draws_at_once_while_the_pointer_is_held_and_whatever_the_last_redraw_cost() => OnUi(async f =>
+        {
+            f.Pane.RedrawInterval = TimeSpan.FromSeconds(30);
+            f.Pane.PointerHeld = () => true;
+            Task ask = Ask(f);
+            f.Feed(Text("one"));
+            await Handled(f, 1);
+            f.Pane.LastRedrawCost = TimeSpan.FromSeconds(1);
+            f.Feed(Text(" two"));
+            await Handled(f, 2);
+            Assert.Equal("one", f.Pane.AnswerBox.Shown);          // a redraw of the stream: it waits
+            Assert.NotNull(f.Pane.PendingRedraw);
+
+            f.End();
+            await ask;
+
+            Assert.Equal("one two", f.Pane.AnswerBox.Shown);
+            Assert.Equal("one two", Rendered(f.Pane));
+            Assert.Null(f.Pane.PendingRedraw);
+        });
+
+        [Fact]
+        public Task A_PointerHeld_that_throws_counts_as_not_held_and_is_reported_once_by_its_type() => OnUi(async f =>
+        {
+            f.Pane.RedrawInterval = TimeSpan.Zero;
+            f.Pane.PointerHeld = () => throw new InvalidOperationException("the answer says hunter2");
+            Task ask = Ask(f);
+            f.Feed(Text("one"));
+            await Handled(f, 1);
+            f.Pane.LastRedrawCost = TimeSpan.Zero;
+            f.Feed(Text(" two"));
+            await Handled(f, 2);
+            f.Pane.LastRedrawCost = TimeSpan.Zero;
+            f.Feed(Text(" three"));
+            await Handled(f, 3);
+
+            Assert.Equal("one two three", f.Pane.AnswerBox.Shown);   // each drawn at once: nothing held it back
+            string warning = Assert.Single(f.Warned);
+            Assert.Contains("InvalidOperationException", warning, StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", warning, StringComparison.Ordinal);
+            f.End();
+            await ask;
+        });
+
+        [Fact]
+        public Task A_draw_stores_what_it_cost_and_a_new_search_or_question_forgets_it() => OnUi(async f =>
+        {
+            Task ask = Ask(f);
+            f.Feed(Text("| a | b |\n|---|---|\n| 1 | 2 |"));
+            await Handled(f, 1);
+            await Until(() => f.Pane.LastRedrawCost > TimeSpan.Zero, "the cost of the draw to be stored");
+            f.End();
+            await ask;
+
+            f.Pane.LastRedrawCost = TimeSpan.FromSeconds(1);      // a heavy answer
+            f.Pane.QueryBox.Text = "wifi";
+            await f.Pane.SearchNow();
+            Assert.Equal(TimeSpan.Zero, f.Pane.LastRedrawCost);   // it does not slow the first redraws of the next one
+
+            f.Pane.LastRedrawCost = TimeSpan.FromSeconds(1);
+            ask = Ask(f, "printer");
+            Assert.Equal(TimeSpan.Zero, f.Pane.LastRedrawCost);   // nor does a new question keep it
+            f.End();
+            await ask;
+        });
+
+        [Fact]
+        public Task A_new_search_and_DropAnswer_stop_a_redraw_that_waits_and_store_no_cost() => OnUi(async f =>
+        {
+            f.Pane.RedrawInterval = TimeSpan.FromSeconds(30);
+            f.Pane.PointerHeld = () => false;
+            Task ask = Ask(f);
+            f.Feed(Text("one"));
+            await Handled(f, 1);
+            f.Feed(Text(" two"));
+            await Handled(f, 2);
+            Assert.NotNull(f.Pane.PendingRedraw);
+
+            f.Pane.QueryBox.Text = "wifi";
+            await f.Pane.SearchNow();
+            await ask;
+            Assert.Null(f.Pane.PendingRedraw);
+
+            ask = Ask(f);
+            f.Feed(Text("one"));
+            await Handled(f, 3);
+            f.Feed(Text(" two"));
+            await Handled(f, 4);
+            Assert.NotNull(f.Pane.PendingRedraw);
+
+            f.Pane.DropAnswer();                                  // a credential was stored
+            await ask;
+            Assert.Null(f.Pane.PendingRedraw);
+            Assert.Null(f.Pane.AnswerBox.PendingRedraw);
+            await Task.Delay(30);                                 // the dispatcher passes Loaded: the draws of the dropped answer leave no cost
+            Assert.Equal(TimeSpan.Zero, f.Pane.LastRedrawCost);
+            Assert.Equal(TimeSpan.Zero, f.Pane.AnswerBox.LastRedrawCost);
+            Assert.Equal("", f.Pane.AnswerBox.Shown);
+        });
+
         // ---- what ends an answer -----------------------------------------------------------------------
 
         [Fact]
@@ -1084,6 +1279,7 @@ namespace Kil0bitSystemMonitor.Tests
             renderer.Calls[0].Done.TrySetResult(DiagramFakes.Picture());
             await Until(() => told, "the end of the draw");
 
+            Assert.Null(f.Pane.AnswerBox.PendingRedraw);          // told of the picture, the cleared box asked for no redraw
             Assert.Same(shown, f.Pane.AnswerBox.Document);        // nothing was drawn again
             Assert.Equal("", Rendered(f.Pane));
             Assert.Equal(0, diagrams.PicturesKept);               // and the picture of the dropped answer is not kept

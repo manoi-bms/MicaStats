@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Input;
@@ -39,8 +40,15 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The sources of the diagrams whose Source toggle is on: kept here, because every draw of the text builds new buttons.</summary>
         private readonly HashSet<string> _sourceShown = new(StringComparer.Ordinal);
 
-        /// <summary>This box's redraw, the same delegate at every draw, so a diagram tells it once.</summary>
+        /// <summary>This box's request for a redraw, the same delegate at every draw, so a diagram tells it once.</summary>
         private readonly Action _invalidate;
+
+        /// <summary>
+        /// The timer the box draws itself again on, with when it last drew and what that cost. It
+        /// holds the box weakly, and fires once for one wait: a box that was dropped is collected
+        /// while it runs. <see cref="Clear"/> stops it.
+        /// </summary>
+        private readonly RedrawTimer<PadAnswerBox> _redraw;
         private bool _dark = true;
         private bool _markdown;
 
@@ -52,6 +60,8 @@ namespace Kil0bitSystemMonitor.Pad
         public PadAnswerBox()
         {
             _invalidate = RedrawOf(this);
+            _redraw = new RedrawTimer<PadAnswerBox>(this, static box => box.OnRedrawTimer());
+            PointerHeld = () => RedrawPace.HeldOver(this);
             BuildDocument = raw =>
             {
                 ChatRender render = NewRender();
@@ -86,6 +96,35 @@ namespace Kil0bitSystemMonitor.Pad
         internal IChatDiagrams? Diagrams { get; set; } = ChatDiagrams.Current;
 
         /// <summary>
+        /// The shortest time from a draw to a redraw the box makes by itself, for a picture that
+        /// arrived. A draw that cost more than a quarter of it makes that redraw wait longer
+        /// (<see cref="RedrawPace.Next"/>). Text the pane hands over is drawn at once: the pane
+        /// paced it.
+        /// </summary>
+        internal TimeSpan RedrawInterval { get; set; } = TimeSpan.FromMilliseconds(100);
+
+        /// <summary>
+        /// What the last draw cost, from its start to the end of the layout it caused. The box
+        /// measures it; the tests set it.
+        /// </summary>
+        internal TimeSpan LastRedrawCost
+        {
+            get => _redraw.LastCost;
+            set => _redraw.LastCost = value;
+        }
+
+        /// <summary>
+        /// True while the left mouse button is down and the pointer is over the box. A redraw the
+        /// box makes by itself waits for it to be false: the document, and every button in it, is
+        /// new at each draw, so a click that began on Copy or Source would end on the button's
+        /// replacement and be lost. Tests replace it; it may throw, which counts as not held.
+        /// </summary>
+        internal Func<bool> PointerHeld { get; set; }
+
+        /// <summary>How long the box's timer was set to wait, while a redraw waits for it; otherwise null. For tests.</summary>
+        internal TimeSpan? PendingRedraw => _redraw.Pending;
+
+        /// <summary>
         /// Shows <paramref name="raw"/> rendered from Markdown. Never throws: it runs on a timer
         /// tick while an answer streams, where an exception would take MicaStats down. Markdown
         /// that cannot be rendered is shown as plain text, and the failure is reported once.
@@ -99,11 +138,14 @@ namespace Kil0bitSystemMonitor.Pad
         /// Leaves nothing of the result: the box is empty, its diagrams' Source choices are gone,
         /// and the pictures kept for drawing answers again are forgotten
         /// (<see cref="IChatDiagrams.Clear"/>). A picture still being drawn changes nothing when it
-        /// arrives. Never throws.
+        /// arrives, and nothing is left that could draw the old result again: no redraw waits for
+        /// the timer, and none is started for a box that shows no Markdown. What drawing the
+        /// result cost is forgotten too. Never throws.
         /// </summary>
         public void Clear()
         {
             Display("", markdown: false);
+            _redraw.Forget();
             _sourceShown.Clear();
             try
             {
@@ -173,26 +215,60 @@ namespace Kil0bitSystemMonitor.Pad
             var weak = new WeakReference<PadAnswerBox>(box);
             return () =>
             {
-                if (weak.TryGetTarget(out PadAnswerBox? target)) target.Redraw();
+                if (weak.TryGetTarget(out PadAnswerBox? target)) target.AskRedraw();
             };
         }
 
         /// <summary>
-        /// A picture the box was waiting for has arrived, or failed. The pane skips a draw whose
-        /// text is unchanged, so the box draws itself: the text it shows now, whatever it showed
-        /// when the picture was asked for. Plain text, and a box that was cleared, have no picture
-        /// to show and stay as they are.
+        /// A picture the box was waiting for has arrived or failed, or Try again was pressed. The
+        /// pane skips a draw whose text is unchanged, so the box draws itself. Not here: whoever
+        /// calls is in the middle of something (the adapter telling every view of a draw's end, a
+        /// click), and may call several times in a row. The box's timer draws it, once: no sooner
+        /// than the last draw allows, and not while the pointer is held. Plain text, and a box
+        /// that was cleared, have no picture to show: nothing is asked for.
         /// </summary>
-        private void Redraw()
+        private void AskRedraw()
         {
-            if (_markdown) Display(Shown, markdown: true);
+            if (_markdown) _redraw.Ask(RedrawInterval);
         }
 
+        /// <summary>
+        /// The timer fired: the box draws the text it shows now, whatever it showed when the
+        /// redraw was asked for, unless it shows plain text or nothing by now, the last draw
+        /// turned out to cost more than was known when the timer was set, or the pointer is held.
+        /// In the last two cases the timer runs again. The draw is <see cref="Display"/>, as
+        /// every draw of the box is: its links are taken out (<see cref="Put"/>).
+        /// </summary>
+        private void OnRedrawTimer()
+        {
+            if (!_markdown) return;
+            if (_redraw.Ready(RedrawInterval, PointerHeld, Warn)) Display(Shown, markdown: true);
+        }
+
+        /// <summary>
+        /// Draws <paramref name="text"/> now, whoever asks: the pane (which paced it), a theme
+        /// change, the box's own timer. A redraw that waited for the timer is not needed any
+        /// more: this draw shows every picture that has arrived.
+        /// </summary>
         private void Display(string? text, bool markdown)
         {
+            _redraw.Stop();
+            long started = Stopwatch.GetTimestamp();
             string raw = text ?? "";
-            // A text that does not continue the one shown is another result: the Source choices made for the old one go with it.
-            if (!raw.StartsWith(Shown, StringComparison.Ordinal)) _sourceShown.Clear();
+            // A text that does not continue the one shown is another result: the Source choices made for the old one go with it,
+            // and what drawing the old one cost says nothing about this one.
+            if (!raw.StartsWith(Shown, StringComparison.Ordinal))
+            {
+                _sourceShown.Clear();
+                _redraw.Forget();
+            }
+            Draw(raw, markdown);
+            _redraw.Measure(started);   // a redraw the box makes by itself is paced by what this draw cost
+        }
+
+        /// <summary>Builds and shows the document for <paramref name="raw"/>. Every document the box shows is shown by <see cref="Put"/>.</summary>
+        private void Draw(string raw, bool markdown)
+        {
             Shown = raw;
             _markdown = markdown;
             _picturesAsked = false;   // a Markdown build says so again; plain text asks for none

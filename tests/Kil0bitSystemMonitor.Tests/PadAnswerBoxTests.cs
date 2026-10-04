@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Documents;
@@ -428,7 +429,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Null(Picture(box));
 
             // The pane skips a draw when the text is unchanged, so the box redraws itself.
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture(width: 100, height: 50));
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramFakes.Picture(width: 100, height: 50), box);
 
             Assert.NotNull(Picture(box));
             Assert.DoesNotContain("Drawing the diagram…", Lines(box));
@@ -509,6 +510,7 @@ namespace Kil0bitSystemMonitor.Tests
             var shown = box.Document;
             await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
 
+            Assert.Null(box.PendingRedraw);   // told of the picture, the box asked for no redraw: none comes later either
             Assert.Equal(0, builds());
             Assert.Same(shown, box.Document);
             Assert.Equal("Something else.", Rendered(box));
@@ -527,6 +529,7 @@ namespace Kil0bitSystemMonitor.Tests
             renderer.Calls[0].Done.TrySetResult(DiagramFakes.Picture());   // the picture arrives; not through Finish, so the fake engine keeps nothing either
             await ChatDiagramFakes.Until(() => told, "the end of the draw");
 
+            Assert.Null(box.PendingRedraw);                                                   // told of the picture, the cleared box asked for no redraw
             Assert.Equal(0, builds());
             Assert.Equal("", Rendered(box));
             Assert.Equal(0, diagrams.PicturesKept);                                           // the cleared draw's picture was not kept
@@ -541,7 +544,7 @@ namespace Kil0bitSystemMonitor.Tests
             box.ShowMarkdown(ChatDiagramFakes.Block() + "\n\nThe first ending.");
 
             box.ShowMarkdown(ChatDiagramFakes.Block() + "\n\nAnother ending.");
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramFakes.Picture(), box);
 
             Assert.NotNull(Picture(box));
             Assert.Contains("Another ending.", Rendered(box), StringComparison.Ordinal);
@@ -555,7 +558,7 @@ namespace Kil0bitSystemMonitor.Tests
             var (box, diagrams, renderer) = DiagramBox();
             box.ShowMarkdown(ChatDiagramFakes.Block());
             Assert.True(renderer.Calls[0].Request.Dark);   // a box is dark until it is told
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramFakes.Picture(), box);
             var dark = Picture(box)!.Source;
 
             box.ApplyTheme(false);
@@ -563,7 +566,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2, renderer.Calls.Count);
             Assert.False(renderer.Calls[1].Request.Dark);
             Assert.Null(Picture(box));
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 1, DiagramFakes.Picture(), box);
             Assert.NotSame(dark, Picture(box)!.Source);
 
             box.ApplyTheme(false);   // the theme it has: nothing is built again
@@ -612,7 +615,7 @@ namespace Kil0bitSystemMonitor.Tests
             string text = ChatDiagramFakes.Block();
             box.ShowMarkdown(text);
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramResult.Failure(DiagramText.RuntimeMissing, lasting: false, DiagramText.RuntimeDownload));
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramResult.Failure(DiagramText.RuntimeMissing, lasting: false, DiagramText.RuntimeDownload), box);
 
             Assert.Equal(2, builds());   // the text, and one redraw for the end of the draw
             Assert.Contains("This diagram could not be drawn: " + DiagramText.RuntimeMissing, Lines(box));
@@ -630,18 +633,19 @@ namespace Kil0bitSystemMonitor.Tests
             var (box, diagrams, renderer) = DiagramBox();
             string text = ChatDiagramFakes.Block();
             box.ShowMarkdown(text);
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramResult.Failure(DiagramText.EngineStopped, lasting: false));
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramResult.Failure(DiagramText.EngineStopped, lasting: false), box);
             var retry = ButtonNamed(box, "Try again");
             Assert.Equal("Draw this diagram again", retry.ToolTip);
             Assert.True(MouseReaches(box, retry));
 
             RaiseClick(retry);
+            await Redrawn(box);                                       // the press asks for the redraw; the box's timer makes it
 
             Assert.Equal(2, renderer.Calls.Count);                    // one press, one draw; the pane was not handed the text again
             Assert.Contains("Drawing the diagram…", Lines(box));
             Assert.Equal(text, box.Shown);
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 1, DiagramFakes.Picture(), box);
             Assert.NotNull(Picture(box));
             Assert.DoesNotContain(ChatDocument.All<System.Windows.Controls.Button>(box.Document), b => Equals(b.Content, "Try again"));
             Assert.Equal(2, renderer.Calls.Count);
@@ -704,7 +708,7 @@ namespace Kil0bitSystemMonitor.Tests
             two.ShowMarkdown(ChatDiagramFakes.Block());
             Assert.Single(renderer.Calls);
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramFakes.Picture(), one, two);
             Assert.NotNull(Picture(one));
             Assert.NotNull(Picture(two));   // each box was told, and drew itself
 
@@ -781,6 +785,292 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Null(box.Diagrams);
             Assert.Null(Picture(box));
             Assert.Equal("Copy code", Assert.Single(ChatDocument.All<System.Windows.Controls.Button>(box.Document)).ToolTip);
+        });
+
+        // ---- keeping up while an answer streams (AI chat UI spec 1.5) ------------------------------
+        // The pane paces the text it hands over. The box paces only what it draws by itself: a picture that arrived.
+
+        private static TimeSpan Ms(double ms) => TimeSpan.FromMilliseconds(ms);
+
+        /// <summary>Waits, with the dispatcher free, until no redraw of these boxes is waiting for its timer.</summary>
+        private static Task Redrawn(params PadAnswerBox[] boxes) =>
+            ChatDiagramFakes.Until(() => boxes.All(box => box.PendingRedraw is null), "the redraw that waited");
+
+        /// <summary>
+        /// Ends a draw, and waits for the redraw each of these boxes asked for: a box that is told
+        /// of a picture does not draw it then, its timer does.
+        /// </summary>
+        private static async Task FinishAndRedraw(ChatDiagrams diagrams, FakeRenderer renderer, int index, DiagramResult result, params PadAnswerBox[] boxes)
+        {
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, index, result);
+            await Redrawn(boxes);
+        }
+
+        /// <summary>
+        /// A box that shows a link and one diagram, "being drawn" until the test says otherwise.
+        /// The redraw it handed over is <c>Gets[0].WhenDone</c>: calling it is a picture arriving,
+        /// as the adapter tells it (inline, on the UI thread).
+        /// </summary>
+        private static (PadAnswerBox Box, FakeChatDiagrams Diagrams, Func<int> Builds) WaitingForAPicture(Func<bool> pointerHeld)
+        {
+            var diagrams = new FakeChatDiagrams();
+            var box = new PadAnswerBox { Diagrams = diagrams, PointerHeld = pointerHeld };
+            box.ShowMarkdown("See [site](https://example.com/a).\n\n" + ChatDiagramFakes.Block());
+            return (box, diagrams, CountBuilds(box));
+        }
+
+        [Fact]
+        public Task A_picture_that_arrives_is_drawn_by_the_boxes_timer_and_several_arrivals_give_one_redraw() => UiThread.RunAsync(async () =>
+        {
+            var (box, diagrams, builds) = WaitingForAPicture(() => false);
+            Action arrive = diagrams.Gets[0].WhenDone!;
+            diagrams.Answer = (_, _) => ChatDiagramFakes.Drawn();
+
+            arrive();                                             // as the adapter tells its waiters: inline, several in a row
+            arrive();
+            arrive();
+
+            Assert.Equal(0, builds());                            // not inside whatever ended the draw
+            Assert.Null(Picture(box));
+            Assert.NotNull(box.PendingRedraw);
+            await Redrawn(box);
+            Assert.Equal(1, builds());
+            Assert.NotNull(Picture(box));
+            Assert.Empty(Links(box));                             // the timer's redraw goes the way every draw goes: its links are text
+            Assert.Contains("https://example.com/a", Rendered(box), StringComparison.Ordinal);
+            Assert.Same(arrive, diagrams.Gets[^1].WhenDone);      // the same delegate at every build: the adapter tells a box once
+
+            await Task.Delay(60);                                 // and nothing more by itself
+            Assert.Equal(1, builds());
+            Assert.Null(box.PendingRedraw);
+        });
+
+        [Fact]
+        public void A_picture_that_arrives_is_drawn_no_sooner_than_the_last_draw_allows() => UiThread.Run(() =>
+        {
+            var clock = Stopwatch.StartNew();
+            var (box, diagrams, builds) = WaitingForAPicture(() => false);
+            box.LastRedrawCost = Ms(300);
+
+            diagrams.Gets[0].WhenDone!();
+
+            Assert.Equal(0, builds());
+            RedrawWaits.AssertWaits(box.PendingRedraw, Ms(1200), clock);
+        });
+
+        [Fact]
+        public Task A_picture_that_arrives_waits_while_the_pointer_is_held_and_the_timer_runs_again_for_the_plain_interval() => UiThread.RunAsync(async () =>
+        {
+            bool held = true;
+            int asked = 0;
+            var (box, diagrams, builds) = WaitingForAPicture(() => { asked++; return held; });
+            box.RedrawInterval = Ms(20);
+            box.LastRedrawCost = Ms(15);                          // the redraw is due 60 ms after the last draw
+
+            diagrams.Gets[0].WhenDone!();
+            await ChatDiagramFakes.Until(() => asked > 0, "the redraw timer");
+
+            Assert.Equal(0, builds());                            // a click that began on a button in the answer is not lost
+            Assert.Equal(Ms(20), box.PendingRedraw);              // the plain interval, not the paced one
+
+            held = false;
+            await Redrawn(box);
+            Assert.Equal(1, builds());
+        });
+
+        [Fact]
+        public void Text_handed_to_the_box_is_drawn_at_once_while_the_pointer_is_held_and_whatever_the_last_draw_cost() => UiThread.Run(() =>
+        {
+            var (box, diagrams, builds) = WaitingForAPicture(() => true);
+            box.LastRedrawCost = TimeSpan.FromSeconds(1);
+            diagrams.Gets[0].WhenDone!();                         // a redraw waits for the box's timer
+            Assert.NotNull(box.PendingRedraw);
+            string more = box.Shown + "\n\nMore.";
+
+            box.ShowMarkdown(more);                               // the pane paced this already: the box draws it now
+
+            Assert.Equal(1, builds());
+            Assert.Contains("More.", Rendered(box), StringComparison.Ordinal);
+            Assert.Null(box.PendingRedraw);                       // and that draw showed whatever the redraw was waiting to show
+
+            diagrams.Gets[^1].WhenDone!();
+            Assert.NotNull(box.PendingRedraw);
+            box.ShowPlain(more);                                  // Source was turned on
+            Assert.Equal(more, Rendered(box));
+            Assert.Null(box.PendingRedraw);                       // plain text has no picture to wait for
+            Assert.Equal(1, builds());
+        });
+
+        [Fact]
+        public void A_theme_change_draws_the_box_again_at_once_while_the_pointer_is_held_and_whatever_the_last_draw_cost() => UiThread.Run(() =>
+        {
+            var (box, diagrams, builds) = WaitingForAPicture(() => true);
+            box.LastRedrawCost = TimeSpan.FromSeconds(1);
+
+            box.ApplyTheme(false);
+
+            Assert.Equal(1, builds());
+            Assert.False(diagrams.Gets[^1].Dark);                 // the picture is asked for in the new theme, now
+            Assert.Null(box.PendingRedraw);
+        });
+
+        [Fact]
+        public void Clear_stops_a_redraw_that_waits_and_a_picture_that_arrives_later_starts_none_and_no_cost_is_stored() => UiThread.Run(() =>
+        {
+            var (box, diagrams, builds) = WaitingForAPicture(() => true);
+            Action arrive = diagrams.Gets[0].WhenDone!;
+            arrive();
+            Assert.NotNull(box.PendingRedraw);
+
+            box.Clear();                                          // a credential was stored: nothing may draw the old answer again
+
+            Assert.Null(box.PendingRedraw);
+            Assert.Equal("", Rendered(box));
+            arrive();                                             // the draw of the answer that went ends
+            Assert.Null(box.PendingRedraw);
+            RedrawWaits.ToLoaded();
+            Assert.Equal(TimeSpan.Zero, box.LastRedrawCost);      // not even what drawing it cost is kept
+            Assert.Equal(0, builds());
+            Assert.Equal("", Rendered(box));
+        });
+
+        [Fact]
+        public Task A_PointerHeld_that_throws_counts_as_not_held_and_is_reported_once_by_its_type() => UiThread.RunAsync(async () =>
+        {
+            var warnings = new List<string>();
+            var (box, diagrams, builds) = WaitingForAPicture(() => throw new InvalidOperationException("the answer says hunter2"));
+            box.Warn = warnings.Add;
+            box.RedrawInterval = Ms(10);
+
+            diagrams.Gets[0].WhenDone!();
+            await Redrawn(box);
+            diagrams.Gets[^1].WhenDone!();
+            await Redrawn(box);
+
+            Assert.Equal(2, builds());                            // each drawn: nothing held it back
+            string warning = Assert.Single(warnings);
+            Assert.Contains("InvalidOperationException", warning, StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", warning, StringComparison.Ordinal);
+        });
+
+        /// <summary>
+        /// Why the cost is read from a callback at Loaded priority. The box is in a real window,
+        /// so the layout of a new document is done by the dispatcher (at Render priority) after
+        /// the draw has returned. The cost is stored after that layout, not before it.
+        /// </summary>
+        [Fact]
+        public void What_a_draw_cost_is_stored_after_the_layout_it_caused() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+            var window = new Window
+            {
+                Width = 600,
+                Height = 400,
+                Left = -20000,
+                Top = -20000,
+                ShowInTaskbar = false,
+                ShowActivated = false,
+                Content = box,
+            };
+            try
+            {
+                window.Show();
+                window.UpdateLayout();
+                RedrawWaits.ToLoaded();                           // whatever showing the window left to do
+
+                TimeSpan notYet = TimeSpan.FromTicks(-1);         // no cost a draw has
+                box.LastRedrawCost = notYet;
+                int layoutsBeforeTheCost = 0;
+                box.LayoutUpdated += (_, _) =>
+                {
+                    if (box.LastRedrawCost == notYet) layoutsBeforeTheCost++;
+                };
+                double height = box.DesiredSize.Height;
+                string table = "| a | b | c |\n|---|---|---|\n" + string.Concat(Enumerable.Range(1, 30).Select(i => "| " + i + " | two | three |\n"));
+
+                box.ShowMarkdown(table);
+
+                Assert.Equal(notYet, box.LastRedrawCost);         // not when the build returns
+                Assert.Equal(0, layoutsBeforeTheCost);            // and nothing is laid out yet: the dispatcher does that
+                RedrawWaits.ToLoaded();
+
+                Assert.True(layoutsBeforeTheCost > 0, "the new document was laid out before its cost was stored");
+                Assert.True(box.LastRedrawCost > TimeSpan.Zero, "the cost of the draw is stored");
+                Assert.True(box.IsMeasureValid && box.IsArrangeValid, "nothing is left to lay out");
+                Assert.True(box.DesiredSize.Height > height, "the table is laid out: " + box.DesiredSize.Height + " against " + height);
+            }
+            finally
+            {
+                window.Content = null;
+                window.Close();
+            }
+        });
+
+        [Fact]
+        public void A_text_that_does_not_continue_the_one_shown_forgets_what_the_last_draw_cost() => UiThread.Run(() =>
+        {
+            var box = new PadAnswerBox();
+            box.ShowMarkdown("An answer");
+            box.LastRedrawCost = Ms(300);
+
+            box.ShowMarkdown("An answer, and more of it");
+            Assert.Equal(Ms(300), box.LastRedrawCost);            // the same answer, streaming on
+
+            box.ShowMarkdown("Another answer");
+            Assert.Equal(TimeSpan.Zero, box.LastRedrawCost);      // a heavy answer does not slow the first redraws of the next
+        });
+
+        [Fact]
+        public Task Try_again_in_the_box_under_a_held_pointer_is_drawn_when_the_button_is_released_and_needs_no_new_text() => UiThread.RunAsync(async () =>
+        {
+            bool held = true;
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Failed("It took too long", canRetry: true) };
+            var box = new PadAnswerBox { Diagrams = diagrams, RedrawInterval = Ms(20), PointerHeld = () => held };
+            box.ShowMarkdown(ChatDiagramFakes.Block());
+            var builds = CountBuilds(box);
+            int asked = diagrams.Gets.Count;
+
+            RaiseClick(ButtonNamed(box, "Try again"));            // the click itself comes with the pointer over the answer
+
+            Assert.Single(diagrams.Forgotten);
+            Assert.Equal(0, builds());
+            Assert.NotNull(box.PendingRedraw);                    // asked for, though the text is the same: the timer will draw it
+            await Task.Delay(80);                                 // some ticks, all under the held button
+            Assert.Equal(0, builds());
+            Assert.NotNull(box.PendingRedraw);
+
+            held = false;                                         // the button is released
+            await Redrawn(box);
+            Assert.Equal(1, builds());                            // the same text, built again; the pane handed over nothing
+            Assert.Equal(asked + 1, diagrams.Gets.Count);         // and that build asks for the diagram, which starts its draw
+            Assert.Equal(ChatDiagramFakes.Block(), box.Shown);
+        });
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static WeakReference BoxWithARedrawWaiting()
+        {
+            var diagrams = new FakeChatDiagrams();
+            var box = new PadAnswerBox { Diagrams = diagrams, PointerHeld = () => false };
+            box.ShowMarkdown(ChatDiagramFakes.Block());
+            box.LastRedrawCost = Ms(500);                         // the next redraw waits two seconds: its timer runs through the collections
+            box.ShowMarkdown(ChatDiagramFakes.Block() + "\n\nMore.");   // a draw whose cost is not stored yet
+            diagrams.Gets[0].WhenDone!();
+            Assert.NotNull(box.PendingRedraw);
+            return new WeakReference(box);
+        }
+
+        [Fact]
+        public void A_redraw_that_waits_and_a_cost_not_yet_stored_do_not_keep_their_box_alive() => UiThread.Run(() =>
+        {
+            WeakReference box = BoxWithARedrawWaiting();
+
+            for (int i = 0; i < 3; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+
+            Assert.False(box.IsAlive);   // neither the timer that runs nor the callback that waits holds the box
         });
     }
 }

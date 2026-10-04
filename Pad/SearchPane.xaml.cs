@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
@@ -75,8 +76,9 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>True while a search typed into the query box waits for its pause to run; for tests.</summary>
         internal bool TypedSearchPending => _typing.IsEnabled;
-        private readonly DispatcherTimer _redraw;
-        private readonly Stopwatch _sinceDraw = new();
+
+        /// <summary>The timer a streaming answer is drawn again on, with when the pane last drew it and what that cost. It holds the pane weakly.</summary>
+        private readonly RedrawTimer<SearchPane> _redraw;
         private readonly StringBuilder _answer = new();
         private CancellationTokenSource? _running;
 
@@ -95,8 +97,8 @@ namespace Kil0bitSystemMonitor.Pad
             // The timers first: hiding the pane, below, already stops one of them.
             _typing = new DispatcherTimer { Interval = TypingPause };
             _typing.Tick += (_, _) => { _typing.Stop(); _ = SearchNow(); };
-            _redraw = new DispatcherTimer(DispatcherPriority.Background);
-            _redraw.Tick += (_, _) => DrawAnswer();
+            _redraw = new RedrawTimer<SearchPane>(this, static pane => pane.OnRedrawTimer());
+            PointerHeld = () => RedrawPace.HeldOver(AnswerBox);
             InitializeComponent();
             Visibility = Visibility.Collapsed;
         }
@@ -125,8 +127,32 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The rows currently listed.</summary>
         public IReadOnlyList<SearchRow> Rows { get; private set; } = Array.Empty<SearchRow>();
 
-        /// <summary>The shortest time between two redraws of an answer that is streaming in.</summary>
+        /// <summary>
+        /// The shortest time between two redraws of an answer that is streaming in. A redraw that
+        /// cost more than a quarter of it makes the next one wait longer (<see cref="RedrawPace.Next"/>).
+        /// </summary>
         internal TimeSpan RedrawInterval { get; set; } = TimeSpan.FromMilliseconds(100);
+
+        /// <summary>
+        /// What the last draw of the answer cost, from its start to the end of the layout it
+        /// caused; forgotten with the answer. The pane measures it; the tests set it.
+        /// </summary>
+        internal TimeSpan LastRedrawCost
+        {
+            get => _redraw.LastCost;
+            set => _redraw.LastCost = value;
+        }
+
+        /// <summary>
+        /// True while the left mouse button is down and the pointer is over the answer. A redraw
+        /// of a streaming answer waits for it to be false: the document, and every button in it,
+        /// is new at each draw, so a click that began on Copy or Source would end on the button's
+        /// replacement and be lost. Tests replace it; it may throw, which counts as not held.
+        /// </summary>
+        internal Func<bool> PointerHeld { get; set; }
+
+        /// <summary>How long the timer was set to wait, while a redraw of the answer waits for it; otherwise null. For tests.</summary>
+        internal TimeSpan? PendingRedraw => _redraw.Pending;
 
         /// <summary>
         /// Where a failed question is reported, by the exception's type only: a message could quote
@@ -359,11 +385,12 @@ namespace Kil0bitSystemMonitor.Pad
         /// Takes the answer off the pane: a new search or question starts without the old one.
         /// The status line goes back to the search status at once, not when the next result
         /// arrives: "Answering from…" and "Answered from…" speak of an answer that is gone.
+        /// A redraw that waited is dropped, and what the old answer's redraws cost is forgotten:
+        /// it does not slow the first redraws of the next one.
         /// </summary>
         private void ClearAnswer()
         {
-            _redraw.Stop();
-            _sinceDraw.Reset();
+            _redraw.Forget();
             _answer.Clear();
             AnswerPanel.Visibility = Visibility.Collapsed;
             AnswerStop.Visibility = Visibility.Collapsed;
@@ -440,7 +467,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             if (!ReferenceEquals(mine, _running)) return;
-            DrawAnswer();   // the last text, at once
+            DrawAnswer();   // the last text, at once: whatever the last draw cost, and though the pointer may be held
             bool nothing = string.IsNullOrWhiteSpace(_answer.ToString());
             ending ??= mine.IsCancellationRequested ? StoppedText : null;
             // A clean end with no text is not an answer: the status does not say "Answered".
@@ -452,18 +479,26 @@ namespace Kil0bitSystemMonitor.Pad
             AnswerCopy.Visibility = When(!nothing);
         }
 
-        /// <summary>Draws now when the interval has passed since the last draw (or nothing was drawn yet); otherwise once, when it has.</summary>
+        /// <summary>
+        /// The first text of an answer is drawn at once. Later text is drawn once the last draw
+        /// allows it (<see cref="RedrawInterval"/>, or four times what that draw cost) and the
+        /// pointer is not held over the answer: at once when both hold already, otherwise by the
+        /// timer.
+        /// </summary>
         private void ScheduleDraw()
         {
-            if (_redraw.IsEnabled) return;
-            TimeSpan since = _sinceDraw.Elapsed;
-            if (!_sinceDraw.IsRunning || since >= RedrawInterval)
-            {
-                DrawAnswer();
-                return;
-            }
-            _redraw.Interval = RedrawInterval - since;
-            _redraw.Start();
+            if (_redraw.Waiting) return;
+            if (!_redraw.HasDrawn || _redraw.Ready(RedrawInterval, PointerHeld, Warn)) DrawAnswer();
+        }
+
+        /// <summary>
+        /// The timer fired: the redraw that waited is made now, unless the last draw turned out
+        /// to cost more than was known when the timer was set, or the pointer is held; then the
+        /// timer runs again. An answer that was taken off the pane has no timer running.
+        /// </summary>
+        private void OnRedrawTimer()
+        {
+            if (_redraw.Ready(RedrawInterval, PointerHeld, Warn)) DrawAnswer();
         }
 
         /// <summary>Draws the answer so far, cancelling a redraw that was waiting. Text already on screen is left alone.</summary>
@@ -471,8 +506,11 @@ namespace Kil0bitSystemMonitor.Pad
         {
             _redraw.Stop();
             string raw = _answer.ToString();
-            if (!string.Equals(AnswerBox.Shown, raw, StringComparison.Ordinal)) AnswerBox.ShowMarkdown(raw);
-            _sinceDraw.Restart();
+            if (string.Equals(AnswerBox.Shown, raw, StringComparison.Ordinal)) return;
+
+            long started = Stopwatch.GetTimestamp();
+            AnswerBox.ShowMarkdown(raw);
+            _redraw.Measure(started);   // the next redraw of the stream is paced by what this draw cost
         }
 
         /// <summary>Reports a failure once it happened, by its type only; reporting never throws into the pane.</summary>

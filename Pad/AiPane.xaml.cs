@@ -3,7 +3,8 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Threading;
+using Kil0bitSystemMonitor.Ai;
+using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
 
@@ -33,8 +34,8 @@ namespace Kil0bitSystemMonitor.Pad
         internal const string AddedTintKey = "AiPane.AddedTint";
         internal const string RemovedTintKey = "AiPane.RemovedTint";
 
-        private readonly DispatcherTimer _redraw;
-        private readonly Stopwatch _sinceDraw = new();
+        /// <summary>The timer a streaming result is drawn again on, with when the pane last drew and what that cost. It holds the pane weakly.</summary>
+        private readonly RedrawTimer<AiPane> _redraw;
         private AiPaneView? _view;
         private bool _drawn;
         private bool _drawnRendered;
@@ -47,10 +48,10 @@ namespace Kil0bitSystemMonitor.Pad
         {
             InitializeComponent();
             Visibility = Visibility.Collapsed;
-            _redraw = new DispatcherTimer(DispatcherPriority.Background);
-            _redraw.Tick += (_, _) => DrawNow();
-            // A redraw still waiting is dropped with the window: no timer ticks for a pane that is gone. The next view draws as usual.
-            Unloaded += (_, _) => _redraw.Stop();
+            _redraw = new RedrawTimer<AiPane>(this, static pane => pane.OnRedrawTimer());
+            PointerHeld = () => RedrawPace.HeldOver(ResultBox);
+            // A redraw still waiting is dropped with the window: no timer ticks for a pane that is gone, and no cost is stored for it. The next view draws as usual.
+            Unloaded += (_, _) => _redraw.Cancel();
             ApplyTheme(dark: true);
         }
 
@@ -75,8 +76,39 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Enter in the instruction box: the instruction, trimmed and never empty.</summary>
         public event Action<string>? InstructionEntered;
 
-        /// <summary>The shortest time between two redraws of a result that is streaming in.</summary>
+        /// <summary>
+        /// The shortest time between two redraws of a result that is streaming in. A redraw that
+        /// cost more than a quarter of it makes the next one wait longer (<see cref="RedrawPace.Next"/>).
+        /// </summary>
         internal TimeSpan RedrawInterval { get; set; } = TimeSpan.FromMilliseconds(100);
+
+        /// <summary>
+        /// What the last draw of the result cost, from its start to the end of the layout it
+        /// caused; forgotten when another request takes the pane. The pane measures it; the
+        /// tests set it.
+        /// </summary>
+        internal TimeSpan LastRedrawCost
+        {
+            get => _redraw.LastCost;
+            set => _redraw.LastCost = value;
+        }
+
+        /// <summary>
+        /// True while the left mouse button is down and the pointer is over the result. A redraw
+        /// of a streaming result waits for it to be false: the document, and every button in it,
+        /// is new at each draw, so a click that began on Copy or Source would end on the button's
+        /// replacement and be lost. Tests replace it; it may throw, which counts as not held.
+        /// </summary>
+        internal Func<bool> PointerHeld { get; set; }
+
+        /// <summary>
+        /// Where a <see cref="PointerHeld"/> that throws is reported, once, by the exception's
+        /// type only. Tests replace it so nothing reaches the real log.
+        /// </summary>
+        internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("pad", message);
+
+        /// <summary>How long the timer was set to wait, while a redraw of the result waits for it; otherwise null. For tests.</summary>
+        internal TimeSpan? PendingRedraw => _redraw.Pending;
 
         /// <summary>True while the line diff is shown in place of the result.</summary>
         internal bool ShowingChanges => ChangesToggle.IsChecked == true;
@@ -87,7 +119,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// Draws <paramref name="view"/>. The title, the lines, the buttons and the status change
         /// at once. The result text redraws at most every <see cref="RedrawInterval"/> while one
-        /// reply streams in, and at once when it ends or when the view belongs to another request.
+        /// reply streams in (less often when a redraw is costly, and not while the pointer is
+        /// held over it: <see cref="ScheduleDraw"/>), and at once when its first text arrives,
+        /// when it ends or when the view belongs to another request.
         /// A result that is shown rendered and has text gets the Source toggle, which is off again
         /// for another request. Showing a view never opens or closes the pane.
         /// </summary>
@@ -97,8 +131,11 @@ namespace Kil0bitSystemMonitor.Pad
             // instruction, and not for a request that was refused, failed with nothing, or whose first
             // text has not arrived. The choice is made for one request: it does not carry over to the next.
             bool offerSource = view.Markdown && !view.AskForInstruction && view.Result.Length > 0;
-            if (!offerSource || !SameRequest(view)) TurnSourceOff();
-            bool streaming = Continues(view);   // asked once the toggle is settled: the form the text is drawn in counts
+            bool sameRequest = SameRequest(view);
+            if (!offerSource || !sameRequest) TurnSourceOff();
+            // Another request: what the last one's redraws cost says nothing about this one's, and nothing of it waits.
+            if (!sameRequest) _redraw.Forget();
+            bool streaming = sameRequest && Continues(view);   // asked once the toggle is settled: the form the text is drawn in counts
             _view = view;
 
             TitleText.Text = view.Title;
@@ -140,13 +177,14 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>
         /// Empties the pane: nothing of the last request stays in it, shown or not (its result,
         /// rendered or as text, with the pictures drawn for it; its Changes view; a typed
-        /// instruction; its lines), and a redraw still waiting is dropped. Source goes off with
+        /// instruction; its lines), and a redraw still waiting is dropped, the pane's and the
+        /// result box's, with what the result's redraws cost. Source goes off with
         /// the result, and with no view left turning it shows nothing. For text that must not be
         /// kept: a credential was stored from the note it came from. The next view draws as usual.
         /// </summary>
         public void Clear()
         {
-            _redraw.Stop();
+            _redraw.Forget();
             _view = null;
             _drawn = false;
             _comparedOriginal = null;
@@ -208,11 +246,13 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>
         /// True when <paramref name="view"/> is the reply on screen with more text added: one
-        /// stream going on, which may wait for the next redraw. Anything else (the first view, a
-        /// finished one, another request, a reply to be drawn in the other form) draws at once.
+        /// stream going on, which may wait for the next redraw. Anything else (the first view, the
+        /// first text of a reply, a finished view, a reply to be drawn in the other form) draws
+        /// at once; so does another request (<see cref="Show"/>).
         /// </summary>
         private bool Continues(AiPaneView view) =>
             view.Running && _drawn && _drawnRendered == Rendered(view)
+            && ResultBox.Shown.Length > 0
             && view.Result.StartsWith(ResultBox.Shown, StringComparison.Ordinal);
 
         /// <summary>True when <paramref name="view"/>'s result is drawn rendered: Markdown, and Source is off.</summary>
@@ -260,18 +300,26 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
-        /// <summary>Draws now when the interval has passed since the last draw; otherwise once, when it has.</summary>
+        /// <summary>
+        /// More text of the reply on screen: it is drawn once the last draw allows it
+        /// (<see cref="RedrawInterval"/>, or four times what that draw cost) and the pointer is
+        /// not held over the result: at once when both hold already, otherwise by the timer.
+        /// </summary>
         private void ScheduleDraw()
         {
-            if (_redraw.IsEnabled) return;
-            TimeSpan since = _sinceDraw.Elapsed;
-            if (since >= RedrawInterval)
-            {
-                DrawNow();
-                return;
-            }
-            _redraw.Interval = RedrawInterval - since;
-            _redraw.Start();
+            if (_redraw.Waiting) return;
+            if (_redraw.Ready(RedrawInterval, PointerHeld, Warn)) DrawNow();
+        }
+
+        /// <summary>
+        /// The timer fired: the redraw that waited is made now, unless the pane was cleared
+        /// meanwhile, the last draw turned out to cost more than was known when the timer was
+        /// set, or the pointer is held. In the last two cases the timer runs again.
+        /// </summary>
+        private void OnRedrawTimer()
+        {
+            if (_view is null) return;
+            if (_redraw.Ready(RedrawInterval, PointerHeld, Warn)) DrawNow();
         }
 
         /// <summary>
@@ -287,11 +335,12 @@ namespace Kil0bitSystemMonitor.Pad
             bool rendered = Rendered(view);
             if (_drawn && _drawnRendered == rendered && string.Equals(ResultBox.Shown, view.Result, StringComparison.Ordinal)) return;
 
+            long started = Stopwatch.GetTimestamp();
             if (rendered) ResultBox.ShowMarkdown(view.Result);
             else ResultBox.ShowPlain(view.Result);
             _drawn = true;
             _drawnRendered = rendered;
-            _sinceDraw.Restart();
+            _redraw.Measure(started);   // the next redraw of the stream is paced by what this draw cost
         }
 
         /// <summary>Shows the result, or the line diff in its place while Changes is on.</summary>

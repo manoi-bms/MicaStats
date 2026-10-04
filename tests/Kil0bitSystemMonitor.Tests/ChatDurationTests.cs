@@ -37,18 +37,39 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains(" min ", text, StringComparison.Ordinal);
         }
 
+        /// <summary>A culture whose number format shares nothing with the invariant one: its own group and decimal separators.</summary>
+        private static CultureInfo OddNumbers()
+        {
+            var odd = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+            odd.NumberFormat.NumberGroupSeparator = "'";
+            odd.NumberFormat.NumberDecimalSeparator = "·";
+            odd.NumberFormat.NumberGroupSizes = new[] { 2 };
+            return odd;
+        }
+
+        /// <summary>
+        /// What this pins is the number format, not the digits: a whole number's plain
+        /// <c>ToString()</c> gives the digits 0 to 9 in every .NET culture, with or without
+        /// <c>InvariantCulture</c>, so no test can tell those two apart. What a culture, or a
+        /// format string, could bring in is a group separator ("N0" writes 1,234 or 1.234 or
+        /// 12'34), and that shows only from 1,000 minutes on, which the other tests never reach.
+        /// </summary>
         [Fact]
-        public void The_digits_are_ASCII_whatever_the_culture()
+        public void A_long_duration_is_written_without_a_group_separator_and_the_same_under_every_culture()
         {
             CultureInfo old = CultureInfo.CurrentCulture;
             try
             {
-                CultureInfo.CurrentCulture = new CultureInfo("th-TH");   // the culture of the PC this is written on
+                // This PC's culture, one that groups with a dot, one with a space, and one that shares nothing with the invariant one.
+                foreach (CultureInfo culture in new[] { new CultureInfo("th-TH"), new CultureInfo("de-DE"), new CultureInfo("fr-FR"), OddNumbers() })
+                {
+                    CultureInfo.CurrentCulture = culture;
 
-                Assert.Equal("4 s", ChatDuration.Text(TimeSpan.FromSeconds(4)));
-                Assert.Equal("1 min 5 s", ChatDuration.Text(TimeSpan.FromSeconds(65)));
-                Assert.Equal("1234 min 56 s", ChatDuration.Text(TimeSpan.FromSeconds(1234 * 60 + 56)));   // no group separator either
-                Assert.All(ChatDuration.Text(TimeSpan.FromSeconds(9876 * 60 + 54)).Where(char.IsDigit), digit => Assert.InRange(digit, '0', '9'));
+                    Assert.Equal("4 s", ChatDuration.Text(TimeSpan.FromSeconds(4)));
+                    Assert.Equal("1 min 5 s", ChatDuration.Text(TimeSpan.FromSeconds(65)));
+                    Assert.Equal("1234 min 56 s", ChatDuration.Text(TimeSpan.FromSeconds(1234 * 60 + 56)));
+                    Assert.Equal("1234567 min 8 s", ChatDuration.Text(TimeSpan.FromSeconds(1234567L * 60 + 8)));
+                }
             }
             finally
             {

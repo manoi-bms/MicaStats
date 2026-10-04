@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Ai;
 using Xunit;
@@ -67,5 +68,18 @@ namespace Kil0bitSystemMonitor.Tests
         /// A redraw timer, which ticks at Background, does not run.
         /// </summary>
         public static void ToLoaded() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
+
+        /// <summary>
+        /// Asserts that a redraw waits, and that its timer was set to <paramref name="whole"/> less
+        /// what had passed since the redraw before it. <paramref name="clock"/> was started before
+        /// that redraw, so it has run at least as long as the view's own clock: no test sleeps, and
+        /// a slow machine only widens the range.
+        /// </summary>
+        public static void AssertWaits(TimeSpan? pending, TimeSpan whole, Stopwatch clock)
+        {
+            TimeSpan passed = clock.Elapsed;
+            Assert.True(pending.HasValue, "a redraw waits for its timer");
+            Assert.InRange(pending.GetValueOrDefault(), whole - passed, whole);
+        }
     }
 }

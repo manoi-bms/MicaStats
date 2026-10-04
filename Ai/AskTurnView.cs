@@ -6,7 +6,6 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
-using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Ai.Tools;
@@ -41,13 +40,14 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly StringBuilder _raw = new();
         private readonly Dictionary<string, ToolChip> _chipsByTool = new(StringComparer.Ordinal);
         private readonly List<ToolChip> _chips = new();
-        private readonly DispatcherTimer _renderTimer;
-        private readonly Stopwatch _sinceRender = new();
+
+        /// <summary>The timer the streaming answer is drawn again on, with when it last drew and what that cost. It holds this turn weakly.</summary>
+        private readonly RedrawTimer<AskTurnView> _redraw;
 
         /// <summary>The sources of the diagrams whose Source toggle is on: kept here, because every render builds new buttons.</summary>
         private readonly HashSet<string> _sourceShown = new(StringComparer.Ordinal);
 
-        /// <summary>This turn's redraw, the same delegate at every render, so a draw tells it once.</summary>
+        /// <summary>This turn's request for a redraw, the same delegate at every render, so a draw tells it once.</summary>
         private readonly Action _invalidate;
         private bool _dark = true;
 
@@ -58,6 +58,17 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly StackPanel _content;
         private bool _rendered;
         private bool _renderFailed;
+
+        /// <summary>The value of <see cref="PlainLinks"/> the document on screen was built with.</summary>
+        private bool _shownPlainLinks;
+
+        /// <summary>
+        /// True when what is on screen was built for another value of <see cref="PlainLinks"/>:
+        /// it may hold a link that must be text by now. A render that is asked for then never
+        /// waits, for its pace or for the pointer. <see cref="ShowLinksAsText"/> renders by
+        /// itself, so this is true only for a caller that set the property and nothing more.
+        /// </summary>
+        private bool LinksOutOfDate => _rendered && PlainLinks != _shownPlainLinks;
 
         /// <summary>Builds the visuals for one question.</summary>
         public AskTurnView(string question)
@@ -228,8 +239,8 @@ namespace Kil0bitSystemMonitor.Ai
             root.Children.Add(answerRow);
             Root = root;
 
-            _renderTimer = new DispatcherTimer(DispatcherPriority.Background);
-            _renderTimer.Tick += (s, e) => RenderNow();
+            _redraw = new RedrawTimer<AskTurnView>(this, static turn => turn.OnRedrawTimer());
+            PointerHeld = () => RedrawPace.HeldOver(Answer);
             StartTyping();
         }
 
@@ -299,8 +310,32 @@ namespace Kil0bitSystemMonitor.Ai
         /// </summary>
         internal bool PlainLinks { get; set; }
 
-        /// <summary>The shortest time between two renders of a streaming answer.</summary>
+        /// <summary>
+        /// The shortest time between two renders of a streaming answer. A render that cost more
+        /// than a quarter of it makes the next one wait longer (<see cref="RedrawPace.Next"/>).
+        /// </summary>
         internal TimeSpan RenderInterval { get; set; } = TimeSpan.FromMilliseconds(100);
+
+        /// <summary>
+        /// What the last render cost, from its start to the end of the layout it caused. The turn
+        /// measures it; the tests set it.
+        /// </summary>
+        internal TimeSpan LastRedrawCost
+        {
+            get => _redraw.LastCost;
+            set => _redraw.LastCost = value;
+        }
+
+        /// <summary>
+        /// True while the left mouse button is down and the pointer is over the answer. A render
+        /// on the timer waits for it to be false: the document, and every button in it, is new
+        /// at each render, so a click that began on Copy or Source would end on the button's
+        /// replacement and be lost. Tests replace it; it may throw, which counts as not held.
+        /// </summary>
+        internal Func<bool> PointerHeld { get; set; }
+
+        /// <summary>How long the timer was set to wait, while a render waits for it; otherwise null. For tests.</summary>
+        internal TimeSpan? PendingRedraw => _redraw.Pending;
 
         /// <summary>
         /// Draws the answer's Mermaid blocks; null leaves them as code. The app's own by default
@@ -326,12 +361,13 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>
         /// The window dropped this turn (New conversation, or it closed). A picture that arrives
         /// later, or a theme change, renders it no more, and if a cancelled stream still ends it,
-        /// it asks for no picture.
+        /// it asks for no picture. A render that waited for the timer is dropped, the timer is
+        /// never started for this turn again, and no cost is stored for it.
         /// </summary>
         internal void Release()
         {
             _released = true;
-            _renderTimer.Stop();
+            _redraw.Cancel();
         }
 
         /// <summary>
@@ -356,14 +392,42 @@ namespace Kil0bitSystemMonitor.Ai
             var weak = new WeakReference<AskTurnView>(turn);
             return () =>
             {
-                if (weak.TryGetTarget(out AskTurnView? target) && !target._released) target.RenderNow();
+                if (weak.TryGetTarget(out AskTurnView? target)) target.AskRedraw();
             };
+        }
+
+        /// <summary>
+        /// A picture the answer waits for has arrived or failed, or Try again was pressed. Nothing
+        /// is rendered here: whoever calls is in the middle of something (the adapter telling
+        /// every view of a draw's end, a click), and may call several times in a row. The timer
+        /// renders it, once: no sooner than the last render allows, and not while the pointer is
+        /// held. This holds after the answer has ended too, when no other render is due. Only
+        /// links that are out of date are not left to the timer (<see cref="LinksOutOfDate"/>).
+        /// </summary>
+        private void AskRedraw()
+        {
+            if (_released) return;
+            if (LinksOutOfDate) RenderNow();
+            else _redraw.Ask(RenderInterval);
+        }
+
+        /// <summary>
+        /// The timer fired: the render that waited is made now, unless the turn was released
+        /// meanwhile, the last render turned out to cost more than was known when the timer was
+        /// set, or the pointer is held. In the last two cases the timer runs again, but never
+        /// over links that are out of date.
+        /// </summary>
+        private void OnRedrawTimer()
+        {
+            if (_released) return;
+            if (LinksOutOfDate || _redraw.Ready(RenderInterval, PointerHeld, Warn)) RenderNow();
         }
 
         /// <summary>
         /// Adds streamed text to the answer. Whitespace before the first visible character is
         /// dropped: some OpenAI-compatible servers (vLLM with a reasoning parser) start every
-        /// answer with blank lines. The answer re-renders at most every <see cref="RenderInterval"/>.
+        /// answer with blank lines. The answer re-renders at most every <see cref="RenderInterval"/>,
+        /// and less often when a render is costly (<see cref="ScheduleRender"/>).
         /// </summary>
         public void AppendText(string text)
         {
@@ -400,6 +464,13 @@ namespace Kil0bitSystemMonitor.Ai
         /// after. Called for a note tool's chip, and by the window once the conversation says a
         /// note tool handed notes to the model (<see cref="AiConversation.NotesEverRead"/>), which
         /// does not depend on the tool names a provider's call ids let through.
+        ///
+        /// <para>
+        /// What is shown is rendered again here, at once: never by the timer, whatever the last
+        /// render cost, and never waiting for the pointer. A link left on screen until the next
+        /// redraw of the stream, or for as long as the mouse button is held over the answer, is
+        /// the very click this exists to stop.
+        /// </para>
         /// </summary>
         internal void ShowLinksAsText()
         {
@@ -457,17 +528,21 @@ namespace Kil0bitSystemMonitor.Ai
         /// down or leave the window busy. If the Markdown cannot be rendered, the answer is shown as
         /// plain text and the failure is reported once. With <see cref="PlainLinks"/> the links go
         /// before the document is shown; a document whose links cannot be taken out is not shown
-        /// either (the plain text has none).
+        /// either (the plain text has none). Every render of the turn is this one, the timer's
+        /// too: none goes around the links.
         /// </summary>
         internal void RenderNow()
         {
-            _renderTimer.Stop();
+            _redraw.Stop();
+            long started = Stopwatch.GetTimestamp();
             string raw = RawText;
+            bool plainLinks = PlainLinks;   // read once: the document shown is built for this value
             try
             {
                 FlowDocument document = BuildDocument(raw);
-                if (PlainLinks) ChatDocument.RemoveLinks(document);
+                if (plainLinks) ChatDocument.RemoveLinks(document);
                 Answer.Show(document);
+                _shownPlainLinks = plainLinks;
             }
             catch (Exception ex)
             {
@@ -480,6 +555,7 @@ namespace Kil0bitSystemMonitor.Ai
                 try
                 {
                     Answer.Show(ChatDocument.Plain(raw));
+                    _shownPlainLinks = plainLinks;   // plain text holds no link, whichever the value
                 }
                 catch (Exception)
                 {
@@ -488,21 +564,26 @@ namespace Kil0bitSystemMonitor.Ai
             }
             Answer.Visibility = raw.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             _rendered = true;
-            _sinceRender.Restart();
+            if (!_released) _redraw.Measure(started);   // the next render is paced by what this one cost
         }
 
-        /// <summary>The first text renders at once; later text waits until the interval has passed.</summary>
+        /// <summary>
+        /// The first text renders at once. Later text is rendered once the last render allows it
+        /// (<see cref="RenderInterval"/>, or four times what that render cost) and the pointer is
+        /// not held over the answer: at once when both hold already, otherwise by the timer. A
+        /// turn that was released waits for nothing: what its cancelled stream still hands over
+        /// is rendered when the stream ends (<see cref="Complete"/>). And nothing waits over
+        /// links that are out of date (<see cref="LinksOutOfDate"/>).
+        /// </summary>
         private void ScheduleRender()
         {
-            if (_renderTimer.IsEnabled) return;
-            TimeSpan since = _sinceRender.Elapsed;
-            if (!_rendered || since >= RenderInterval)
+            if (!_rendered || LinksOutOfDate)
             {
                 RenderNow();
                 return;
             }
-            _renderTimer.Interval = RenderInterval - since;
-            _renderTimer.Start();
+            if (_released || _redraw.Waiting) return;
+            if (_redraw.Ready(RenderInterval, PointerHeld, Warn)) RenderNow();
         }
 
         /// <summary>Shows the dots; they animate only while they are on screen (<see cref="TypingDots"/>).</summary>

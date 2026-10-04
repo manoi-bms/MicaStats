@@ -1144,6 +1144,7 @@ namespace Kil0bitSystemMonitor.Tests
                 Click(window.NewButton);
                 await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
 
+                Assert.Null(turn.PendingRedraw);            // told of the picture, the dropped turn asked for no redraw
                 Assert.Same(shown, turn.Answer.Document);   // the dropped turn was not built again
                 Assert.Empty(window.Turns);
 
@@ -1170,6 +1171,7 @@ namespace Kil0bitSystemMonitor.Tests
                 window.Close();
                 await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
 
+                Assert.Null(turn.PendingRedraw);            // no redraw waits for the closed window's turn either
                 Assert.Same(shown, turn.Answer.Document);
             });
         }

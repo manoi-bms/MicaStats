@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
@@ -462,7 +463,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains("Drawing the diagram…", Lines(turn));
             string raw = turn.RawText;
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture(width: 100, height: 50));
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramFakes.Picture(width: 100, height: 50), turn);
 
             Assert.Equal(raw, turn.RawText);
             var picture = Picture(turn);
@@ -478,8 +479,10 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var (turn, diagrams, renderer) = DiagramTurn();
             turn.AppendText(ChatDiagramFakes.Block() + "\n\n");
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramFakes.Picture(), turn);
             var first = Picture(turn)!.Source;
+            turn.LastRedrawCost = TimeSpan.Zero;   // whatever the redraws so far cost: each piece of text below is rendered at once
+            var builds = CountBuilds(turn);
 
             for (int i = 0; i < 25; i++)
             {
@@ -488,6 +491,7 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.Same(first, Picture(turn)!.Source);
                 Assert.DoesNotContain("Drawing the diagram…", Lines(turn));
             }
+            Assert.Equal(25, builds());
             turn.Complete(DateTime.Now, TimeSpan.Zero);
 
             Assert.Same(first, Picture(turn)!.Source);
@@ -500,7 +504,7 @@ namespace Kil0bitSystemMonitor.Tests
             var (turn, diagrams, renderer) = DiagramTurn();
             turn.AppendText(ChatDiagramFakes.Block());
             Assert.True(renderer.Calls[0].Request.Dark);   // a turn is dark until it is told
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramFakes.Picture(), turn);
             var dark = Picture(turn)!.Source;
 
             turn.ApplyTheme(false);
@@ -513,7 +517,7 @@ namespace Kil0bitSystemMonitor.Tests
             turn.ApplyTheme(false);
             Assert.Equal(2, renderer.Calls.Count);
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 1, DiagramFakes.Picture(), turn);
             Assert.NotNull(Picture(turn));
             Assert.NotSame(dark, Picture(turn)!.Source);
 
@@ -546,7 +550,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(1, builds());
 
             // A failure the engine does not keep (a timeout): only the adapter stands between it and draw, fail, redraw, draw.
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramResult.Failure(DiagramText.TookTooLong, lasting: false));
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramResult.Failure(DiagramText.TookTooLong, lasting: false), turn);
 
             Assert.Equal(2, builds());   // one redraw, for the end of the draw
             Assert.Contains("This diagram could not be drawn: " + DiagramText.TookTooLong, Lines(turn));
@@ -556,7 +560,9 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2, builds());
             Assert.Single(renderer.Calls);
 
+            turn.LastRedrawCost = TimeSpan.Zero;   // whatever the redraws so far cost: each piece of text below is rendered at once
             for (int i = 0; i < 50; i++) turn.AppendText("more ");
+            Assert.Equal(52, builds());
             turn.ApplyTheme(false);
             turn.ApplyTheme(true);
             turn.Complete(DateTime.Now, TimeSpan.Zero);
@@ -614,7 +620,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(1, builds());
             Assert.Equal(2, renderer.Calls.Count);
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 1, DiagramFakes.Picture(), turn);
             Assert.NotNull(Picture(turn));
             Assert.Equal(2, builds());
             Assert.Equal(2, renderer.Calls.Count);
@@ -630,18 +636,19 @@ namespace Kil0bitSystemMonitor.Tests
             var passing = DiagramResult.Failure(DiagramText.TookTooLong, lasting: false);   // the engine was still starting
             turn.AppendText(ChatDiagramFakes.Block() + "\n\nDone.");
             turn.Complete(DateTime.Now, TimeSpan.Zero);
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, passing);
+            await FinishAndRedraw(diagrams, renderer, 0, passing, turn);
             Assert.Contains("This diagram could not be drawn: " + DiagramText.TookTooLong, Lines(turn));
             var builds = CountBuilds(turn);
 
             RaiseClick(TryAgain(turn)!);
+            await Redrawn(turn);                                     // the press asks for the redraw; the turn's timer makes it
 
             Assert.Equal(2, renderer.Calls.Count);                   // one press, one draw
             Assert.Equal(1, builds());
             Assert.Contains("Drawing the diagram…", Lines(turn));    // the finished answer drew itself again
             Assert.Null(TryAgain(turn));
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, passing);
+            await FinishAndRedraw(diagrams, renderer, 1, passing, turn);
 
             Assert.NotNull(TryAgain(turn));                          // it failed again: the button is back
             Assert.Equal(2, builds());
@@ -650,7 +657,8 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2, builds());
 
             RaiseClick(TryAgain(turn)!);
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 2, DiagramFakes.Picture());
+            await Redrawn(turn);
+            await FinishAndRedraw(diagrams, renderer, 2, DiagramFakes.Picture(), turn);
 
             Assert.Equal(3, renderer.Calls.Count);
             Assert.NotNull(Picture(turn));                           // the engine was up this time
@@ -663,7 +671,7 @@ namespace Kil0bitSystemMonitor.Tests
             var (turn, diagrams, renderer) = DiagramTurn();
             turn.AppendText(ChatDiagramFakes.Block());
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramResult.Failure("Parse error on line 2", lasting: true));
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramResult.Failure("Parse error on line 2", lasting: true), turn);
 
             Assert.Contains("This diagram could not be drawn: Parse error on line 2", Lines(turn));
             Assert.Null(TryAgain(turn));
@@ -680,6 +688,7 @@ namespace Kil0bitSystemMonitor.Tests
             turn.Release();
             await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
 
+            Assert.Null(turn.PendingRedraw);   // told of the picture, the turn asked for no redraw: none comes later either
             Assert.Equal(0, builds());
             Assert.Same(shown, turn.Answer.Document);
 
@@ -733,16 +742,19 @@ namespace Kil0bitSystemMonitor.Tests
             two.AppendText(ChatDiagramFakes.Block() + "\n\n");
             Assert.Single(renderer.Calls);   // the same diagram in two turns is one draw
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramFakes.Picture(), one, two);
             Assert.NotNull(Picture(one));
             Assert.NotNull(Picture(two));    // and both turns are told
 
             RaiseClick(ChatDocument.All<Button>(one.Answer.Document).Single(b => Equals(b.Content, "Source")));
             Assert.Equal(Visibility.Collapsed, Picture(one)!.Visibility);
+            var clicked = one.Answer.Document;
+            one.LastRedrawCost = two.LastRedrawCost = TimeSpan.Zero;   // whatever the redraws so far cost: the text below is rendered at once
 
             one.AppendText("more");          // a new document, with new buttons
             two.AppendText("more");
 
+            Assert.NotSame(clicked, one.Answer.Document);
             Assert.Equal(Visibility.Collapsed, Picture(one)!.Visibility);
             Assert.Equal(Visibility.Visible, ChatDocument.All<System.Windows.Controls.TextBox>(one.Answer.Document).Single().Visibility);
             Assert.Equal(Visibility.Visible, Picture(two)!.Visibility);
@@ -755,8 +767,8 @@ namespace Kil0bitSystemMonitor.Tests
             turn.PlainLinks = true;
             turn.AppendText("See [site](https://example.com/a).\n\n" + ChatDiagramFakes.Block() + "\n\n" + ChatDiagramFakes.Block("pie"));
 
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
-            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramResult.Failure("No diagram: see [help](https://evil.example/h)", lasting: true));
+            await FinishAndRedraw(diagrams, renderer, 0, DiagramFakes.Picture(), turn);
+            await FinishAndRedraw(diagrams, renderer, 1, DiagramResult.Failure("No diagram: see [help](https://evil.example/h)", lasting: true), turn);
 
             Assert.Empty(ChatDocument.All<Hyperlink>(turn.Answer.Document));
             Assert.Single(ChatDocument.All<Image>(turn.Answer.Document));
@@ -787,6 +799,419 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.True(PadAnswerBoxTests.MouseReaches(answer, buttons.Single(b => Equals(b.Content, "Source"))));
             Assert.True(PadAnswerBoxTests.MouseReaches(answer, buttons.Single(b => Equals(b.Content, "Copy"))));
+        });
+
+        // ---- keeping up while an answer streams (AI chat UI spec 1.5) ------------------------------
+
+        private static TimeSpan Ms(double ms) => TimeSpan.FromMilliseconds(ms);
+
+        /// <summary>Waits, with the dispatcher free, until no redraw of these turns is waiting for its timer.</summary>
+        private static Task Redrawn(params AskTurnView[] turns) =>
+            ChatDiagramFakes.Until(() => turns.All(turn => turn.PendingRedraw is null), "the redraw that waited");
+
+        /// <summary>
+        /// Ends a draw, and waits for the redraw each of these turns asked for: a turn that is told
+        /// of a picture does not draw it then, its timer does.
+        /// </summary>
+        private static async Task FinishAndRedraw(ChatDiagrams diagrams, FakeRenderer renderer, int index, DiagramResult result, params AskTurnView[] turns)
+        {
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, index, result);
+            await Redrawn(turns);
+        }
+
+        /// <summary>
+        /// A turn that shows one diagram, "being drawn" until the test says otherwise. The redraw
+        /// it handed over is <c>Gets[0].WhenDone</c>: calling it is a picture arriving, as the
+        /// adapter tells it (inline, on the UI thread).
+        /// </summary>
+        private static (AskTurnView Turn, FakeChatDiagrams Diagrams, Func<int> Builds) WaitingForAPicture(Func<bool> pointerHeld)
+        {
+            var diagrams = new FakeChatDiagrams();
+            var turn = new AskTurnView("q") { Diagrams = diagrams, PointerHeld = pointerHeld };
+            turn.AppendText(ChatDiagramFakes.Block());
+            return (turn, diagrams, CountBuilds(turn));
+        }
+
+        [Fact]
+        public void After_a_redraw_that_cost_300_ms_the_next_streamed_text_waits_1200_ms() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q") { PointerHeld = () => false };
+            var clock = Stopwatch.StartNew();
+            turn.AppendText("one");                               // the first text draws at once
+            turn.LastRedrawCost = Ms(300);
+
+            turn.AppendText(" two");
+
+            Assert.Equal("one", Rendered(turn));                  // not at once, though the plain 100 ms may have passed
+            RedrawWaits.AssertWaits(turn.PendingRedraw, Ms(1200), clock);
+        });
+
+        [Fact]
+        public Task A_tick_while_the_pointer_is_held_draws_nothing_and_waits_the_plain_interval_and_the_next_tick_draws() => UiThread.RunAsync(async () =>
+        {
+            bool held = true;
+            int asked = 0;
+            var turn = new AskTurnView("q") { RenderInterval = Ms(20), PointerHeld = () => { asked++; return held; } };
+            turn.AppendText("one");
+            turn.LastRedrawCost = Ms(15);                         // the next redraw is due 60 ms after this one
+            turn.AppendText(" two");
+
+            await ChatDiagramFakes.Until(() => asked > 0, "the redraw timer");
+
+            Assert.Equal("one", Rendered(turn));                  // a click that began on a button in it is not lost
+            Assert.Equal(Ms(20), turn.PendingRedraw);             // the timer runs again: for the plain interval, not the paced one
+
+            held = false;
+            await Redrawn(turn);
+            Assert.Equal("one two", Rendered(turn));
+        });
+
+        [Fact]
+        public Task Text_that_is_due_at_once_is_not_drawn_while_the_pointer_is_held() => UiThread.RunAsync(async () =>
+        {
+            bool held = true;
+            var turn = new AskTurnView("q") { RenderInterval = TimeSpan.Zero, PointerHeld = () => held };
+            turn.AppendText("one");
+
+            turn.AppendText(" two");                              // nothing to wait for but the pointer
+
+            Assert.Equal("one", Rendered(turn));
+            Assert.Equal(TimeSpan.Zero, turn.PendingRedraw);
+
+            held = false;
+            await Redrawn(turn);
+            Assert.Equal("one two", Rendered(turn));
+        });
+
+        [Fact]
+        public void The_first_text_draws_at_once_while_the_pointer_is_held_and_whatever_a_redraw_cost() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q") { RenderInterval = TimeSpan.FromSeconds(30), PointerHeld = () => true };
+            turn.LastRedrawCost = TimeSpan.FromSeconds(1);
+
+            turn.AppendText("one");
+
+            Assert.Equal("one", Rendered(turn));
+            Assert.Null(turn.PendingRedraw);
+        });
+
+        [Fact]
+        public void The_end_of_the_answer_draws_at_once_while_the_pointer_is_held_and_whatever_the_last_redraw_cost() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q") { RenderInterval = TimeSpan.FromSeconds(30), PointerHeld = () => true };
+            turn.AppendText("one");
+            turn.LastRedrawCost = TimeSpan.FromSeconds(1);
+            turn.AppendText(" two");                              // a redraw of the stream: it waits
+            Assert.NotNull(turn.PendingRedraw);
+
+            turn.Complete(DateTime.Now, TimeSpan.Zero);
+
+            Assert.Equal("one two", Rendered(turn));
+            Assert.Null(turn.PendingRedraw);
+            Assert.Equal(Visibility.Visible, turn.Footer.Visibility);
+        });
+
+        /// <summary>A turn that shows a link and a diagram's picture, after a costly redraw and under a held pointer.</summary>
+        private static (AskTurnView Turn, FakeChatDiagrams Diagrams, Func<int> Builds) HeldTurnWithALinkAndAPicture()
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            var turn = new AskTurnView("q") { Diagrams = diagrams, RenderInterval = TimeSpan.FromSeconds(30), PointerHeld = () => true };
+            turn.AppendText("[site](https://example.com/a)\n\n" + ChatDiagramFakes.Block());
+            turn.LastRedrawCost = TimeSpan.FromSeconds(1);
+            return (turn, diagrams, CountBuilds(turn));
+        }
+
+        [Fact]
+        public void A_theme_change_draws_at_once_while_the_pointer_is_held_and_whatever_the_last_redraw_cost() => UiThread.Run(() =>
+        {
+            var (turn, diagrams, builds) = HeldTurnWithALinkAndAPicture();
+
+            turn.ApplyTheme(false);
+
+            Assert.Equal(1, builds());
+            Assert.False(diagrams.Gets[^1].Dark);                 // the picture is asked for in the new theme, now
+            Assert.Null(turn.PendingRedraw);
+        });
+
+        [Fact]
+        public void Links_are_turned_into_text_at_once_while_the_pointer_is_held_and_whatever_the_last_redraw_cost() => UiThread.Run(() =>
+        {
+            var (turn, _, builds) = HeldTurnWithALinkAndAPicture();
+            Assert.Single(ChatDocument.All<Hyperlink>(turn.Answer.Document));
+
+            turn.ShowLinksAsText();                               // the conversation read notes: a link on screen goes, now
+
+            Assert.Equal(1, builds());
+            Assert.Empty(ChatDocument.All<Hyperlink>(turn.Answer.Document));
+            Assert.Null(turn.PendingRedraw);
+        });
+
+        /// <summary>
+        /// Text that streamed before a note tool ran may hold a link, and from that moment note
+        /// text may have steered the answer. The link must not stay clickable until the next
+        /// redraw of the stream, nor for as long as the mouse button is held over the answer:
+        /// that held button is the click this rule exists to stop. No dispatcher pass is needed.
+        /// </summary>
+        [Theory]
+        [InlineData("search_notes")]
+        [InlineData("get_note")]
+        public void A_note_tool_used_mid_answer_leaves_no_link_on_screen_at_once_while_the_pointer_is_held_and_whatever_the_last_redraw_cost(string tool) => UiThread.Run(() =>
+        {
+            var (turn, _, builds) = HeldTurnWithALinkAndAPicture();
+            turn.AppendText("\n\nAnd [more](https://example.com/b)");   // a redraw of the stream: it waits for its timer
+            Assert.NotNull(turn.PendingRedraw);
+            Assert.Single(ChatDocument.All<Hyperlink>(turn.Answer.Document));
+
+            turn.AddTool(tool, "{\"query\":\"vpn\"}");
+
+            Assert.Empty(ChatDocument.All<Hyperlink>(turn.Answer.Document));
+            Assert.Equal(1, builds());                            // rendered then and there, with the text that was waiting
+            Assert.Contains("https://example.com/b", Rendered(turn), StringComparison.Ordinal);
+            Assert.Null(turn.PendingRedraw);                      // and no redraw is left to wait for
+        });
+
+        /// <summary>
+        /// Defence in depth beside <see cref="AskTurnView.ShowLinksAsText"/>, which renders by
+        /// itself. Whoever only sets <see cref="AskTurnView.PlainLinks"/> and then asks for a
+        /// redraw the way the stream does must not leave a link clickable while that redraw waits
+        /// for its pace or for the pointer: what is on screen was built for the other value.
+        /// </summary>
+        [Theory]
+        [InlineData("text")]       // more of the answer streams in
+        [InlineData("picture")]    // a diagram's picture arrives, or Try again is pressed
+        public void A_redraw_asked_for_after_PlainLinks_changed_is_made_at_once_whatever_it_would_wait_for(string asked) => UiThread.Run(() =>
+        {
+            var (turn, diagrams, builds) = HeldTurnWithALinkAndAPicture();
+            turn.PlainLinks = true;                               // set directly: nothing renders for that
+            Assert.Single(ChatDocument.All<Hyperlink>(turn.Answer.Document));
+            Assert.Equal(0, builds());
+
+            if (asked == "text") turn.AppendText("\n\nMore.");
+            else diagrams.Gets[^1].WhenDone!();
+
+            Assert.Empty(ChatDocument.All<Hyperlink>(turn.Answer.Document));   // then and there: no dispatcher pass, no timer
+            Assert.Equal(1, builds());
+            Assert.Null(turn.PendingRedraw);
+        });
+
+        [Fact]
+        public Task A_redraw_that_waits_under_a_held_pointer_is_made_at_its_next_tick_once_PlainLinks_changed() => UiThread.RunAsync(async () =>
+        {
+            var (turn, _, builds) = HeldTurnWithALinkAndAPicture();   // the pointer stays held to the end
+            turn.RenderInterval = Ms(20);
+            turn.LastRedrawCost = TimeSpan.Zero;
+            turn.AppendText("\n\nMore.");                         // waits, and under the held pointer would wait again at every tick
+            Assert.NotNull(turn.PendingRedraw);
+
+            turn.PlainLinks = true;
+            await ChatDiagramFakes.Until(() => builds() > 0, "the tick that finds the links out of date");
+
+            Assert.Empty(ChatDocument.All<Hyperlink>(turn.Answer.Document));
+            Assert.Null(turn.PendingRedraw);
+        });
+
+        [Fact]
+        public void A_PointerHeld_that_throws_counts_as_not_held_and_is_reported_once_by_its_type() => UiThread.Run(() =>
+        {
+            var warnings = new List<string>();
+            var turn = new AskTurnView("q")
+            {
+                RenderInterval = TimeSpan.Zero,
+                Warn = warnings.Add,
+                PointerHeld = () => throw new InvalidOperationException("the answer says hunter2"),
+            };
+
+            turn.AppendText("one");
+            turn.AppendText(" two");
+            turn.AppendText(" three");
+
+            Assert.Equal("one two three", Rendered(turn));        // each drawn at once: nothing held it back
+            string warning = Assert.Single(warnings);
+            Assert.Contains("InvalidOperationException", warning, StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", warning, StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public void A_redraw_stores_what_it_cost_once_the_dispatcher_reaches_Loaded() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");
+
+            turn.AppendText("| a | b |\n|---|---|\n| 1 | 2 |");
+
+            Assert.Equal(TimeSpan.Zero, turn.LastRedrawCost);     // not when the build returns: its layout is still to come
+            RedrawWaits.ToLoaded();
+            Assert.True(turn.LastRedrawCost > TimeSpan.Zero, "the cost of the redraw is stored");
+        });
+
+        [Fact]
+        public void A_turn_released_before_its_redraw_was_measured_stores_no_cost() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");
+            turn.AppendText("text");
+
+            turn.Release();
+            RedrawWaits.ToLoaded();
+
+            Assert.Equal(TimeSpan.Zero, turn.LastRedrawCost);
+        });
+
+        [Fact]
+        public void A_render_of_a_released_turn_stores_no_cost() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");
+            turn.AppendText("text");
+            turn.LastRedrawCost = TimeSpan.FromHours(1);          // nothing is waited for now, and this value is no cost a redraw has
+            turn.Release();
+
+            turn.Complete(DateTime.Now, TimeSpan.Zero);           // a stream that was cancelled still ends its turn, and renders it
+            RedrawWaits.ToLoaded();
+
+            Assert.Equal("text", Rendered(turn));
+            Assert.Equal(TimeSpan.FromHours(1), turn.LastRedrawCost);
+        });
+
+        [Fact]
+        public Task A_picture_that_arrives_is_drawn_by_the_timer_and_several_arrivals_give_one_redraw() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, builds) = WaitingForAPicture(() => false);
+            Action arrive = diagrams.Gets[0].WhenDone!;
+
+            arrive();                                             // as the adapter tells its waiters: inline, several in a row
+            arrive();
+            arrive();
+
+            Assert.Equal(0, builds());                            // not inside whatever ended the draw
+            Assert.NotNull(turn.PendingRedraw);
+            await Redrawn(turn);
+            Assert.Equal(1, builds());
+            Assert.Same(arrive, diagrams.Gets[^1].WhenDone);      // the same delegate at every build: the adapter tells a turn once
+
+            await Task.Delay(60);                                 // and nothing more by itself
+            Assert.Equal(1, builds());
+            Assert.Null(turn.PendingRedraw);
+        });
+
+        [Fact]
+        public void A_picture_that_arrives_is_drawn_no_sooner_than_the_last_redraw_allows() => UiThread.Run(() =>
+        {
+            var clock = Stopwatch.StartNew();
+            var (turn, diagrams, builds) = WaitingForAPicture(() => false);
+            turn.LastRedrawCost = Ms(300);
+
+            diagrams.Gets[0].WhenDone!();
+
+            Assert.Equal(0, builds());
+            RedrawWaits.AssertWaits(turn.PendingRedraw, Ms(1200), clock);
+        });
+
+        [Fact]
+        public Task A_picture_that_arrives_waits_while_the_pointer_is_held() => UiThread.RunAsync(async () =>
+        {
+            bool held = true;
+            int asked = 0;
+            var (turn, diagrams, builds) = WaitingForAPicture(() => { asked++; return held; });
+            turn.RenderInterval = Ms(20);
+
+            diagrams.Gets[0].WhenDone!();
+            await ChatDiagramFakes.Until(() => asked > 0, "the redraw timer");
+
+            Assert.Equal(0, builds());
+            Assert.Equal(Ms(20), turn.PendingRedraw);
+
+            held = false;
+            await Redrawn(turn);
+            Assert.Equal(1, builds());
+        });
+
+        [Fact]
+        public Task A_picture_that_arrives_after_the_answer_ended_is_drawn_without_any_new_text() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, builds) = WaitingForAPicture(() => false);
+            turn.Complete(DateTime.Now, TimeSpan.Zero);           // no other redraw is due any more
+            int before = builds();
+            diagrams.Answer = (_, _) => ChatDiagramFakes.Drawn();
+
+            diagrams.Gets[0].WhenDone!();
+
+            Assert.Equal(before, builds());
+            await Redrawn(turn);
+            Assert.Equal(before + 1, builds());
+            Assert.NotNull(Picture(turn));
+        });
+
+        [Fact]
+        public Task Release_stops_a_redraw_that_waits_and_nothing_starts_one_for_a_released_turn() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, builds) = WaitingForAPicture(() => true);   // held: the redraw would wait, and wait again
+            turn.RenderInterval = Ms(10);
+            Action arrive = diagrams.Gets[0].WhenDone!;
+            arrive();
+            Assert.NotNull(turn.PendingRedraw);
+
+            turn.Release();
+            Assert.Null(turn.PendingRedraw);                      // the timer is stopped
+
+            turn.AppendText(" more");                             // text a cancelled stream still hands over
+            Assert.Null(turn.PendingRedraw);
+            arrive();                                             // a picture that arrives late
+            Assert.Null(turn.PendingRedraw);
+
+            await Task.Delay(60);
+            Assert.Equal(0, builds());
+            Assert.Null(turn.PendingRedraw);                      // and the held pointer did not start it again
+        });
+
+        [Fact]
+        public Task Try_again_under_a_held_pointer_is_drawn_when_the_button_is_released_and_needs_no_new_text() => UiThread.RunAsync(async () =>
+        {
+            bool held = true;
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Failed("It took too long", canRetry: true) };
+            var turn = new AskTurnView("q") { Diagrams = diagrams, RenderInterval = Ms(20), PointerHeld = () => held };
+            turn.AppendText(ChatDiagramFakes.Block());
+            turn.Complete(DateTime.Now, TimeSpan.Zero);
+            var builds = CountBuilds(turn);
+            int asked = diagrams.Gets.Count;
+
+            RaiseClick(TryAgain(turn)!);                          // the click itself comes with the pointer over the answer
+
+            Assert.Single(diagrams.Forgotten);
+            Assert.Equal(0, builds());
+            Assert.NotNull(turn.PendingRedraw);                   // asked for, though the text is the same: the timer will draw it
+            await Task.Delay(80);                                 // some ticks, all under the held button
+            Assert.Equal(0, builds());
+            Assert.NotNull(turn.PendingRedraw);
+
+            held = false;                                         // the button is released
+            await Redrawn(turn);
+            Assert.Equal(1, builds());                            // the same text, built again
+            Assert.Equal(asked + 1, diagrams.Gets.Count);         // and that build asks for the diagram, which starts its draw
+        });
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static WeakReference TurnWithARedrawWaiting()
+        {
+            var diagrams = new FakeChatDiagrams();
+            var turn = new AskTurnView("q") { Diagrams = diagrams, PointerHeld = () => false };
+            turn.AppendText(ChatDiagramFakes.Block());
+            turn.LastRedrawCost = Ms(500);                        // the next redraw waits two seconds: its timer runs through the collections
+            turn.Complete(DateTime.Now, TimeSpan.Zero);           // a redraw whose cost is not stored yet
+            diagrams.Gets[0].WhenDone!();
+            Assert.NotNull(turn.PendingRedraw);
+            return new WeakReference(turn);
+        }
+
+        [Fact]
+        public void A_redraw_that_waits_and_a_cost_not_yet_stored_do_not_keep_their_turn_alive() => UiThread.Run(() =>
+        {
+            WeakReference turn = TurnWithARedrawWaiting();
+
+            for (int i = 0; i < 3; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+
+            Assert.False(turn.IsAlive);   // neither the timer that runs nor the callback that waits holds the turn
         });
     }
 }

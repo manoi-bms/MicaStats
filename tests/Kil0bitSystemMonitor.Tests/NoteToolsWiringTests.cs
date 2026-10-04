@@ -834,6 +834,96 @@ public class NoteToolsWiringTests : IDisposable
         }
     });
 
+    /// <summary>A redraw of this turn's stream would wait from now on: a long interval, a costly last redraw, and the mouse button held over the answer.</summary>
+    private static void MakeAnyTimedRedrawWait(AskTurnView turn)
+    {
+        turn.RenderInterval = TimeSpan.FromSeconds(30);
+        turn.LastRedrawCost = TimeSpan.FromSeconds(1);
+        turn.PointerHeld = () => true;
+    }
+
+    /// <summary>
+    /// The window's own call in its send loop. A link is on screen, then a note tool hands notes
+    /// to the model without its name reaching the window. The link goes when the window handles
+    /// the next update: read back by the answer itself as it is resumed, in the same call stack,
+    /// so no dispatcher pass and no timer came between. A redraw of the stream would have waited.
+    /// </summary>
+    [Fact]
+    public void In_the_Ask_window_a_link_on_screen_goes_at_once_when_notes_were_read_however_long_a_redraw_of_the_stream_would_wait() => UiThread.Run(() =>
+    {
+        AskWindow? window = null;
+        int linksBefore = -1, linksAfter = -1;
+        TimeSpan? waiting = TimeSpan.Zero;
+        async IAsyncEnumerable<AssistantUpdate> Answer(AiConversation conversation)
+        {
+            await Task.Yield();
+            yield return new AssistantUpdate(AssistantUpdateKind.Text, "See [x](https://example.com/p).");
+            AskTurnView turn = window!.Turns[0];
+            MakeAnyTimedRedrawWait(turn);
+            linksBefore = Links(turn.Answer.Document).Count;
+            conversation.MarkNotesRead("this PC");
+            yield return new AssistantUpdate(AssistantUpdateKind.ToolUsed, ToolName: "get_live_status", ToolArgs: "{}");   // no note tool's name: only the conversation says it
+            linksAfter = Links(turn.Answer.Document).Count;
+            waiting = turn.PendingRedraw;
+            yield return new AssistantUpdate(AssistantUpdateKind.Done);
+        }
+        window = new AskWindow(() => new AskSetup((conversation, question, ct) => Answer(conversation), null), () => { }, _ => "");
+        try
+        {
+            Send(window, "What is my VPN gateway?");
+
+            Assert.Equal(1, linksBefore);
+            Assert.Equal(0, linksAfter);
+            Assert.Null(waiting);                                 // the links did not go by a redraw that waits
+            Assert.Equal("See x (https://example.com/p).", Shown(window.Turns[0].Answer.Document));
+        }
+        finally
+        {
+            window.Close();
+        }
+    });
+
+    /// <summary>
+    /// The window's other call, where an answer ends. Notes are read and the stream ends with no
+    /// further update, so only that call and the last render are left. The link is gone by the
+    /// time the window counts the question, which it does in the same call stack.
+    /// </summary>
+    [Fact]
+    public void In_the_Ask_window_no_link_is_left_when_an_answer_ends_right_after_notes_were_read_however_long_a_redraw_of_the_stream_would_wait() => UiThread.Run(() =>
+    {
+        AskWindow? window = null;
+        bool notesRead = false;
+        int linksBefore = -1, linksAtTheEnd = -1;
+        async IAsyncEnumerable<AssistantUpdate> Answer(AiConversation conversation)
+        {
+            await Task.Yield();
+            yield return new AssistantUpdate(AssistantUpdateKind.Text, "See [x](https://example.com/p).");
+            AskTurnView turn = window!.Turns[0];
+            MakeAnyTimedRedrawWait(turn);
+            linksBefore = Links(turn.Answer.Document).Count;
+            conversation.MarkNotesRead("this PC");
+            notesRead = true;
+        }
+        (int Used, int Limit)? Count()
+        {
+            if (notesRead && linksAtTheEnd < 0) linksAtTheEnd = Links(window!.Turns[0].Answer.Document).Count;
+            return null;
+        }
+        window = new AskWindow(() => new AskSetup((conversation, question, ct) => Answer(conversation), null), () => { }, _ => "", usage: Count);
+        try
+        {
+            Send(window, "What is my VPN gateway?");
+
+            Assert.Equal(1, linksBefore);
+            Assert.Equal(0, linksAtTheEnd);
+            Assert.Null(window.Turns[0].PendingRedraw);
+        }
+        finally
+        {
+            window.Close();
+        }
+    });
+
     /// <summary>
     /// Text pasted into a note can steer the model into asking for the one destructive button.
     /// Once a note was read, that button is not shown; before, it is, as always.

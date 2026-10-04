@@ -12,6 +12,7 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad;
@@ -1029,6 +1030,63 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(f.Found, f.Pane.Rows);
             Assert.Equal("Words", f.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task DropAnswer_forgets_the_pictures_kept_for_answers_and_a_new_search_or_question_does_not() => OnUi(async f =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            f.Pane.AnswerBox.Diagrams = diagrams;
+            Task ask = Ask(f);
+            f.Feed(Text(ChatDiagramFakes.Block()));
+            f.End();
+            await ask;
+            Assert.Single(ChatDocument.All<System.Windows.Controls.Image>(f.Pane.AnswerBox.Document));   // the answer shows its diagram
+
+            // A new search and a new question take the answer off the pane and leave the pictures
+            // alone: they are the whole app's, wanted again by the answers other windows still show.
+            f.Pane.QueryBox.Text = "wifi";
+            await f.Pane.SearchNow();
+            Assert.Equal("", f.Pane.AnswerBox.Shown);
+            Assert.Equal(0, diagrams.Cleared);
+            ask = Ask(f);
+            f.Feed(Text(ChatDiagramFakes.Block()));
+            f.End();
+            await ask;
+            Assert.Equal(0, diagrams.Cleared);
+            Assert.Single(ChatDocument.All<System.Windows.Controls.Image>(f.Pane.AnswerBox.Document));
+
+            f.Pane.DropAnswer();                                  // a credential was stored: a kept picture or failure message may quote it
+
+            Assert.Equal(1, diagrams.Cleared);
+            Assert.Equal("", f.Pane.AnswerBox.Shown);
+            Assert.Equal("", Rendered(f.Pane));
+            Assert.Empty(ChatDocument.All<System.Windows.Controls.Image>(f.Pane.AnswerBox.Document));
+            Assert.Equal(Visibility.Collapsed, f.Pane.AnswerPanel.Visibility);
+        });
+
+        [Fact]
+        public Task A_picture_that_arrives_after_DropAnswer_changes_nothing_and_is_not_kept() => OnUi(async f =>
+        {
+            var renderer = new FakeRenderer();
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            f.Pane.AnswerBox.Diagrams = diagrams;
+            Task ask = Ask(f);
+            f.Feed(Text(ChatDiagramFakes.Block()));
+            f.End();
+            await ask;
+            Assert.Single(renderer.Calls);                        // the answer's diagram is being drawn
+            bool told = false;
+            diagrams.Get(ChatDiagramFakes.Flow, true, () => told = true);   // behind the box's own waiter: when this one is told, the box was
+
+            f.Pane.DropAnswer();
+            var shown = f.Pane.AnswerBox.Document;
+            renderer.Calls[0].Done.TrySetResult(DiagramFakes.Picture());
+            await Until(() => told, "the end of the draw");
+
+            Assert.Same(shown, f.Pane.AnswerBox.Document);        // nothing was drawn again
+            Assert.Equal("", Rendered(f.Pane));
+            Assert.Equal(0, diagrams.PicturesKept);               // and the picture of the dropped answer is not kept
         });
 
         [Fact]

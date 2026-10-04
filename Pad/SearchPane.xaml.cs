@@ -247,6 +247,14 @@ namespace Kil0bitSystemMonitor.Pad
         /// answer on screen is cleared; a question still searching or streaming is cancelled and
         /// shows nothing more (its answer, if not yet read, is never read, so nothing is sent).
         /// The rows and the search status stay, and a plain search goes on. Never throws.
+        ///
+        /// <para>
+        /// The answer box draws diagrams, and what is kept for drawing an answer again can quote it
+        /// too: a picture, and a failure's message, which can repeat the diagram's source. Those
+        /// are forgotten here (<see cref="PadAnswerBox.Clear"/>), and a picture still being drawn
+        /// changes nothing when it arrives. Only here: <see cref="ClearAnswer"/> runs for every
+        /// new search and question, and the pictures are the whole app's.
+        /// </para>
         /// </summary>
         internal void DropAnswer()
         {
@@ -256,6 +264,7 @@ namespace Kil0bitSystemMonitor.Pad
                 _running = null;   // whatever it still yields is no longer this pane's to draw
             }
             ClearAnswer();
+            AnswerBox.Clear();
         }
 
         /// <summary>

@@ -24,6 +24,8 @@ Not in scope: follow-up questions in MicaPad's AI pane (it stays one request at 
 - *(Added after Task 1's review.)* The delimiter row must hold a pipe itself: a line of only dashes under a line of text is a rule, as it always was. A pipe inside a code span does not make a line a header either.
 - The delimiter row sets the number of columns and each column's alignment (left, centre, right). A body row with fewer cells is padded; extra cells are dropped.
 - Cells hold the same inline styles as a paragraph: bold, italic, code, strike-through and links.
+- *(Added after the final review.)* A code span in a cell ends where the paragraph parser ends it: a backslash inside a code span escapes nothing, so `` `C:\` `` is one whole cell and the pipe after it starts the next.
+- *(Added after the final review.)* `<br>`, `<br/>` and `<br />` in a cell are a line break. A pipe table has no other way to write one, and models use it. It is the one place an HTML tag means anything, and it is only ever a line break.
 - The table ends at a blank line or at a line that starts another block (a heading, a list item, a quote, a fence, a rule), whether or not that line holds a pipe. A line of plain text right under the last row is one more row, with one cell.
 - **Limits (R):** at most 12 columns and 100 body rows. A table over either limit is not a table: its lines stay as they are today, plain text with their pipes. Text is never lost.
 - A header row whose delimiter row has not arrived yet (an answer still streaming) is a paragraph until it does.
@@ -33,6 +35,7 @@ Not in scope: follow-up questions in MicaPad's AI pane (it stays one request at 
 
 - A code block gets a small header: the language word as written (nothing when there is none) and a **Copy** button, which copies the block's text and reads **Copied** for a moment.
 - The code stays selectable, with its own Copy and Select all menu.
+- *(Added after the final review.)* A fenced block that is indented, as models write it under a numbered step or a bullet, is still a code block (or a diagram): its fence may be indented by any number of spaces or by tabs, and that indent is taken off its lines. The block ends the list item it stood under; a numbered list goes on counting after it.
 
 ### 1.3 Mermaid diagrams
 
@@ -52,7 +55,7 @@ Not in scope: follow-up questions in MicaPad's AI pane (it stays one request at 
 
 ### 1.4 What an answer never does
 
-- **It loads nothing.** An image written as `![alt](address)` stays text. No HTML is interpreted. No address is fetched to draw anything.
+- **It loads nothing.** An image written as `![alt](address)` is never loaded: it is shown as "!" and a link, which follows the link rules below like any other. No HTML is interpreted (a line break in a table cell apart). No address is fetched to draw anything.
 - **The link rules do not change.** In MicaPad, and in Ask MicaStats once the conversation read notes, no link is clickable. That holds for a link inside a table cell too.
 - A diagram is a picture: nothing in it can be clicked.
 
@@ -91,13 +94,15 @@ Both system prompts say what the answer is shown as, so the model writes for it.
 - The AI pane and Search notes share the column, so they share the width.
 - **(R)** Default 360 (today the AI pane is 320 and Search notes 300). At least 260, at most 900, and never so wide that the editor has less than 320. When the window is too narrow for both, the pane keeps 260.
 - A double-click on the bar goes back to the default. It can be moved with the arrow keys.
-- The width is remembered across restarts, one value for every MicaPad window (`PadPaneWidth`). It is saved when a drag ends.
+- The width is remembered across restarts, one value for every MicaPad window (`PadPaneWidth`). It is saved when a drag ends, and only when the pane was really moved: a click on the bar, a cancelled drag or a key at the limit saves nothing. *(Added after the final review.)* A key move that loses the keyboard before the key is released (Alt+Tab) is ended there and saved like any other.
+- History shares the column but keeps its own width and has no splitter.
 
 ### 3.2 Preview and source
 
 - **Draw as diagram** and **Ask AI…** now show their result rendered, as **Summarize** and **Explain** do. So Draw as diagram shows the diagram itself before anything is inserted.
 - A **Source** toggle, beside **Changes**, shows the text exactly as **Insert below** and **Replace selection** would put it in the note. It is offered whenever a result is shown rendered and there is text to show: not while the pane waits for an instruction, and not for a request that was refused or failed with nothing.
 - A rewrite (Improve, Fix, Shorten, Translate, Fix diagram) is still shown as its text, with **Changes**.
+- *(Added after the final review.)* **Ask AI…** on a note that is not shown as Markdown (a code file, plain text with Markdown formatting off) starts with **Source** on: its answer is often code, and rendering code as Markdown shows it wrongly (lost indentation, a `#` comment as a heading). The toggle still switches to the rendered view.
 - What is inserted or replaced does not change: always the text, never the rendering.
 
 ### 3.3 Saying what is going on
@@ -112,7 +117,7 @@ Both system prompts say what the answer is shown as, so the model writes for it.
 - **How long it took.** Under a finished answer, after the time: "14:32 · 4 s".
 - **How many questions are left.** The hint under the question box ends with the day's count: "Enter to send · Shift+Enter for a new line · 12 of 100 today". It is refreshed when the window opens and after each answer.
 - **Jump to the latest.** When the transcript is scrolled away from its end, a round button at its lower right jumps back to it.
-- **(R) It remembers its size** across restarts (`AskWidth`, `AskHeight`), never smaller than its minimum and never larger than the screen's work area. It still opens centred.
+- **(R) It remembers its size** across restarts (`AskWidth`, `AskHeight`), never smaller than its minimum and never larger than the work area of the screen it opens on. It still opens centred. *(Corrected after the final review: the size was fitted to the primary screen while the window opens on the screen under the pointer, so a large saved size could open partly off a smaller second screen.)*
 
 ## 5. Failures
 
@@ -130,6 +135,8 @@ Nothing here sends anything new. What matters:
 - **Links.** `RemoveLinks` must leave no link anywhere in a document, tables included.
 - **Copy** goes through one replaceable hook, so a test never touches the real clipboard.
 - **The AI pane's Clear** (a credential was stored from the note) also drops the Source toggle, the diagrams shown and the answer pictures kept for redrawing. The Search notes answer is dropped the same way. *(Added after Task 4's review.)* A pane that was closed before the credential was stored is cleared too: it still held its last result, unseen. (Part 1 had parked this; with pictures kept as well, it is fixed here.)
+- *(Added after the final review.)* **The drawing engine forgets them too.** When an answer's pictures are forgotten, the diagram draws still waiting in the engine's queue for that answer are dropped with their source text, a draw under way is not kept when it ends, and the engine's own store drops the pictures and SVG text it holds for them. Before, a queued draw kept the answer's text and went on to draw it.
+- *(Added after the final review; older code.)* **Ask MicaStats is cleared as well.** A conversation that read notes through the note tools holds note text in its tool results and its answers, on screen and in what the next question would send. When text of a note is stored as a credential and the open Ask window's conversation has read notes, that conversation is ended: the transcript is cleared and a line says why. A conversation that never read notes is left alone.
 - **Consent.** No consent check in MicaPad's window files is moved, removed or reordered.
 
 Known limit: the drawing engine keeps the last 64 pictures in memory, as it does for a note's own diagrams. A picture drawn from a result that was later cleared stays there until it is pushed out or MicaStats exits. It is never shown again and never written to disk.

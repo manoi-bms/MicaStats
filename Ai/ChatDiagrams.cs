@@ -84,9 +84,9 @@ namespace Kil0bitSystemMonitor.Ai
     ///
     /// <para>
     /// Only Mermaid, and only on this PC: every request has no Kroki server, so an answer's text is
-    /// never posted anywhere. Nothing throws. Everything here runs on the UI thread: Get and Clear
-    /// are called there, and a draw that ends elsewhere is brought back to it before anything is
-    /// remembered or anyone is told.
+    /// never posted anywhere. Nothing throws. Everything here runs on the UI thread: Get, Forget
+    /// and Clear are called there, and a draw that ends elsewhere is brought back to it before
+    /// anything is remembered or anyone is told.
     /// </para>
     /// </summary>
     internal sealed class ChatDiagrams : IChatDiagrams

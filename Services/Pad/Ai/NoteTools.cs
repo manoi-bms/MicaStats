@@ -54,8 +54,10 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
         /// <summary>
         /// Most characters of note text one <c>get_note</c> call returns. Below what Ask MicaStats
-        /// keeps of a tool result in a conversation (20,000 characters of JSON), so a full read is
-        /// kept whole: shortened there, it would be cut in the middle of its JSON.
+        /// keeps of a tool result in a conversation (20,000 characters of JSON), so a full read of
+        /// plain text is kept whole. Text that takes more room once written as JSON (an emoji is
+        /// twelve characters there, a quote two) can still be over; it is then kept with fewer
+        /// lines (<see cref="Shortened"/>), not cut in the middle of its JSON.
         /// </summary>
         public const int MaxChars = 16000;
 
@@ -172,6 +174,175 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             catch (OperationCanceledException) { throw; }
             catch (NotesNotReadyException) { return ToolJson.Error(NotReady); }
             catch (Exception ex) { return Failed(ex); }
+        }
+
+        /// <summary>
+        /// A result of one of the two tools made shorter, in the tool's own shape, for a caller
+        /// that may keep only so much of it: a <c>get_note</c> result with fewer whole lines (its
+        /// <c>lastLine</c> the last one it still holds, <c>truncated</c> true, and
+        /// <c>cutInLine</c> when not even its first line fits whole), a <c>search_notes</c> result
+        /// with fewer passages from the end (the only one left with its text cut). It stays valid
+        /// JSON and ends with <see cref="About"/>, where cutting its text in the middle would
+        /// lose both.
+        ///
+        /// <para>
+        /// The text is the one the tool gave, already cleaned of credentials: no note is read
+        /// again, and nothing is added to it. At least <paramref name="lose"/> characters of note
+        /// text go, counted as they are written in <paramref name="result"/> (an emoji is twelve
+        /// characters there, a quote two). A caller that used to cut that many characters off the
+        /// end of the whole result so keeps no more of the note than it did.
+        /// </para>
+        /// </summary>
+        /// <param name="result">The result as the tool gave it.</param>
+        /// <param name="lose">How many characters of note text, as written in <paramref name="result"/>, must go at least.</param>
+        /// <param name="maxChars">The most characters the shorter result may take as JSON text (<see cref="ToolJson.ToText"/>).</param>
+        /// <returns>Null when <paramref name="result"/> is not a result with notes of one of the two tools, or cannot be made to fit.</returns>
+        public static JsonObject? Shortened(JsonElement result, int lose, int maxChars)
+        {
+            if (result.ValueKind != JsonValueKind.Object) return null;
+            if (!result.TryGetProperty("about", out JsonElement about) || about.ValueKind != JsonValueKind.String || about.GetString() != About) return null;
+
+            if (result.TryGetProperty("results", out JsonElement results) && results.ValueKind == JsonValueKind.Array)
+                return ShortenedSearch(result, results, Math.Max(lose, 1), maxChars);
+            if (result.TryGetProperty("text", out JsonElement text) && text.ValueKind == JsonValueKind.String)
+                return ShortenedNote(result, text, Math.Max(lose, 1), maxChars);
+            return null;
+        }
+
+        private static JsonObject? ShortenedNote(JsonElement result, JsonElement written, int lose, int maxChars)
+        {
+            string text = written.GetString() ?? "";
+            int first = result.TryGetProperty("firstLine", out JsonElement line) && line.TryGetInt32(out int n) ? n : 1;
+
+            for (int keep = CharsLeft(written, lose); ; )
+            {
+                // Whole lines within what may stay; a first line that does not fit is cut inside it.
+                int end = 0, count = 0;
+                for (int at = 0; at <= text.Length;)
+                {
+                    int next = text.IndexOf('\n', at);
+                    int lineEnd = next < 0 ? text.Length : next;
+                    if (lineEnd > keep) break;
+                    end = lineEnd;
+                    count++;
+                    if (next < 0) break;
+                    at = next + 1;
+                }
+                bool cutInLine = count == 0;
+                if (cutInLine) end = WholeChars(text, keep);
+
+                var shorter = new JsonObject();
+                foreach (JsonProperty property in result.EnumerateObject())
+                {
+                    switch (property.Name)
+                    {
+                        case "lastLine":
+                            shorter["lastLine"] = first - 1 + Math.Max(count, 1);
+                            break;
+                        case "truncated":
+                        case "cutInLine":
+                        case "text":
+                        case "about":
+                            break;   // written below, in the tool's order
+                        default:
+                            shorter[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+                            break;
+                    }
+                }
+                shorter["truncated"] = true;
+                if (cutInLine) shorter["cutInLine"] = true;
+                shorter["text"] = text.Substring(0, end);
+                shorter["about"] = About;
+
+                int over = ToolJson.ToText(shorter).Length - maxChars;
+                if (over <= 0) return shorter;
+                if (keep == 0) return null;   // even with no text it is too long
+                keep = Math.Max(0, Math.Min(keep, end) - over);
+            }
+        }
+
+        private static JsonObject? ShortenedSearch(JsonElement result, JsonElement results, int lose, int maxChars)
+        {
+            var hits = new List<JsonElement>();
+            foreach (JsonElement hit in results.EnumerateArray()) hits.Add(hit);
+
+            // Whole passages go from the end. Only when one is left, and more must go, is its text cut.
+            int kept = hits.Count, lost = 0;
+            while (kept > 1 && lost < lose) lost += hits[--kept].GetRawText().Length;
+            string? cut = null;
+            if (kept == 1 && lost < lose)
+            {
+                if (hits[0].ValueKind == JsonValueKind.Object && hits[0].TryGetProperty("text", out JsonElement written) && written.ValueKind == JsonValueKind.String)
+                {
+                    string text = written.GetString() ?? "";
+                    cut = text.Substring(0, WholeChars(text, CharsLeft(written, lose - lost)));
+                }
+                else
+                {
+                    kept = 0;
+                }
+            }
+
+            while (true)
+            {
+                var passages = new JsonArray();
+                for (int i = 0; i < kept; i++)
+                {
+                    JsonNode? passage = JsonNode.Parse(hits[i].GetRawText());
+                    if (cut != null && i == kept - 1 && passage is JsonObject last) last["text"] = cut;
+                    passages.Add(passage);
+                }
+                var shorter = new JsonObject();
+                foreach (JsonProperty property in result.EnumerateObject())
+                {
+                    if (property.Name is "results" or "about") continue;   // written below, in the tool's order
+                    shorter[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+                }
+                shorter["results"] = passages;
+                shorter["about"] = About;
+
+                int over = ToolJson.ToText(shorter).Length - maxChars;
+                if (over <= 0) return shorter;
+                if (kept == 0) return null;   // even with no passage it is too long
+                if (cut is { Length: > 0 })
+                {
+                    cut = cut.Substring(0, WholeChars(cut, Math.Max(0, cut.Length - over)));
+                }
+                else
+                {
+                    kept--;
+                    cut = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// How many characters of the string <paramref name="written"/> stands for are left once
+        /// <paramref name="lose"/> characters are taken off the end of it as it is written. An
+        /// escape (<c>\n</c>, <c>\uD83D</c>) is one character of the string, and one that would be
+        /// cut in two is not left.
+        /// </summary>
+        private static int CharsLeft(JsonElement written, int lose)
+        {
+            string literal = written.GetRawText();          // with its two quotes
+            int end = literal.Length - 1 - lose;            // where the text as written ends once the characters are gone
+            int chars = 0;
+            for (int i = 1; i < end;)
+            {
+                int step = literal[i] != '\\' ? 1 : literal[i + 1] == 'u' ? 6 : 2;
+                if (i + step > end) break;
+                i += step;
+                chars++;
+            }
+            return chars;
+        }
+
+        /// <summary>At most <paramref name="length"/> characters of <paramref name="text"/>, and never the first half of a surrogate pair at the end.</summary>
+        private static int WholeChars(string text, int length)
+        {
+            int end = Math.Clamp(length, 0, text.Length);
+            if (end > 0 && end < text.Length && char.IsHighSurrogate(text[end - 1])) end--;
+            return end;
         }
 
         /// <summary>

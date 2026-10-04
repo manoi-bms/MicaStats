@@ -963,6 +963,228 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.MaxChars < ToolHistory.MaxResultChars);
         }
 
+        // ----- a note result that is over the cap once written as JSON (re-check, residual 4) ------
+
+        /// <summary>40 emoji: 80 characters in a note, 480 once written as JSON (each is two escapes of six).</summary>
+        private static string Emoji(int count) => string.Concat(Enumerable.Repeat(char.ConvertFromUtf32(0x1F600), count));
+
+        /// <summary>
+        /// How many characters of its first <c>text</c> value a result still holds once the plain
+        /// cut (<see cref="ToolHistory.Cap"/>) made it a string: what was kept of the note before.
+        /// An escape cut in two holds no character.
+        /// </summary>
+        private static int TextCharsHeld(string cut)
+        {
+            var start = System.Text.RegularExpressions.Regex.Match(cut, "\"text\":\\s*\"");
+            Assert.True(start.Success, "the cut result holds no text value");
+            int end = cut.LastIndexOf("\n[MicaStats shortened", StringComparison.Ordinal);
+            Assert.True(end > 0, "not a result the plain cut shortened");
+            int chars = 0;
+            for (int i = start.Index + start.Length; i < end && cut[i] != '"';)
+            {
+                int step = cut[i] != '\\' ? 1 : i + 1 < end && cut[i + 1] == 'u' ? 6 : 2;
+                if (i + step > end) break;
+                i += step;
+                chars++;
+            }
+            return chars;
+        }
+
+        /// <summary>The kept result of the one tool call of the conversation, which must still be a JSON object within the cap, with its <c>about</c> line.</summary>
+        private JsonElement KeptNoteResult()
+        {
+            FunctionResultContent kept = _conversation.Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single();
+            JsonElement json = Assert.IsType<JsonElement>(kept.Result);          // not a string cut in the middle of its JSON
+            Assert.Equal(JsonValueKind.Object, json.ValueKind);
+            Assert.True(json.GetRawText().Length <= ToolHistory.MaxResultChars, "kept " + json.GetRawText().Length + " characters");
+            Assert.Equal(Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About, json.GetProperty("about").GetString());
+            return json;
+        }
+
+        /// <summary>
+        /// 16,000 characters of a note are far more once written as JSON: an emoji takes twelve
+        /// characters, a quote two. The kept result is then the tool's own shape with fewer whole
+        /// lines, never a string cut in the middle.
+        /// </summary>
+        [Theory]
+        [InlineData("emoji")]
+        [InlineData("quotes")]
+        public async Task A_get_note_result_over_the_cap_once_written_as_JSON_is_kept_as_valid_json_with_fewer_whole_lines(string kind)
+        {
+            string line = kind == "emoji" ? Emoji(40) : string.Concat(Enumerable.Repeat("\"a\": \"b\", ", 6));
+            string text = "login {{secret:K7Q2M9XD}}\n" + string.Join("\n", Enumerable.Range(2, 399).Select(i =>
+                i.ToString(System.Globalization.CultureInfo.InvariantCulture) + " " + line));
+            var reader = new FakeNoteReader { Note = new Kil0bitSystemMonitor.Services.Pad.Ai.NoteText("a1", "Long", text) };
+            NoteAccess notes = NotesForAsk(reader);
+            _model.Call(ToolNames.GetNote, new Dictionary<string, object?> { ["noteId"] = "a1", ["lineCount"] = 400 })
+                  .Reply("It is long.")
+                  .Reply("Yes.");
+
+            await AskAsync(Assistant(notes: notes), "What is in the long note?");
+            await AskAsync(Assistant(notes: notes), "Sure?");
+
+            // Within its own question the model saw the whole result: within get_note's cap as text, over the kept cap as JSON.
+            JsonElement seen = Assert.IsType<JsonElement>(Contents(_model.Requests[1]).OfType<FunctionResultContent>().Single().Result);
+            string seenText = seen.GetProperty("text").GetString()!;
+            Assert.True(seenText.Length <= Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.MaxChars);
+            Assert.True(seen.GetRawText().Length > ToolHistory.MaxResultChars, "the tool returned " + seen.GetRawText().Length + " characters");
+
+            JsonElement kept = KeptNoteResult();
+            Assert.Equal("a1", kept.GetProperty("noteId").GetString());
+            Assert.Equal(1, kept.GetProperty("firstLine").GetInt32());
+            Assert.Equal(400, kept.GetProperty("lines").GetInt32());
+            Assert.True(kept.GetProperty("truncated").GetBoolean());
+            Assert.False(kept.TryGetProperty("cutInLine", out _));
+
+            // Whole lines from the start of what the tool gave, and the last line it names is the last it holds.
+            string keptText = kept.GetProperty("text").GetString()!;
+            Assert.StartsWith(keptText, seenText, StringComparison.Ordinal);
+            Assert.Equal('\n', seenText[keptText.Length]);
+            Assert.Equal(keptText.Split('\n').Length, kept.GetProperty("lastLine").GetInt32());
+
+            // Never more of the note than the plain cut kept before, and still most of it.
+            int before = TextCharsHeld(ToolHistory.Cap(seen.GetRawText()));
+            Assert.InRange(keptText.Length, before - 3 * line.Length, before);
+
+            // Cleaned once, by the tool: the credential is still [credential], and the note was not read again.
+            Assert.StartsWith("login [credential]\n", keptText, StringComparison.Ordinal);
+            Assert.DoesNotContain("K7Q2M9XD", kept.GetRawText(), StringComparison.Ordinal);
+            Assert.Equal(1, reader.Reads);
+
+            // And the next question sends that same whole result.
+            Assert.Equal(kept.GetRawText(), ResultText(Contents(_model.Requests[2]).OfType<FunctionResultContent>().Single()));
+        }
+
+        [Fact]
+        public async Task A_search_notes_result_over_the_cap_is_kept_as_valid_json_with_fewer_whole_passages()
+        {
+            var reader = new FakeNoteReader
+            {
+                Hits = Enumerable.Range(1, 8).Select(i => new Kil0bitSystemMonitor.Services.Pad.Ai.NoteHit(
+                    "n" + i, "Title " + i, "Heading", 1, 9, false, "passage " + i + " " + Emoji(250))).ToList(),
+            };
+            NoteAccess notes = NotesForAsk(reader);
+            _model.Call(ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "smile" })
+                  .Reply("Eight passages.")
+                  .Reply("Yes.");
+
+            await AskAsync(Assistant(notes: notes), "Where do I smile?");
+            await AskAsync(Assistant(notes: notes), "Sure?");
+
+            JsonElement seen = Assert.IsType<JsonElement>(Contents(_model.Requests[1]).OfType<FunctionResultContent>().Single().Result);
+            JsonElement[] seenHits = seen.GetProperty("results").EnumerateArray().ToArray();
+            Assert.Equal(8, seenHits.Length);
+            Assert.True(seen.GetRawText().Length > ToolHistory.MaxResultChars, "the tool returned " + seen.GetRawText().Length + " characters");
+
+            JsonElement kept = KeptNoteResult();
+            Assert.Equal("smile", kept.GetProperty("query").GetString());
+            Assert.Equal("words", kept.GetProperty("searchedBy").GetString());
+            JsonElement[] keptHits = kept.GetProperty("results").EnumerateArray().ToArray();
+            Assert.InRange(keptHits.Length, 4, 7);
+
+            // The first passages, each whole and as the tool gave it; and each was whole in what the plain cut kept before.
+            string before = ToolHistory.Cap(seen.GetRawText());
+            for (int i = 0; i < keptHits.Length; i++)
+            {
+                Assert.Equal(seenHits[i].GetProperty("noteId").GetString(), keptHits[i].GetProperty("noteId").GetString());
+                Assert.Equal(seenHits[i].GetProperty("text").GetString(), keptHits[i].GetProperty("text").GetString());
+                Assert.Contains(seenHits[i].GetRawText(), before, StringComparison.Ordinal);
+            }
+            Assert.Equal(1, reader.Searches);
+            Assert.Equal(kept.GetRawText(), ResultText(Contents(_model.Requests[2]).OfType<FunctionResultContent>().Single()));
+        }
+
+        /// <summary>A kept result of one tool call, as <see cref="ToolHistory.KeepAnswered"/> keeps it.</summary>
+        private static FunctionResultContent KeptOf(string tool, object? result)
+        {
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.Assistant, new List<AIContent> { new FunctionCallContent("c1", tool) }),
+                new(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("c1", result) }),
+                new(ChatRole.Assistant, "Done."),
+            };
+            return ToolHistory.KeepAnswered(messages).SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single();
+        }
+
+        private static JsonElement NoteJson(JsonObject result) => JsonSerializer.SerializeToElement(result);
+
+        [Fact]
+        public void One_passage_longer_than_the_cap_is_kept_with_its_text_cut_and_no_more_of_it_than_before()
+        {
+            string text = "one passage " + Emoji(4000);
+            JsonElement given = NoteJson(new JsonObject
+            {
+                ["query"] = "smile",
+                ["searchedBy"] = "words",
+                ["results"] = new JsonArray(new JsonObject
+                {
+                    ["noteId"] = "n1", ["title"] = "T", ["heading"] = "", ["firstLine"] = 1, ["lastLine"] = 1, ["open"] = true, ["text"] = text,
+                }),
+                ["about"] = Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About,
+            });
+            Assert.True(given.GetRawText().Length > ToolHistory.MaxResultChars);
+
+            JsonElement kept = Assert.IsType<JsonElement>(KeptOf(ToolNames.SearchNotes, given).Result);
+
+            Assert.True(kept.GetRawText().Length <= ToolHistory.MaxResultChars, "kept " + kept.GetRawText().Length + " characters");
+            Assert.Equal(Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About, kept.GetProperty("about").GetString());
+            string keptText = Assert.Single(kept.GetProperty("results").EnumerateArray().ToArray()).GetProperty("text").GetString()!;
+            Assert.StartsWith(keptText, text, StringComparison.Ordinal);
+            Assert.False(char.IsHighSurrogate(keptText[^1]));                     // never half an emoji
+            int before = TextCharsHeld(ToolHistory.Cap(given.GetRawText()));
+            Assert.InRange(keptText.Length, before - 40, before);
+        }
+
+        [Fact]
+        public void One_line_longer_than_the_cap_is_kept_cut_inside_the_line_and_says_so()
+        {
+            string text = "one line " + Emoji(4000);
+            JsonElement given = NoteJson(new JsonObject
+            {
+                ["noteId"] = "a1", ["title"] = "Long", ["lines"] = 3, ["firstLine"] = 2, ["lastLine"] = 2, ["truncated"] = false,
+                ["text"] = text,
+                ["about"] = Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About,
+            });
+
+            JsonElement kept = Assert.IsType<JsonElement>(KeptOf(ToolNames.GetNote, given).Result);
+
+            Assert.True(kept.GetRawText().Length <= ToolHistory.MaxResultChars, "kept " + kept.GetRawText().Length + " characters");
+            Assert.True(kept.GetProperty("truncated").GetBoolean());
+            Assert.True(kept.GetProperty("cutInLine").GetBoolean());
+            Assert.Equal(2, kept.GetProperty("lastLine").GetInt32());            // the line it holds part of
+            Assert.Equal("about", kept.EnumerateObject().Last().Name);           // still closed by the line that says it is data
+            string keptText = kept.GetProperty("text").GetString()!;
+            Assert.StartsWith(keptText, text, StringComparison.Ordinal);
+            Assert.False(char.IsHighSurrogate(keptText[^1]));
+            int before = TextCharsHeld(ToolHistory.Cap(given.GetRawText()));
+            Assert.InRange(keptText.Length, before - 40, before);
+        }
+
+        /// <summary>The nine PC tools are cut as before, whatever their result looks like; so is a note tool's result of a shape it never gives.</summary>
+        [Fact]
+        public void Every_other_result_over_the_cap_is_cut_to_text_as_before()
+        {
+            JsonElement likeANote = NoteJson(new JsonObject
+            {
+                ["noteId"] = "a1", ["title"] = "T", ["lines"] = 1, ["firstLine"] = 1, ["lastLine"] = 1, ["truncated"] = false,
+                ["text"] = new string('x', 30_000),
+                ["about"] = Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About,
+            });
+            JsonElement noText = NoteJson(new JsonObject { ["noteId"] = "a1", ["rows"] = new string('x', 30_000) });
+            JsonElement notAnObject = JsonSerializer.SerializeToElement(new string('x', 30_000));
+
+            foreach ((string tool, JsonElement result) in new[]
+                     {
+                         (ToolNames.GetHardware, likeANote), (ToolNames.GetNote, noText), (ToolNames.SearchNotes, noText), (ToolNames.GetNote, notAnObject),
+                     })
+            {
+                string kept = Assert.IsType<string>(KeptOf(tool, result).Result);
+
+                Assert.Equal(ToolHistory.Cap(result.GetRawText()), kept);
+                Assert.Contains("MicaStats shortened this result", kept, StringComparison.Ordinal);
+            }
+        }
+
         [Fact]
         public async Task A_huge_tool_result_is_not_sent_again_in_full_with_later_questions()
         {

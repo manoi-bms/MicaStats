@@ -68,14 +68,18 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// The messages worth keeping from one answer: text, tool calls that got a result, and
         /// the results. A call left without a result (the model asked after the last round) is
         /// dropped, because sending it back would fail the next question. A result longer than
-        /// <see cref="MaxResultChars"/> is kept shortened (<see cref="Cap"/>): the conversation is
-        /// sent again with every later request, so one large lookup would otherwise cost its full
-        /// size on every round of every later question.
+        /// <see cref="MaxResultChars"/> is kept shortened (<see cref="Shortened"/>): the
+        /// conversation is sent again with every later request, so one large lookup would
+        /// otherwise cost its full size on every round of every later question.
         /// </summary>
         public static List<ChatMessage> KeepAnswered(IEnumerable<ChatMessage> messages)
         {
             List<ChatMessage> list = messages.ToList();
             var answered = new HashSet<string>(list.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.CallId));
+            var noteCalls = new HashSet<string>(
+                list.SelectMany(m => m.Contents).OfType<FunctionCallContent>()
+                    .Where(c => c.Name is ToolNames.SearchNotes or ToolNames.GetNote).Select(c => c.CallId),
+                StringComparer.Ordinal);
             var kept = new List<ChatMessage>();
             foreach (ChatMessage message in list)
             {
@@ -90,13 +94,35 @@ namespace Kil0bitSystemMonitor.Services.Ai
                             break;
                         case FunctionResultContent result:
                             string full = ResultText(result.Result);
-                            contents.Add(full.Length <= MaxResultChars ? result : new FunctionResultContent(result.CallId, Cap(full)));
+                            contents.Add(full.Length <= MaxResultChars ? result : Shortened(result, full, noteCalls.Contains(result.CallId)));
                             break;
                     }
                 }
                 if (contents.Count > 0) kept.Add(new ChatMessage(message.Role, contents));
             }
             return kept;
+        }
+
+        /// <summary>
+        /// A result over <see cref="MaxResultChars"/> as it is kept. The result of a PC tool is
+        /// cut to text (<see cref="Cap"/>). So cut, the result of a note tool would end in the
+        /// middle of its JSON and lose the line that says it is data, and 16,000 characters of a
+        /// note are easily over the cap once written as JSON (an emoji is twelve characters
+        /// there, a quote two). It is kept in its own shape with less of the note
+        /// (<see cref="NoteTools.Shortened"/>): at least as many characters of note text go as the
+        /// cut would have taken off the whole result, so never more of the note is kept than
+        /// before. One that cannot be shortened that way is cut to text like any other; the
+        /// take-back counts such a string as a note read.
+        /// </summary>
+        private static FunctionResultContent Shortened(FunctionResultContent result, string full, bool ofNoteTool)
+        {
+            if (ofNoteTool && result.Result is JsonElement given &&
+                NoteTools.Shortened(given, full.Length - CapKeeps(full, CapNote(full.Length)), MaxResultChars) is { } shorter)
+            {
+                JsonElement json = AiToolFunctions.ToElement(shorter);
+                if (json.GetRawText().Length <= MaxResultChars) return new FunctionResultContent(result.CallId, json);
+            }
+            return new FunctionResultContent(result.CallId, Cap(full));
         }
 
         /// <summary>
@@ -107,11 +133,20 @@ namespace Kil0bitSystemMonitor.Services.Ai
         internal static string Cap(string text)
         {
             if (text.Length <= MaxResultChars) return text;
-            string note = "\n[MicaStats shortened this result from " + text.Length.ToString(CultureInfo.InvariantCulture) +
-                          " characters. Call the tool again if the rest is needed.]";
+            string note = CapNote(text.Length);
+            return text[..CapKeeps(text, note)] + note;
+        }
+
+        private static string CapNote(int length) =>
+            "\n[MicaStats shortened this result from " + length.ToString(CultureInfo.InvariantCulture) +
+            " characters. Call the tool again if the rest is needed.]";
+
+        /// <summary>How many characters of a <paramref name="text"/> over the cap stay in front of <paramref name="note"/>.</summary>
+        private static int CapKeeps(string text, string note)
+        {
             int keep = MaxResultChars - note.Length;
             if (char.IsHighSurrogate(text[keep - 1])) keep--;   // never split a character in two
-            return text[..keep] + note;
+            return keep;
         }
 
         /// <summary>What stands in a conversation for an answer that was taken back.</summary>

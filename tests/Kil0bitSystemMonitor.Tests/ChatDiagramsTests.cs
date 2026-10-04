@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Media;
@@ -46,6 +47,28 @@ namespace Kil0bitSystemMonitor.Tests
         public static BitmapSource Bitmap(int width = 200, int height = 100)
         {
             var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, new byte[width * height * 4], width * 4);
+            bitmap.Freeze();
+            return bitmap;
+        }
+
+        /// <summary>A real PNG of that many pixels, small as a file: one bit a pixel, every one black.</summary>
+        public static byte[] Png(int width, int height)
+        {
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(Counted(width, height)));
+            using var stream = new MemoryStream();
+            encoder.Save(stream);
+            return stream.ToArray();
+        }
+
+        /// <summary>
+        /// A frozen bitmap that reports that many pixels and costs one bit for each: a picture that
+        /// counts as 15 MB (1,600 by 2,400 by 4 bytes) holds 480 KB here.
+        /// </summary>
+        public static BitmapSource Counted(int width, int height)
+        {
+            int stride = (width + 7) / 8;
+            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.BlackWhite, null, new byte[stride * height], stride);
             bitmap.Freeze();
             return bitmap;
         }
@@ -450,27 +473,259 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(0, told);   // the caller is still building its document: it has the answer already
         });
 
+        // ---- memory: how large a picture is decoded, and what is kept ------------------------------
+
+        private static string Source(int i) => "pie\n  \"a\" : " + i.ToString(CultureInfo.InvariantCulture);
+
+        /// <summary>What the adapter keeps for a PNG, for a diagram of that size, at a display scaling.</summary>
+        private static ChatDiagramState DrawnAt(byte[] png, double width, double height, Func<double>? scale)
+        {
+            var renderer = new ImmediateRenderer { Answer = _ => DiagramResult.Picture(png, DiagramFakes.Svg, width, height, paper: false) };
+            var diagrams = new ChatDiagrams(() => renderer, () => true, scale) { Warn = _ => { } };
+            var state = diagrams.Get(Flow, true, null);
+            Assert.Equal(ChatDiagramStatus.Drawn, state.Status);
+            Assert.True(state.Picture!.IsFrozen);
+            return state;
+        }
+
+        private static (int Width, int Height) PixelsOf(ChatDiagramState state)
+        {
+            var bitmap = Assert.IsAssignableFrom<BitmapSource>(state.Picture);
+            return (bitmap.PixelWidth, bitmap.PixelHeight);
+        }
+
+        [Theory]
+        [InlineData(1.0)]
+        [InlineData(2.0)]
+        public void A_4000_by_3000_png_is_decoded_no_larger_than_the_cap_and_is_shown_as_large_as_before(double scale) => UiThread.Run(() =>
+        {
+            byte[] png = ChatDiagramFakes.Png(4000, 3000);   // a diagram of 2,000 by 1,500, drawn with twice as many pixels
+
+            var state = DrawnAt(png, 2000, 1500, () => scale);
+
+            Assert.Equal((1600, 1200), PixelsOf(state));     // 7.68 MB, not the 48 MB of the whole PNG
+            Assert.Equal(2000, state.Width);
+            Assert.Equal(1500, state.Height);
+        });
+
         [Fact]
-        public void At_most_32_outcomes_are_kept_and_the_least_recently_used_goes_first() => UiThread.Run(() =>
+        public void A_tall_png_is_decoded_no_higher_than_the_cap() => UiThread.Run(() =>
+        {
+            byte[] png = ChatDiagramFakes.Png(2000, 4000);   // a diagram of 1,000 by 2,000
+
+            Assert.Equal((1000, 2000), PixelsOf(DrawnAt(png, 1000, 2000, () => 1.0)));
+            var doubled = DrawnAt(png, 1000, 2000, () => 2.0);
+            Assert.Equal((1200, 2400), PixelsOf(doubled));   // 1,600 wide would be 3,200 high
+            Assert.Equal(1000, doubled.Width);
+            Assert.Equal(2000, doubled.Height);
+        });
+
+        [Theory]
+        [InlineData(1.0, 400, 300)]
+        [InlineData(1.5, 600, 450)]
+        [InlineData(2.0, 800, 600)]
+        [InlineData(3.0, 1200, 900)]
+        [InlineData(10.0, 1200, 900)]                     // capped at 3
+        [InlineData(0.5, 400, 300)]                       // below 1 counts as 1: never fewer pixels than the diagram's size
+        [InlineData(-2.0, 400, 300)]
+        [InlineData(double.NaN, 400, 300)]                // not finite counts as 1
+        [InlineData(double.PositiveInfinity, 400, 300)]
+        public void A_picture_is_decoded_with_as_many_pixels_as_the_display_scaling_needs(double scale, int width, int height) => UiThread.Run(() =>
+        {
+            byte[] png = ChatDiagramFakes.Png(2000, 1500);   // more pixels than any scaling asks for
+
+            var state = DrawnAt(png, 400, 300, () => scale);
+
+            Assert.Equal((width, height), PixelsOf(state));
+            Assert.Equal(400, state.Width);                  // the shown size does not follow the scaling
+            Assert.Equal(300, state.Height);
+        });
+
+        [Fact]
+        public void Without_a_scaling_or_with_one_that_cannot_be_read_a_picture_is_decoded_at_its_own_size() => UiThread.Run(() =>
+        {
+            byte[] png = ChatDiagramFakes.Png(2000, 1500);
+
+            Assert.Equal((400, 300), PixelsOf(DrawnAt(png, 400, 300, null)));
+            Assert.Equal((400, 300), PixelsOf(DrawnAt(png, 400, 300, () => throw new InvalidOperationException("no screen"))));
+        });
+
+        [Fact]
+        public void A_picture_is_never_decoded_with_more_pixels_than_its_png_has() => UiThread.Run(() =>
+        {
+            byte[] png = ChatDiagramFakes.Png(800, 600);     // as the engine draws a 400 by 300 diagram
+
+            Assert.Equal((800, 600), PixelsOf(DrawnAt(png, 400, 300, () => 3.0)));
+            Assert.Equal((800, 600), PixelsOf(DrawnAt(png, 400, 300, () => 2.0)));
+            Assert.Equal((400, 300), PixelsOf(DrawnAt(png, 400, 300, () => 1.0)));
+        });
+
+        [Fact]
+        public Task The_scaling_is_read_when_a_picture_is_decoded() => UiThread.RunAsync(async () =>
+        {
+            double scale = 1.0;
+            var renderer = new FakeRenderer();
+            var diagrams = new ChatDiagrams(() => renderer, () => true, () => scale) { Warn = _ => { } };
+            diagrams.Get(Flow, true, null);
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramResult.Picture(ChatDiagramFakes.Png(2000, 1500), DiagramFakes.Svg, 400, 300, paper: false));
+            Assert.Equal((400, 300), PixelsOf(diagrams.Get(Flow, true, null)));
+
+            scale = 2.0;
+            Assert.Equal((400, 300), PixelsOf(diagrams.Get(Flow, true, null)));   // kept as it was decoded
+            diagrams.Clear();
+            Assert.Equal((800, 600), PixelsOf(diagrams.Get(Flow, true, null)));   // decoded again, from the engine's own store
+        });
+
+        [Fact]
+        public void The_app_reads_the_primary_screens_scaling_as_a_number_from_100_to_500_percent()
+        {
+            // What App hands the adapter. Asked of Windows itself: no window, no file, nothing shown.
+            double scale = App.PrimaryScreenScale();
+
+            Assert.True(double.IsFinite(scale));
+            Assert.InRange(scale, 1.0, 5.0);
+        }
+
+        /// <summary>An adapter over a renderer that answers at once, whose decodes are counted and give a bitmap of that many pixels.</summary>
+        private static (ChatDiagrams Diagrams, ImmediateRenderer Renderer, Func<int> Decodes) Counting(int pixelWidth, int pixelHeight)
+        {
+            var renderer = new ImmediateRenderer();
+            int decodes = 0;
+            BitmapSource picture = ChatDiagramFakes.Counted(pixelWidth, pixelHeight);
+            var diagrams = new ChatDiagrams(() => renderer, () => true)
+            {
+                Warn = _ => { },
+                Decoder = (_, _, _) =>
+                {
+                    decodes++;
+                    return picture;
+                },
+            };
+            return (diagrams, renderer, () => decodes);
+        }
+
+        [Fact]
+        public void Of_nine_pictures_of_15_MB_the_eight_used_last_stay_and_a_rebuild_of_their_answer_decodes_and_draws_nothing() => UiThread.Run(() =>
+        {
+            const long each = 1600L * 2400 * 4;   // the largest a picture is decoded at: 15,360,000 bytes
+            var (diagrams, renderer, decodes) = Counting(1600, 2400);
+
+            for (int i = 0; i < 9; i++) Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(Source(i), true, null).Status);
+
+            Assert.Equal(8, ChatDiagrams.AlwaysKept);
+            Assert.Equal(8, diagrams.PicturesKept);           // over 64 MB, and still eight: one answer never loses its own
+            Assert.Equal(8 * each, diagrams.PictureBytes);
+            Assert.True(diagrams.PictureBytes > ChatDiagrams.MaxPictureBytes);
+            Assert.Equal(9, decodes());
+            Assert.Equal(9, renderer.Requests.Count);
+
+            // An answer that holds the eight used last is built again and again: no decode, no draw.
+            for (int rebuild = 0; rebuild < 5; rebuild++)
+                for (int i = 1; i < 9; i++) Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(Source(i), true, null).Status);
+            Assert.Equal(9, decodes());
+            Assert.Equal(9, renderer.Requests.Count);
+
+            diagrams.Get(Source(0), true, null);              // the first went, and is drawn and decoded again
+            Assert.Equal(10, decodes());
+            Assert.Equal(10, renderer.Requests.Count);
+            Assert.Equal(8, diagrams.PicturesKept);
+        });
+
+        [Fact]
+        public void Smaller_pictures_are_kept_up_to_64_MB_and_the_least_recently_used_goes_first() => UiThread.Run(() =>
+        {
+            const long each = 1000L * 1500 * 4;   // 6,000,000 bytes: eleven fit in 64 MB, twelve do not
+            var (diagrams, renderer, decodes) = Counting(1000, 1500);
+            Assert.Equal(64L * 1024 * 1024, ChatDiagrams.MaxPictureBytes);
+
+            for (int i = 0; i < 11; i++) diagrams.Get(Source(i), true, null);
+            Assert.Equal(11, diagrams.PicturesKept);
+            Assert.Equal(11 * each, diagrams.PictureBytes);
+
+            diagrams.Get(Source(0), true, null);              // used again: the oldest is now number 1
+            diagrams.Get(Source(11), true, null);             // one more than fits
+
+            Assert.Equal(11, diagrams.PicturesKept);
+            Assert.Equal(11 * each, diagrams.PictureBytes);
+            Assert.Equal(12, decodes());
+            diagrams.Get(Source(0), true, null);
+            for (int i = 2; i < 12; i++) diagrams.Get(Source(i), true, null);
+            Assert.Equal(12, renderer.Requests.Count);        // all of those are still kept
+            diagrams.Get(Source(1), true, null);
+            Assert.Equal(13, renderer.Requests.Count);        // number 1 was dropped, and is asked for again
+
+            diagrams.Clear();
+            Assert.Equal(0, diagrams.PicturesKept);
+            Assert.Equal(0, diagrams.PictureBytes);
+        });
+
+        [Fact]
+        public void Pictures_do_not_push_out_a_failure_and_a_hundred_failures_do_not_push_out_a_picture() => UiThread.Run(() =>
+        {
+            var (diagrams, renderer, decodes) = Counting(1600, 2400);
+            renderer.Answer = request => request.Source.StartsWith("no", StringComparison.Ordinal)
+                ? DiagramResult.Failure("Parse error", lasting: true)
+                : DiagramFakes.Picture();
+
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get("no 0", true, null).Status);
+            for (int i = 0; i < 20; i++) diagrams.Get(Source(i), true, null);
+            Assert.Equal(21, renderer.Requests.Count);
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get("no 0", true, null).Status);
+            Assert.Equal(21, renderer.Requests.Count);        // twenty pictures later the failure is still kept: no new draw
+            Assert.Equal(1, diagrams.FailuresKept);
+
+            for (int i = 1; i <= 100; i++) diagrams.Get("no " + i.ToString(CultureInfo.InvariantCulture), true, null);
+            Assert.Equal(121, renderer.Requests.Count);
+            Assert.Equal(ChatDiagrams.MaxFailures, diagrams.FailuresKept);
+            Assert.Equal(8, diagrams.PicturesKept);
+            for (int i = 12; i < 20; i++) Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(Source(i), true, null).Status);
+            Assert.Equal(121, renderer.Requests.Count);       // a hundred failures later the pictures are still kept
+            Assert.Equal(20, decodes());
+        });
+
+        [Fact]
+        public void At_most_64_failures_are_kept_and_the_least_recently_used_goes_first() => UiThread.Run(() =>
         {
             var renderer = new ImmediateRenderer { Answer = _ => DiagramResult.Failure("no", lasting: true) };
             var diagrams = new ChatDiagrams(() => renderer, () => true);
-            static string Source(int i) => "pie\n  \"a\" : " + i.ToString(CultureInfo.InvariantCulture);
 
-            Assert.Equal(32, ChatDiagrams.MaxKept);
-            for (int i = 0; i < ChatDiagrams.MaxKept; i++) diagrams.Get(Source(i), true, null);
-            Assert.Equal(32, renderer.Requests.Count);
+            Assert.Equal(64, ChatDiagrams.MaxFailures);
+            for (int i = 0; i < ChatDiagrams.MaxFailures; i++) diagrams.Get(Source(i), true, null);
+            Assert.Equal(64, renderer.Requests.Count);
 
             diagrams.Get(Source(0), true, null);    // used again: the oldest is now number 1
             diagrams.Get(Source(100), true, null);  // one more than fits
-            Assert.Equal(33, renderer.Requests.Count);
+            Assert.Equal(65, renderer.Requests.Count);
+            Assert.Equal(64, diagrams.FailuresKept);
 
             diagrams.Get(Source(0), true, null);
-            for (int i = 2; i < ChatDiagrams.MaxKept; i++) diagrams.Get(Source(i), true, null);
-            Assert.Equal(33, renderer.Requests.Count);   // all of those are still kept
+            for (int i = 2; i < ChatDiagrams.MaxFailures; i++) diagrams.Get(Source(i), true, null);
+            Assert.Equal(65, renderer.Requests.Count);   // all of those are still kept
 
             diagrams.Get(Source(1), true, null);
-            Assert.Equal(34, renderer.Requests.Count);   // number 1 was dropped, and is asked for again
+            Assert.Equal(66, renderer.Requests.Count);   // number 1 was dropped, and is asked for again
+        });
+
+        [Theory]
+        [InlineData(0, 50)]
+        [InlineData(100, 0)]
+        [InlineData(double.NaN, 50)]
+        [InlineData(100, double.NaN)]
+        [InlineData(double.PositiveInfinity, 50)]
+        [InlineData(-100, 50)]
+        public void A_picture_without_a_size_is_a_failure_and_nothing_is_decoded(double width, double height) => UiThread.Run(() =>
+        {
+            var (diagrams, renderer, decodes) = Counting(200, 100);
+            renderer.Answer = _ => DiagramResult.Picture(DiagramFakes.Png, DiagramFakes.Svg, width, height, paper: false);
+
+            var state = diagrams.Get(Flow, true, null);
+
+            Assert.Equal(ChatDiagramStatus.Failed, state.Status);
+            Assert.Equal(DiagramText.Failed, state.Error);
+            Assert.Null(state.Picture);
+            Assert.Equal(0, decodes());
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get(Flow, true, null).Status);
+            Assert.Single(renderer.Requests);             // kept: the same result would come again
         });
 
         [Fact]

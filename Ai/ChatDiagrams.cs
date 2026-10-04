@@ -29,8 +29,8 @@ namespace Kil0bitSystemMonitor.Ai
 
     /// <summary>
     /// The picture of one Mermaid block, or why there is none. <see cref="Width"/> and
-    /// <see cref="Height"/> are the picture's own size in device-independent pixels: it is shown at
-    /// most that large, however many pixels the bitmap has (the engine draws it with twice as many).
+    /// <see cref="Height"/> are the diagram's own size in device-independent pixels: it is shown at
+    /// most that large, however many pixels the bitmap was decoded with.
     /// </summary>
     internal sealed record ChatDiagramState(ChatDiagramStatus Status, ImageSource? Picture = null, double Width = 0, double Height = 0, string? Error = null);
 
@@ -62,6 +62,16 @@ namespace Kil0bitSystemMonitor.Ai
     /// </para>
     ///
     /// <para>
+    /// What it keeps. A picture is decoded once, with no more pixels than the screen draws it with
+    /// and never over <see cref="MaxDecodeWidth"/> by <see cref="MaxDecodeHeight"/>. Pictures are
+    /// kept up to <see cref="MaxPictureBytes"/>, and always the <see cref="AlwaysKept"/> used last,
+    /// so an answer that is built again finds its own pictures and decodes nothing. Failures are
+    /// kept apart, up to <see cref="MaxFailures"/>: a picture never pushes a failure out, nor a
+    /// failure a picture. A picture dropped here stays with the answers that still show it, until
+    /// those are built again or go.
+    /// </para>
+    ///
+    /// <para>
     /// Only Mermaid, and only on this PC: every request has no Kroki server, so an answer's text is
     /// never posted anywhere. Nothing throws. Everything here runs on the UI thread: Get and Clear
     /// are called there, and a draw that ends elsewhere is brought back to it before anything is
@@ -73,12 +83,25 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>How many Mermaid blocks of one answer are drawn; the ones after them are code.</summary>
         public const int MaxPerAnswer = 8;
 
+        /// <summary>The most pixels a picture is decoded with, across and down: 15.36 MB at the most.</summary>
+        internal const int MaxDecodeWidth = 1600;
+        internal const int MaxDecodeHeight = 2400;
+
+        /// <summary>How many bytes of pictures are kept (pixels across, by pixels down, by 4), the least recently used dropped first.</summary>
+        internal const long MaxPictureBytes = 64L * 1024 * 1024;
+
         /// <summary>
-        /// How many outcomes are remembered, the least recently used dropped first. More than one
-        /// document asks for (<see cref="MaxPerAnswer"/>): a document being rebuilt never pushes
-        /// out an outcome it is about to ask for again.
+        /// The pictures used last that are kept whatever they weigh: as many as one answer shows
+        /// (<see cref="MaxPerAnswer"/>). Without it an answer of eight tall diagrams would drop its
+        /// own pictures and decode them again at every rebuild.
         /// </summary>
-        internal const int MaxKept = 32;
+        internal const int AlwaysKept = MaxPerAnswer;
+
+        /// <summary>How many failures are kept, the least recently used dropped first.</summary>
+        internal const int MaxFailures = 64;
+
+        /// <summary>The largest display scaling a picture is decoded for.</summary>
+        internal const double MaxScale = 3;
 
         private static readonly ChatDiagramState Off = new(ChatDiagramStatus.Off);
         private static readonly ChatDiagramState Drawing = new(ChatDiagramStatus.Drawing);
@@ -88,16 +111,23 @@ namespace Kil0bitSystemMonitor.Ai
 
         private readonly Func<IDiagramRenderer?> _renderer;
         private readonly Func<bool> _enabled;
-        private readonly Dictionary<string, LinkedListNode<(string Key, ChatDiagramState State)>> _kept = new(StringComparer.Ordinal);
-        private readonly LinkedList<(string Key, ChatDiagramState State)> _order = new();
+        private readonly Func<double>? _scale;
+        private readonly Kept _pictures = new();
+        private readonly Kept _failures = new();
         private readonly Dictionary<string, List<Action>> _waiting = new(StringComparer.Ordinal);
 
         /// <param name="renderer">The drawing engine, made on first use; null when there is none.</param>
         /// <param name="enabled">Settings → MicaPad → Draw diagrams, read at every call.</param>
-        public ChatDiagrams(Func<IDiagramRenderer?> renderer, Func<bool> enabled)
+        /// <param name="scale">
+        /// The display scaling a picture is decoded for (1.5 at 150%), read at each decode. Null is
+        /// 1; a value that is not finite or is below 1 counts as 1, and one above
+        /// <see cref="MaxScale"/> as that.
+        /// </param>
+        public ChatDiagrams(Func<IDiagramRenderer?> renderer, Func<bool> enabled, Func<double>? scale = null)
         {
             _renderer = renderer;
             _enabled = enabled;
+            _scale = scale;
         }
 
         /// <summary>The app's own, set at startup; null before that and in tests.</summary>
@@ -105,6 +135,21 @@ namespace Kil0bitSystemMonitor.Ai
 
         /// <summary>Where a failure is reported, by its type only. Tests replace it so nothing reaches the real log.</summary>
         internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("ai", message);
+
+        /// <summary>
+        /// Decodes a PNG into a frozen bitmap that many pixels across, or that many down (the other
+        /// side follows; both 0 is the PNG's own size). Tests replace it to count the decodes.
+        /// </summary>
+        internal Func<byte[], int, int, BitmapSource> Decoder { get; set; } = DecodePng;
+
+        /// <summary>How many pictures are kept; for tests.</summary>
+        internal int PicturesKept => _pictures.Count;
+
+        /// <summary>The bytes of the pictures kept; for tests.</summary>
+        internal long PictureBytes => _pictures.Bytes;
+
+        /// <summary>How many failures are kept; for tests.</summary>
+        internal int FailuresKept => _failures.Count;
 
         /// <inheritdoc />
         public ChatDiagramState Get(string source, bool dark, Action? whenDone)
@@ -118,12 +163,7 @@ namespace Kil0bitSystemMonitor.Ai
 
                 DiagramRequest request = RequestFor(kind, source, dark);
                 key = request.Key;
-                if (_kept.TryGetValue(key, out var kept))
-                {
-                    _order.Remove(kept);
-                    _order.AddFirst(kept);
-                    return kept.Value.State;
-                }
+                if (_pictures.TryUse(key, out ChatDiagramState? kept) || _failures.TryUse(key, out kept)) return kept;
                 if (_waiting.TryGetValue(key, out List<Action>? waiters))
                 {
                     Add(waiters, whenDone);
@@ -168,8 +208,8 @@ namespace Kil0bitSystemMonitor.Ai
         /// </remarks>
         public void Clear()
         {
-            _kept.Clear();
-            _order.Clear();
+            _pictures.Clear();
+            _failures.Clear();
             _waiting.Clear();
         }
 
@@ -253,15 +293,16 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>
         /// What a draw's result is to an answer. A picture is decoded here, once, and kept frozen.
         /// Everything else is a failure with the renderer's message: a syntax error, a missing
-        /// WebView2 Runtime, a draw that took too long, and a result that says nothing at all.
+        /// WebView2 Runtime, a draw that took too long, and a result that says nothing at all. So
+        /// is a picture without a size, or one that cannot be decoded.
         /// </summary>
         private ChatDiagramState StateOf(DiagramResult? result)
         {
             if (result is not { IsPicture: true }) return Failed(result?.Error ?? DiagramText.Failed);
-            if (!(result.Width > 0) || !(result.Height > 0)) return Failed(DiagramText.Failed);
+            if (!IsSize(result.Width) || !IsSize(result.Height)) return Failed(DiagramText.Failed);
             try
             {
-                return new ChatDiagramState(ChatDiagramStatus.Drawn, Decode(result.Png!), result.Width, result.Height);
+                return new ChatDiagramState(ChatDiagramStatus.Drawn, Decode(result.Png!, result.Width), result.Width, result.Height);
             }
             catch (Exception ex)
             {
@@ -270,19 +311,61 @@ namespace Kil0bitSystemMonitor.Ai
             }
         }
 
+        private static bool IsSize(double side) => double.IsFinite(side) && side > 0;
+
         /// <summary>
-        /// The PNG as a frozen bitmap, decoded the way <c>DiagramPicture.BitmapOf</c> decodes it, at
-        /// its own pixel size: the engine draws a diagram with twice as many pixels as its size, and
-        /// one picture may be shown in several windows on screens with different scaling, so there
-        /// is no one screen to decode it for. Shown no larger than the size the result names, it is
-        /// sharp up to 200% scaling. Not through <c>BitmapOf</c> itself: that keeps what it decodes
-        /// in a store of its own, which <see cref="Clear"/> could not empty.
+        /// The PNG as a frozen bitmap with as many pixels as the screen draws the diagram with: its
+        /// width times the display scaling, as MicaPad's <c>DiagramPicture.DecodeWidthOf</c> takes
+        /// it; never more than the PNG has (the engine draws it with twice the diagram's size), and
+        /// never over <see cref="MaxDecodeWidth"/> by <see cref="MaxDecodeHeight"/>. The PNG's size
+        /// is read from its header, and the decoder is told the size wanted, so the whole PNG (up
+        /// to 4,096 a side, 64 MB) is never laid out in memory. Not through
+        /// <c>DiagramPicture.BitmapOf</c>: that keeps what it decodes in a store of its own, which
+        /// <see cref="Clear"/> could not empty.
         /// </summary>
-        private static BitmapSource Decode(byte[] png)
+        private BitmapSource Decode(byte[] png, double width)
+        {
+            if (!TryPngSize(png, out int fullWidth, out int fullHeight)) throw new InvalidDataException("Not a PNG");
+
+            int across = (int)Math.Max(1, Math.Min(Math.Min(Math.Ceiling(width * Scale()), MaxDecodeWidth), fullWidth));
+            // A tall picture: the height is what the cap holds, and the width follows it.
+            if ((double)fullHeight * across / fullWidth > MaxDecodeHeight) return Decoder(png, 0, MaxDecodeHeight);
+            return Decoder(png, across < fullWidth ? across : 0, 0);
+        }
+
+        /// <summary>The display scaling to decode for: 1 to <see cref="MaxScale"/>; 1 when none was given or it cannot be read.</summary>
+        private double Scale()
+        {
+            double scale = 1;
+            try
+            {
+                if (_scale != null) scale = _scale();
+            }
+            catch (Exception ex)
+            {
+                Report("Reading the display scaling for a diagram failed (" + ex.GetType().Name + ")");
+            }
+            return double.IsFinite(scale) && scale >= 1 ? Math.Min(scale, MaxScale) : 1;
+        }
+
+        /// <summary>A PNG's size in pixels from its header (bytes 16 to 23, big-endian), as <c>DiagramPicture.PngWidth</c> reads the width.</summary>
+        private static bool TryPngSize(byte[] png, out int width, out int height)
+        {
+            width = height = 0;
+            if (png.Length < 24 || png[0] != 0x89 || png[1] != (byte)'P' || png[2] != (byte)'N' || png[3] != (byte)'G') return false;
+            width = png[16] << 24 | png[17] << 16 | png[18] << 8 | png[19];
+            height = png[20] << 24 | png[21] << 16 | png[22] << 8 | png[23];
+            return width > 0 && height > 0;
+        }
+
+        /// <summary>Decodes as <c>DiagramPicture.BitmapOf</c> does: loaded at once, at the size asked for, and frozen.</summary>
+        private static BitmapSource DecodePng(byte[] png, int decodeWidth, int decodeHeight)
         {
             var decoded = new BitmapImage();
             decoded.BeginInit();
             decoded.CacheOption = BitmapCacheOption.OnLoad;
+            if (decodeWidth > 0) decoded.DecodePixelWidth = decodeWidth;
+            else if (decodeHeight > 0) decoded.DecodePixelHeight = decodeHeight;
             decoded.StreamSource = new MemoryStream(png);
             decoded.EndInit();
             decoded.Freeze();
@@ -291,18 +374,31 @@ namespace Kil0bitSystemMonitor.Ai
 
         private static ChatDiagramState Failed(string error) => new(ChatDiagramStatus.Failed, Error: error);
 
-        /// <summary>Remembers an outcome as the most recently used, and drops the least recently used over <see cref="MaxKept"/>.</summary>
+        /// <summary>
+        /// Remembers an outcome as the most recently used of its kind. Pictures over
+        /// <see cref="MaxPictureBytes"/> go, the least recently used first, but never the
+        /// <see cref="AlwaysKept"/> used last; failures over <see cref="MaxFailures"/> go the same way.
+        /// </summary>
         private ChatDiagramState Keep(string key, ChatDiagramState state)
         {
-            if (_kept.Remove(key, out var old)) _order.Remove(old);
-            _kept[key] = _order.AddFirst((key, state));
-            while (_kept.Count > MaxKept && _order.Last is { } last)
+            if (state.Status == ChatDiagramStatus.Drawn)
             {
-                _order.RemoveLast();
-                _kept.Remove(last.Value.Key);
+                _failures.Remove(key);
+                _pictures.Put(key, state, BytesOf(state.Picture));
+                while (_pictures.Bytes > MaxPictureBytes && _pictures.Count > AlwaysKept) _pictures.DropOldest();
+            }
+            else
+            {
+                _pictures.Remove(key);
+                _failures.Put(key, state, 0);
+                while (_failures.Count > MaxFailures) _failures.DropOldest();
             }
             return state;
         }
+
+        /// <summary>What a picture weighs here: four bytes a pixel.</summary>
+        private static long BytesOf(ImageSource? picture) =>
+            picture is BitmapSource bitmap ? (long)bitmap.PixelWidth * bitmap.PixelHeight * 4 : 0;
 
         /// <summary>
         /// Adds a waiter, once: a view gives the same redraw at every rebuild, ten times a second
@@ -322,6 +418,57 @@ namespace Kil0bitSystemMonitor.Ai
             catch (Exception)
             {
                 // Logging is best effort; it must not throw into a render either.
+            }
+        }
+
+        /// <summary>Outcomes by key, the most recently used first, with what they weigh together.</summary>
+        private sealed class Kept
+        {
+            private readonly Dictionary<string, LinkedListNode<(string Key, ChatDiagramState State, long Bytes)>> _byKey = new(StringComparer.Ordinal);
+            private readonly LinkedList<(string Key, ChatDiagramState State, long Bytes)> _order = new();
+
+            public int Count => _byKey.Count;
+
+            public long Bytes { get; private set; }
+
+            /// <summary>The outcome for <paramref name="key"/>, which is now the most recently used.</summary>
+            public bool TryUse(string key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ChatDiagramState? state)
+            {
+                if (!_byKey.TryGetValue(key, out var node))
+                {
+                    state = null;
+                    return false;
+                }
+                _order.Remove(node);
+                _order.AddFirst(node);
+                state = node.Value.State;
+                return true;
+            }
+
+            public void Put(string key, ChatDiagramState state, long bytes)
+            {
+                Remove(key);
+                _byKey[key] = _order.AddFirst((key, state, bytes));
+                Bytes += bytes;
+            }
+
+            public void Remove(string key)
+            {
+                if (!_byKey.Remove(key, out var node)) return;
+                _order.Remove(node);
+                Bytes -= node.Value.Bytes;
+            }
+
+            public void DropOldest()
+            {
+                if (_order.Last is { } oldest) Remove(oldest.Value.Key);
+            }
+
+            public void Clear()
+            {
+                _byKey.Clear();
+                _order.Clear();
+                Bytes = 0;
             }
         }
     }

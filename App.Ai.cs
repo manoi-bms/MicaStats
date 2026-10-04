@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Models;
@@ -98,12 +99,42 @@ public partial class App
         // Mermaid blocks in AI answers, in Ask MicaStats and in MicaPad: drawn by MicaPad's own
         // renderer, on this PC, while Settings → MicaPad → Draw diagrams is on. Nothing is made
         // here: the renderer by the first answer that holds a diagram (or the first MicaPad
-        // window), its browser page by the first draw.
+        // window), its browser page by the first draw. A picture is decoded with the pixels the
+        // primary screen's scaling needs, read each time one is decoded.
         AppConfig diagramSettings = config.Config;
         Kil0bitSystemMonitor.Ai.ChatDiagrams.Current =
-            new Kil0bitSystemMonitor.Ai.ChatDiagrams(DiagramRendererOnFirstUse, () => diagramSettings.PadDiagrams);
+            new Kil0bitSystemMonitor.Ai.ChatDiagrams(DiagramRendererOnFirstUse, () => diagramSettings.PadDiagrams, PrimaryScreenScale);
         // AI anchor: start
     }
+
+    /// <summary>
+    /// The primary screen's display scaling as Windows has it now: 1.0 at 100%, 1.5 at 150%. The
+    /// primary screen is the one that holds the point (0, 0); its effective DPI over 96 is the
+    /// scaling. 1.0 when Windows does not say.
+    /// </summary>
+    internal static double PrimaryScreenScale()
+    {
+        try
+        {
+            IntPtr monitor = MonitorFromPoint(default, MonitorDefaultToPrimary);
+            if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, EffectiveDpi, out uint dpiX, out _) == 0 && dpiX > 0)
+                return dpiX / 96.0;
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Warn("ai", "Reading the display scaling failed (" + ex.GetType().Name + ")");
+        }
+        return 1.0;
+    }
+
+    private const uint MonitorDefaultToPrimary = 1;
+    private const int EffectiveDpi = 0;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(Kil0bitSystemMonitor.Helpers.Win32Helper.POINT point, uint flags);
+
+    [DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
 
     /// <summary>
     /// Pushes the AI settings into the running services. Runs on the UI thread, at startup and

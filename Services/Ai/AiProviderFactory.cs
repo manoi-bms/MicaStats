@@ -2,6 +2,7 @@ using System;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -49,27 +50,10 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
             if (config.AiProvider == AiProviders.OpenAiCompatible) return CreateCompatible(config, secrets, handler);
 
-            string? key = secrets.Get(SecretNames.ClaudeKey);
-            if (string.IsNullOrWhiteSpace(key)) return new AiClientResult(null, NoKey, IsClaude: true);
+            string? key = ClaudeKey(secrets);
+            if (key == null) return new AiClientResult(null, NoKey, IsClaude: true);
 
-            // MicaStats must talk only to api.anthropic.com with the user's own key. These variables
-            // belong to Claude Code gateways; the SDK would read them at construction and could
-            // redirect the traffic, add an Authorization header, or override anthropic-version.
-            Environment.SetEnvironmentVariable("ANTHROPIC_BASE_URL", null);
-            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", null);
-            Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", null);
-
-            var anthropic = new AnthropicClient
-            {
-                ApiKey = key.Trim(),
-                // The SDK would otherwise read ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN from the
-                // environment and could send the key and every question to another host.
-                BaseUrl = "https://api.anthropic.com",
-                AuthToken = null,
-                HttpClient = NewHttpClient(handler),
-                // 429 and 529 are retried twice by the SDK before the Ask window says "busy".
-                MaxRetries = 2,
-            };
+            AnthropicClient anthropic = NewAnthropicClient(key, NewHttpClient(handler));
             IChatClient client = anthropic.AsIChatClient(config.AiClaudeModel, MaxOutputTokens);
             return new AiClientResult(client, null, IsClaude: true);
         }
@@ -79,13 +63,11 @@ namespace Kil0bitSystemMonitor.Services.Ai
             string model = (config.AiCompatibleModel ?? "").Trim();
             if (model.Length == 0) return new AiClientResult(null, NoModel, IsClaude: false);
 
-            if (!Uri.TryCreate((config.AiCompatibleBaseUrl ?? "").Trim(), UriKind.Absolute, out Uri? endpoint) ||
-                (endpoint.Scheme != Uri.UriSchemeHttp && endpoint.Scheme != Uri.UriSchemeHttps))
+            if (!TryCompatibleEndpoint(config, out Uri? endpoint))
                 return new AiClientResult(null, BadUrl, IsClaude: false);
 
             // The key is optional (a local Ollama has none), but the SDK rejects an empty one.
-            string? key = secrets.Get(SecretNames.CompatibleKey);
-            var credential = new ApiKeyCredential(string.IsNullOrWhiteSpace(key) ? "none" : key.Trim());
+            var credential = new ApiKeyCredential(CompatibleKey(secrets) ?? "none");
             var openAi = new OpenAIClient(credential, new OpenAIClientOptions
             {
                 Endpoint = endpoint,
@@ -113,8 +95,65 @@ namespace Kil0bitSystemMonitor.Services.Ai
                    host.EndsWith(".openai.azure.com", StringComparison.OrdinalIgnoreCase);
         }
 
+        // ----- Shared with ModelCatalog: a list of models is asked for with the same key, at the
+        // same address and through the same kind of client as a question. ---------------------
+
+        /// <summary>The one address a Claude request goes to.</summary>
+        internal const string ClaudeBaseUrl = "https://api.anthropic.com";
+
+        /// <summary>The saved Claude key, trimmed; null when none is saved.</summary>
+        internal static string? ClaudeKey(SecretStore secrets) => Trimmed(secrets.Get(SecretNames.ClaudeKey));
+
+        /// <summary>The saved key of the compatible server, trimmed; null when none is saved (a local server needs none).</summary>
+        internal static string? CompatibleKey(SecretStore secrets) => Trimmed(secrets.Get(SecretNames.CompatibleKey));
+
+        private static string? Trimmed(string? key) => string.IsNullOrWhiteSpace(key) ? null : key.Trim();
+
+        /// <summary>
+        /// The compatible server's address from the settings. False when the base URL is not an
+        /// absolute http or https address: nothing is sent then, and <see cref="BadUrl"/> says so.
+        /// </summary>
+        internal static bool TryCompatibleEndpoint(AppConfig config, [NotNullWhen(true)] out Uri? endpoint) =>
+            Uri.TryCreate((config.AiCompatibleBaseUrl ?? "").Trim(), UriKind.Absolute, out endpoint) &&
+            (endpoint.Scheme == Uri.UriSchemeHttp || endpoint.Scheme == Uri.UriSchemeHttps);
+
+        /// <summary>
+        /// The Anthropic client every Claude request is made with: the user's own key, to
+        /// <see cref="ClaudeBaseUrl"/> and nowhere else, over <paramref name="http"/>.
+        /// </summary>
+        internal static AnthropicClient NewAnthropicClient(string key, HttpClient http)
+        {
+            // MicaStats must talk only to api.anthropic.com with the user's own key. These variables
+            // belong to Claude Code gateways; the SDK would read them at construction and could
+            // redirect the traffic, add an Authorization header, or override anthropic-version.
+            Environment.SetEnvironmentVariable("ANTHROPIC_BASE_URL", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_CUSTOM_HEADERS", null);
+
+            return new AnthropicClient
+            {
+                ApiKey = key,
+                // The SDK would otherwise read ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN from the
+                // environment and could send the key and every question to another host.
+                BaseUrl = ClaudeBaseUrl,
+                AuthToken = null,
+                HttpClient = http,
+                // 429 and 529 are retried twice by the SDK before the Ask window says "busy".
+                MaxRetries = 2,
+            };
+        }
+
+        /// <summary>The HTTP client of a question: the network, or a test's handler in its place.</summary>
         private static HttpClient NewHttpClient(HttpMessageHandler? handler) =>
-            new(handler ?? new SocketsHttpHandler(), disposeHandler: handler == null) { Timeout = RequestTimeout };
+            NewHttpClient(handler ?? new SocketsHttpHandler(), owned: handler == null, RequestTimeout);
+
+        /// <summary>
+        /// An HTTP client over <paramref name="handler"/> that gives up after <paramref name="timeout"/>.
+        /// <paramref name="owned"/> is true for a handler made here, which goes with the client, and
+        /// false for a test's, which is never disposed here.
+        /// </summary>
+        internal static HttpClient NewHttpClient(HttpMessageHandler handler, bool owned, TimeSpan timeout) =>
+            new(handler, disposeHandler: owned) { Timeout = timeout };
     }
 
     /// <summary>

@@ -10,6 +10,7 @@ using Kil0bitSystemMonitor.Services.Pad;
 
 // UseWindowsForms puts System.Windows.Forms in scope; these names exist in both.
 using ContextMenu = System.Windows.Controls.ContextMenu;
+using Image = System.Windows.Controls.Image;
 using MenuItem = System.Windows.Controls.MenuItem;
 using RichTextBox = System.Windows.Controls.RichTextBox;
 using TextBoxBase = System.Windows.Controls.Primitives.TextBoxBase;
@@ -35,12 +36,20 @@ namespace Kil0bitSystemMonitor.Pad
         private static readonly string CopyGlyph = ((char)0xE8C8).ToString();
         private static readonly string SelectAllGlyph = ((char)0xE8B3).ToString();
 
+        /// <summary>The sources of the diagrams whose Source toggle is on: kept here, because every draw of the text builds new buttons.</summary>
+        private readonly HashSet<string> _sourceShown = new(StringComparer.Ordinal);
+
+        /// <summary>This box's redraw, the same delegate at every draw, so a diagram tells it once.</summary>
+        private readonly Action _invalidate;
         private bool _dark = true;
+        private bool _markdown;
         private bool _warned;
 
         /// <summary>Builds the box empty and dark; <see cref="ApplyTheme"/> switches it.</summary>
         public PadAnswerBox()
         {
+            _invalidate = RedrawOf(this);
+            BuildDocument = raw => ChatDocument.Build(ChatMarkdown.Parse(raw), NewRender());
             Style = ChatStyles.Get("ChatAnswer");
             GiveMenu(this);
             ApplyTheme(dark: true);
@@ -50,10 +59,17 @@ namespace Kil0bitSystemMonitor.Pad
         public string Shown { get; private set; } = "";
 
         /// <summary>Turns Markdown into the document shown. Tests replace it to make rendering fail.</summary>
-        internal Func<string, FlowDocument> BuildDocument { get; set; } = raw => ChatDocument.Build(ChatMarkdown.Parse(raw), ChatRender.Default);
+        internal Func<string, FlowDocument> BuildDocument { get; set; }
 
         /// <summary>Where a render failure is reported, once per box. Tests replace it so nothing reaches the real log.</summary>
         internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("pad", message);
+
+        /// <summary>
+        /// Draws the answer's Mermaid blocks; null leaves them as code. The app's own by default
+        /// (<see cref="ChatDiagrams.Current"/>, null in tests); the pictures are shared, the redraw
+        /// and the Source choices are this box's.
+        /// </summary>
+        internal IChatDiagrams? Diagrams { get; set; } = ChatDiagrams.Current;
 
         /// <summary>
         /// Shows <paramref name="raw"/> rendered from Markdown. Never throws: it runs on a timer
@@ -66,17 +82,46 @@ namespace Kil0bitSystemMonitor.Pad
         public void ShowPlain(string text) => Display(text, markdown: false);
 
         /// <summary>
+        /// Leaves nothing of the result: the box is empty, its diagrams' Source choices are gone,
+        /// and the pictures kept for drawing answers again are forgotten
+        /// (<see cref="IChatDiagrams.Clear"/>). A picture still being drawn changes nothing when it
+        /// arrives. Never throws.
+        /// </summary>
+        public void Clear()
+        {
+            Display("", markdown: false);
+            _sourceShown.Clear();
+            try
+            {
+                Diagrams?.Clear();
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    Warn("Forgetting an AI answer's diagrams failed (" + ex.GetType().Name + ")");
+                }
+                catch (Exception)
+                {
+                    // Logging is best effort.
+                }
+            }
+        }
+
+        /// <summary>
         /// Paints the box for the pad's dark or light theme: the <c>Ask.*</c> brushes the chat
         /// renderer reads go into this box's own resources, so the text already shown repaints,
-        /// and the menus follow.
+        /// and the menus follow. A diagram is a bitmap drawn for one theme, so when the theme
+        /// really changes a rendered answer is built again: its pictures are asked for in the new
+        /// theme, and its menus are new ones in the new look.
         /// </summary>
         public void ApplyTheme(bool dark)
         {
+            bool changed = dark != _dark;
             _dark = dark;
             AskThemeApplier.ApplyResources(Resources, dark ? AskPalette.Dark : AskPalette.Light);
             if (ContextMenu is { } own) Paint(own);
-            foreach (TextBoxBase code in ChatDocument.All<TextBoxBase>(Document))
-                if (code.ContextMenu is { } menu) Paint(menu);
+            if (changed && _markdown) Display(Shown, markdown: true);
         }
 
         /// <summary>WPF gives the document a 5 px page padding when the box builds its view; the answer has none.</summary>
@@ -86,10 +131,49 @@ namespace Kil0bitSystemMonitor.Pad
             Document.PagePadding = new Thickness(0);
         }
 
+        /// <summary>
+        /// What one build of the answer's document needs: this box's theme, Source choices and
+        /// redraw. Never <see cref="ChatRender.Default"/>, which every view would share.
+        /// </summary>
+        private ChatRender NewRender() => new()
+        {
+            Diagrams = Diagrams,
+            Dark = _dark,
+            Invalidate = _invalidate,
+            SourceShown = _sourceShown,
+        };
+
+        /// <summary>
+        /// The redraw a draw is given to call when it ends. It holds the box only weakly: the draw
+        /// may outlive the box (a MicaPad window that closed), and must not keep it alive until then.
+        /// </summary>
+        private static Action RedrawOf(PadAnswerBox box)
+        {
+            var weak = new WeakReference<PadAnswerBox>(box);
+            return () =>
+            {
+                if (weak.TryGetTarget(out PadAnswerBox? target)) target.Redraw();
+            };
+        }
+
+        /// <summary>
+        /// A picture the box was waiting for has arrived, or failed. The pane skips a draw whose
+        /// text is unchanged, so the box draws itself: the text it shows now, whatever it showed
+        /// when the picture was asked for. Plain text, and a box that was cleared, have no picture
+        /// to show and stay as they are.
+        /// </summary>
+        private void Redraw()
+        {
+            if (_markdown) Display(Shown, markdown: true);
+        }
+
         private void Display(string? text, bool markdown)
         {
             string raw = text ?? "";
+            // A text that does not continue the one shown is another result: the Source choices made for the old one go with it.
+            if (!raw.StartsWith(Shown, StringComparison.Ordinal)) _sourceShown.Clear();
             Shown = raw;
+            _markdown = markdown;
             if (markdown)
             {
                 try
@@ -126,6 +210,26 @@ namespace Kil0bitSystemMonitor.Pad
             document.PagePadding = new Thickness(0);
             // The chat renderer gives a code block the Ask window's menu, which follows the theme only inside that window.
             foreach (TextBoxBase code in ChatDocument.All<TextBoxBase>(document)) GiveMenu(code);
+            // A diagram's picture too; its entries (Copy image, Copy source) are the renderer's own.
+            foreach (Image picture in ChatDocument.All<Image>(document))
+                if (picture.ContextMenu is { } chat) picture.ContextMenu = InPadLook(chat);
+        }
+
+        /// <summary>The entries of a menu the chat renderer built, moved into a menu in the pad's look and current theme.</summary>
+        private ContextMenu InPadLook(ContextMenu chat)
+        {
+            var entries = new List<object>();
+            foreach (object entry in chat.Items) entries.Add(entry);
+            chat.Items.Clear();
+
+            var menu = new ContextMenu();
+            foreach (object entry in entries)
+            {
+                if (entry is MenuItem { Icon: null } item) item.Icon = CopyGlyph;   // both entries copy something
+                menu.Items.Add(entry);
+            }
+            Paint(menu);
+            return menu;
         }
 
         /// <summary>Reports a render failure once, by its type only: the message could quote the answer.</summary>

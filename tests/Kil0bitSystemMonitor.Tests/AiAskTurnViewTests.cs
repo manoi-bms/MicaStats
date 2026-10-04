@@ -2,14 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Documents;
 using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Services.Ai;
+using Kil0bitSystemMonitor.Services.Pad;
 using Xunit;
 
 using Button = System.Windows.Controls.Button;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using Image = System.Windows.Controls.Image;
+using TextBlock = System.Windows.Controls.TextBlock;
 
 namespace Kil0bitSystemMonitor.Tests
 {
@@ -268,6 +272,292 @@ namespace Kil0bitSystemMonitor.Tests
             var copy = Assert.Single(ChatDocument.All<Button>(answer.Document));
 
             Assert.True(PadAnswerBoxTests.MouseReaches(answer, copy));
+        });
+
+        // ---- Mermaid diagrams: the real adapter over a renderer whose draws the test ends ----------
+
+        private const string Flow = ChatDiagramFakes.Flow;
+
+        /// <summary>A turn that renders every piece of text at once, drawing through <see cref="ChatDiagrams"/> over a fake renderer.</summary>
+        private static (AskTurnView Turn, ChatDiagrams Diagrams, FakeRenderer Renderer) DiagramTurn()
+        {
+            var renderer = new FakeRenderer();
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            var turn = new AskTurnView("q") { Diagrams = diagrams, RenderInterval = TimeSpan.Zero };
+            return (turn, diagrams, renderer);
+        }
+
+        private static List<string> Lines(AskTurnView turn) => ChatDocument.All<TextBlock>(turn.Answer.Document).Select(t => t.Text).ToList();
+
+        private static Image? Picture(AskTurnView turn) => ChatDocument.All<Image>(turn.Answer.Document).SingleOrDefault();
+
+        /// <summary>Counts how often the turn builds its document from here on.</summary>
+        private static Func<int> CountBuilds(AskTurnView turn)
+        {
+            int builds = 0;
+            var build = turn.BuildDocument;
+            turn.BuildDocument = raw =>
+            {
+                builds++;
+                return build(raw);
+            };
+            return () => builds;
+        }
+
+        private static void RaiseClick(Button button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
+        [Fact]
+        public void A_mermaid_block_streamed_in_pieces_is_asked_for_only_when_its_closing_fence_arrives() => UiThread.Run(() =>
+        {
+            var (turn, _, renderer) = DiagramTurn();
+            string[] pieces = { "Here ", "it is:\n\n", "```mer", "maid\n", "flowchart LR\n", "  a --", "> b", "\n``", "`", "\n\nDone." };
+
+            var draws = new List<int>();
+            foreach (string piece in pieces)
+            {
+                turn.AppendText(piece);
+                draws.Add(renderer.Calls.Count);
+            }
+
+            // While the fence is open the block is code; the ninth piece closes it.
+            Assert.Equal(new[] { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1 }, draws);
+            Assert.Equal(Flow, renderer.Calls[0].Request.Source);
+            Assert.Null(renderer.Calls[0].Request.KrokiServer);
+            Assert.Contains("Drawing the diagram…", Lines(turn));
+            Assert.Null(Picture(turn));
+        });
+
+        [Fact]
+        public Task When_the_draw_ends_the_turn_shows_the_picture_without_any_new_text() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, renderer) = DiagramTurn();
+            turn.AppendText("Look:\n\n" + ChatDiagramFakes.Block() + "\n\nThat is all.");
+            Assert.Contains("Drawing the diagram…", Lines(turn));
+            string raw = turn.RawText;
+
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture(width: 100, height: 50));
+
+            Assert.Equal(raw, turn.RawText);
+            var picture = Picture(turn);
+            Assert.NotNull(picture);
+            Assert.Equal(100, picture!.MaxWidth);
+            Assert.DoesNotContain("Drawing the diagram…", Lines(turn));
+            Assert.Contains("That is all.", Rendered(turn), StringComparison.Ordinal);
+            Assert.Single(renderer.Calls);
+        });
+
+        [Fact]
+        public Task Text_that_streams_after_the_picture_keeps_it_and_asks_for_nothing_more() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, renderer) = DiagramTurn();
+            turn.AppendText(ChatDiagramFakes.Block() + "\n\n");
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            var first = Picture(turn)!.Source;
+
+            for (int i = 0; i < 25; i++)
+            {
+                turn.AppendText("more ");
+                // Every rebuild finds the picture already there: the same bitmap, never "Drawing…" again.
+                Assert.Same(first, Picture(turn)!.Source);
+                Assert.DoesNotContain("Drawing the diagram…", Lines(turn));
+            }
+            turn.Complete(DateTime.Now);
+
+            Assert.Same(first, Picture(turn)!.Source);
+            Assert.Single(renderer.Calls);
+        });
+
+        [Fact]
+        public Task A_theme_change_draws_the_turn_again_in_the_new_theme_and_a_theme_it_already_has_draws_nothing() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, renderer) = DiagramTurn();
+            turn.AppendText(ChatDiagramFakes.Block());
+            Assert.True(renderer.Calls[0].Request.Dark);   // a turn is dark until it is told
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            var dark = Picture(turn)!.Source;
+
+            turn.ApplyTheme(false);
+
+            Assert.Equal(2, renderer.Calls.Count);
+            Assert.False(renderer.Calls[1].Request.Dark);
+            Assert.Null(Picture(turn));   // the dark picture is not shown on a light answer
+            Assert.Contains("Drawing the diagram…", Lines(turn));
+
+            turn.ApplyTheme(false);
+            Assert.Equal(2, renderer.Calls.Count);
+
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramFakes.Picture());
+            Assert.NotNull(Picture(turn));
+            Assert.NotSame(dark, Picture(turn)!.Source);
+
+            turn.ApplyTheme(true);
+            Assert.Equal(2, renderer.Calls.Count);   // the dark picture is still kept
+            Assert.Same(dark, Picture(turn)!.Source);
+        });
+
+        [Fact]
+        public void A_theme_given_before_the_first_text_renders_nothing_and_is_used_by_the_first_render() => UiThread.Run(() =>
+        {
+            var (turn, _, renderer) = DiagramTurn();
+            var build = CountBuilds(turn);
+
+            turn.ApplyTheme(false);
+
+            Assert.Equal(0, build());
+            Assert.Equal(Visibility.Collapsed, turn.Answer.Visibility);
+
+            turn.AppendText(ChatDiagramFakes.Block());
+            Assert.False(Assert.Single(renderer.Calls).Request.Dark);
+        });
+
+        [Fact]
+        public Task A_draw_that_fails_is_shown_once_and_never_asked_for_again_however_often_the_turn_renders() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, renderer) = DiagramTurn();
+            var builds = CountBuilds(turn);
+            turn.AppendText(ChatDiagramFakes.Block() + "\n\n");
+            Assert.Equal(1, builds());
+
+            // A failure the engine does not keep (a timeout): only the adapter stands between it and draw, fail, redraw, draw.
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramResult.Failure(DiagramText.TookTooLong, lasting: false));
+
+            Assert.Equal(2, builds());   // one redraw, for the end of the draw
+            Assert.Contains("This diagram could not be drawn: " + DiagramText.TookTooLong, Lines(turn));
+            Assert.Null(Picture(turn));
+
+            await Task.Delay(150);       // left alone, it does not go round again
+            Assert.Equal(2, builds());
+            Assert.Single(renderer.Calls);
+
+            for (int i = 0; i < 50; i++) turn.AppendText("more ");
+            turn.ApplyTheme(false);
+            turn.ApplyTheme(true);
+            turn.Complete(DateTime.Now);
+
+            Assert.Equal(2, renderer.Calls.Count);   // the dark failure once, and the light theme's own draw
+            Assert.True(renderer.Calls[0].Request.Dark);
+            Assert.False(renderer.Calls[1].Request.Dark);
+            Assert.Contains("This diagram could not be drawn: " + DiagramText.TookTooLong, Lines(turn));
+        });
+
+        [Fact]
+        public Task A_turn_the_window_dropped_is_not_rendered_again_and_asks_for_no_picture() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, renderer) = DiagramTurn();
+            turn.AppendText(ChatDiagramFakes.Block());
+            var builds = CountBuilds(turn);
+            var shown = turn.Answer.Document;
+
+            turn.Release();
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+
+            Assert.Equal(0, builds());
+            Assert.Same(shown, turn.Answer.Document);
+
+            turn.ApplyTheme(false);
+            Assert.Equal(0, builds());
+
+            // A stream that was cancelled may still end the turn: it renders as text and code, and draws nothing.
+            turn.AppendText("\n\n" + ChatDiagramFakes.Block("pie\n  \"a\" : 1"));
+            turn.Complete(DateTime.Now);
+            Assert.Single(renderer.Calls);
+            Assert.Empty(ChatDocument.All<Image>(turn.Answer.Document));
+        });
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static WeakReference WaitingTurn(ChatDiagrams diagrams)
+        {
+            var turn = new AskTurnView("q") { Diagrams = diagrams, RenderInterval = TimeSpan.Zero };
+            turn.AppendText(ChatDiagramFakes.Block());
+            return new WeakReference(turn);
+        }
+
+        [Fact]
+        public Task A_draw_still_running_does_not_keep_its_turn_alive() => UiThread.RunAsync(async () =>
+        {
+            var renderer = new FakeRenderer();
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+
+            WeakReference turn = WaitingTurn(diagrams);
+            Assert.Single(renderer.Calls);
+            for (int i = 0; i < 3; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+            Assert.False(turn.IsAlive);   // the adapter holds the turn's redraw, and the redraw holds the turn only weakly
+
+            // The draw ends for a turn that is gone: nothing is thrown, and the picture is there for whoever asks next.
+            renderer.Finish(0, DiagramFakes.Picture());
+            await ChatDiagramFakes.Until(() => diagrams.Get(Flow, true, null).Status == ChatDiagramStatus.Drawn, "the picture");
+            Assert.Single(renderer.Calls);
+        });
+
+        [Fact]
+        public Task The_Source_choice_of_a_diagram_survives_the_next_render_and_belongs_to_its_turn() => UiThread.RunAsync(async () =>
+        {
+            var renderer = new FakeRenderer();
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            var one = new AskTurnView("q") { Diagrams = diagrams, RenderInterval = TimeSpan.Zero };
+            var two = new AskTurnView("q") { Diagrams = diagrams, RenderInterval = TimeSpan.Zero };
+            one.AppendText(ChatDiagramFakes.Block() + "\n\n");
+            two.AppendText(ChatDiagramFakes.Block() + "\n\n");
+            Assert.Single(renderer.Calls);   // the same diagram in two turns is one draw
+
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            Assert.NotNull(Picture(one));
+            Assert.NotNull(Picture(two));    // and both turns are told
+
+            RaiseClick(ChatDocument.All<Button>(one.Answer.Document).Single(b => Equals(b.Content, "Source")));
+            Assert.Equal(Visibility.Collapsed, Picture(one)!.Visibility);
+
+            one.AppendText("more");          // a new document, with new buttons
+            two.AppendText("more");
+
+            Assert.Equal(Visibility.Collapsed, Picture(one)!.Visibility);
+            Assert.Equal(Visibility.Visible, ChatDocument.All<System.Windows.Controls.TextBox>(one.Answer.Document).Single().Visibility);
+            Assert.Equal(Visibility.Visible, Picture(two)!.Visibility);
+        });
+
+        [Fact]
+        public Task With_plain_links_a_diagram_is_still_drawn_and_no_link_is_left_beside_it_or_in_its_error() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, renderer) = DiagramTurn();
+            turn.PlainLinks = true;
+            turn.AppendText("See [site](https://example.com/a).\n\n" + ChatDiagramFakes.Block() + "\n\n" + ChatDiagramFakes.Block("pie"));
+
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramResult.Failure("No diagram: see [help](https://evil.example/h)", lasting: true));
+
+            Assert.Empty(ChatDocument.All<Hyperlink>(turn.Answer.Document));
+            Assert.Single(ChatDocument.All<Image>(turn.Answer.Document));
+            Assert.Contains("https://example.com/a", Rendered(turn), StringComparison.Ordinal);
+            Assert.Contains("This diagram could not be drawn: No diagram: see [help](https://evil.example/h)", Lines(turn));
+        });
+
+        [Fact]
+        public void A_turn_without_a_source_of_pictures_shows_mermaid_as_code() => UiThread.Run(() =>
+        {
+            var turn = new AskTurnView("q");   // ChatDiagrams.Current is null in tests
+
+            turn.AppendText(ChatDiagramFakes.Block());
+
+            Assert.Null(turn.Diagrams);
+            Assert.Empty(ChatDocument.All<Image>(turn.Answer.Document));
+            Assert.Equal("Copy code", Assert.Single(ChatDocument.All<Button>(turn.Answer.Document)).ToolTip);
+        });
+
+        [Fact]
+        public void A_mouse_reaches_the_Source_toggle_and_the_Copy_button_of_a_diagram_in_the_Ask_answer() => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            var answer = new AnswerBox { Style = ChatStyles.Get("ChatAnswer") };
+            AskThemeApplier.ApplyResources(answer.Resources, AskPalette.Dark);
+            answer.Show(ChatDocument.Build(ChatMarkdown.Parse(ChatDiagramFakes.Block()), new ChatRender { Diagrams = diagrams }));
+            var buttons = ChatDocument.All<Button>(answer.Document);
+
+            Assert.True(PadAnswerBoxTests.MouseReaches(answer, buttons.Single(b => Equals(b.Content, "Source"))));
+            Assert.True(PadAnswerBoxTests.MouseReaches(answer, buttons.Single(b => Equals(b.Content, "Copy"))));
         });
     }
 }

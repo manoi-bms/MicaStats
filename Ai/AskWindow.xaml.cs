@@ -102,6 +102,7 @@ namespace Kil0bitSystemMonitor.Ai
             {
                 _cts?.Cancel();
                 _config.PropertyChanged -= OnConfigChanged;
+                foreach (AskTurnView turn in _turns) turn.Release();   // a picture that arrives later redraws nothing
                 if (ReferenceEquals(s_current, this)) s_current = null;
             };
             UpdateButtons();
@@ -132,6 +133,10 @@ namespace Kil0bitSystemMonitor.Ai
             _palette = AskPalette.For(_config.AskTheme);
             AskThemeApplier.ApplyResources(Resources, _palette);
             ModernWpf.ThemeManager.SetRequestedTheme(this, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
+
+            // The brushes repaint what is shown, but a diagram is a bitmap drawn for one theme: each
+            // turn builds its answer again. Before the menus below, which are then the new ones.
+            foreach (AskTurnView turn in _turns) turn.ApplyTheme(_palette.IsDark);
 
             // Sun (E706) offers the light theme, moon (E708) the dark one.
             ThemeButton.Content = _palette.IsDark ? "\uE706" : "\uE708";
@@ -206,6 +211,8 @@ namespace Kil0bitSystemMonitor.Ai
             _generation++;
             // A new instance, not Clear(): an orphaned stream rolls back its own conversation.
             _conversation = new AiConversation();
+            // A diagram still being drawn must not render a turn that is gone when it arrives.
+            foreach (AskTurnView turn in _turns) turn.Release();
             _turns.Clear();
             TranscriptPanel.Children.Clear();
             EmptyState.Visibility = Visibility.Visible;
@@ -351,6 +358,7 @@ namespace Kil0bitSystemMonitor.Ai
         private AskTurnView AddTurn(string question)
         {
             var turn = new AskTurnView(question) { PlainLinks = _conversation.NotesEverRead || _turns.Any(t => t.PlainLinks) };
+            turn.ApplyTheme(_palette.IsDark);   // before its first render: its diagrams are drawn for this theme
             _turns.Add(turn);
             TranscriptPanel.Children.Add(turn.Root);
             EmptyState.Visibility = Visibility.Collapsed;

@@ -94,6 +94,14 @@ public partial class App
         // After AiTools exists (Task 7's code above this line).
         ApplyToolPipe();
         ApplyMcpHttp();
+
+        // Mermaid blocks in AI answers, in Ask MicaStats and in MicaPad: drawn by MicaPad's own
+        // renderer, on this PC, while Settings → MicaPad → Draw diagrams is on. Nothing is made
+        // here: the renderer by the first answer that holds a diagram (or the first MicaPad
+        // window), its browser page by the first draw.
+        AppConfig diagramSettings = config.Config;
+        Kil0bitSystemMonitor.Ai.ChatDiagrams.Current =
+            new Kil0bitSystemMonitor.Ai.ChatDiagrams(DiagramRendererOnFirstUse, () => diagramSettings.PadDiagrams);
         // AI anchor: start
     }
 

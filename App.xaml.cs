@@ -34,8 +34,14 @@ namespace Kil0bitSystemMonitor
         private static Kil0bitSystemMonitor.Services.Pad.CredentialVault? s_padVault;
         private static Kil0bitSystemMonitor.Pad.VaultSession? s_vaultSession;
 
-        /// <summary>Draws MicaPad's diagrams for every window (one hidden WebView2); created with the first MicaPad window, disposed at exit.</summary>
+        /// <summary>
+        /// Draws the diagrams of every MicaPad window and of AI answers (one hidden WebView2); made by
+        /// <see cref="DiagramRendererOnFirstUse"/>, disposed at exit.
+        /// </summary>
         private static Kil0bitSystemMonitor.Services.Pad.DiagramRenderer? s_diagrams;
+
+        /// <summary>Set at exit: from then on no renderer is made, so a late answer cannot start one that nothing would dispose.</summary>
+        private static bool s_diagramsClosed;
         private static Kil0bitSystemMonitor.Services.Pad.ImageSources? s_images;
 
         /// <summary>The config the search follows and its handler, removed at exit.</summary>
@@ -682,6 +688,32 @@ namespace Kil0bitSystemMonitor
         internal static Kil0bitSystemMonitor.Pad.PadRuntime? PadHostIfStarted => s_padRuntime;
 
         /// <summary>
+        /// The diagram renderer, made the first time something needs it: a MicaPad window
+        /// (<see cref="OpenPad"/>) or a Mermaid block in an AI answer
+        /// (<see cref="Kil0bitSystemMonitor.Ai.ChatDiagrams"/>), so Ask MicaStats can draw before
+        /// MicaPad was ever opened. This is the only place it is made, so both get the same one.
+        /// Making it starts nothing: its hidden browser page is created by the first draw. Null
+        /// before the config exists. Once exit began none is made: this gives the disposed one,
+        /// which draws nothing, or null. UI thread.
+        /// </summary>
+        internal static Kil0bitSystemMonitor.Services.Pad.DiagramRenderer? DiagramRendererOnFirstUse()
+        {
+            if (s_diagrams != null || s_diagramsClosed) return s_diagrams;
+            var config = ConfigService?.Config;
+            if (config == null) return null;
+
+            s_diagrams = new Kil0bitSystemMonitor.Services.Pad.DiagramRenderer(
+                () => Kil0bitSystemMonitor.Pad.DiagramPage.CreateAsync(
+                    Kil0bitSystemMonitor.Pad.DiagramPage.DefaultUserDataFolder,
+                    Kil0bitSystemMonitor.Pad.DiagramPage.ScriptsFolder),
+                warn: message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("pad", message),
+                kroki: new Kil0bitSystemMonitor.Services.Pad.KrokiClient(),
+                krokiServerNow: () => config.PadKroki ? config.PadKrokiServer : null);   // what the windows send (MicaPadWindow.ConfigureDiagrams)
+            Kil0bitSystemMonitor.Pad.MicaPadWindow.DiagramRenderer = s_diagrams;
+            return s_diagrams;
+        }
+
+        /// <summary>
         /// Shows MicaPad, creating its workspace on first use, and opens <paramref name="path"/> in a
         /// tab when given. From the overlay menu, the hotkey, <c>--pad</c> and the settings page.
         /// A file already open in a MicaPad window brings that window forward; anything else goes to
@@ -697,17 +729,8 @@ namespace Kil0bitSystemMonitor
                 // The workspace (restored) and the search: the same ones a note tool may have started already.
                 var workspace = PadHost.EnsureStarted();
 
-                if (s_diagrams == null)
-                {
-                    s_diagrams = new Kil0bitSystemMonitor.Services.Pad.DiagramRenderer(
-                        () => Kil0bitSystemMonitor.Pad.DiagramPage.CreateAsync(
-                            Kil0bitSystemMonitor.Pad.DiagramPage.DefaultUserDataFolder,
-                            Kil0bitSystemMonitor.Pad.DiagramPage.ScriptsFolder),
-                        warn: message => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("pad", message),
-                        kroki: new Kil0bitSystemMonitor.Services.Pad.KrokiClient(),
-                        krokiServerNow: () => config.PadKroki ? config.PadKrokiServer : null);   // what the windows send (MicaPadWindow.ConfigureDiagrams)
-                    Kil0bitSystemMonitor.Pad.MicaPadWindow.DiagramRenderer = s_diagrams;
-                }
+                // The same renderer an AI answer may have made already.
+                DiagramRendererOnFirstUse();
 
                 if (s_images == null)
                 {
@@ -872,6 +895,7 @@ namespace Kil0bitSystemMonitor
                 // WPF has already closed MicaPad by now, so the window-state recording relies on Quit or
                 // SessionEnding having called PrepareForExit first. This flush is the writer-thread drain.
                 FlushPad();
+                s_diagramsClosed = true;
                 s_diagrams?.Dispose();
                 s_images?.Dispose();
                 s_vaultSession?.Dispose();

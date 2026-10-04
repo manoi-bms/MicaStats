@@ -46,12 +46,23 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly Ellipse[] _dots = new Ellipse[3];
         private readonly DispatcherTimer _renderTimer;
         private readonly Stopwatch _sinceRender = new();
+
+        /// <summary>The sources of the diagrams whose Source toggle is on: kept here, because every render builds new buttons.</summary>
+        private readonly HashSet<string> _sourceShown = new(StringComparer.Ordinal);
+
+        /// <summary>This turn's redraw, the same delegate at every render, so a draw tells it once.</summary>
+        private readonly Action _invalidate;
+        private bool _dark = true;
+        private bool _released;
         private bool _rendered;
         private bool _renderFailed;
 
         /// <summary>Builds the visuals for one question.</summary>
         public AskTurnView(string question)
         {
+            _invalidate = RedrawOf(this);
+            BuildDocument = raw => ChatDocument.Build(ChatMarkdown.Parse(raw), NewRender());
+
             Question = new TextBox
             {
                 Style = ChatStyles.Get("ChatReadOnlyText"),
@@ -243,7 +254,7 @@ namespace Kil0bitSystemMonitor.Ai
         public TextBlock TimeText { get; }
 
         /// <summary>Turns the answer's Markdown into the document shown. Tests replace it to make rendering fail.</summary>
-        internal Func<string, FlowDocument> BuildDocument { get; set; } = raw => ChatDocument.Build(ChatMarkdown.Parse(raw), ChatRender.Default);
+        internal Func<string, FlowDocument> BuildDocument { get; set; }
 
         /// <summary>Where a render failure is reported, once per answer. Tests replace it so nothing reaches the real log.</summary>
         internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("ai", message);
@@ -259,6 +270,62 @@ namespace Kil0bitSystemMonitor.Ai
 
         /// <summary>The shortest time between two renders of a streaming answer.</summary>
         internal TimeSpan RenderInterval { get; set; } = TimeSpan.FromMilliseconds(100);
+
+        /// <summary>
+        /// Draws the answer's Mermaid blocks; null leaves them as code. The app's own by default
+        /// (<see cref="ChatDiagrams.Current"/>, null in tests); the pictures are shared, the redraw
+        /// and the Source choices are this turn's.
+        /// </summary>
+        internal IChatDiagrams? Diagrams { get; set; } = ChatDiagrams.Current;
+
+        /// <summary>
+        /// The window's theme changed (or, for a new turn, is told for the first time). The brushes
+        /// repaint by themselves, but a diagram is a bitmap drawn for one theme, so an answer that
+        /// has been rendered is built again and asks for its pictures in the new theme.
+        /// </summary>
+        internal void ApplyTheme(bool dark)
+        {
+            if (_dark == dark) return;
+            _dark = dark;
+            if (_rendered && !_released) RenderNow();
+        }
+
+        /// <summary>
+        /// The window dropped this turn (New conversation, or it closed). A picture that arrives
+        /// later, or a theme change, renders it no more, and if a cancelled stream still ends it,
+        /// it asks for no picture.
+        /// </summary>
+        internal void Release()
+        {
+            _released = true;
+            _renderTimer.Stop();
+        }
+
+        /// <summary>
+        /// What one build of the answer's document needs: this turn's theme, Source choices and
+        /// redraw. Never <see cref="ChatRender.Default"/>, which every view would share.
+        /// </summary>
+        private ChatRender NewRender() => new()
+        {
+            Diagrams = _released ? null : Diagrams,
+            Dark = _dark,
+            Invalidate = _invalidate,
+            SourceShown = _sourceShown,
+        };
+
+        /// <summary>
+        /// The redraw a draw is given to call when it ends. It holds the turn only weakly: the draw
+        /// may outlive the turn (New conversation, a closed window), and must neither keep it alive
+        /// until then nor render it when it is gone.
+        /// </summary>
+        private static Action RedrawOf(AskTurnView turn)
+        {
+            var weak = new WeakReference<AskTurnView>(turn);
+            return () =>
+            {
+                if (weak.TryGetTarget(out AskTurnView? target) && !target._released) target.RenderNow();
+            };
+        }
 
         /// <summary>
         /// Adds streamed text to the answer. Whitespace before the first visible character is

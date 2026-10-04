@@ -670,5 +670,122 @@ namespace Kil0bitSystemMonitor.Tests
                 window.Close();
             }
         });
+
+        // ---- Mermaid diagrams in answers ------------------------------------------------------------
+
+        private static AssistantUpdate[] AnswerWith(string text) => new[]
+        {
+            new AssistantUpdate(AssistantUpdateKind.Text, text),
+            new AssistantUpdate(AssistantUpdateKind.Done),
+        };
+
+        [Fact]
+        public void A_turn_draws_in_the_windows_theme_and_a_theme_change_draws_every_turn_again() => UiThread.Run(() =>
+        {
+            const string pie = "pie\n  \"a\" : 1";
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            var before = ChatDiagrams.Current;
+            ChatDiagrams.Current = diagrams;   // what the app sets at startup; a turn takes it when it is made
+            var h = new Harness();
+            var config = new Kil0bitSystemMonitor.Models.AppConfig { AskTheme = "Light" };
+            var window = new AskWindow(() => h.Setups.Dequeue(), () => { }, _ => "", null, config);
+            try
+            {
+                h.Setups.Enqueue(h.Answer(AnswerWith(ChatDiagramFakes.Block())));
+                h.Setups.Enqueue(h.Answer(AnswerWith(ChatDiagramFakes.Block(pie))));
+                Send(window, "One?");
+                Send(window, "Two?");
+
+                Assert.NotEmpty(diagrams.Gets);
+                Assert.All(diagrams.Gets, g => Assert.False(g.Dark));   // a new turn has the window's theme before it first renders
+                Assert.All(window.Turns, t => Assert.Single(ChatDocument.All<System.Windows.Controls.Image>(t.Answer.Document)));
+                diagrams.Gets.Clear();
+
+                config.AskTheme = "Dark";
+
+                // A diagram is a bitmap drawn for one theme: every turn builds its document again.
+                Assert.Equal(new[] { (ChatDiagramFakes.Flow, true), (pie, true) }, diagrams.Gets.Select(g => (g.Source, g.Dark)));
+                var menu = ChatDocument.All<System.Windows.Controls.Image>(window.Turns[0].Answer.Document).Single().ContextMenu!;
+                Assert.Equal(ModernWpf.ElementTheme.Dark, ModernWpf.ThemeManager.GetRequestedTheme(menu));
+                diagrams.Gets.Clear();
+
+                window.ToggleTheme();
+
+                Assert.Equal(new[] { (ChatDiagramFakes.Flow, false), (pie, false) }, diagrams.Gets.Select(g => (g.Source, g.Dark)));
+                menu = ChatDocument.All<System.Windows.Controls.Image>(window.Turns[0].Answer.Document).Single().ContextMenu!;
+                Assert.Equal(ModernWpf.ElementTheme.Light, ModernWpf.ThemeManager.GetRequestedTheme(menu));
+            }
+            finally
+            {
+                window.Close();
+                ChatDiagrams.Current = before;
+            }
+        });
+
+        [Fact]
+        public Task New_conversation_drops_its_turns_and_a_picture_that_arrives_later_redraws_none_of_them() => UiThread.RunAsync(async () =>
+        {
+            var renderer = new FakeRenderer();
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            var before = ChatDiagrams.Current;
+            ChatDiagrams.Current = diagrams;
+            var h = new Harness();
+            var window = h.Build();
+            try
+            {
+                h.Setups.Enqueue(h.Answer(AnswerWith(ChatDiagramFakes.Block())));
+                Send(window, "One?");
+                var turn = Assert.Single(window.Turns);
+                Assert.Single(renderer.Calls);
+                var shown = turn.Answer.Document;
+
+                Click(window.NewButton);
+                await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+
+                Assert.Same(shown, turn.Answer.Document);   // the dropped turn was not built again
+                Assert.Empty(window.Turns);
+
+                // The next conversation still draws: the picture is kept, so it is there at once.
+                h.Setups.Enqueue(h.Answer(AnswerWith(ChatDiagramFakes.Block())));
+                Send(window, "Two?");
+                Assert.Single(ChatDocument.All<System.Windows.Controls.Image>(window.Turns[0].Answer.Document));
+                Assert.Single(renderer.Calls);
+            }
+            finally
+            {
+                window.Close();
+                ChatDiagrams.Current = before;
+            }
+        });
+
+        [Fact]
+        public Task A_closed_window_is_not_drawn_again_when_a_picture_arrives() => UiThread.RunAsync(async () =>
+        {
+            var renderer = new FakeRenderer();
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            var before = ChatDiagrams.Current;
+            ChatDiagrams.Current = diagrams;
+            var h = new Harness();
+            var window = h.Build();
+            bool closed = false;
+            try
+            {
+                h.Setups.Enqueue(h.Answer(AnswerWith(ChatDiagramFakes.Block())));
+                Send(window, "One?");
+                var turn = Assert.Single(window.Turns);
+                var shown = turn.Answer.Document;
+
+                window.Close();
+                closed = true;
+                await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+
+                Assert.Same(shown, turn.Answer.Document);
+            }
+            finally
+            {
+                if (!closed) window.Close();
+                ChatDiagrams.Current = before;
+            }
+        });
     }
 }

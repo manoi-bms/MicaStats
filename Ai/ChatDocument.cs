@@ -5,6 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
@@ -16,6 +18,10 @@ using List = System.Windows.Documents.List;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using TextBox = System.Windows.Controls.TextBox;
 using Button = System.Windows.Controls.Button;
+using ContextMenu = System.Windows.Controls.ContextMenu;
+using Control = System.Windows.Controls.Control;
+using Image = System.Windows.Controls.Image;
+using MenuItem = System.Windows.Controls.MenuItem;
 
 namespace Kil0bitSystemMonitor.Ai
 {
@@ -23,7 +29,9 @@ namespace Kil0bitSystemMonitor.Ai
     /// Turns parsed answer Markdown (<see cref="ChatMarkdown"/>) into the FlowDocument the Ask
     /// window shows: paragraphs with line breaks, headings, nested lists, quotes, code blocks,
     /// rules and styled runs. Links open only through <see cref="Open"/>, which allows http, https
-    /// and mailto and nothing else, as MicaPad does.
+    /// and mailto and nothing else, as MicaPad does. A closed <c>mermaid</c> block becomes a
+    /// picture when the view's <see cref="ChatRender"/> can get one; nothing is ever fetched to
+    /// draw an answer.
     /// </summary>
     internal static class ChatDocument
     {
@@ -69,6 +77,7 @@ namespace Kil0bitSystemMonitor.Ai
             render ??= ChatRender.Default;
             var document = NewDocument();
             var lists = new List<(List List, int Depth, ChatBlockKind Kind)>();
+            int diagrams = 0;
             foreach (ChatBlock block in blocks)
             {
                 if (block.Kind is ChatBlockKind.Bullet or ChatBlockKind.Numbered)
@@ -82,7 +91,7 @@ namespace Kil0bitSystemMonitor.Ai
                 {
                     ChatBlockKind.Heading => Heading(block),
                     ChatBlockKind.Quote => Quote(block),
-                    ChatBlockKind.Code => CodeBlock(block, render),
+                    ChatBlockKind.Code => CodeOrDiagram(block, render, ref diagrams),
                     ChatBlockKind.Table when block.Table is { } table => TableBlock(table),
                     ChatBlockKind.Rule => Rule(),
                     _ => Paragraph(block.Runs, ParagraphSpacing),
@@ -221,51 +230,28 @@ namespace Kil0bitSystemMonitor.Ai
         /// A rounded box with a header (the language on the left, a flat Copy button on the right)
         /// above the code, which is selectable and wrapped, in a monospace font.
         /// </summary>
-        private static BlockUIContainer CodeBlock(ChatBlock block, ChatRender render)
+        private static BlockUIContainer CodeBlock(ChatBlock block, ChatRender render) =>
+            new(CodeBox(block, render)) { Margin = ParagraphSpacing };
+
+        /// <summary>A code block's box, without the block around it: also what a diagram shows while it is drawn, and when it cannot be.</summary>
+        private static Border CodeBox(ChatBlock block, ChatRender render)
         {
-            var text = new TextBox
-            {
-                Style = ChatStyles.Get("ChatReadOnlyText"),
-                Text = block.Code,
-                FontFamily = ChatPalette.MonoFont,
-                FontSize = ChatPalette.CodeSize,
-            };
-            AskMenus.Install(text, editable: false);
-
-            var copy = new Button
-            {
-                Style = ChatStyles.Get("ChatFlatButton"),
-                Content = CopyLabel,
-                ToolTip = "Copy code",
-                FontSize = 11.5,
-                Padding = new Thickness(6, 2, 6, 2),
-                HorizontalAlignment = HorizontalAlignment.Right,
-            };
-            string code = block.Code;
-            CopyTimer? timer = null;
-            copy.Click += (s, e) => timer = Copied(copy, render, code, timer);
-
             var header = new Grid { Margin = new Thickness(0, -4, -4, 4) };
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            if (block.Language.Length > 0)
-            {
-                var language = new TextBlock
-                {
-                    Text = block.Language,
-                    FontSize = 11.5,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                };
-                language.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Muted");
-                header.Children.Add(language);
-            }
+            if (block.Language.Length > 0) header.Children.Add(HeaderLabel(block.Language));
+            Button copy = CopyButton(render, block.Code, "Copy code");
             Grid.SetColumn(copy, 1);
             header.Children.Add(copy);
+            return Box(header, CodeText(block.Code));
+        }
 
+        /// <summary>The rounded box of a code block or a diagram: its header, then what it holds. The brush is a reference, so a theme switch repaints.</summary>
+        private static Border Box(UIElement header, params UIElement[] content)
+        {
             var inside = new StackPanel();
             inside.Children.Add(header);
-            inside.Children.Add(text);
+            foreach (UIElement part in content) inside.Children.Add(part);
             var box = new Border
             {
                 CornerRadius = new CornerRadius(8),
@@ -273,7 +259,54 @@ namespace Kil0bitSystemMonitor.Ai
                 Child = inside,
             };
             box.SetResourceReference(Border.BackgroundProperty, "Ask.CodeBack");
-            return new BlockUIContainer(box) { Margin = ParagraphSpacing };
+            return box;
+        }
+
+        /// <summary>Code as selectable, wrapped, monospace text with the Ask window's Copy and Select all menu.</summary>
+        private static TextBox CodeText(string code)
+        {
+            var text = new TextBox
+            {
+                Style = ChatStyles.Get("ChatReadOnlyText"),
+                Text = code,
+                FontFamily = ChatPalette.MonoFont,
+                FontSize = ChatPalette.CodeSize,
+            };
+            AskMenus.Install(text, editable: false);
+            return text;
+        }
+
+        /// <summary>The small muted word at the left of a box's header: a code block's language, or "Diagram".</summary>
+        private static TextBlock HeaderLabel(string text)
+        {
+            var label = new TextBlock
+            {
+                Text = text,
+                FontSize = 11.5,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+            label.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Muted");
+            return label;
+        }
+
+        private static Button FlatButton(string content) => new()
+        {
+            Style = ChatStyles.Get("ChatFlatButton"),
+            Content = content,
+            FontSize = 11.5,
+            Padding = new Thickness(6, 2, 6, 2),
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+
+        /// <summary>A header's Copy button for <paramref name="text"/>, with the "Copied" feedback.</summary>
+        private static Button CopyButton(ChatRender render, string text, string toolTip)
+        {
+            Button copy = FlatButton(CopyLabel);
+            copy.ToolTip = toolTip;
+            CopyTimer? timer = null;
+            copy.Click += (s, e) => timer = Copied(copy, render, text, timer);
+            return copy;
         }
 
         private const string CopyLabel = "Copy";
@@ -287,20 +320,27 @@ namespace Kil0bitSystemMonitor.Ai
         /// </summary>
         private static CopyTimer? Copied(Button copy, ChatRender render, string code, CopyTimer? previous)
         {
+            if (!CopyText(render, code)) return previous;
+
+            previous?.Stop();
+            copy.Content = "Copied";
+            return CopyTimer.Start(copy, CopiedFor);
+        }
+
+        /// <summary>Hands text to <see cref="ChatRender.Copy"/>. False when the hook threw, which is logged by type.</summary>
+        private static bool CopyText(ChatRender render, string text)
+        {
             try
             {
-                render.Copy(code);
+                render.Copy(text);
+                return true;
             }
             catch (Exception ex)
             {
                 // The type only: the message could quote the code.
                 DiagnosticsLog.Warn("ai", "Copying code failed (" + ex.GetType().Name + ")");
-                return previous;
+                return false;
             }
-
-            previous?.Stop();
-            copy.Content = "Copied";
-            return CopyTimer.Start(copy, CopiedFor);
         }
 
         /// <summary>The one-shot timer behind "Copied". It references its button through a <see cref="WeakReference{T}"/> only.</summary>
@@ -324,6 +364,192 @@ namespace Kil0bitSystemMonitor.Ai
             }
 
             public void Stop() => _timer.Stop();
+        }
+
+        /// <summary>The one fence word drawn as a picture in an answer, in any letter case. Every other word is code.</summary>
+        private const string DiagramWord = "mermaid";
+
+        private const string DrawingText = "Drawing the diagram…";
+        private const string NotDrawnText = "This diagram could not be drawn: ";
+
+        /// <summary>
+        /// A code block, or the picture of a Mermaid block: only when the view draws diagrams, the
+        /// fence is closed (an answer still streaming asks for nothing until then) and fewer than
+        /// <see cref="ChatDiagrams.MaxPerAnswer"/> diagrams come before it. The block is complete
+        /// when this returns, and everything it says is plain text; a picture that arrives later
+        /// comes with the next build of the document, never into this one.
+        /// </summary>
+        private static Block CodeOrDiagram(ChatBlock block, ChatRender render, ref int diagrams)
+        {
+            if (render.Diagrams is not { } pictures || !block.Closed || diagrams >= ChatDiagrams.MaxPerAnswer
+                || !string.Equals(block.Language, DiagramWord, StringComparison.OrdinalIgnoreCase))
+                return CodeBlock(block, render);
+
+            diagrams++;
+            ChatDiagramState state;
+            try
+            {
+                state = pictures.Get(block.Code, render.Dark, render.Invalidate);
+            }
+            catch (Exception ex)
+            {
+                // The type only: the message could quote the source.
+                DiagnosticsLog.Warn("ai", "Asking for a diagram in an answer failed (" + ex.GetType().Name + ")");
+                state = new ChatDiagramState(ChatDiagramStatus.Failed);
+            }
+
+            return state.Status switch
+            {
+                ChatDiagramStatus.Drawn when state.Picture != null => DiagramBlock(block, state, render),
+                ChatDiagramStatus.Drawing => Noted(CodeBox(block, render), above: DrawingText),
+                ChatDiagramStatus.Failed => Noted(CodeBox(block, render), below: NotDrawnText + (state.Error ?? DiagramText.Failed)),
+                _ => CodeBlock(block, render),
+            };
+        }
+
+        /// <summary>A code box with one muted line above or below it.</summary>
+        private static BlockUIContainer Noted(Border code, string? above = null, string? below = null)
+        {
+            var parts = new StackPanel();
+            if (above != null) parts.Children.Add(Note(above, new Thickness(0, 0, 0, 4)));
+            parts.Children.Add(code);
+            if (below != null) parts.Children.Add(Note(below, new Thickness(0, 4, 0, 0)));
+            return new BlockUIContainer(parts) { Margin = ParagraphSpacing };
+        }
+
+        /// <summary>
+        /// A muted, wrapping line of plain text. A renderer's message goes here as it is: it can
+        /// quote the diagram's source, which the model wrote, so it is never read as Markdown and
+        /// can hold no link.
+        /// </summary>
+        private static TextBlock Note(string text, Thickness margin)
+        {
+            var note = new TextBlock
+            {
+                Text = text,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = margin,
+            };
+            note.SetResourceReference(TextBlock.ForegroundProperty, "Ask.Muted");
+            return note;
+        }
+
+        /// <summary>
+        /// A drawn diagram: the box of a code block, with "Diagram", the Source toggle and Copy in
+        /// its header, and under it the picture or, while Source is on, the Mermaid text. The
+        /// picture is shown at its own size (<see cref="ChatDiagramState.Width"/> by
+        /// <see cref="ChatDiagramState.Height"/>, as MicaPad's <c>DiagramPicture.SizeOf</c> takes
+        /// it), made smaller when the answer is narrower and never enlarged. Both the picture and
+        /// the text are in the block from the start; the toggle only shows one of them.
+        /// </summary>
+        private static BlockUIContainer DiagramBlock(ChatBlock block, ChatDiagramState state, ChatRender render)
+        {
+            string source = block.Code;
+
+            var picture = new Image
+            {
+                Source = state.Picture,
+                Stretch = Stretch.Uniform,
+                StretchDirection = StretchDirection.DownOnly,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Cursor = Cursors.Arrow,   // a picture, not text: the answer's text cursor stops at its edge
+            };
+            if (state.Width > 0) picture.MaxWidth = state.Width;
+            if (state.Height > 0) picture.MaxHeight = state.Height;
+            RenderOptions.SetBitmapScalingMode(picture, BitmapScalingMode.HighQuality);
+            picture.ContextMenu = DiagramMenu(state.Picture as BitmapSource, source, render);
+
+            TextBox text = CodeText(source);
+
+            Button toggle = FlatButton("Source");
+            void Show(bool sourceShown)
+            {
+                picture.Visibility = sourceShown ? Visibility.Collapsed : Visibility.Visible;
+                text.Visibility = sourceShown ? Visibility.Visible : Visibility.Collapsed;
+                // The accent marks the toggle as on; off, the style's muted color is back.
+                if (sourceShown) toggle.SetResourceReference(Control.ForegroundProperty, "Ask.Accent");
+                else toggle.ClearValue(Control.ForegroundProperty);
+            }
+            Show(render.SourceShown.Contains(source));
+            toggle.Click += (s, e) =>
+            {
+                // The choice lives in the view's set, not on this button: the next build makes a new one.
+                bool sourceShown = text.Visibility != Visibility.Visible;
+                if (sourceShown) render.SourceShown.Add(source);
+                else render.SourceShown.Remove(source);
+                Show(sourceShown);
+            };
+
+            Button copy = CopyButton(render, source, "Copy the diagram's source");
+
+            var header = new Grid { Margin = new Thickness(0, -4, -4, 4) };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.Children.Add(HeaderLabel("Diagram"));
+            Grid.SetColumn(toggle, 1);
+            header.Children.Add(toggle);
+            Grid.SetColumn(copy, 2);
+            header.Children.Add(copy);
+
+            return new BlockUIContainer(Box(header, picture, text)) { Margin = ParagraphSpacing };
+        }
+
+        /// <summary>
+        /// A picture's right-click menu: Copy image and Copy source, in the Ask window's look for the
+        /// view's theme (a menu opens in its own popup, outside the view's brushes). A view with
+        /// another look, MicaPad's answer box, moves the entries into a menu of its own.
+        /// </summary>
+        private static ContextMenu DiagramMenu(BitmapSource? picture, string source, ChatRender render)
+        {
+            var copyImage = new MenuItem { Header = "Copy image", IsEnabled = picture != null };
+            copyImage.Click += (s, e) =>
+            {
+                if (picture != null) CopyPicture(picture, render.Dark);
+            };
+            var copySource = new MenuItem { Header = "Copy source" };
+            copySource.Click += (s, e) => CopyText(render, source);
+
+            // The tag is how a theme switch finds an Ask menu (AskMenus.Retheme).
+            var menu = new ContextMenu { Tag = typeof(AskMenus) };
+            menu.Items.Add(copyImage);
+            menu.Items.Add(copySource);
+            AskMenus.Apply(menu, render.Dark ? AskPalette.Dark : AskPalette.Light);
+            return menu;
+        }
+
+        /// <summary>Hands a diagram's picture to <see cref="ChatClipboard.SetImage"/> as it is at the time of the click. Never throws.</summary>
+        private static void CopyPicture(BitmapSource picture, bool dark)
+        {
+            try
+            {
+                ChatClipboard.SetImage(OnBoxColor(picture, dark));
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Warn("ai", "Copying a diagram failed (" + ex.GetType().Name + ")");
+            }
+        }
+
+        /// <summary>
+        /// The picture on the color of the box it is shown in. A diagram is drawn on nothing, and
+        /// most programs paste a transparent bitmap on black, where a light theme's dark lines
+        /// cannot be seen.
+        /// </summary>
+        private static BitmapSource OnBoxColor(BitmapSource picture, bool dark)
+        {
+            var area = new Rect(0, 0, picture.PixelWidth, picture.PixelHeight);
+            var visual = new DrawingVisual();
+            using (DrawingContext context = visual.RenderOpen())
+            {
+                context.DrawRectangle(Kil0bitSystemMonitor.Pad.PadThemeApplier.ToBrush((dark ? AskPalette.Dark : AskPalette.Light).CodeBack), null, area);
+                context.DrawImage(picture, area);
+            }
+            var flat = new RenderTargetBitmap(picture.PixelWidth, picture.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+            flat.Render(visual);
+            flat.Freeze();
+            return flat;
         }
 
         /// <summary>

@@ -14,7 +14,10 @@ using Xunit;
 using Border = System.Windows.Controls.Border;
 using Brush = System.Windows.Media.Brush;
 using Color = System.Windows.Media.Color;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using Image = System.Windows.Controls.Image;
 using List = System.Windows.Documents.List;
+using Size = System.Windows.Size;
 using TextBox = System.Windows.Controls.TextBox;
 
 namespace Kil0bitSystemMonitor.Tests
@@ -451,6 +454,430 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Empty(Click(Assert.Single(ChatDocument.All<Button>(document))));   // the shared hook is not called
             Assert.Equal(new[] { "code" }, copied);
+        });
+
+        // ---- Mermaid diagrams: a fake source of pictures, never the drawing page -------------------
+
+        private const string Flow = ChatDiagramFakes.Flow;
+
+        /// <summary>The document for <paramref name="markdown"/> built with <paramref name="render"/>, in a host that carries the Ask.* brushes.</summary>
+        private static FlowDocument BuildWith(string markdown, ChatRender render, AskPalette? palette = null)
+        {
+            var host = new System.Windows.Controls.RichTextBox();
+            AskThemeApplier.ApplyResources(host.Resources, palette ?? AskPalette.Dark);
+            var document = ChatDocument.Build(ChatMarkdown.Parse(markdown), render);
+            host.Document = document;
+            return document;
+        }
+
+        /// <summary>One Mermaid block whose picture is in <paramref name="state"/>.</summary>
+        private static (FlowDocument Document, FakeChatDiagrams Diagrams) Diagram(ChatDiagramState state, ISet<string>? shown = null)
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => state };
+            var render = shown == null ? new ChatRender { Diagrams = diagrams } : new ChatRender { Diagrams = diagrams, SourceShown = shown };
+            return (BuildWith(ChatDiagramFakes.Block(), render), diagrams);
+        }
+
+        private static Button ButtonNamed(FlowDocument document, string content) =>
+            Assert.Single(ChatDocument.All<Button>(document), b => Equals(b.Content, content));
+
+        private static List<string> Texts(FlowDocument document) => ChatDocument.All<TextBlock>(document).Select(t => t.Text).ToList();
+
+        [Fact]
+        public void A_mermaid_fence_that_is_still_open_is_code_and_no_picture_is_asked_for() => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams();
+
+            var document = BuildWith("Here it is:\n\n```mermaid\n" + Flow, new ChatRender { Diagrams = diagrams });
+
+            Assert.Empty(diagrams.Gets);   // nothing is drawn, or even asked for, until the closing fence arrives
+            Assert.Equal(Flow, Assert.Single(ChatDocument.All<TextBox>(document)).Text);
+            Assert.Empty(ChatDocument.All<Image>(document));
+            Assert.Equal(new[] { "mermaid" }, Texts(document));   // the code header's language, and no "Drawing…"
+        });
+
+        [Theory]
+        [InlineData("mermaid")]
+        [InlineData("Mermaid")]
+        [InlineData("MERMAID")]
+        public void A_closed_mermaid_fence_asks_for_its_picture_whatever_the_letter_case(string word) => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams();
+            Action invalidate = () => { };
+
+            BuildWith(ChatDiagramFakes.Block(word: word), new ChatRender { Diagrams = diagrams, Dark = false, Invalidate = invalidate });
+
+            var get = Assert.Single(diagrams.Gets);
+            Assert.Equal(Flow, get.Source);
+            Assert.False(get.Dark);                    // the view's theme
+            Assert.Same(invalidate, get.WhenDone);     // and the view's own redraw
+        });
+
+        [Theory]
+        [InlineData("dot")]
+        [InlineData("graphviz")]
+        [InlineData("markmap")]
+        [InlineData("svg")]
+        [InlineData("plantuml")]
+        [InlineData("d2")]
+        [InlineData("kroki")]
+        [InlineData("math")]
+        [InlineData("mmd")]
+        [InlineData("mermaids")]
+        [InlineData("")]
+        public void Every_other_fence_word_is_code_and_no_picture_is_asked_for(string word) => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+
+            var document = BuildWith(ChatDiagramFakes.Block(word: word), new ChatRender { Diagrams = diagrams });
+
+            Assert.Empty(diagrams.Gets);
+            Assert.Empty(ChatDocument.All<Image>(document));
+            Assert.Equal(Flow, Assert.Single(ChatDocument.All<TextBox>(document)).Text);
+            Assert.Equal("Copy code", Assert.Single(ChatDocument.All<Button>(document)).ToolTip);
+        });
+
+        [Fact]
+        public void A_render_without_pictures_shows_a_mermaid_block_as_code() => UiThread.Run(() =>
+        {
+            var document = Build(ChatDiagramFakes.Block());
+
+            Assert.Empty(ChatDocument.All<Image>(document));
+            Assert.Equal(new[] { "mermaid" }, Texts(document));
+            Assert.Equal("Copy code", Assert.Single(ChatDocument.All<Button>(document)).ToolTip);
+        });
+
+        [Fact]
+        public void Of_fifty_diagrams_eight_are_asked_for_and_the_rest_are_code() => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            static string Source(int i) => "pie\n  \"a\" : " + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string markdown = string.Join("\n\n", Enumerable.Range(0, 50).Select(i => ChatDiagramFakes.Block(Source(i))));
+
+            var document = BuildWith(markdown, new ChatRender { Diagrams = diagrams });
+
+            Assert.Equal(8, ChatDiagrams.MaxPerAnswer);
+            Assert.Equal(Enumerable.Range(0, 8).Select(Source), diagrams.Gets.Select(g => g.Source));
+            var blocks = document.Blocks.ToList();
+            Assert.Equal(50, blocks.Count);
+            Assert.All(blocks.Take(8), b => Assert.Single(ChatDocument.All<Image>(b)));
+            Assert.All(blocks.Skip(8), b =>
+            {
+                Assert.Empty(ChatDocument.All<Image>(b));
+                Assert.Equal("Copy code", Assert.Single(ChatDocument.All<Button>(b)).ToolTip);
+            });
+            Assert.Equal(Source(8), ChatDocument.All<TextBox>(blocks[8]).Single().Text);   // the ninth keeps its text, as code
+        });
+
+        [Fact]
+        public void A_diagram_that_is_off_is_a_code_block() => UiThread.Run(() =>
+        {
+            var (document, diagrams) = Diagram(new ChatDiagramState(ChatDiagramStatus.Off));
+
+            Assert.Single(diagrams.Gets);
+            var container = Assert.IsType<BlockUIContainer>(Assert.Single(document.Blocks));
+            var inside = Assert.IsType<StackPanel>(Assert.IsType<Border>(container.Child).Child);   // exactly what a code block is
+            Assert.Equal(Flow, Assert.IsType<TextBox>(inside.Children[1]).Text);
+            Assert.Equal(new[] { "mermaid" }, Texts(document));
+            Assert.Equal("Copy code", Assert.Single(ChatDocument.All<Button>(document)).ToolTip);
+            Assert.Empty(ChatDocument.All<Image>(document));
+        });
+
+        [Fact]
+        public void A_diagram_being_drawn_says_so_above_its_source() => UiThread.Run(() =>
+        {
+            var (document, _) = Diagram(new ChatDiagramState(ChatDiagramStatus.Drawing));
+
+            var container = Assert.IsType<BlockUIContainer>(Assert.Single(document.Blocks));
+            var parts = Assert.IsType<StackPanel>(container.Child).Children;
+            var note = Assert.IsType<TextBlock>(parts[0]);
+            Assert.Equal("Drawing the diagram…", note.Text);
+            Assert.Equal(Color.FromArgb(0x88, 0xED, 0xED, 0xF2), ColorOf(note.Foreground));   // muted
+            var code = Assert.IsType<Border>(parts[1]);
+            Assert.Equal(Flow, Assert.Single(ChatDocument.All<TextBox>(code)).Text);
+            Assert.Equal("Copy", ButtonNamed(document, "Copy").Content);
+            Assert.Empty(ChatDocument.All<Image>(document));
+        });
+
+        [Fact]
+        public void A_drawn_diagram_is_a_box_with_Diagram_Source_and_Copy_above_the_picture_at_most_its_own_size() => UiThread.Run(() =>
+        {
+            var state = ChatDiagramFakes.Drawn(width: 320, height: 120);
+
+            var (document, _) = Diagram(state);
+
+            var container = Assert.IsType<BlockUIContainer>(Assert.Single(document.Blocks));
+            Assert.Equal(new Thickness(0), container.Margin);   // the last block of the answer
+            var box = Assert.IsType<Border>(container.Child);
+            Assert.Equal(new CornerRadius(8), box.CornerRadius);
+            Assert.Equal(Color.FromRgb(0x16, 0x16, 0x1C), ColorOf(box.Background));
+            Assert.Equal(new[] { "Diagram" }, Texts(document));
+
+            var source = ButtonNamed(document, "Source");
+            var copy = ButtonNamed(document, "Copy");
+            Assert.Equal("Copy the diagram's source", copy.ToolTip);
+            Assert.Equal(2, ChatDocument.All<Button>(document).Count);
+
+            var picture = Assert.Single(ChatDocument.All<Image>(document));
+            Assert.Same(state.Picture, picture.Source);
+            Assert.Equal(Stretch.Uniform, picture.Stretch);
+            Assert.Equal(StretchDirection.DownOnly, picture.StretchDirection);   // made smaller for a narrow answer, never enlarged
+            Assert.Equal(320, picture.MaxWidth);
+            Assert.Equal(120, picture.MaxHeight);
+            Assert.Equal(HorizontalAlignment.Left, picture.HorizontalAlignment);
+            Assert.Equal(Visibility.Visible, picture.Visibility);
+
+            var text = Assert.Single(ChatDocument.All<TextBox>(document));
+            Assert.Equal(Flow, text.Text);
+            Assert.Equal(Visibility.Collapsed, text.Visibility);   // the source waits behind the toggle
+            Assert.True(text.IsReadOnly);
+
+            var menu = Assert.IsType<System.Windows.Controls.ContextMenu>(picture.ContextMenu);
+            Assert.Equal(new object[] { "Copy image", "Copy source" }, menu.Items.OfType<System.Windows.Controls.MenuItem>().Select(i => i.Header));
+            Assert.Empty(ChatDocument.All<Hyperlink>(document));   // a diagram is a picture: nothing in it can be clicked open
+        });
+
+        [Fact]
+        public void The_box_around_a_picture_follows_the_theme() => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+
+            var document = BuildWith(ChatDiagramFakes.Block(), new ChatRender { Diagrams = diagrams, Dark = false }, AskPalette.Light);
+
+            var box = Assert.IsType<Border>(Assert.IsType<BlockUIContainer>(Assert.Single(document.Blocks)).Child);
+            Assert.Equal(Color.FromRgb(0xF0, 0xF0, 0xF4), ColorOf(box.Background));
+            var label = Assert.Single(ChatDocument.All<TextBlock>(document));
+            Assert.Equal(Color.FromRgb(0x66, 0x66, 0x70), ColorOf(label.Foreground));
+        });
+
+        [Fact]
+        public void A_diagram_that_failed_is_its_source_with_the_reason_under_it_as_plain_text() => UiThread.Run(() =>
+        {
+            const string reason = "Parse error on line 2: see [the docs](https://evil.example/x) or https://evil.example/y";
+
+            var (document, _) = Diagram(ChatDiagramFakes.Failed(reason));
+
+            var container = Assert.IsType<BlockUIContainer>(Assert.Single(document.Blocks));
+            var parts = Assert.IsType<StackPanel>(container.Child).Children;
+            var code = Assert.IsType<Border>(parts[0]);
+            Assert.Equal(Flow, Assert.Single(ChatDocument.All<TextBox>(code)).Text);
+            var note = Assert.IsType<TextBlock>(parts[1]);
+            Assert.Equal("This diagram could not be drawn: " + reason, note.Text);   // exactly as the renderer said it
+            Assert.Equal(TextWrapping.Wrap, note.TextWrapping);
+            Assert.Equal(Color.FromArgb(0x88, 0xED, 0xED, 0xF2), ColorOf(note.Foreground));
+            Assert.Empty(ChatDocument.All<Image>(document));
+
+            // The message is never read as Markdown, so there is no link for RemoveLinks to find or to miss.
+            Assert.Empty(ChatDocument.All<Hyperlink>(document));
+            ChatDocument.RemoveLinks(document);
+            Assert.Equal("This diagram could not be drawn: " + reason, note.Text);
+        });
+
+        [Fact]
+        public void A_failure_without_a_message_still_says_something() => UiThread.Run(() =>
+        {
+            var (document, _) = Diagram(new ChatDiagramState(ChatDiagramStatus.Failed));
+
+            Assert.Contains("This diagram could not be drawn: " + Kil0bitSystemMonitor.Services.Pad.DiagramText.Failed, Texts(document));
+        });
+
+        [Fact]
+        public void The_Source_toggle_swaps_the_picture_and_the_code_and_keeps_the_choice_in_the_views_set() => UiThread.Run(() =>
+        {
+            var shown = new HashSet<string>(StringComparer.Ordinal);
+            var (document, _) = Diagram(ChatDiagramFakes.Drawn(), shown);
+            var toggle = ButtonNamed(document, "Source");
+            var picture = Assert.Single(ChatDocument.All<Image>(document));
+            var text = Assert.Single(ChatDocument.All<TextBox>(document));
+
+            RaiseClick(toggle);
+
+            Assert.Equal(Visibility.Collapsed, picture.Visibility);
+            Assert.Equal(Visibility.Visible, text.Visibility);
+            Assert.Equal(new[] { Flow }, shown);
+
+            RaiseClick(toggle);
+
+            Assert.Equal(Visibility.Visible, picture.Visibility);
+            Assert.Equal(Visibility.Collapsed, text.Visibility);
+            Assert.Empty(shown);
+        });
+
+        [Fact]
+        public void A_document_built_again_with_the_same_set_shows_the_source_of_that_diagram_only() => UiThread.Run(() =>
+        {
+            var shown = new HashSet<string>(StringComparer.Ordinal) { Flow };
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            string markdown = ChatDiagramFakes.Block() + "\n\n" + ChatDiagramFakes.Block("pie\n  \"a\" : 1");
+
+            var document = BuildWith(markdown, new ChatRender { Diagrams = diagrams, SourceShown = shown });
+
+            var blocks = document.Blocks.ToList();
+            Assert.Equal(Visibility.Collapsed, ChatDocument.All<Image>(blocks[0]).Single().Visibility);
+            Assert.Equal(Visibility.Visible, ChatDocument.All<TextBox>(blocks[0]).Single().Visibility);
+            Assert.Equal(Visibility.Visible, ChatDocument.All<Image>(blocks[1]).Single().Visibility);
+            Assert.Equal(Visibility.Collapsed, ChatDocument.All<TextBox>(blocks[1]).Single().Visibility);
+
+            RaiseClick(ChatDocument.All<Button>(blocks[0]).Single(b => Equals(b.Content, "Source")));   // and back to the picture
+            Assert.Equal(Visibility.Visible, ChatDocument.All<Image>(blocks[0]).Single().Visibility);
+            Assert.Empty(shown);
+        });
+
+        [Fact]
+        public void Two_renders_keep_their_Source_choices_apart() => UiThread.Run(() =>
+        {
+            var first = Diagram(ChatDiagramFakes.Drawn(), new HashSet<string>(StringComparer.Ordinal));
+            var second = Diagram(ChatDiagramFakes.Drawn(), new HashSet<string>(StringComparer.Ordinal));
+
+            RaiseClick(ButtonNamed(first.Document, "Source"));
+
+            Assert.Equal(Visibility.Collapsed, ChatDocument.All<Image>(first.Document).Single().Visibility);
+            Assert.Equal(Visibility.Visible, ChatDocument.All<Image>(second.Document).Single().Visibility);
+        });
+
+        [Fact]
+        public void A_diagrams_Copy_and_Copy_source_hand_the_mermaid_text_to_the_one_clipboard_hook() => UiThread.Run(() =>
+        {
+            var (document, _) = Diagram(ChatDiagramFakes.Drawn());
+            var copy = ButtonNamed(document, "Copy");
+
+            Assert.Equal(new[] { Flow }, Click(copy));
+            Assert.Equal("Copied", copy.Content);   // the same feedback as a code block's Copy
+
+            var menu = ChatDocument.All<Image>(document).Single().ContextMenu!;
+            var copySource = menu.Items.OfType<System.Windows.Controls.MenuItem>().Single(i => Equals(i.Header, "Copy source"));
+            var copied = new List<string>();
+            var previous = ChatClipboard.SetText;
+            ChatClipboard.SetText = copied.Add;
+            try
+            {
+                copySource.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+            }
+            finally
+            {
+                ChatClipboard.SetText = previous;
+            }
+            Assert.Equal(new[] { Flow }, copied);
+        });
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Copy_image_hands_the_picture_on_the_color_of_its_box_to_the_image_hook(bool dark) => UiThread.Run(() =>
+        {
+            var state = ChatDiagramFakes.Drawn(width: 4, height: 3);   // 8 by 6 pixels, every one transparent
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => state };
+            var document = BuildWith(ChatDiagramFakes.Block(), new ChatRender { Diagrams = diagrams, Dark = dark }, dark ? AskPalette.Dark : AskPalette.Light);
+            var menu = ChatDocument.All<Image>(document).Single().ContextMenu!;
+            var copyImage = menu.Items.OfType<System.Windows.Controls.MenuItem>().Single(i => Equals(i.Header, "Copy image"));
+
+            var images = new List<System.Windows.Media.Imaging.BitmapSource>();
+            var texts = new List<string>();
+            var previousImage = ChatClipboard.SetImage;
+            var previousText = ChatClipboard.SetText;
+            ChatClipboard.SetImage = images.Add;
+            ChatClipboard.SetText = texts.Add;
+            try
+            {
+                copyImage.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+            }
+            finally
+            {
+                ChatClipboard.SetImage = previousImage;
+                ChatClipboard.SetText = previousText;
+            }
+
+            Assert.Empty(texts);
+            var image = Assert.Single(images);
+            Assert.Equal(8, image.PixelWidth);
+            Assert.Equal(6, image.PixelHeight);
+            // A transparent picture pastes as black in most programs: it goes out on the color of the box it is shown in.
+            var pixel = new byte[4];
+            new System.Windows.Media.Imaging.FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0).CopyPixels(new Int32Rect(3, 2, 1, 1), pixel, 4, 0);
+            var back = (dark ? AskPalette.Dark : AskPalette.Light).CodeBack;
+            Assert.Equal(new[] { back.B, back.G, back.R, (byte)0xFF }, pixel);
+        });
+
+        [Fact]
+        public void Clipboard_hooks_that_fail_do_not_throw_out_of_a_diagrams_menu_or_buttons() => UiThread.Run(() =>
+        {
+            var (document, _) = Diagram(ChatDiagramFakes.Drawn());
+            var menu = ChatDocument.All<Image>(document).Single().ContextMenu!;
+            var copy = ButtonNamed(document, "Copy");
+
+            var previousImage = ChatClipboard.SetImage;
+            var previousText = ChatClipboard.SetText;
+            ChatClipboard.SetImage = _ => throw new InvalidOperationException("busy");
+            ChatClipboard.SetText = _ => throw new InvalidOperationException("busy");
+            try
+            {
+                foreach (var item in menu.Items.OfType<System.Windows.Controls.MenuItem>())
+                    item.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+                RaiseClick(copy);
+            }
+            finally
+            {
+                ChatClipboard.SetImage = previousImage;
+                ChatClipboard.SetText = previousText;
+            }
+
+            Assert.Equal("Copy", copy.Content);   // a copy that failed does not claim "Copied"
+        });
+
+        private sealed class BrokenDiagrams : IChatDiagrams
+        {
+            public ChatDiagramState Get(string source, bool dark, Action? whenDone) => throw new InvalidOperationException("the source was " + source);
+
+            public void Clear()
+            {
+            }
+        }
+
+        [Fact]
+        public void A_source_of_pictures_that_throws_leaves_a_code_block_with_a_reason_and_the_rest_of_the_answer() => UiThread.Run(() =>
+        {
+            var document = BuildWith("Before.\n\n" + ChatDiagramFakes.Block() + "\n\nAfter.", new ChatRender { Diagrams = new BrokenDiagrams() });
+
+            var blocks = document.Blocks.ToList();
+            Assert.Equal(3, blocks.Count);
+            Assert.Equal(Flow, ChatDocument.All<TextBox>(blocks[1]).Single().Text);
+            Assert.Contains("This diagram could not be drawn: " + Kil0bitSystemMonitor.Services.Pad.DiagramText.Failed, Texts(document));
+        });
+
+        /// <summary>The size the picture of one drawn diagram is laid out at, in an answer in a window <paramref name="width"/> wide (off screen).</summary>
+        private static Size PictureSizeIn(double width, ChatDiagramState state)
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => state };
+            var document = ChatDocument.Build(ChatMarkdown.Parse(ChatDiagramFakes.Block()), new ChatRender { Diagrams = diagrams });
+            var box = new AnswerBox { Style = ChatStyles.Get("ChatAnswer") };
+            AskThemeApplier.ApplyResources(box.Resources, AskPalette.Dark);
+            box.Show(document);
+            var window = new Window { Width = width, Height = 400, Left = -20000, Top = -20000, ShowInTaskbar = false, ShowActivated = false, Content = box };
+            try
+            {
+                window.Show();
+                window.UpdateLayout();
+                var picture = Assert.Single(ChatDocument.All<Image>(document));
+                return new Size(picture.ActualWidth, picture.ActualHeight);
+            }
+            finally
+            {
+                window.Content = null;
+                window.Close();
+            }
+        }
+
+        [Fact]
+        public void A_picture_is_shown_at_its_own_size_and_made_smaller_only_when_the_answer_is_narrower() => UiThread.Run(() =>
+        {
+            // 200 by 100 device-independent pixels, drawn with 400 by 200 pixels as the engine does.
+            var size = PictureSizeIn(700, ChatDiagramFakes.Drawn(width: 200, height: 100));
+            Assert.Equal(200, size.Width, 0.5);   // its own size: not the bitmap's 400, and not stretched to the answer's width
+            Assert.Equal(100, size.Height, 0.5);
+
+            size = PictureSizeIn(160, ChatDiagramFakes.Drawn(width: 200, height: 100));
+            Assert.InRange(size.Width, 40, 140);                    // it fits inside the narrow answer
+            Assert.Equal(size.Width / 2, size.Height, 0.5);         // and keeps its proportions
         });
     }
 }

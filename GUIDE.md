@@ -774,7 +774,9 @@ Turning the Ask switch off, or changing the AI provider in **Settings → AI**, 
 already read and the answers that used it. Before the next question of that conversation goes
 out, the earlier note results are replaced with the refusal, and every answer given after a note
 was read with "(Removed: this answer used your notes, and notes access has changed.)". So notes
-read through a server on this PC do not follow the conversation to another provider.
+read through a server on this PC do not follow the conversation to another provider. Changing the
+AI provider takes them back when the host changes; another model, port or path on the same host
+does not.
 
 * **`search_notes`** takes `query` and `limit` (1 to 20; 8 if you leave it out) and returns the
   best passages, each with its note id, title, heading and line numbers. The query is cut at 500

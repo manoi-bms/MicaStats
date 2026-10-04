@@ -252,6 +252,19 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_br_tag_in_a_table_cell_shows_two_lines_in_the_cell() => UiThread.Run(() =>
+        {
+            var document = Build("| Step | What |\n|---|---|\n| one<br>two | `a<br>b` |");
+
+            var cells = Assert.IsType<Table>(Assert.Single(document.Blocks)).RowGroups[0].Rows[1].Cells;
+            var inlines = Assert.IsType<Paragraph>(Assert.Single(cells[0].Blocks)).Inlines;
+            Assert.Equal(new[] { typeof(Run), typeof(LineBreak), typeof(Run) }, inlines.Select(i => i.GetType()));
+            Assert.Equal(new[] { "one", "two" }, inlines.OfType<Run>().Select(r => r.Text));
+            // In a code span the tag is its letters, on one line.
+            Assert.Equal("a<br>b", Assert.IsType<Run>(Assert.Single(Assert.IsType<Paragraph>(Assert.Single(cells[1].Blocks)).Inlines)).Text);
+        });
+
+        [Fact]
         public void A_table_with_no_body_rows_and_an_empty_cell_builds() => UiThread.Run(() =>
         {
             var document = Build("| a | b |\n|---|---|\n|  | x |");
@@ -526,6 +539,25 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.Equal(Flow, Assert.Single(diagrams.Gets).Source);
             Assert.Single(ChatDocument.All<Image>(document));
+        });
+
+        [Theory]
+        [InlineData("    ")]
+        [InlineData("\t")]
+        public void A_mermaid_fence_indented_under_a_numbered_step_is_drawn_and_the_list_goes_on_counting(string indent) => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Drawn() };
+            string markdown = "1. Look at the flow:\n\n" + indent + "```mermaid\n" + indent + "flowchart LR\n" + indent + "  a --> b\n" + indent + "```\n\n2. Then read on.";
+
+            var document = BuildWith(markdown, new ChatRender { Diagrams = diagrams });
+
+            Assert.Equal(Flow, Assert.Single(diagrams.Gets).Source);   // the indent is off: the source is the diagram's own
+            Assert.Single(ChatDocument.All<Image>(document));
+            Assert.DoesNotContain("```", new TextRange(document.ContentStart, document.ContentEnd).Text, StringComparison.Ordinal);
+            var lists = document.Blocks.OfType<System.Windows.Documents.List>().ToList();
+            Assert.Equal(2, lists.Count);                               // the block ended the first item's list
+            Assert.Equal(1, lists[0].StartIndex);
+            Assert.Equal(2, lists[1].StartIndex);                       // and the second starts at its item's own number
         });
 
         [Theory]

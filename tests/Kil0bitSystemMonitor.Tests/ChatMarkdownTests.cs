@@ -277,6 +277,166 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2, blocks[2].Number);
         }
 
+        // ---- a fence indented four columns or more, as models write one under a numbered step ----
+
+        [Theory]
+        [InlineData("    ")]         // to the text of "1. " and one more, as most models write it
+        [InlineData("     ")]
+        [InlineData("        ")]
+        [InlineData("\t")]           // a tab reaches column four
+        [InlineData("  \t")]
+        [InlineData("\t\t")]
+        public void A_fence_indented_four_columns_or_more_under_a_numbered_step_is_a_code_block(string indent)
+        {
+            string md = "1. List what is running:\n\n" + indent + "```powershell\n" + indent + "Get-Process | Sort-Object CPU\n" + indent + "```\n\n2. Read the top line.";
+
+            var blocks = ChatMarkdown.Parse(md);
+
+            Assert.Equal(new[] { ChatBlockKind.Numbered, ChatBlockKind.Code, ChatBlockKind.Numbered }, blocks.Select(b => b.Kind));
+            Assert.Equal(new[] { Plain("List what is running:") }, blocks[0].Runs);   // the block ended the item: no backticks in it
+            Assert.Equal("powershell", blocks[1].Language);
+            Assert.Equal("Get-Process | Sort-Object CPU", blocks[1].Code);
+            Assert.True(blocks[1].Closed);
+            Assert.Equal(2, blocks[2].Number);                                         // the list goes on counting
+            Assert.Equal(0, blocks[2].Depth);
+            Assert.Equal(new[] { Plain("Read the top line.") }, blocks[2].Runs);
+        }
+
+        [Fact]
+        public void An_indented_fence_right_under_its_item_or_under_a_bullet_or_plain_text_is_a_code_block_too()
+        {
+            var tight = ChatMarkdown.Parse("1. Run:\n    ```\n    ipconfig /all\n    ```\n2. Check.");
+            Assert.Equal(new[] { ChatBlockKind.Numbered, ChatBlockKind.Code, ChatBlockKind.Numbered }, tight.Select(b => b.Kind));
+            Assert.Equal("ipconfig /all", tight[1].Code);
+            Assert.Equal(2, tight[2].Number);
+
+            var bullet = ChatMarkdown.Parse("- Run:\n\n    ~~~sh\n    ls -la\n    ~~~\n- Check.");
+            Assert.Equal(new[] { ChatBlockKind.Bullet, ChatBlockKind.Code, ChatBlockKind.Bullet }, bullet.Select(b => b.Kind));
+            Assert.Equal("sh", bullet[1].Language);
+            Assert.Equal("ls -la", bullet[1].Code);
+
+            var plain = ChatMarkdown.Parse("Like this:\n\n      ```js\n      let a;\n      ```\nDone.");
+            Assert.Equal(new[] { ChatBlockKind.Paragraph, ChatBlockKind.Code, ChatBlockKind.Paragraph }, plain.Select(b => b.Kind));
+            Assert.Equal("let a;", plain[1].Code);
+            Assert.Equal(new[] { Plain("Done.") }, plain[2].Runs);
+        }
+
+        [Fact]
+        public void Code_that_is_itself_indented_inside_an_indented_fence_keeps_its_relative_indent()
+        {
+            string md = "1. Save this:\n\n    ```python\n    def f(x):\n        if x:\n            return 1\n\n      odd = 2\n  less = 3\nnone = 4\n    ```";
+
+            var code = ChatMarkdown.Parse(md)[1];
+
+            // Only the opening line's four characters of indent go; a line with less loses what it has.
+            Assert.Equal("def f(x):\n    if x:\n        return 1\n\n  odd = 2\nless = 3\nnone = 4", code.Code);
+            Assert.True(code.Closed);
+
+            var tabbed = ChatMarkdown.Parse("1. Save this:\n\n\t```go\n\tfunc f() {\n\t\treturn\n\t}\n\t```")[1];
+            Assert.Equal("func f() {\n\treturn\n}", tabbed.Code);
+        }
+
+        [Fact]
+        public void An_indented_fence_closes_at_a_fence_line_of_any_indent_and_at_least_as_long()
+        {
+            // Closed by a longer fence that is not indented at all, by one indented more, and by a tab.
+            foreach (string closing in new[] { "`````", "            ```", "\t```  ", "```" })
+            {
+                var blocks = ChatMarkdown.Parse("1. Run:\n\n    ```sh\n    ls\n" + closing + "\nAfter.");
+                Assert.Equal(new[] { ChatBlockKind.Numbered, ChatBlockKind.Code, ChatBlockKind.Paragraph }, blocks.Select(b => b.Kind));
+                Assert.Equal("ls", blocks[1].Code);
+                Assert.True(blocks[1].Closed);
+                Assert.Equal(new[] { Plain("After.") }, blocks[2].Runs);
+            }
+
+            // Not closed by a shorter fence, by the other character, or by a fence line with more on it.
+            var open = ChatMarkdown.Parse("1. Run:\n\n    ````sh\n    ls\n    ```\n    ~~~~\n    ```` x\nAfter.");
+            Assert.Equal(new[] { ChatBlockKind.Numbered, ChatBlockKind.Code }, open.Select(b => b.Kind));
+            Assert.Equal("ls\n```\n~~~~\n```` x\nAfter.", open[1].Code);
+            Assert.False(open[1].Closed);
+        }
+
+        [Fact]
+        public void An_indented_fence_still_open_at_the_end_is_a_code_block_that_is_not_closed()
+        {
+            var blocks = ChatMarkdown.Parse("1. Draw it:\n\n    ```mermaid\n    flowchart LR\n      a --> b");
+
+            Assert.Equal(new[] { ChatBlockKind.Numbered, ChatBlockKind.Code }, blocks.Select(b => b.Kind));
+            Assert.Equal("mermaid", blocks[1].Language);
+            Assert.Equal("flowchart LR\n  a --> b", blocks[1].Code);
+            Assert.False(blocks[1].Closed);
+
+            var onlyOpener = ChatMarkdown.Parse("1. Draw it:\n\n    ```mermaid");
+            Assert.Equal("", onlyOpener[1].Code);
+            Assert.False(onlyOpener[1].Closed);
+        }
+
+        [Fact]
+        public void An_indented_fence_line_inside_an_open_top_level_fence_is_code_and_opens_nothing()
+        {
+            var block = Single("```md\nUnder a step:\n\n    ```js\n    let a;\n    ```\n\nThat is all.\n```");
+
+            Assert.Equal(ChatBlockKind.Code, block.Kind);
+            Assert.Equal("md", block.Language);
+            Assert.Equal("Under a step:\n\n    ```js\n    let a;\n    ```\n\nThat is all.", block.Code);   // verbatim: its indent stays
+            Assert.True(block.Closed);
+
+            // And in a fence indented by up to three spaces, which is the old rule and takes that indent off its lines.
+            var three = ChatMarkdown.Parse("1. Run:\n   ```md\n       ```js\n   x\n   ```\n2. Check.");
+            Assert.Equal(new[] { ChatBlockKind.Numbered, ChatBlockKind.Code, ChatBlockKind.Numbered }, three.Select(b => b.Kind));
+            Assert.Equal("    ```js\nx", three[1].Code);
+        }
+
+        [Theory]
+        [InlineData("    ```a`b")]              // a backtick fence's info string holds no backtick: this is inline code
+        [InlineData("    ``")]                  // two are not a fence
+        [InlineData("    $$")]                  // no math blocks in an answer
+        [InlineData("    x ```")]
+        public void An_indented_line_that_is_no_opening_fence_stays_text_in_its_item(string line)
+        {
+            var blocks = ChatMarkdown.Parse("1. Step\n\n" + line + "\n    more");
+
+            var item = Assert.Single(blocks);
+            Assert.Equal(ChatBlockKind.Numbered, item.Kind);
+            Assert.Contains("more", string.Concat(item.Runs.Select(r => r.Text)), StringComparison.Ordinal);
+        }
+
+        /// <summary>Every piece of text the blocks hold, and the language word of each code block.</summary>
+        private static string AllTextAndLanguages(IReadOnlyList<ChatBlock> blocks) =>
+            AllText(blocks) + string.Concat(blocks.Select(b => " " + b.Language));
+
+        [Fact]
+        public void Every_prefix_of_a_text_with_an_indented_fence_parses_and_keeps_every_character_of_text_once()
+        {
+            // Bullets, so that only characters Significant leaves out are consumed as markers.
+            const string full = "- Open a terminal:\n\n    ```powershell\n    Get-Process |\n        Sort-Object CPU\n\tOther\n    ```\n\n- Done.\n\n\t~~~\n\tlast";
+            for (int n = 0; n <= full.Length; n++)
+            {
+                string prefix = full.Substring(0, n);
+                var blocks = ChatMarkdown.Parse(prefix);   // must not throw
+                // Only white space goes: each text character is in the blocks as often as in the prefix.
+                Assert.Equal(Significant(prefix).Replace("~", "", StringComparison.Ordinal),
+                             Significant(AllTextAndLanguages(blocks)).Replace("~", "", StringComparison.Ordinal));
+            }
+        }
+
+        [Fact]
+        public void Fifty_thousand_indented_fences_parse_quickly()
+        {
+            // One pass over the lines: each opening line is matched with its closing line as it comes.
+            string md = string.Concat(Enumerable.Repeat("1. Step\n\n    ```sh\n    ls\n    ```\n\n", 50000)) + "    ```open\n" + string.Concat(Enumerable.Repeat("    ```x\n", 50000));
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var blocks = ChatMarkdown.Parse(md);
+            watch.Stop();
+
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), "took " + watch.Elapsed);
+            Assert.Equal(100001, blocks.Count);
+            Assert.Equal(50001, blocks.Count(b => b.Kind == ChatBlockKind.Code));
+            Assert.False(blocks[^1].Closed);
+            Assert.Equal(50000, blocks[^1].Code.Split('\n').Length - 1);   // each "```x" line is code in the open block
+        }
+
         [Fact]
         public void Three_dashes_stars_or_underscores_make_a_rule()
         {
@@ -589,6 +749,71 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { CodeRun("C:\\") }, table.Header[0].Runs);
             Assert.Equal(new[] { CodeRun("D:\\") }, table.Header[1].Runs);
             Assert.Equal(new[] { "1", "2" }, Texts(table.Rows[0]));
+        }
+
+        // ---- <br> in a table cell is a line break: the one place an HTML tag means anything ----
+
+        [Theory]
+        [InlineData("<br>")]
+        [InlineData("<br/>")]
+        [InlineData("<br />")]
+        [InlineData("<BR>")]
+        [InlineData("<Br/>")]
+        [InlineData("<bR />")]
+        public void A_br_tag_in_a_table_cell_is_a_line_break(string tag)
+        {
+            var table = TableOf("| Step" + tag + "number | What |\n|---|---|\n| one" + tag + "two | a " + tag + " b" + tag + tag + "c |");
+
+            Assert.Equal(new[] { Plain("Step"), Break, Plain("number") }, table.Header[0].Runs);
+            Assert.Equal(new[] { Plain("one"), Break, Plain("two") }, table.Rows[0][0].Runs);
+            Assert.Equal(new[] { Plain("a "), Break, Plain(" b"), Break, Break, Plain("c") }, table.Rows[0][1].Runs);
+            Assert.All(new[] { table.Header[0], table.Rows[0][0], table.Rows[0][1] }, cell => Assert.Contains(cell.Runs, r => r.IsLineBreak));
+        }
+
+        [Fact]
+        public void A_br_tag_in_a_cell_keeps_the_styles_around_it_and_stays_text_in_a_code_span()
+        {
+            var table = TableOf("| a | b | c |\n|---|---|---|\n| **bold<br>still bold** | `x<br>y` | [docs<br>here](https://example.com/) |");
+            var row = table.Rows[0];
+
+            Assert.Equal(new[] { new ChatRun("bold", Bold: true), Break, new ChatRun("still bold", Bold: true) }, row[0].Runs);
+            Assert.Equal(new[] { CodeRun("x<br>y") }, row[1].Runs);      // in code it is the letters
+            Assert.Equal(new[] { "docs", "\n", "here" }, row[2].Runs.Select(r => r.Text));
+            Assert.NotNull(row[2].Runs[0].Link);
+            Assert.NotNull(row[2].Runs[2].Link);
+        }
+
+        [Theory]
+        [InlineData("<b>")]
+        [InlineData("</br>")]
+        [InlineData("<br")]
+        [InlineData("< br>")]
+        [InlineData("<brx>")]
+        [InlineData("<br  />")]
+        [InlineData("<br/ >")]
+        [InlineData("<hr>")]
+        [InlineData("<img src=x>")]
+        [InlineData("&lt;br&gt;")]
+        public void Nothing_else_of_HTML_means_anything_in_a_cell(string written)
+        {
+            var table = TableOf("| a | b |\n|---|---|\n| one" + written + "two | x |");
+
+            Assert.Equal(new[] { Plain("one" + written + "two") }, table.Rows[0][0].Runs);
+        }
+
+        [Fact]
+        public void A_br_tag_outside_a_table_stays_text()
+        {
+            Assert.Equal(new[] { Plain("one<br>two") }, Runs("one<br>two"));
+            Assert.Equal(new[] { Plain("one<br/>two") }, Runs("# one<br/>two"));
+            Assert.Equal(new[] { Plain("one<br />two") }, Runs("- one<br />two"));
+            Assert.Equal(new[] { Plain("one<BR>two") }, Runs("> one<BR>two"));
+            Assert.Equal(new[] { Plain("one<br>two") }, ChatMarkdown.ParseInline("one<br>two"));
+            Assert.Equal("a<br>b", Single("```\na<br>b\n```").Code);
+
+            // A row past the inline limit gets no styling at all, a break included.
+            string longCell = new string('x', ChatMarkdown.MaxInlineLength) + "<br>y";
+            Assert.Equal(new[] { Plain(longCell) }, TableOf("| a |\n|---|\n| " + longCell + " |").Rows[0][0].Runs);
         }
 
         private const char PipeMark = 'P';

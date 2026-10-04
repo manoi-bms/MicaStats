@@ -114,6 +114,13 @@ namespace Kil0bitSystemMonitor.Services.Ai
     /// and mailto addresses become links (<see cref="SafeLinks"/>); any other target leaves its
     /// text plain. Pure: no WPF.
     /// </para>
+    ///
+    /// <para>
+    /// Two things it reads that the tokenizer does not, because models write them: a fenced block
+    /// indented under a list item, whatever its indent (the indent is taken off before the lines
+    /// are classified), and <c>&lt;br&gt;</c> in a table cell, which is a line break there and
+    /// text everywhere else. No other HTML means anything.
+    /// </para>
     /// </summary>
     public static class ChatMarkdown
     {
@@ -153,6 +160,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             if (string.IsNullOrEmpty(text)) return blocks;
 
             string[] lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
+            UnindentIndentedFences(lines);
             MdFence[] fences = FenceTracker.Classify(lines, mathBlocks: false);
 
             var levels = new List<int>();   // the indentation of each open list level
@@ -348,6 +356,75 @@ namespace Kil0bitSystemMonitor.Services.Ai
             return line.Substring(i);
         }
 
+        /// <summary>
+        /// Takes the indent off every fenced block whose opening line is indented by four columns
+        /// or more (a tab reaches the next multiple of four), as a model writes one under a
+        /// numbered step or a bullet. The line classifier (<see cref="FenceTracker"/>, which
+        /// MicaPad's editor shares and which keeps its rule) lets a fence be indented by three
+        /// spaces at most, so without this such a block is text in its list item: backticks and
+        /// all, with no Copy button and no diagram.
+        ///
+        /// <para>
+        /// The block runs from its opening line to the first later line that closes it (only white
+        /// space, then at least as many of the same fence character, then only white space), or to
+        /// the end of the text. Its opening line loses its indent; each line inside loses as many
+        /// leading spaces and tabs as the opening line had, or what it has when that is fewer; its
+        /// closing line loses all of its indent. After that the block is a fence at the top level
+        /// to everything that reads the lines. Nothing but leading white space ever goes.
+        /// </para>
+        ///
+        /// <para>
+        /// A fence the classifier does see is followed here by its own rules, so an indented fence
+        /// line inside it stays the code it is. One pass over the lines; only a line whose first
+        /// character after its indent is a backtick or a tilde is looked at more closely.
+        /// </para>
+        /// </summary>
+        private static void UnindentIndentedFences(string[] lines)
+        {
+            char fence = '\0';       // the fence character of the block the pass is in, or none
+            int length = 0;          // how many of them opened it
+            int indent = -1;         // the opening line's leading spaces and tabs, for an indented block; -1 in one the classifier sees
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                int lead = LeadLength(line);
+
+                if (length == 0)
+                {
+                    if (lead >= line.Length || line[lead] is not ('`' or '~')) continue;   // most lines
+                    bool indented = lead > 3 || line.IndexOf('\t', 0, lead) >= 0;
+                    string from = indented ? line.Substring(lead) : line;
+                    if (FenceTracker.DelimiterOf(from) is not { } opening) continue;       // a backtick in the info string: inline code
+                    fence = opening.Char;
+                    length = opening.Length;
+                    indent = indented ? lead : -1;
+                    if (indented) lines[i] = from;
+                }
+                else if (indent < 0)
+                {
+                    if (FenceTracker.Closes(line, fence, length)) length = 0;
+                }
+                else if (lead < line.Length && line[lead] == fence && FenceTracker.Closes(line.Substring(lead), fence, length))
+                {
+                    lines[i] = line.Substring(lead);
+                    length = 0;
+                }
+                else
+                {
+                    lines[i] = line.Substring(Math.Min(lead, indent));
+                }
+            }
+        }
+
+        /// <summary>How many spaces and tabs a line starts with.</summary>
+        private static int LeadLength(string line)
+        {
+            int i = 0;
+            while (i < line.Length && (line[i] == ' ' || line[i] == '\t')) i++;
+            return i;
+        }
+
         // ---- tables ----------------------------------------------------------------------------
 
         /// <summary>
@@ -406,7 +483,21 @@ namespace Kil0bitSystemMonitor.Services.Ai
         }
 
         private static ChatCell MakeCell(string text, bool styled) =>
-            new(styled ? ParseInline(text) : (text.Length == 0 ? new List<ChatRun>() : new List<ChatRun> { new ChatRun(text) }));
+            new(styled ? ParseCell(text) : (text.Length == 0 ? new List<ChatRun>() : new List<ChatRun> { new ChatRun(text) }));
+
+        /// <summary>
+        /// The styled runs of a table cell: as <see cref="ParseInline"/>, and <c>&lt;br&gt;</c>,
+        /// <c>&lt;br/&gt;</c> or <c>&lt;br /&gt;</c> (any letter case, outside a code span) is a
+        /// line break. A pipe table has no other way to write one, and models use it. Only here,
+        /// and only that: no other tag means anything anywhere in an answer.
+        /// </summary>
+        private static IReadOnlyList<ChatRun> ParseCell(string text)
+        {
+            var writer = new RunWriter { CellBreaks = true };
+            if (text.Length > MaxInlineLength) writer.Text(text, default);
+            else Inline(text, 0, text.Length, default, writer);
+            return writer.Finish();
+        }
 
         /// <summary>
         /// Whether a line (a heading, list item, quote or rule, with or without a pipe) starts a block
@@ -591,6 +682,12 @@ namespace Kil0bitSystemMonitor.Services.Ai
                     continue;
                 }
                 if (c == '`') { i = CodeSpan(s, i, end, format, writer); continue; }
+                if (c == '<' && writer.CellBreaks && BreakTagLength(s, i, end) is int tag and > 0)
+                {
+                    writer.Break();
+                    i += tag;
+                    continue;
+                }
                 if (c == '[' && TryLink(s, i, end, format, writer, out int afterLink)) { i = afterLink; continue; }
                 if (c is '*' or '_' or '~') { i = Emphasis(s, i, end, format, writer); continue; }
                 if (format.Link == null && (c is 'h' or 'H' or 'm' or 'M') && TryAddress(s, i, end, format, writer, out int afterAddress))
@@ -614,6 +711,20 @@ namespace Kil0bitSystemMonitor.Services.Ai
             int j = i;
             while (j < end && s[j] == c) j++;
             return j - i;
+        }
+
+        /// <summary>
+        /// The length of the line-break tag at <paramref name="i"/>: <c>&lt;br&gt;</c> (4),
+        /// <c>&lt;br/&gt;</c> (5) or <c>&lt;br /&gt;</c> (6), in any letter case; 0 for anything
+        /// else, which stays the text it is.
+        /// </summary>
+        private static int BreakTagLength(string s, int i, int end)
+        {
+            if (i + 3 >= end || s[i] != '<' || (s[i + 1] != 'b' && s[i + 1] != 'B') || (s[i + 2] != 'r' && s[i + 2] != 'R')) return 0;
+            int j = i + 3;
+            if (s[j] == '>') return 4;
+            if (s[j] == ' ' && j + 1 < end && s[j + 1] == '/') j++;
+            return s[j] == '/' && j + 1 < end && s[j + 1] == '>' ? j + 2 - i : 0;
         }
 
         /// <summary>A run of backticks closed by a run of the same length; unclosed backticks are text.</summary>
@@ -806,6 +917,16 @@ namespace Kil0bitSystemMonitor.Services.Ai
             private readonly StringBuilder _pending = new();
             private Format _format;
 
+            /// <summary>True for the text of a table cell: there, and only there, a <c>&lt;br&gt;</c> tag is a line break.</summary>
+            public bool CellBreaks { get; init; }
+
+            /// <summary>A line break: a run of its own (<see cref="ChatRun.IsLineBreak"/>), which the text before and after it never joins.</summary>
+            public void Break()
+            {
+                Flush();
+                _runs.Add(new ChatRun("\n"));
+            }
+
             public void Text(char c, Format format)
             {
                 Switch(format);
@@ -846,7 +967,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
             private void Add(ChatRun run)
             {
-                if (_runs.Count > 0 && _runs[^1] is var last && last.Bold == run.Bold && last.Italic == run.Italic
+                if (_runs.Count > 0 && _runs[^1] is var last && !last.IsLineBreak && last.Bold == run.Bold && last.Italic == run.Italic
                     && last.Code == run.Code && last.Strike == run.Strike && ReferenceEquals(last.Link, run.Link))
                 {
                     _runs[^1] = last with { Text = last.Text + run.Text };

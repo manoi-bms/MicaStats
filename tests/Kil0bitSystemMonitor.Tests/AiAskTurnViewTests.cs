@@ -115,6 +115,18 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
+        public void Line_and_paragraph_separators_in_a_tool_name_become_spaces()
+        {
+            string name = "a" + (char)0x2028 + "b" + (char)0x2029 + "c";
+
+            string line = AskTurnView.ActivityFor(name);
+
+            Assert.Equal("Using a b c…", line);
+            Assert.DoesNotContain((char)0x2028, line);
+            Assert.DoesNotContain((char)0x2029, line);
+        }
+
+        [Fact]
         public void A_new_turn_says_thinking_beside_the_dots() => UiThread.Run(() =>
         {
             var turn = new AskTurnView("q");

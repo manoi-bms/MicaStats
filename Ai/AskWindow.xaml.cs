@@ -319,6 +319,9 @@ namespace Kil0bitSystemMonitor.Ai
                             break;
                         case AssistantUpdateKind.LimitedMode:
                             turn.ShowNote(update.Text ?? LimitedModeNote);
+                            // The model still has the answer to write; unlike an error or Stopped,
+                            // this note does not end it. The row sits above the answer until text comes.
+                            turn.ShowActivity(AskTurnView.Thinking);
                             break;
                         case AssistantUpdateKind.Error:
                             failed = true;
@@ -485,6 +488,9 @@ namespace Kil0bitSystemMonitor.Ai
                 _follow = IsNearEnd(TranscriptScroll.VerticalOffset, TranscriptScroll.ScrollableHeight);
             else if (_follow)
                 TranscriptScroll.ScrollToEnd();
+            else if (IsNearEnd(TranscriptScroll.VerticalOffset, TranscriptScroll.ScrollableHeight))
+                _follow = true;   // the window grew (or the content shrank) until the offset reached the end
+            // A change of extent while the reader is scrolled up and not at the end is not followed.
             UpdateJump();
         }
 

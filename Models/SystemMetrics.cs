@@ -653,24 +653,6 @@ namespace Kil0bitSystemMonitor.Models
         /// <see cref="PadEmbeddingServer"/>. Off by default: keyword search needs no server and
         /// nothing leaves the PC until it is on. Turning it off deletes the stored vectors.
         /// </summary>
-        /// <summary>
-        /// The Ask MicaStats window's width, remembered from the last time it closed. Stored within
-        /// 420 (the window's minimum) and 10000 (NaN is the default 640); the window fits it to the
-        /// screen's work area when it opens.
-        /// </summary>
-        public double AskWidth
-        {
-            get => _askWidth;
-            set { Set(ref _askWidth, double.IsNaN(value) ? 640 : Math.Clamp(value, 420, 10000)); }
-        }
-
-        /// <summary>The Ask MicaStats window's height; stored within 420 and 10000 (NaN is the default 720).</summary>
-        public double AskHeight
-        {
-            get => _askHeight;
-            set { Set(ref _askHeight, double.IsNaN(value) ? 720 : Math.Clamp(value, 420, 10000)); }
-        }
-
         public bool PadSemanticSearch { get => _padSemanticSearch; set { Set(ref _padSemanticSearch, value); } }
 
         /// <summary>
@@ -806,6 +788,24 @@ namespace Kil0bitSystemMonitor.Models
 
         /// <summary>Loopback port of the local HTTP MCP server; kept out of the privileged range.</summary>
         public int AiMcpHttpPort { get => _aiMcpHttpPort; set { Set(ref _aiMcpHttpPort, Math.Clamp(value, 1024, 65535)); } }
+
+        /// <summary>
+        /// The Ask MicaStats window's width, remembered from the last time it closed. Stored within
+        /// 420 (the window's minimum) and 10000 (NaN is the default 640); the window fits it to the
+        /// screen's work area when it opens.
+        /// </summary>
+        public double AskWidth
+        {
+            get => _askWidth;
+            set { Set(ref _askWidth, double.IsNaN(value) ? 640 : Math.Clamp(value, 420, 10000)); }
+        }
+
+        /// <summary>The Ask MicaStats window's height; stored within 420 and 10000 (NaN is the default 720).</summary>
+        public double AskHeight
+        {
+            get => _askHeight;
+            set { Set(ref _askHeight, double.IsNaN(value) ? 720 : Math.Clamp(value, 420, 10000)); }
+        }
 
         private string _askTheme = Kil0bitSystemMonitor.Services.Pad.PadThemes.Dark;
 

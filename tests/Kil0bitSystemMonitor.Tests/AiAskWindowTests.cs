@@ -411,6 +411,96 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_viewport_change_that_leaves_the_offset_at_the_end_follows_again_and_hides_the_button() => WithWindow((window, h) =>
+        {
+            h.Setups.Enqueue(h.Answer(LongAnswer()));
+            Send(window, "Tell me a lot.");
+            Lay(window);
+            var scroll = window.TranscriptScroll;
+            Assert.True(scroll.ScrollableHeight > 400, "the answer must be much taller than the window for this test");
+
+            scroll.ScrollToVerticalOffset(scroll.ScrollableHeight - 100);   // scrolled up, 100 from the end
+            Lay(window);
+            Assert.Equal(Visibility.Visible, window.JumpButton.Visibility);
+
+            window.Height += 150;   // the viewport grows; the offset is clamped to the new end
+            Lay(window);
+            Assert.True(scroll.ScrollableHeight > 0);
+            Assert.Equal(scroll.ScrollableHeight, scroll.VerticalOffset);
+            Assert.Equal(Visibility.Collapsed, window.JumpButton.Visibility);
+        });
+
+        [Fact]
+        public void Growing_content_while_scrolled_up_and_not_at_the_end_does_not_follow() => WithWindow((window, h) =>
+        {
+            h.Setups.Enqueue(h.Answer(LongAnswer()));
+            Send(window, "Tell me a lot.");
+            Lay(window);
+            window.TranscriptScroll.ScrollToVerticalOffset(0);
+            Lay(window);
+            Assert.Equal(Visibility.Visible, window.JumpButton.Visibility);
+
+            window.Turns[0].AppendText(string.Concat(Enumerable.Repeat("\n\nMore of the answer.", 30)));
+            window.Turns[0].RenderNow();
+            Lay(window);
+
+            Assert.Equal(0, window.TranscriptScroll.VerticalOffset);
+            Assert.Equal(Visibility.Visible, window.JumpButton.Visibility);
+        });
+
+        [Fact]
+        public void After_the_limited_mode_note_the_activity_shows_thinking_until_text_arrives_and_stays_hidden_after() => WithWindow((window, h) =>
+        {
+            var noted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var texted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var end = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            h.Setups.Enqueue(new AskSetup((conversation, question, ct) => NoteThenText(noted, gate.Task, texted, end.Task, ct), null));
+
+            window.QuestionBox.Text = "Is it fine?";
+            Click(window.SendButton);
+            var turn = window.Turns[0];
+            UiPump.Wait(noted.Task);
+            Assert.Equal(Visibility.Visible, turn.Note.Visibility);
+            Assert.Equal(Visibility.Visible, turn.Activity.Visibility);
+            Assert.Equal("Thinking…", turn.ActivityText.Text);
+            var content = (System.Windows.Controls.Panel)turn.Activity.Parent;
+            Assert.True(content.Children.IndexOf(turn.Activity) < content.Children.IndexOf(turn.Answer));   // no text yet: above the answer
+            Assert.True(content.Children.IndexOf(turn.Answer) < content.Children.IndexOf(turn.Note));
+
+            gate.SetResult();
+            UiPump.Wait(texted.Task);
+            Assert.Equal(Visibility.Collapsed, turn.Activity.Visibility);
+
+            end.SetResult();
+            UiPump.Wait(window.Pending!);
+            Assert.Equal(Visibility.Collapsed, turn.Activity.Visibility);
+        });
+
+        private static async IAsyncEnumerable<AssistantUpdate> NoteThenText(
+            TaskCompletionSource noted, Task gate, TaskCompletionSource texted, Task end, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            yield return new AssistantUpdate(AssistantUpdateKind.LimitedMode);
+            noted.TrySetResult();
+            await gate.WaitAsync(ct);
+            yield return new AssistantUpdate(AssistantUpdateKind.Text, "Fine.");
+            texted.TrySetResult();
+            await end.WaitAsync(ct);
+            yield return new AssistantUpdate(AssistantUpdateKind.Done);
+        }
+
+        [Fact]
+        public void An_error_note_keeps_the_activity_hidden() => WithWindow((window, h) =>
+        {
+            h.Setups.Enqueue(h.Answer(
+                new AssistantUpdate(AssistantUpdateKind.Error, "The provider is down."),
+                new AssistantUpdate(AssistantUpdateKind.Done)));
+            Send(window, "Hello?");
+            Assert.Equal(Visibility.Collapsed, window.Turns[0].Activity.Visibility);
+        });
+
+        [Fact]
         public void The_jump_button_is_not_in_the_scrolled_content_takes_no_focus_and_has_a_name() => WithWindow((window, h) =>
         {
             Assert.False(window.JumpButton.Focusable);
@@ -485,6 +575,11 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal((700d, 500d), AskWindow.SizeToRemember(WindowState.Minimized, restore, 160, 28));
             // No restore size known (a window that was never shown): the window's own size.
             Assert.Equal((640d, 720d), AskWindow.SizeToRemember(WindowState.Maximized, Rect.Empty, 640, 720));
+            Assert.Equal((640d, 720d), AskWindow.SizeToRemember(WindowState.Minimized, Rect.Empty, 640, 720));
+            var nan = new Rect(double.NaN, double.NaN, double.NaN, double.NaN);
+            Assert.Equal((640d, 720d), AskWindow.SizeToRemember(WindowState.Maximized, nan, 640, 720));
+            Assert.Equal((640d, 720d), AskWindow.SizeToRemember(WindowState.Minimized, nan, 640, 720));
+            Assert.Equal((640d, 720d), AskWindow.SizeToRemember(WindowState.Maximized, new Rect(0, 0, 0, 0), 640, 720));
         }
 
         [Fact]

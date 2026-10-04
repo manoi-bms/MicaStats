@@ -112,7 +112,7 @@ namespace Kil0bitSystemMonitor.Ai
             // the Markdown renderer: a tool name comes from the model.
             ActivityText = new TextBlock
             {
-                Text = "Thinking…",
+                Text = Thinking,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0),
@@ -540,14 +540,17 @@ namespace Kil0bitSystemMonitor.Ai
             StartTyping();
         }
 
+        /// <summary>What the activity line says before any tool has run.</summary>
+        internal const string Thinking = "Thinking…";
+
         /// <summary>The longest part of a tool's name the activity line shows.</summary>
         private const int MaxToolNameLength = 40;
 
         /// <summary>
         /// What the activity line says while a tool runs. The name is the model's: a tool this
         /// app does not know is shown as "Using {name}…" with the name cut to
-        /// <see cref="MaxToolNameLength"/> characters and any line break or other control or
-        /// format character turned into a space, so it cannot make a second line or reorder the text.
+        /// <see cref="MaxToolNameLength"/> characters and any line break or other control,
+        /// format, line-separator or paragraph-separator character turned into a space, so it cannot make a second line or reorder the text.
         /// </summary>
         internal static string ActivityFor(string tool) => tool switch
         {
@@ -571,7 +574,9 @@ namespace Kil0bitSystemMonitor.Ai
             foreach (char c in name)
             {
                 if (text.Length >= MaxToolNameLength) break;
-                bool odd = char.IsControl(c) || CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.Format;
+                UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(c);
+                bool odd = char.IsControl(c) || category is UnicodeCategory.Format
+                    or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator;
                 text.Append(odd ? ' ' : c);
             }
             if (text.Length > 0 && char.IsHighSurrogate(text[^1])) text.Length--;   // never half a pair

@@ -446,5 +446,336 @@ namespace Kil0bitSystemMonitor.Tests
             string line = string.Concat(Enumerable.Repeat("*a ", ChatMarkdown.MaxInlineLength));
             Assert.Equal(new[] { Plain(line.TrimEnd()) }, Runs(line));
         }
+
+        // ---- tables ----------------------------------------------------------------------------
+
+        private static string Text(ChatCell cell) => string.Concat(cell.Runs.Select(r => r.Text));
+
+        private static string[] Texts(IReadOnlyList<ChatCell> cells) => cells.Select(Text).ToArray();
+
+        private static ChatTable TableOf(string markdown)
+        {
+            var block = Single(markdown);
+            Assert.Equal(ChatBlockKind.Table, block.Kind);
+            Assert.NotNull(block.Table);
+            return block.Table!;
+        }
+
+        /// <summary>Every piece of text the blocks hold (runs, code, cells), joined, for "nothing was lost" checks.</summary>
+        private static string AllText(IEnumerable<ChatBlock> blocks)
+        {
+            var all = new System.Text.StringBuilder();
+            foreach (ChatBlock b in blocks)
+            {
+                foreach (ChatRun r in b.Runs) all.Append(r.Text).Append(' ');
+                all.Append(b.Code).Append(' ');
+                if (b.Table != null)
+                {
+                    foreach (ChatCell c in b.Table.Header) all.Append(Text(c)).Append(' ');
+                    foreach (var row in b.Table.Rows)
+                        foreach (ChatCell c in row) all.Append(Text(c)).Append(' ');
+                }
+            }
+            return all.ToString();
+        }
+
+        [Fact]
+        public void A_plain_table_has_header_aligns_and_rows()
+        {
+            var table = TableOf("| Name | CPU | Memory |\n| --- | --- | --- |\n| Chrome | 40% | 2 GB |\n| Teams | 12% | 1 GB |");
+
+            Assert.Equal(new[] { "Name", "CPU", "Memory" }, Texts(table.Header));
+            Assert.Equal(new[] { ChatAlign.Left, ChatAlign.Left, ChatAlign.Left }, table.Aligns);
+            Assert.Equal(2, table.Rows.Count);
+            Assert.Equal(new[] { "Chrome", "40%", "2 GB" }, Texts(table.Rows[0]));
+            Assert.Equal(new[] { "Teams", "12%", "1 GB" }, Texts(table.Rows[1]));
+        }
+
+        [Fact]
+        public void The_delimiter_row_sets_each_columns_alignment()
+        {
+            var table = TableOf("| a | b | c | d |\n|:---|:---:|---:|---|\n| 1 | 2 | 3 | 4 |");
+            Assert.Equal(new[] { ChatAlign.Left, ChatAlign.Center, ChatAlign.Right, ChatAlign.Left }, table.Aligns);
+        }
+
+        [Fact]
+        public void Outer_pipes_are_optional()
+        {
+            var table = TableOf("a | b\n- | -\n1 | 2\n3 | 4");
+            Assert.Equal(new[] { "a", "b" }, Texts(table.Header));
+            Assert.Equal(new[] { "1", "2" }, Texts(table.Rows[0]));
+            Assert.Equal(new[] { "3", "4" }, Texts(table.Rows[1]));
+        }
+
+        [Fact]
+        public void A_short_row_is_padded_and_a_long_row_is_cut()
+        {
+            var table = TableOf("| a | b | c |\n|---|---|---|\n| 1 |\n| 1 | 2 | 3 | 4 | 5 |");
+            Assert.Equal(new[] { "1", "", "" }, Texts(table.Rows[0]));
+            Assert.Equal(new[] { "1", "2", "3" }, Texts(table.Rows[1]));
+            Assert.Empty(table.Rows[0][1].Runs);
+        }
+
+        [Fact]
+        public void An_escaped_pipe_and_a_pipe_in_a_code_span_stay_in_their_cell()
+        {
+            var table = TableOf("| cmd | note |\n|---|---|\n| a \\| b | `x | y` |\n| ``p | q`` | r |");
+            Assert.Equal(new[] { "a | b", "x | y" }, Texts(table.Rows[0]));
+            Assert.True(table.Rows[0][1].Runs.Single().Code);
+            Assert.Equal(new[] { "p | q", "r" }, Texts(table.Rows[1]));
+        }
+
+        [Fact]
+        public void Bold_code_and_a_link_in_a_cell_are_runs()
+        {
+            var table = TableOf("| a | b | c |\n|---|---|---|\n| **hot** | `top` | [docs](https://example.com/) |");
+            var row = table.Rows[0];
+            Assert.Equal(new[] { new ChatRun("hot", Bold: true) }, row[0].Runs);
+            Assert.Equal(new[] { new ChatRun("top", Code: true) }, row[1].Runs);
+            Assert.Equal(new[] { new ChatRun("docs", Link: new Uri("https://example.com/")) }, row[2].Runs);
+        }
+
+        [Fact]
+        public void A_header_without_its_delimiter_is_a_paragraph_and_becomes_a_table_when_it_arrives()
+        {
+            const string header = "| Name | CPU |";
+            var before = Single(header);
+            Assert.Equal(ChatBlockKind.Paragraph, before.Kind);
+            Assert.Equal(new[] { Plain(header) }, before.Runs);
+
+            Assert.Equal(ChatBlockKind.Paragraph, Single(header + "\n").Kind);
+
+            var table = TableOf(header + "\n|---|---|");
+            Assert.Equal(new[] { "Name", "CPU" }, Texts(table.Header));
+            Assert.Empty(table.Rows);
+        }
+
+        [Fact]
+        public void Every_prefix_of_a_streaming_table_parses_and_keeps_the_text_it_has()
+        {
+            const string full = "Intro\n\n| Name | CPU |\n|:--|--:|\n| `a|b` | **40%** |\n| Teams | 12% |\n\nDone.";
+            for (int n = 0; n <= full.Length; n++)
+            {
+                string prefix = full.Substring(0, n);
+                var blocks = ChatMarkdown.Parse(prefix);   // must not throw
+                string all = AllText(blocks);
+                foreach (string word in new[] { "Intro", "Name", "CPU", "Teams", "Done." })
+                    if (prefix.Contains(word, StringComparison.Ordinal)) Assert.Contains(word, all, StringComparison.Ordinal);
+            }
+        }
+
+        [Theory]
+        [InlineData("| a | b |\n| --- | -")]
+        [InlineData("| a | b |\n| --- |")]
+        [InlineData("| a | b |\n| --- | :")]
+        [InlineData("| a | b |\n|")]
+        [InlineData("| a | b |\n| --- | --- | ---")]
+        public void A_half_delimiter_row_neither_throws_nor_loses_text(string markdown)
+        {
+            var blocks = ChatMarkdown.Parse(markdown);
+            string all = AllText(blocks);
+            Assert.Contains("a", all, StringComparison.Ordinal);
+            Assert.Contains("b", all, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_half_delimiter_that_still_matches_the_header_is_a_table_with_no_rows()
+        {
+            var table = TableOf("| a | b |\n| --- | -");
+            Assert.Equal(new[] { "a", "b" }, Texts(table.Header));
+            Assert.Empty(table.Rows);
+        }
+
+        [Fact]
+        public void A_header_and_delimiter_with_different_counts_are_not_a_table()
+        {
+            var blocks = ChatMarkdown.Parse("| a | b | c |\n|---|---|\n| 1 | 2 |");
+            Assert.DoesNotContain(blocks, b => b.Kind == ChatBlockKind.Table);
+            Assert.Contains("| 1 | 2 |", AllText(blocks), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_table_ends_at_a_blank_line_and_at_a_heading()
+        {
+            var blocks = ChatMarkdown.Parse("| a | b |\n|---|---|\n| 1 | 2 |\n\n| 3 | 4 |\n\n| c | d |\n|---|---|\n| 5 | 6 |\n## Next\nafter");
+            Assert.Equal(new[] { ChatBlockKind.Table, ChatBlockKind.Paragraph, ChatBlockKind.Table, ChatBlockKind.Heading, ChatBlockKind.Paragraph },
+                blocks.Select(b => b.Kind));
+            Assert.Single(blocks[0].Table!.Rows);
+            Assert.Equal(new[] { Plain("| 3 | 4 |") }, blocks[1].Runs);
+            Assert.Single(blocks[2].Table!.Rows);
+            Assert.Equal(new[] { Plain("Next") }, blocks[3].Runs);
+        }
+
+        [Fact]
+        public void A_table_ends_at_a_fence_a_list_item_a_quote_and_a_rule()
+        {
+            foreach (string stop in new[] { "```\ncode\n```", "- item", "> quote", "---" })
+            {
+                var blocks = ChatMarkdown.Parse("| a |\n|---|\n| 1 |\n" + stop);
+                Assert.Equal(ChatBlockKind.Table, blocks[0].Kind);
+                Assert.Single(blocks[0].Table!.Rows);
+                Assert.Equal(2, blocks.Count);
+            }
+        }
+
+        [Fact]
+        public void A_table_may_follow_a_paragraph_without_a_blank_line()
+        {
+            var blocks = ChatMarkdown.Parse("Results:\n| a | b |\n|---|---|\n| 1 | 2 |");
+            Assert.Equal(new[] { ChatBlockKind.Paragraph, ChatBlockKind.Table }, blocks.Select(b => b.Kind));
+            Assert.Equal(new[] { Plain("Results:") }, blocks[0].Runs);
+        }
+
+        [Fact]
+        public void Inside_a_list_item_or_a_quote_there_are_no_tables()
+        {
+            foreach (string md in new[]
+            {
+                "- | a | b |\n  |---|---|\n  | 1 | 2 |",
+                "- item\n| a | b |\n|---|---|",
+                "1. item\n\n   | a | b |\n   |---|---|",
+                "> | a | b |\n> |---|---|\n> | 1 | 2 |",
+                "> quote\n| a | b |\n|---|---|",
+            })
+            {
+                var blocks = ChatMarkdown.Parse(md);
+                Assert.DoesNotContain(blocks, b => b.Kind == ChatBlockKind.Table);
+                Assert.Contains("a", AllText(blocks), StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
+        public void A_row_of_only_pipes_and_an_empty_header_cell_are_kept_as_empty_cells()
+        {
+            var table = TableOf("| | b |\n|---|---|\n|||\n| x | y |");
+            Assert.Equal(new[] { "", "b" }, Texts(table.Header));
+            Assert.Equal(new[] { "", "" }, Texts(table.Rows[0]));
+            Assert.Equal(new[] { "x", "y" }, Texts(table.Rows[1]));
+        }
+
+        [Fact]
+        public void Twelve_columns_and_a_hundred_rows_are_still_a_table()
+        {
+            Assert.Equal(12, ChatMarkdown.MaxTableColumns);
+            Assert.Equal(100, ChatMarkdown.MaxTableRows);
+
+            string head = "|" + string.Concat(Enumerable.Range(1, 12).Select(i => " h" + i + " |"));
+            string delim = "|" + string.Concat(Enumerable.Repeat("---|", 12));
+            string rows = string.Join("\n", Enumerable.Range(1, 100).Select(r => "| r" + r + " |"));
+
+            var table = TableOf(head + "\n" + delim + "\n" + rows);
+
+            Assert.Equal(12, table.Header.Count);
+            Assert.Equal(100, table.Rows.Count);
+            Assert.All(table.Rows, r => Assert.Equal(12, r.Count));
+        }
+
+        [Fact]
+        public void Thirteen_columns_is_no_table_and_every_cell_is_still_there()
+        {
+            string head = "|" + string.Concat(Enumerable.Range(1, 13).Select(i => " h" + i + " |"));
+            string delim = "|" + string.Concat(Enumerable.Repeat("---|", 13));
+            string row = "|" + string.Concat(Enumerable.Range(1, 13).Select(i => " c" + i + " |"));
+            string md = head + "\n" + delim + "\n" + row;
+
+            var blocks = ChatMarkdown.Parse(md);
+
+            // Exactly what the parser makes of these lines without table support: one paragraph of three lines.
+            var block = Assert.Single(blocks);
+            Assert.Equal(ChatBlockKind.Paragraph, block.Kind);
+            Assert.Equal(new[] { Plain(head), Break, Plain(delim), Break, Plain(row) }, block.Runs);
+            string all = AllText(blocks);
+            for (int i = 1; i <= 13; i++)
+            {
+                Assert.Contains(" h" + i + " ", all, StringComparison.Ordinal);
+                Assert.Contains(" c" + i + " ", all, StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
+        public void A_hundred_and_first_row_is_no_table_and_every_row_is_still_there()
+        {
+            string[] lines = new[] { "| a | b |", "|---|---|" }
+                .Concat(Enumerable.Range(1, 101).Select(r => "| row" + r + " | x |")).ToArray();
+
+            var blocks = ChatMarkdown.Parse(string.Join("\n", lines));
+
+            var block = Assert.Single(blocks);
+            Assert.Equal(ChatBlockKind.Paragraph, block.Kind);
+            string all = AllText(blocks);
+            foreach (string line in lines) Assert.Contains(line, all, StringComparison.Ordinal);
+            // Line by line what the parser made before tables: runs separated by breaks, nothing styled.
+            Assert.Equal(lines.Length, block.Runs.Count(r => !r.IsLineBreak));
+            Assert.Equal(lines, block.Runs.Where(r => !r.IsLineBreak).Select(r => r.Text));
+        }
+
+        [Fact]
+        public void A_line_of_four_thousand_pipes_parses_quickly_and_loses_nothing()
+        {
+            string pipes = new string('|', 4000);
+            string md = pipes + "\n" + pipes + "\n\n| x | y |\n|---|---|\n\n" + pipes;
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var blocks = ChatMarkdown.Parse(md);
+            watch.Stop();
+
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), "took " + watch.Elapsed);
+            string all = AllText(blocks);
+            Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(all, "[|]{4000}").Count);
+            Assert.Contains("x", all, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_thousand_backticks_and_pipes_in_one_row_parse_quickly()
+        {
+            string odd = string.Concat(Enumerable.Range(1, 60).Select(n => new string('`', n) + "|"));
+            string md = "| a | b |\n|---|---|\n" + odd + "\n" + string.Concat(Enumerable.Repeat("`|", 5000));
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var blocks = ChatMarkdown.Parse(md);
+            watch.Stop();
+
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), "took " + watch.Elapsed);
+            Assert.Equal(ChatBlockKind.Table, blocks[0].Kind);
+        }
+
+        [Fact]
+        public void A_table_of_five_thousand_rows_is_text_and_parses_quickly()
+        {
+            string md = "| a | b |\n|---|---|\n" + string.Join("\n", Enumerable.Range(1, 5000).Select(r => "| " + r + " | **x** |"));
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var blocks = ChatMarkdown.Parse(md);
+            watch.Stop();
+
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), "took " + watch.Elapsed);
+            Assert.DoesNotContain(blocks, b => b.Kind == ChatBlockKind.Table);
+            Assert.Contains("| 5000 |", AllText(blocks), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_cell_longer_than_the_inline_limit_is_shown_plain()
+        {
+            string longCell = string.Concat(Enumerable.Repeat("*a ", ChatMarkdown.MaxInlineLength));
+            var table = TableOf("| a | b |\n|---|---|\n| **ok** | " + longCell + " |");
+
+            Assert.Equal(new[] { Plain(longCell.TrimEnd()) }, table.Rows[0][1].Runs);
+        }
+
+        [Fact]
+        public void Closed_is_true_for_a_closed_fence_false_for_an_open_one_and_true_for_everything_else()
+        {
+            Assert.True(Single("```js\nlet a;\n```").Closed);
+            Assert.True(Single("~~~\nx\n~~~").Closed);
+            Assert.False(Single("```js\nlet a;").Closed);
+            Assert.False(Single("```js\nlet a;\n").Closed);
+            Assert.False(Single("```").Closed);
+            Assert.True(Single("plain text").Closed);
+            Assert.True(Single("# Heading").Closed);
+            Assert.True(Single("- item").Closed);
+            Assert.True(Single("> quote").Closed);
+            Assert.True(Single("---").Closed);
+            Assert.True(Single("| a |\n|---|").Closed);
+        }
     }
 }

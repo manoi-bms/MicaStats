@@ -17,7 +17,26 @@ namespace Kil0bitSystemMonitor.Services.Ai
         Quote,
         Code,
         Rule,
+        Table,
     }
+
+    /// <summary>How a table column's text sits in its cells.</summary>
+    public enum ChatAlign
+    {
+        Left,
+        Center,
+        Right,
+    }
+
+    /// <summary>One table cell: its text as styled runs (empty for an empty cell).</summary>
+    public sealed record ChatCell(IReadOnlyList<ChatRun> Runs);
+
+    /// <summary>
+    /// A table: one alignment per column, a header row and body rows. Every row has exactly as many
+    /// cells as there are columns.
+    /// </summary>
+    public sealed record ChatTable(IReadOnlyList<ChatAlign> Aligns, IReadOnlyList<ChatCell> Header,
+                                   IReadOnlyList<IReadOnlyList<ChatCell>> Rows);
 
     /// <summary>
     /// A piece of text with one style. A run whose text is exactly <c>"\n"</c> is a line break.
@@ -35,7 +54,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
     {
         private readonly List<ChatRun> _runs = new();
 
-        internal ChatBlock(ChatBlockKind kind, int level = 0, int depth = 0, int number = 0, string language = "", string code = "")
+        internal ChatBlock(ChatBlockKind kind, int level = 0, int depth = 0, int number = 0, string language = "", string code = "",
+                            ChatTable? table = null, bool closed = true)
         {
             Kind = kind;
             Level = level;
@@ -43,6 +63,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
             Number = number;
             Language = language;
             Code = code;
+            Table = table;
+            Closed = closed;
         }
 
         /// <summary>What the block is.</summary>
@@ -65,6 +87,15 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
         /// <summary>A code block's text, verbatim, lines joined with <c>\n</c>.</summary>
         public string Code { get; }
+
+        /// <summary>A table block's header, alignments and rows; null for every other kind.</summary>
+        public ChatTable? Table { get; }
+
+        /// <summary>
+        /// For a code block, whether its closing fence line was seen (false while the fence is still
+        /// open at the end of the text, as in a streaming answer); true for every other kind.
+        /// </summary>
+        public bool Closed { get; }
 
         internal void Add(IReadOnlyList<ChatRun> runs) => _runs.AddRange(runs);
 
@@ -98,6 +129,15 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         public const int MaxListDepth = 6;
 
+        /// <summary>
+        /// The most columns a table may have. A wider one is not a table: its lines are parsed as
+        /// text, so a pathological answer cannot build an enormous grid.
+        /// </summary>
+        public const int MaxTableColumns = 12;
+
+        /// <summary>The most body rows a table may have; a longer one is not a table (see <see cref="MaxTableColumns"/>).</summary>
+        public const int MaxTableRows = 100;
+
         private static readonly Regex HeadingRx = new(@"^ {0,3}(#{1,6})(?:[ \t]+|$)", RegexOptions.CultureInvariant);
         private static readonly Regex ClosingHashesRx = new(@"(?:^|[ \t]+)#+[ \t]*$", RegexOptions.CultureInvariant);
         private static readonly Regex BulletRx = new(@"^([ \t]*)[-*+][ \t]+", RegexOptions.CultureInvariant);
@@ -119,6 +159,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             ChatBlock? open = null;         // a paragraph, quote or item the next line may continue
             bool blank = false;             // a blank line came after `open`
             int itemContent = 0;            // where the last item's text starts
+            int noTableThrough = -1;        // lines up to here belong to a table over the limits: text, as before tables
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -132,7 +173,9 @@ namespace Kil0bitSystemMonitor.Services.Ai
                     var code = new List<string>();
                     int j = i + 1;
                     for (; j < lines.Length && fences[j] == MdFence.Inside; j++) code.Add(Unindent(lines[j], indent));
-                    blocks.Add(new ChatBlock(ChatBlockKind.Code, language: fence.Groups[2].Value, code: string.Join("\n", code)));
+                    // Past the last line means the text ended inside the fence (still streaming).
+                    blocks.Add(new ChatBlock(ChatBlockKind.Code, language: fence.Groups[2].Value, code: string.Join("\n", code),
+                        closed: j < lines.Length));
                     i = j;   // the closing fence, or past the end
                     open = null;
                     blank = false;
@@ -156,6 +199,21 @@ namespace Kil0bitSystemMonitor.Services.Ai
                          && int.TryParse(numberMatch.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out number)))
                 {
                     kind = MdBlock.Paragraph;
+                }
+
+                // A table needs a header line that is plain text, not part of an open quote or list item
+                // (those lines continue it), and a delimiter line right after it.
+                bool continues = open is { Kind: ChatBlockKind.Quote or ChatBlockKind.Bullet or ChatBlockKind.Numbered }
+                    && (!blank || (open.Kind != ChatBlockKind.Quote && Width(Leading(line)) >= itemContent));
+                if (i > noTableThrough && !continues && (kind is MdBlock.Paragraph or MdBlock.Definition)
+                    && TryTable(lines, fences, i, ref noTableThrough, out ChatTable? table, out int lastRow))
+                {
+                    blocks.Add(new ChatBlock(ChatBlockKind.Table, table: table));
+                    levels.Clear();
+                    open = null;
+                    blank = false;
+                    i = lastRow;
+                    continue;
                 }
 
                 switch (kind)
@@ -288,6 +346,203 @@ namespace Kil0bitSystemMonitor.Services.Ai
             int i = 0;
             while (i < indent && i < line.Length && line[i] == ' ') i++;
             return line.Substring(i);
+        }
+
+        // ---- tables ----------------------------------------------------------------------------
+
+        /// <summary>
+        /// A table whose header is <c>lines[i]</c>, if a delimiter line follows and the counts agree;
+        /// <paramref name="last"/> is its final line. A table over the limits is none, and
+        /// <paramref name="noTableThrough"/> is set so its lines are all read as text, as they were
+        /// before tables. Every step is linear in the lines it reads, and each line is read once.
+        /// </summary>
+        private static bool TryTable(string[] lines, MdFence[] fences, int i, ref int noTableThrough,
+                                     out ChatTable? table, out int last)
+        {
+            table = null;
+            last = i;
+            if (i + 1 >= lines.Length || fences[i + 1] != MdFence.None || !HasPipe(lines[i])) return false;
+
+            List<ChatAlign>? aligns = Delimiter(lines[i + 1]);
+            if (aligns == null) return false;
+            int columns = aligns.Count;
+            if (columns > MaxTableColumns)
+            {
+                noTableThrough = i + 1;
+                return false;
+            }
+
+            List<string>? header = SplitRow(lines[i], columns, out bool tooMany);
+            if (tooMany || header == null || header.Count != columns) return false;
+
+            // Find where the body ends before splitting any cell, so a huge one costs a line scan only.
+            int end = i + 2;
+            while (end < lines.Length && fences[end] == MdFence.None && !string.IsNullOrWhiteSpace(lines[end])
+                   && (HasPipe(lines[end]) || !StartsBlock(lines[end]))) end++;
+            if (end - (i + 2) > MaxTableRows)
+            {
+                noTableThrough = end - 1;
+                return false;
+            }
+
+            // Past the inline limit a line gets no styling, exactly as a paragraph line does.
+            var head = new List<ChatCell>(columns);
+            foreach (string cell in header) head.Add(MakeCell(cell, lines[i].Length <= MaxInlineLength));
+
+            var rows = new List<IReadOnlyList<ChatCell>>(end - (i + 2));
+            for (int r = i + 2; r < end; r++)
+            {
+                List<string> parts = SplitRow(lines[r], columns, out _)!;   // a cell past the last column is cut
+                bool styled = lines[r].Length <= MaxInlineLength;
+                var row = new List<ChatCell>(columns);
+                for (int c = 0; c < columns; c++) row.Add(MakeCell(c < parts.Count ? parts[c] : "", styled));
+                rows.Add(row);
+            }
+
+            table = new ChatTable(aligns, head, rows);
+            last = end - 1;
+            return true;
+        }
+
+        private static ChatCell MakeCell(string text, bool styled) =>
+            new(styled ? ParseInline(text) : (text.Length == 0 ? new List<ChatRun>() : new List<ChatRun> { new ChatRun(text) }));
+
+        /// <summary>True if a line holds a pipe that no backslash escapes.</summary>
+        private static bool HasPipe(string line)
+        {
+            for (int i = 0; i < line.Length; i++)
+            {
+                if (line[i] == '\\' && i + 1 < line.Length && line[i + 1] == '|') { i++; continue; }
+                if (line[i] == '|') return true;
+            }
+            return false;
+        }
+
+        /// <summary>Whether a line without a pipe starts a block of its own, so it ends a table.</summary>
+        private static bool StartsBlock(string line)
+        {
+            MdBlock kind = MarkdownLineTokenizer.BlockOf(line, MdFence.None);
+            // A Unicode digit is no list number here (see Parse).
+            if (kind == MdBlock.Numbered) return NumberedRx.IsMatch(line);
+            return kind is not (MdBlock.Paragraph or MdBlock.Definition);
+        }
+
+        /// <summary>
+        /// The alignments of a delimiter line (cells of <c>-</c> with an optional <c>:</c> at either
+        /// end), or null if the line is not one. More than <see cref="MaxTableColumns"/> cells give a
+        /// list one longer than that, which is all the caller needs to know.
+        /// </summary>
+        private static List<ChatAlign>? Delimiter(string line)
+        {
+            List<string> cells = SplitRow(line, MaxTableColumns + 1, out _)!;
+            var aligns = new List<ChatAlign>(cells.Count);
+            foreach (string cell in cells)
+            {
+                bool left = cell.StartsWith(':');
+                bool right = cell.Length > 1 && cell.EndsWith(':');
+                int from = left ? 1 : 0;
+                int to = cell.Length - (right ? 1 : 0);
+                if (to <= from) return null;
+                for (int k = from; k < to; k++)
+                    if (cell[k] != '-') return null;
+                aligns.Add(left && right ? ChatAlign.Center : right ? ChatAlign.Right : ChatAlign.Left);
+            }
+            return aligns;
+        }
+
+        /// <summary>
+        /// The trimmed cells of a table line: the outer pipes dropped, split on pipes that are not
+        /// escaped and not inside a code span. A <c>\|</c> stays for the inline parser, which shows a
+        /// pipe, except inside a code span, where it becomes a plain pipe. At most
+        /// <paramref name="limit"/> cells are returned; <paramref name="tooMany"/> says more followed.
+        /// Linear in the line: code spans are matched by one pass over the backtick runs.
+        /// </summary>
+        private static List<string> SplitRow(string line, int limit, out bool tooMany)
+        {
+            tooMany = false;
+            string s = line.Trim();
+            var cells = new List<string>();
+            var cell = new StringBuilder();
+            List<(int Pos, int Len, int Next)> ticks = BacktickRuns(s);
+            int run = 0;
+            int i = s.Length > 0 && s[0] == '|' ? 1 : 0;
+            bool trailing = false;   // the line ended with a separator: no cell follows it
+
+            while (i < s.Length)
+            {
+                char c = s[i];
+                if (c == '\\' && i + 1 < s.Length && IsEscapable(s[i + 1]))
+                {
+                    cell.Append(c).Append(s[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                if (c == '`')
+                {
+                    while (run < ticks.Count && ticks[run].Pos < i) run++;
+                    (int pos, int len, int next) = ticks[run];
+                    if (next >= 0)
+                    {
+                        int close = ticks[next].Pos + ticks[next].Len;
+                        for (int k = pos; k < close; k++)
+                        {
+                            if (s[k] == '\\' && k + 1 < close && s[k + 1] == '|') k++;   // an escaped pipe is a pipe in code
+                            cell.Append(s[k]);
+                        }
+                        i = close;
+                        run = next + 1;
+                    }
+                    else
+                    {
+                        cell.Append(s, pos, len);
+                        i = pos + len;
+                        run++;
+                    }
+                    continue;
+                }
+                if (c == '|')
+                {
+                    cells.Add(cell.ToString().Trim());
+                    cell.Clear();
+                    if (i == s.Length - 1) trailing = true;
+                    else if (cells.Count == limit)
+                    {
+                        tooMany = true;
+                        return cells;
+                    }
+                    i++;
+                    continue;
+                }
+                cell.Append(c);
+                i++;
+            }
+            if (!trailing) cells.Add(cell.ToString().Trim());
+            return cells;
+        }
+
+        /// <summary>
+        /// The runs of backticks in a line (an escaped backtick is no run), each with the index of the
+        /// next run of the same length, which would close it, or -1. One pass from the right.
+        /// </summary>
+        private static List<(int Pos, int Len, int Next)> BacktickRuns(string s)
+        {
+            var runs = new List<(int Pos, int Len, int Next)>();
+            if (s.IndexOf('`') < 0) return runs;
+            for (int i = 0; i < s.Length;)
+            {
+                if (s[i] == '\\' && i + 1 < s.Length && IsEscapable(s[i + 1])) { i += 2; continue; }
+                if (s[i] != '`') { i++; continue; }
+                int n = Run(s, i, s.Length, '`');
+                runs.Add((i, n, -1));
+                i += n;
+            }
+            var nextOfLength = new Dictionary<int, int>();
+            for (int r = runs.Count - 1; r >= 0; r--)
+            {
+                runs[r] = (runs[r].Pos, runs[r].Len, nextOfLength.TryGetValue(runs[r].Len, out int next) ? next : -1);
+                nextOfLength[runs[r].Len] = r;
+            }
+            return runs;
         }
 
         // ---- inline ----------------------------------------------------------------------------

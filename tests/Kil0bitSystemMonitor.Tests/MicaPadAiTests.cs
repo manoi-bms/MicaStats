@@ -776,6 +776,381 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Words · Answered from 1 passage · api.anthropic.com", pane.StatusText.Text);
         });
 
+        // ---- the model's own limits (AI model limits spec 2) ---------------------------------------
+
+        /// <summary>A window of 8,192 tokens: a rewrite takes 1,638 tokens of text, the other actions 2,048; answers up to 2,048 tokens.</summary>
+        private static readonly AiBudget SmallWindow = AiBudget.For(8192, 0, 0);
+
+        /// <summary>A window of 262,144 tokens: 25,600 and 99,072 tokens of text; answers up to 32,000 tokens and 128,000 characters; 20 passages.</summary>
+        private static readonly AiBudget LargeWindow = AiBudget.For(262_144, 0, 0);
+
+        /// <summary>Thai text: one token a character by the estimate, where ASCII is a quarter of one.</summary>
+        private static string Thai(int chars) => new string((char)0x0E01, chars);
+
+        /// <summary>Settings whose model's limits were learned from its provider: a window of 262,144 tokens, answers up to 16,384.</summary>
+        private static AppConfig WithLearnedLimits()
+        {
+            var config = new AppConfig
+            {
+                AiProvider = AiProviders.OpenAiCompatible,
+                AiCompatibleBaseUrl = "https://llm.example.com/v1",
+                AiCompatibleModel = "glm-5.2",
+                AiModelContext = 262_144,
+                AiModelOutput = 16_384,
+            };
+            config.AiModelLimitsOf = ModelCatalog.KeyOf(config);
+            return config;
+        }
+
+        [Fact]
+        public Task By_default_the_budget_is_the_one_the_app_reads_from_its_settings_and_the_standard_one_while_there_are_none() => OnUiWithDefaults((window, env) =>
+        {
+            System.Reflection.MethodInfo? apps = typeof(App).GetMethod(nameof(App.CurrentBudget),
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(apps);
+            Assert.Null(App.ConfigService);                       // the tests never start the app: there are no settings to read
+
+            Assert.Equal(apps, window.AiBudgetNow.Method);        // the app's settings: not limits of its own
+            Assert.Same(AiBudget.Standard, window.AiBudgetNow());
+            Assert.Same(AiBudget.Standard, App.CurrentBudget());
+            return Task.CompletedTask;
+        });
+
+        [Fact]
+        public void The_apps_budget_follows_the_limits_learned_for_the_model_the_settings_name()
+        {
+            Assert.Same(AiBudget.Standard, App.BudgetOf(null));              // before the settings load
+            Assert.Same(AiBudget.Standard, App.BudgetOf(new AppConfig()));   // nothing learned, and Auto: no window is known
+
+            AppConfig config = WithLearnedLimits();
+            Assert.Equal("OpenAiCompatible|https://llm.example.com|glm-5.2", config.AiModelLimitsOf);
+            Assert.Equal(AiBudget.For(262_144, 16_384, 0), App.BudgetOf(config));
+            Assert.Equal(262_144, App.BudgetOf(config).ContextTokens);
+            Assert.Equal(16_384, App.BudgetOf(config).PadOutputTokens);     // never above what the provider reported
+
+            // The number set in Settings holds it down, and never raises it.
+            config.AiContextWindow = 32_000;
+            Assert.Equal(AiBudget.For(262_144, 16_384, 32_000), App.BudgetOf(config));
+            Assert.Equal(32_000, App.BudgetOf(config).ContextTokens);
+            config.AiContextWindow = 1_000_000;
+            Assert.Equal(262_144, App.BudgetOf(config).ContextTokens);
+
+            // Claude, the same way.
+            var claude = new AppConfig { AiClaudeModel = "claude-sonnet-5-5", AiModelContext = 200_000, AiModelOutput = 64_000 };
+            claude.AiModelLimitsOf = ModelCatalog.KeyOf(claude);
+            Assert.Equal(AiBudget.For(200_000, 64_000, 0), App.BudgetOf(claude));
+        }
+
+        [Fact]
+        public void Limits_learned_for_another_model_address_or_provider_are_not_used()
+        {
+            AppConfig config = WithLearnedLimits();
+            config.AiCompatibleModel = "another-model";
+            Assert.Same(AiBudget.Standard, App.BudgetOf(config));
+
+            config = WithLearnedLimits();
+            config.AiCompatibleBaseUrl = "https://other.example.com/v1";
+            Assert.Same(AiBudget.Standard, App.BudgetOf(config));
+
+            config = WithLearnedLimits();
+            config.AiCompatibleBaseUrl = "http://llm.example.com/v1";       // the same host without TLS is another address
+            Assert.Same(AiBudget.Standard, App.BudgetOf(config));
+
+            config = WithLearnedLimits();
+            config.AiProvider = AiProviders.Claude;
+            Assert.Same(AiBudget.Standard, App.BudgetOf(config));
+
+            config = WithLearnedLimits();
+            config.AiModelLimitsOf = config.AiModelLimitsOf.Replace("glm-5.2", "GLM-5.2", StringComparison.Ordinal);   // letter for letter
+            Assert.Same(AiBudget.Standard, App.BudgetOf(config));
+
+            config = WithLearnedLimits();
+            config.AiModelLimitsOf = "";
+            Assert.Same(AiBudget.Standard, App.BudgetOf(config));
+
+            // The number set in Settings still counts: it is the user's, not the other model's.
+            config = WithLearnedLimits();
+            config.AiModelOutput = 2048;
+            config.AiCompatibleModel = "another-model";
+            config.AiContextWindow = 32_000;
+            Assert.Equal(AiBudget.For(0, 0, 32_000), App.BudgetOf(config));
+            Assert.Equal(32_000, App.BudgetOf(config).ContextTokens);
+            Assert.Equal(8000, App.BudgetOf(config).PadOutputTokens);       // not held to the 2,048 the other model reported
+        }
+
+        [Fact]
+        public Task A_rewrite_too_long_for_the_models_window_is_refused_in_tokens_and_makes_no_request() => OnUiAsync(async h =>
+        {
+            h.Window.AiBudgetNow = () => SmallWindow;
+            string thai = Thai(2000);                             // about 2,000 tokens: a rewrite takes 1,638
+            Write(h, thai, thai);
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.Usage.UsedToday);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Equal(Visibility.Visible, h.Pane.Visibility);
+            Assert.Equal("This text is too long for a rewrite with this model: about 2,000 tokens, and it can take about 1,638. Select less text.",
+                         h.Pane.StatusText.Text);
+            Assert.Equal("Selection, 2,000 characters", h.Pane.SourceText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+            Assert.False(h.Pane.InsertButton.IsEnabled);
+            Assert.False(h.Pane.RetryButton.IsEnabled);
+            Assert.Equal(new[] { "AI improve: 0 chars in the request, 0 chars back, refused" }, h.Log);
+
+            // ASCII text of the same length is a quarter of the tokens: it is sent, with the window's own output limit.
+            string ascii = new string('a', 2000);
+            Write(h, ascii, ascii);
+            h.Model.Reply("ok");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Improve.Instruction, ascii), request.Messages[1].Text);
+            Assert.Equal(2048, request.Options?.MaxOutputTokens);
+            Assert.Equal(1, h.Usage.UsedToday);
+        });
+
+        [Fact]
+        public Task A_Thai_note_of_50000_characters_is_refused_for_a_small_window_and_sent_whole_for_a_large_one() => OnUiAsync(async h =>
+        {
+            string note = Thai(50_000);                           // about 50,000 tokens
+            Write(h, note);
+
+            h.Window.AiBudgetNow = () => SmallWindow;
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal("This text is too long for this model: about 50,000 tokens, and it can take about 2,048. Select less text.", h.Pane.StatusText.Text);
+
+            h.Window.AiBudgetNow = () => AiBudget.Standard;       // no window known: counted in characters, as before
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal("Select less text: at most 24,000 characters", h.Pane.StatusText.Text);
+            Assert.Equal(0, h.RunnersBuilt);
+            Assert.Equal(0, h.Usage.UsedToday);
+
+            h.Window.AiBudgetNow = () => LargeWindow;             // it takes 99,072 tokens
+            h.Model.Reply("- a summary");
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Summarize.Instruction, note), request.Messages[1].Text);   // all of it
+            Assert.Equal(32000, request.Options?.MaxOutputTokens);
+            Assert.Equal("Whole note, 50,000 characters", h.Pane.SourceText.Text);
+            Assert.Equal("", h.Pane.StatusText.Text);
+            Assert.Equal("- a summary", h.Pane.ResultBox.Shown);
+            Assert.Equal(1, h.Usage.UsedToday);
+        });
+
+        [Fact]
+        public Task The_budget_is_read_once_for_a_request_and_the_same_one_sizes_its_refusal_and_its_request() => OnUiAsync(async h =>
+        {
+            var handed = new List<AiBudget>();
+            h.Window.AiBudgetNow = () =>
+            {
+                // Another one each time it is asked: a second read for the same request would show.
+                AiBudget next = handed.Count == 0 ? LargeWindow : SmallWindow;
+                handed.Add(next);
+                return next;
+            };
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text").Reply("Better text");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Single(handed);
+            AiSession first = h.Window.AiSessionNow!;
+            Assert.Same(LargeWindow, first.Budget);
+            Assert.Equal(32000, h.Model.Requests[0].Options?.MaxOutputTokens);   // the session's own, not one read again for the runner
+
+            Click(h.Pane.RetryButton);                            // a new request: read again, once
+            await Finished(h, after: first);
+
+            Assert.Equal(2, handed.Count);
+            Assert.Same(SmallWindow, h.Window.AiSessionNow!.Budget);
+            Assert.Equal(2048, h.Model.Requests[1].Options?.MaxOutputTokens);
+        });
+
+        [Fact]
+        public Task A_reply_is_kept_up_to_the_cap_of_the_budget_its_session_was_built_with() => OnUiAsync(async h =>
+        {
+            Write(h, Note, Picked);
+            string reply = new string('x', 100_000);              // over the fixed 64,000 characters, under a large window's 128,000
+
+            h.Window.AiBudgetNow = () => LargeWindow;
+            h.Model.Reply(reply);
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal(100_000, h.Window.AiSessionNow!.ResultForNote.Length);
+            Assert.Equal("", h.Pane.StatusText.Text);             // whole
+            Assert.True(h.Pane.ReplaceButton.IsEnabled);
+
+            h.Window.AiBudgetNow = () => AiBudget.Standard;
+            h.Model.Reply(reply);
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal(64_000, h.Window.AiSessionNow!.ResultForNote.Length);
+            Assert.Equal("Cut short at the length limit", h.Pane.StatusText.Text);
+            Assert.False(h.Pane.ReplaceButton.IsEnabled);
+        });
+
+        [Fact]
+        public Task A_budget_that_cannot_be_read_gives_the_standard_limits_and_never_stops_the_action() => OnUiAsync(async h =>
+        {
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+            h.Window.AiBudgetNow = () => throw new InvalidOperationException("no settings for secret-model");
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Same(AiBudget.Standard, h.Window.AiSessionNow!.Budget);
+            Assert.Equal("Good text", h.Pane.ResultBox.Shown);
+            Assert.Equal(4096, Assert.Single(h.Model.Requests).Options?.MaxOutputTokens);
+            Assert.Contains("InvalidOperationException", Assert.Single(warned), StringComparison.Ordinal);
+            Assert.DoesNotContain("secret-model", warned[0], StringComparison.Ordinal);   // the type only
+
+            // And the limits are the fixed ones: 8,001 characters are too many for a rewrite, and nothing is sent.
+            string text = new string('x', 8001);
+            Write(h, text, text);
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Single(h.Model.Requests);
+            Assert.Equal("Select less text: at most 8,000 characters for a rewrite", h.Pane.StatusText.Text);
+        });
+
+        [Fact]
+        public Task A_seam_that_hands_back_no_budget_gives_the_standard_limits() => OnUiAsync(async h =>
+        {
+            int reads = 0;
+            h.Window.AiBudgetNow = () =>
+            {
+                reads++;
+                return null!;
+            };
+            Write(h, Note, Picked);
+            h.Model.Reply("Good text");
+
+            await h.Window.RunAiAsync(PadAiAction.Improve);
+
+            Assert.Equal(1, reads);
+            Assert.Same(AiBudget.Standard, h.Window.AiSessionNow!.Budget);
+            Assert.Equal(4096, Assert.Single(h.Model.Requests).Options?.MaxOutputTokens);
+            Assert.Equal("Good text", h.Pane.ResultBox.Shown);
+        });
+
+        [Fact]
+        public Task With_AI_off_the_budget_is_not_read() => OnUiWithSearch(async (h, search) =>
+        {
+            int reads = 0;
+            h.Window.AiBudgetNow = () =>
+            {
+                reads++;
+                return LargeWindow;
+            };
+            await Index(h, search, VpnNote);
+            h.AiOn = false;
+
+            await h.Window.RunAiAsync(PadAiAction.Summarize);
+            h.Window.ToggleAi();
+            await AskNotes(h, search, "vpn");
+
+            Assert.Equal(0, reads);                               // nothing is built while AI is off, not even its limits
+            Assert.Empty(h.Model.Requests);
+            Assert.Equal(0, h.RunnersBuilt);
+        });
+
+        /// <summary>Notes of three passages each about the vpn; the search returns at most twenty hits, three of a note.</summary>
+        private static async Task IndexVpnNotes(Harness h, NoteSearchService search, int notes)
+        {
+            for (int n = 1; n <= notes; n++)
+            {
+                if (n > 1) h.Window.NewTab();
+                await Index(h, search, string.Join("\n\n", Enumerable.Range(1, 3).Select(p => "# Part " + Count(n) + "." + Count(p) + "\nthe vpn fact " + Count(n) + "." + Count(p))));
+            }
+        }
+
+        [Fact]
+        public Task With_a_large_window_twenty_passages_are_sources_and_the_pane_numbers_exactly_those() => OnUiWithSearch(async (h, search) =>
+        {
+            await IndexVpnNotes(h, search, 7);                    // twenty-one passages: the search returns its twenty
+            int reads = 0;
+            h.Window.AiBudgetNow = () =>
+            {
+                reads++;
+                return LargeWindow;
+            };
+            h.Model.Reply("See [1] and [20].");
+
+            await AskNotes(h, search, "vpn");
+
+            IReadOnlyList<Passage> hits = (await search.Search.SearchAsync("vpn", CancellationToken.None)).Hits;
+            Assert.Equal(20, hits.Count);
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(Enumerable.Range(1, 20).Select(n => (int?)n).ToArray(), pane.Rows.Select(r => r.Source).ToArray());
+            Assert.Equal("Words · Answered from 20 passages", pane.StatusText.Text);
+
+            // What the pane names is what was sent: every hit, in order, and nothing else.
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            Assert.Equal(NotesQuestion.Message("vpn", hits), request.Messages[1].Text);
+            Assert.Contains("\n\n[20] ", request.Messages[1].Text, StringComparison.Ordinal);
+            Assert.DoesNotContain("\n\n[21] ", request.Messages[1].Text, StringComparison.Ordinal);
+            Assert.Equal(hits.Select(s => (s.NoteId, s.FirstLine)).ToArray(), pane.Rows.Select(r => (r.NoteId, r.FirstLine)).ToArray());
+
+            Assert.Equal(32000, request.Options?.MaxOutputTokens);   // the same budget sizes the request
+            Assert.Equal(1, reads);                               // read once for the question
+            Assert.StartsWith("AI ask-notes: 20 sources, ", Assert.Single(h.Log), StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public Task With_a_window_of_32000_twelve_passages_are_sources_and_the_other_rows_carry_no_number() => OnUiWithSearch(async (h, search) =>
+        {
+            await IndexVpnNotes(h, search, 7);
+            AiBudget budget = AiBudget.For(32_000, 0, 0);
+            Assert.Equal(12, budget.NotesSources);
+            Assert.Equal(8000, budget.PadOutputTokens);
+            h.Window.AiBudgetNow = () => budget;
+            h.Model.Reply("See [1] and [12].");
+
+            await AskNotes(h, search, "vpn");
+
+            IReadOnlyList<Passage> hits = (await search.Search.SearchAsync("vpn", CancellationToken.None)).Hits;
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(Enumerable.Range(1, 12).Select(n => (int?)n).Concat(Enumerable.Repeat((int?)null, 8)).ToArray(),
+                         pane.Rows.Select(r => r.Source).ToArray());
+            Assert.Equal("Words · Answered from 12 passages", pane.StatusText.Text);
+
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            Assert.Equal(NotesQuestion.Message("vpn", hits.Take(12).ToList()), request.Messages[1].Text);
+            Assert.Contains("\n\n[12] ", request.Messages[1].Text, StringComparison.Ordinal);
+            Assert.DoesNotContain("\n\n[13] ", request.Messages[1].Text, StringComparison.Ordinal);
+            Assert.Equal(8000, request.Options?.MaxOutputTokens);
+        });
+
+        [Fact]
+        public Task A_budget_that_cannot_be_read_gives_Ask_your_notes_its_eight_passages_and_the_standard_limits() => OnUiWithSearch(async (h, search) =>
+        {
+            await IndexVpnNotes(h, search, 7);
+            var warned = new List<string>();
+            h.Window.Warn = warned.Add;
+            h.Window.AiBudgetNow = () => throw new InvalidOperationException("no settings for secret-model");
+            h.Model.Reply("See [1] and [8].");
+
+            await AskNotes(h, search, "vpn");
+
+            SearchPane pane = h.Window.SearchPanel;
+            Assert.Equal(Enumerable.Range(1, 8).Select(n => (int?)n).Concat(Enumerable.Repeat((int?)null, 12)).ToArray(),
+                         pane.Rows.Select(r => r.Source).ToArray());
+            Assert.Equal("Words · Answered from 8 passages", pane.StatusText.Text);
+            ScriptedChatClient.Request request = Assert.Single(h.Model.Requests);
+            Assert.DoesNotContain("\n\n[9] ", request.Messages[1].Text, StringComparison.Ordinal);
+            Assert.Equal(4096, request.Options?.MaxOutputTokens);
+            Assert.Contains(warned, line => line.Contains("InvalidOperationException", StringComparison.Ordinal));
+            Assert.All(warned, line => Assert.DoesNotContain("secret-model", line, StringComparison.Ordinal));   // the type only
+        });
+
         // ---- review focus 1: a credential in the selection -------------------------------------
 
         [Fact]

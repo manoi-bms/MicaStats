@@ -23,12 +23,19 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     /// A reply the provider ended early is never a clean end (MicaPad AI spec 5): the length
     /// limit, or any ending it names that is not a normal stop, is
     /// <see cref="PadAiUpdateKind.CutShort"/>; its content filter is an Error
-    /// (<see cref="StoppedByFilter"/>). A reply that passes <see cref="MaxReplyChars"/> is
-    /// stopped there, its request cancelled, and reported as cut short.
+    /// (<see cref="StoppedByFilter"/>). A reply that passes the runner's reply cap is stopped
+    /// there, its request cancelled, and reported as cut short.
+    /// </para>
+    ///
+    /// <para>
+    /// The output limit it asks for and the reply cap are <see cref="MaxOutputTokens"/> and
+    /// <see cref="MaxReplyChars"/> unless the runner was sized for a model whose limits are known
+    /// (<see cref="Within"/>; AI model limits spec 2.2).
     /// </para>
     /// </summary>
     public sealed class PadAiRunner
     {
+        /// <summary>The output limit asked for, and the length a reply is stopped at, while no context window is known.</summary>
         internal const int MaxOutputTokens = 4096;
         internal const int MaxReplyChars = 64000;
         internal const string StoppedByFilter = "The AI provider stopped the reply (content filter).";
@@ -39,13 +46,40 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         private readonly UsageMeter _usage;
         private readonly Func<int> _dailyLimit;
         private readonly TimeSpan _silence;
+        private readonly int _maxOutputTokens;
+        private readonly int _maxReplyChars;
 
-        public PadAiRunner(Func<AiClientResult> client, UsageMeter usage, Func<int> dailyLimit, TimeSpan? silence = null)
+        /// <param name="maxOutputTokens">
+        /// The output limit the request asks for, in tokens; <see cref="MaxOutputTokens"/> unless
+        /// the model's own limits are known (<see cref="AiBudget.PadOutputTokens"/>).
+        /// </param>
+        /// <param name="maxReplyChars">
+        /// The length a reply is stopped at, in characters; <see cref="MaxReplyChars"/> unless the
+        /// model's own limits are known (<see cref="AiBudget.PadReplyChars"/>).
+        /// </param>
+        public PadAiRunner(Func<AiClientResult> client, UsageMeter usage, Func<int> dailyLimit, TimeSpan? silence = null,
+                           int maxOutputTokens = MaxOutputTokens, int maxReplyChars = MaxReplyChars)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _usage = usage ?? throw new ArgumentNullException(nameof(usage));
             _dailyLimit = dailyLimit ?? throw new ArgumentNullException(nameof(dailyLimit));
             _silence = silence ?? TimeSpan.FromSeconds(60);
+            // A limit that is no positive number is the fixed one: none would refuse every request, or cut every reply at once.
+            _maxOutputTokens = maxOutputTokens > 0 ? maxOutputTokens : MaxOutputTokens;
+            _maxReplyChars = maxReplyChars > 0 ? maxReplyChars : MaxReplyChars;
+        }
+
+        /// <summary>
+        /// A runner like this one, sized by <paramref name="budget"/>: it asks for the budget's
+        /// output limit and stops a reply at the budget's cap. The provider, the daily count and
+        /// the silence deadline are this runner's own. No budget is the standard one, whose two
+        /// numbers are the fixed limits. The window hands it the budget of the request it is
+        /// about to make, the one that request's text was measured against.
+        /// </summary>
+        public PadAiRunner Within(AiBudget? budget)
+        {
+            budget ??= AiBudget.Standard;
+            return new PadAiRunner(_client, _usage, _dailyLimit, _silence, budget.PadOutputTokens, budget.PadReplyChars);
         }
 
         public async IAsyncEnumerable<PadAiUpdate> RunAsync(string userMessage, [EnumeratorCancellation] CancellationToken ct)
@@ -120,7 +154,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 Exception? failure = null;
                 bool cutShort = false, filtered = false, capped = false;
                 int length = 0;
-                (IAsyncEnumerator<ChatResponseUpdate>? stream, Exception? openError) = Open(client, result.IsClaude, userMessage, token);
+                (IAsyncEnumerator<ChatResponseUpdate>? stream, Exception? openError) = Open(client, result.IsClaude, userMessage, _maxOutputTokens, token);
                 if (stream == null) failure = openError;
                 else
                 {
@@ -149,7 +183,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                             if (string.IsNullOrEmpty(text)) continue;
 
                             // The cap: a provider that ignores the output limit must not flood the pane.
-                            string piece = Fitting(text, MaxReplyChars - length);
+                            string piece = Fitting(text, _maxReplyChars - length);
                             capped = piece.Length < text.Length;
                             if (piece.Length > 0)
                             {
@@ -208,7 +242,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         }
 
         private static (IAsyncEnumerator<ChatResponseUpdate>? Stream, Exception? Error) Open(
-            IChatClient client, bool isClaude, string? userMessage, CancellationToken token)
+            IChatClient client, bool isClaude, string? userMessage, int maxOutputTokens, CancellationToken token)
         {
             try
             {
@@ -219,7 +253,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                         : new ChatMessage(ChatRole.System, PadAiPrompts.System),
                     new ChatMessage(ChatRole.User, userMessage ?? ""),
                 };
-                return (client.GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = MaxOutputTokens }, token)
+                return (client.GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = maxOutputTokens }, token)
                               .GetAsyncEnumerator(token), null);
             }
             catch (Exception ex)

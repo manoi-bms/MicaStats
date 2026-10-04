@@ -28,8 +28,10 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>
         /// The Search pane's Ask: the search as usual, then the question and the first passages
-        /// found (at most eight) for the model to answer from. The rows are built in hit order,
-        /// so row i is source i + 1, the <c>[n]</c> the answer cites.
+        /// found for the model to answer from: at most eight, or as many as the model's context
+        /// window allows when it is known (twelve or twenty, <see cref="AiBudget.NotesSources"/>),
+        /// and never more than the search returned. The rows are built in hit order, so row i is
+        /// source i + 1, the <c>[n]</c> the answer cites.
         ///
         /// <para>
         /// While AI is off this is the normal search and a sentence saying how to turn AI on:
@@ -67,7 +69,9 @@ namespace Kil0bitSystemMonitor.Pad
             // Off the UI thread, as RunSearchAsync does; the rows are built back here.
             SearchOutcome outcome = await Task.Run(() => service.Search.SearchAsync(query, token), token);
             string status = SearchStatusText.For(outcome, service.Settings());
-            IReadOnlyList<Passage> sources = NotesQuestion.Sources(outcome.Hits);
+            // The model's limits, read once for this question: how many passages it takes, and what its request asks for.
+            AiBudget budget = AiBudgetForRequest();
+            IReadOnlyList<Passage> sources = NotesQuestion.Sources(outcome.Hits, budget.NotesSources);
 
             // The search as usual, with a sentence in place of the answer: no row is a numbered source.
             AskStart Instead(string sentence, string why)
@@ -85,7 +89,7 @@ namespace Kil0bitSystemMonitor.Pad
             PadAiRunner? runner;
             try
             {
-                runner = AiRunnerFactory();
+                runner = AiRunnerFactory()?.Within(budget);
             }
             catch (Exception ex)
             {

@@ -266,6 +266,114 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(new AiSession(PadAiAction.Ask, new string('x', PadAiAction.ReadMaxChars), true).View(Ok).AskForInstruction);
         }
 
+        // ---- the model's own limits (AI model limits spec 2.2 and 2.4) -------------------------------
+
+        /// <summary>A window of 8,192 tokens: a rewrite takes 1,638 tokens of text, the other actions 2,048.</summary>
+        private static readonly AiBudget Small = AiBudget.For(8192, 0, 0);
+
+        /// <summary>A window of 262,144 tokens: a rewrite takes 25,600 tokens of text, the other actions 99,072.</summary>
+        private static readonly AiBudget Large = AiBudget.For(262_144, 0, 0);
+
+        /// <summary>Thai text: one token a character by the estimate.</summary>
+        private static string Thai(int chars) => new string((char)0x0E01, chars);
+
+        [Fact]
+        public void A_session_built_with_no_budget_has_the_standard_one()
+        {
+            Assert.Same(AiBudget.Standard, new AiSession(PadAiAction.Improve, "a", true).Budget);
+            Assert.Same(AiBudget.Standard, new AiSession(PadAiAction.Improve, "a", true, budget: null).Budget);
+        }
+
+        [Fact]
+        public void A_session_keeps_the_budget_it_was_built_with_and_is_refused_by_it()
+        {
+            var s = new AiSession(PadAiAction.Improve, Thai(2000), true, budget: Small);
+
+            Assert.Same(Small, s.Budget);                         // the one object its request is sized by too
+            Assert.Equal("This text is too long for a rewrite with this model: about 2,000 tokens, and it can take about 1,638. Select less text.", s.Refusal);
+            Assert.Equal(PadAiAction.Improve.TooLong(Thai(2000), Small), s.Refusal);
+            var v = s.View(Ok);
+            Assert.Equal(s.Refusal, v.Status);
+            Assert.Equal("", v.Result);
+            Assert.False(v.CanRetry);
+            Assert.False(v.CanCopy);
+            Assert.False(v.CanReplace);
+            Assert.False(v.CanInsert);
+            Assert.Equal("Selection, 2,000 characters", v.SourceLine);   // the source line still counts characters
+            Assert.Throws<System.InvalidOperationException>(() => s.Start());
+
+            // ASCII text of the same length is a quarter of the tokens: it goes.
+            var ascii = new AiSession(PadAiAction.Improve, new string('a', 2000), true, budget: Small);
+            Assert.Null(ascii.Refusal);
+            Assert.Same(Small, ascii.Budget);
+            ascii.Start();
+        }
+
+        [Fact]
+        public void A_read_action_is_held_to_the_read_share_of_the_budget()
+        {
+            Assert.Null(new AiSession(PadAiAction.Summarize, Thai(2048), false, budget: Small).Refusal);
+            Assert.Equal("This text is too long for this model: about 2,049 tokens, and it can take about 2,048. Select less text.",
+                         new AiSession(PadAiAction.Summarize, Thai(2049), false, budget: Small).Refusal);
+        }
+
+        [Fact]
+        public void With_a_large_window_a_session_takes_text_the_fixed_limits_refused()
+        {
+            string note = Thai(50_000);
+            Assert.Equal("Select less text: at most 24,000 characters", new AiSession(PadAiAction.Summarize, note, false).Refusal);
+
+            var s = new AiSession(PadAiAction.Summarize, note, false, budget: Large);
+
+            Assert.Null(s.Refusal);
+            Assert.Equal(PadAiPrompts.ForAction(PadAiAction.Summarize.Instruction, note), s.UserMessage);   // all of it is sent
+            Assert.Equal("Whole note, 50,000 characters", s.View(Ok).SourceLine);
+
+            // The same note for a small window: refused, in tokens.
+            Assert.Equal("This text is too long for this model: about 50,000 tokens, and it can take about 2,048. Select less text.",
+                         new AiSession(PadAiAction.Summarize, note, false, budget: Small).Refusal);
+        }
+
+        [Fact]
+        public void A_refusal_by_the_budget_wins_over_waiting_for_an_instruction()
+        {
+            var s = new AiSession(PadAiAction.Ask, Thai(2049), true, budget: Small);
+
+            Assert.Equal("This text is too long for this model: about 2,049 tokens, and it can take about 2,048. Select less text.", s.Refusal);
+            Assert.False(s.AwaitingInstruction);
+            Assert.False(s.View(Ok).AskForInstruction);
+
+            Assert.True(new AiSession(PadAiAction.Ask, Thai(2048), true, budget: Small).View(Ok).AskForInstruction);
+        }
+
+        [Fact]
+        public void The_text_is_measured_as_it_was_selected_before_a_credential_becomes_its_placeholder()
+        {
+            const string pill = "{{secret:K7Q2M9XD}}";            // 19 characters; sent as [[CREDENTIAL_1]], which has 16
+
+            // With no window: 8,001 characters as selected, 7,998 as sent. Refused, as it always was.
+            var plain = new AiSession(PadAiAction.Improve, pill + new string('x', 8001 - pill.Length), true);
+            Assert.Equal("Select less text: at most 8,000 characters for a rewrite", plain.Refusal);
+
+            // With a window: 6,553 characters as selected (1,639 tokens), 6,550 as sent (1,638). Measured at the same point.
+            var sized = new AiSession(PadAiAction.Improve, pill + new string('x', 4 * 1638 + 1 - pill.Length), true, budget: Small);
+            Assert.Equal("This text is too long for a rewrite with this model: about 1,639 tokens, and it can take about 1,638. Select less text.", sized.Refusal);
+            Assert.Null(new AiSession(PadAiAction.Improve, pill + new string('x', 4 * 1638 - pill.Length), true, budget: Small).Refusal);
+        }
+
+        [Fact]
+        public void A_credential_in_text_a_large_window_takes_is_still_sent_as_its_placeholder()
+        {
+            string source = new string('x', 30_000) + " {{secret:K7Q2M9XD}} " + new string('y', 30_000);   // far over the old limits
+
+            var s = new AiSession(PadAiAction.Summarize, source, false, budget: Large);
+
+            Assert.Null(s.Refusal);
+            Assert.Contains("[[CREDENTIAL_1]]", s.UserMessage, System.StringComparison.Ordinal);
+            foreach (string part in new[] { "{{secret", "K7Q2M9XD", "K7Q2", "M9XD", "}}" })
+                Assert.DoesNotContain(part, s.UserMessage, System.StringComparison.Ordinal);
+        }
+
         [Fact]
         public void A_read_result_on_another_tab_says_why_Insert_below_and_Try_again_are_off()
         {

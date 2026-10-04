@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using Kil0bitSystemMonitor.Models;
+using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
 using Xunit;
 
@@ -74,6 +75,170 @@ namespace Kil0bitSystemMonitor.Tests
             {
                 CultureInfo.CurrentCulture = new CultureInfo("th-TH");
                 Assert.Equal("Select less text: at most 24,000 characters", PadAiAction.Summarize.TooLong(24001));
+            }
+            finally { CultureInfo.CurrentCulture = old; }
+        }
+
+        // ---- the model's own limits (AI model limits spec 2.2 and 2.4) -------------------------------
+
+        /// <summary>A window of 8,192 tokens: a rewrite takes 1,638 tokens of text, the other actions 2,048.</summary>
+        private static readonly AiBudget Small = AiBudget.For(8192, 0, 0);
+
+        /// <summary>A window of 262,144 tokens: a rewrite takes 25,600 tokens of text, the other actions 99,072.</summary>
+        private static readonly AiBudget Large = AiBudget.For(262_144, 0, 0);
+
+        /// <summary>Thai text of <paramref name="chars"/> characters: one token each by the estimate, where ASCII is a quarter.</summary>
+        private static string Thai(int chars) => new string((char)0x0E01, chars);
+
+        private static string Rewrite(string tokens, string limit) =>
+            "This text is too long for a rewrite with this model: about " + tokens + " tokens, and it can take about " + limit + ". Select less text.";
+
+        private static string Read(string tokens, string limit) =>
+            "This text is too long for this model: about " + tokens + " tokens, and it can take about " + limit + ". Select less text.";
+
+        [Fact]
+        public void With_a_window_Thai_text_is_refused_where_ASCII_text_of_the_same_length_is_accepted()
+        {
+            Assert.Equal(1638, Small.RewriteInput);
+            Assert.Equal(2048, Small.ReadInput);
+            string ascii = new string('a', 4000);                 // about 1,000 tokens
+            string thai = Thai(4000);                             // about 4,000
+
+            Assert.Null(PadAiAction.Improve.TooLong(ascii, Small));
+            Assert.Equal(Rewrite("4,000", "1,638"), PadAiAction.Improve.TooLong(thai, Small));
+            Assert.Null(PadAiAction.Summarize.TooLong(ascii, Small));
+            Assert.Equal(Read("4,000", "2,048"), PadAiAction.Summarize.TooLong(thai, Small));
+        }
+
+        [Fact]
+        public void With_a_window_the_two_sentences_are_word_for_word_and_say_tokens()
+        {
+            Assert.Equal("This text is too long for a rewrite with this model: about 31,000 tokens, and it can take about 25,600. Select less text.",
+                         PadAiAction.Improve.TooLong(Thai(31_000), Large));
+            Assert.Equal("This text is too long for this model: about 100,000 tokens, and it can take about 99,072. Select less text.",
+                         PadAiAction.Summarize.TooLong(Thai(100_000), Large));
+        }
+
+        [Fact]
+        public void With_a_window_text_at_the_limit_is_taken_and_one_token_over_is_refused()
+        {
+            // Thai: a token a character.
+            Assert.Null(PadAiAction.Improve.TooLong(Thai(1638), Small));
+            Assert.Equal(Rewrite("1,639", "1,638"), PadAiAction.Improve.TooLong(Thai(1639), Small));
+            Assert.Null(PadAiAction.Explain.TooLong(Thai(2048), Small));
+            Assert.Equal(Read("2,049", "2,048"), PadAiAction.Explain.TooLong(Thai(2049), Small));
+
+            // ASCII: four characters a token, rounded up.
+            Assert.Null(PadAiAction.Improve.TooLong(new string('a', 4 * 1638), Small));
+            Assert.Equal(Rewrite("1,639", "1,638"), PadAiAction.Improve.TooLong(new string('a', 4 * 1638 + 1), Small));
+            Assert.Null(PadAiAction.Explain.TooLong(new string('a', 4 * 2048), Small));
+            Assert.Equal(Read("2,049", "2,048"), PadAiAction.Explain.TooLong(new string('a', 4 * 2048 + 1), Small));
+        }
+
+        [Fact]
+        public void With_a_window_a_rewrite_is_held_to_the_rewrite_share_and_every_other_action_to_the_read_share()
+        {
+            string between = Thai(2000);                          // over the rewrite share of 1,638, under the read share of 2,048
+            string over = Thai(2049);
+
+            foreach (PadAiAction action in PadAiAction.Menu.Append(PadAiAction.FixDiagram("mermaid", "Parse error")))
+            {
+                bool rewrite = action.Kind == PadAiKind.Rewrite;
+                Assert.Equal(rewrite ? Rewrite("2,000", "1,638") : null, action.TooLong(between, Small));
+                Assert.Equal(rewrite ? Rewrite("2,049", "1,638") : Read("2,049", "2,048"), action.TooLong(over, Small));
+            }
+        }
+
+        [Fact]
+        public void A_Thai_note_of_50000_characters_is_refused_for_a_small_window_and_taken_for_a_large_one()
+        {
+            string note = Thai(50_000);                           // about 50,000 tokens
+
+            Assert.Equal(Read("50,000", "2,048"), PadAiAction.Summarize.TooLong(note, Small));
+            Assert.Null(PadAiAction.Summarize.TooLong(note, Large));
+            Assert.Null(PadAiAction.Summarize.TooLong(note, AiBudget.For(1_048_576, 0, 0)));
+            Assert.Null(PadAiAction.Ask.TooLong(note, Large));
+            Assert.Null(PadAiAction.Diagram.TooLong(note, Large));
+
+            // A rewrite must come back whole, so it takes less: 25,600 tokens however large the window.
+            Assert.Equal(Rewrite("50,000", "25,600"), PadAiAction.Improve.TooLong(note, Large));
+            Assert.Equal(Rewrite("50,000", "25,600"), PadAiAction.Improve.TooLong(note, AiBudget.For(1_048_576, 0, 0)));
+
+            // With no window known it is counted in characters, as before.
+            Assert.Equal("Select less text: at most 24,000 characters", PadAiAction.Summarize.TooLong(note, AiBudget.Standard));
+        }
+
+        [Fact]
+        public void With_a_window_more_text_is_taken_than_the_fixed_limits_allowed()
+        {
+            Assert.Equal("Select less text: at most 24,000 characters", PadAiAction.Summarize.TooLong(60_000));
+            Assert.Null(PadAiAction.Summarize.TooLong(new string('a', 60_000), Large));        // about 15,000 tokens of 99,072
+
+            Assert.Equal("Select less text: at most 8,000 characters for a rewrite", PadAiAction.Improve.TooLong(60_000));
+            Assert.Null(PadAiAction.Improve.TooLong(new string('a', 60_000), Large));          // about 15,000 tokens of 25,600
+        }
+
+        [Fact]
+        public void With_no_window_known_the_limits_and_the_sentences_are_the_ones_from_before()
+        {
+            AiBudget none = AiBudget.Standard;
+            Assert.False(none.InTokens);
+
+            Assert.Null(PadAiAction.Improve.TooLong(new string('x', 8000), none));
+            Assert.Equal("Select less text: at most 8,000 characters for a rewrite", PadAiAction.Improve.TooLong(new string('x', 8001), none));
+            Assert.Null(PadAiAction.Summarize.TooLong(new string('x', 24000), none));
+            Assert.Equal("Select less text: at most 24,000 characters", PadAiAction.Summarize.TooLong(new string('x', 24001), none));
+
+            // Characters, not tokens: Thai text counts as its length, as it always did.
+            Assert.Null(PadAiAction.Improve.TooLong(Thai(8000), none));
+            Assert.Equal("Select less text: at most 8,000 characters for a rewrite", PadAiAction.Improve.TooLong(Thai(8001), none));
+            Assert.Null(PadAiAction.Ask.TooLong(Thai(24000), none));
+            Assert.Equal("Select less text: at most 24,000 characters", PadAiAction.Ask.TooLong(Thai(24001), none));
+
+            // For every action and length, exactly what TooLong(int) says for that length.
+            foreach (PadAiAction action in PadAiAction.Menu.Append(PadAiAction.FixDiagram("mermaid", "Parse error")))
+                foreach (int length in new[] { 0, 1, 7999, 8000, 8001, 23999, 24000, 24001, 50_000 })
+                {
+                    Assert.Equal(action.TooLong(length), action.TooLong(new string('x', length), none));
+                    Assert.Equal(action.TooLong(length), action.TooLong(Thai(length), none));
+                }
+
+            // A provider that reports nothing, and no number set in Settings, is the same budget.
+            Assert.Same(none, AiBudget.For(0, 0, 0));
+            Assert.Equal("Select less text: at most 24,000 characters", PadAiAction.Summarize.TooLong(Thai(24001), AiBudget.For(0, 4096, 0)));
+        }
+
+        [Fact]
+        public void No_budget_is_the_standard_one_and_no_text_fits()
+        {
+            Assert.Null(PadAiAction.Improve.TooLong(new string('x', 8000), null));
+            Assert.Equal("Select less text: at most 8,000 characters for a rewrite", PadAiAction.Improve.TooLong(new string('x', 8001), null));
+
+            Assert.Null(PadAiAction.Improve.TooLong(null, Small));
+            Assert.Null(PadAiAction.Improve.TooLong("", Small));
+            Assert.Null(PadAiAction.Improve.TooLong(null, AiBudget.Standard));
+        }
+
+        [Fact]
+        public void The_standard_budget_holds_the_two_fixed_limits_of_the_actions()
+        {
+            // TooLong(int) reads the constants and a budget with no window is measured through it: the two must not drift apart.
+            Assert.Equal(PadAiAction.RewriteMaxChars, AiBudget.Standard.RewriteInput);
+            Assert.Equal(PadAiAction.ReadMaxChars, AiBudget.Standard.ReadInput);
+        }
+
+        [Theory]
+        [InlineData("th-TH")]
+        [InlineData("de-DE")]                                     // groups with a full stop
+        [InlineData("fr-FR")]                                     // groups with a narrow space
+        public void The_numbers_in_the_token_sentences_are_written_the_same_in_every_culture(string culture)
+        {
+            var old = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = new CultureInfo(culture);
+                Assert.Equal(Rewrite("31,000", "25,600"), PadAiAction.Improve.TooLong(Thai(31_000), Large));
+                Assert.Equal(Read("262,144", "99,072"), PadAiAction.Summarize.TooLong(Thai(262_144), Large));
             }
             finally { CultureInfo.CurrentCulture = old; }
         }

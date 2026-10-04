@@ -176,6 +176,27 @@ namespace Kil0bitSystemMonitor.Pad
             return model;
         }
 
+        /// <summary>
+        /// The limits of a request, sized for the model of Settings → AI (AI model limits spec 2.2):
+        /// how much text an action takes, how long an answer may be, how many passages a question
+        /// gets. The app's own, which reads the settings and asks no one, and is the standard
+        /// limits before the settings load. Tests replace it.
+        /// </summary>
+        internal Func<AiBudget> AiBudgetNow { get; set; } = App.CurrentBudget;
+
+        /// <summary>
+        /// The limits as the settings have them now, read once for a request, where it is built:
+        /// that one object then says whether the text fits and sizes what is asked of the model,
+        /// so the two are never of different models. Limits that cannot be read are the standard
+        /// ones, and the failure is logged.
+        /// </summary>
+        private AiBudget AiBudgetForRequest()
+        {
+            AiBudget budget = AiBudget.Standard;
+            GuardAi("Reading the AI model's limits", () => budget = AiBudgetNow() ?? AiBudget.Standard);
+            return budget;
+        }
+
         /// <summary>Puts a result on the clipboard: the pad's own clipboard helper unless a test replaces it.</summary>
         internal Action<string> AiCopy
         {
@@ -696,8 +717,10 @@ namespace Kil0bitSystemMonitor.Pad
             CancelAi(_ai);   // a new action ends the one still running
             // Ask AI on a note that is not shown as Markdown (the fact that leaves Draw as diagram out
             // of the menu) starts with Source on: its answer is often code, which rendering shows wrongly.
+            // The model's limits are read here, once: they refuse text that is too long, and size the request (StreamAiAsync).
             var session = new AiSession(action, source, fromSelection, instruction, AiDestinationNow(), AiModelNow(),
-                sourceFirst: ReferenceEquals(action, PadAiAction.Ask) && !ReferenceEquals(_resolved.Effective, PadLanguages.Markdown));
+                sourceFirst: ReferenceEquals(action, PadAiAction.Ask) && !ReferenceEquals(_resolved.Effective, PadLanguages.Markdown),
+                budget: AiBudgetForRequest());
             var run = new AiRun(session, note, document, instruction);
             if (fromSelection)
             {
@@ -734,7 +757,7 @@ namespace Kil0bitSystemMonitor.Pad
                     failed = true;
                     session.Fail(AiOffText);
                 }
-                else if (AiRunnerFactory() is not { } runner)
+                else if (AiRunnerFactory()?.Within(session.Budget) is not { } runner)   // sized by the limits the text was measured against
                 {
                     failed = true;
                     session.Fail(AiNotReadyText);

@@ -369,6 +369,145 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { PadAiUpdateKind.CutShort, PadAiUpdateKind.Done }, updates.Skip(updates.Count - 2).Select(u => u.Kind));
         }
 
+        // ---- the model's own limits (AI model limits spec 2.2) ---------------------------------------
+
+        /// <summary>A window of 262,144 tokens: MicaPad asks for up to 32,000 tokens and keeps a reply of up to 128,000 characters.</summary>
+        private static readonly AiBudget Large = AiBudget.For(262_144, 0, 0);
+
+        /// <summary>A model that sends <paramref name="thousands"/> thousand characters, a thousand at a time.</summary>
+        private static PiecesClient Thousands(int thousands) =>
+            new(Enumerable.Range(0, thousands).Select(_ => Piece(new string('x', 1000))).ToArray());
+
+        [Fact]
+        public async Task The_request_carries_the_output_limit_the_runner_was_built_with()
+        {
+            _model.Reply("ok");
+            var runner = new PadAiRunner(() => new AiClientResult(_model, null, false), _usage, () => _limit,
+                                         maxOutputTokens: 32000, maxReplyChars: 128000);
+
+            await RunAsync(runner);
+
+            Assert.Equal(32000, Assert.Single(_model.Requests).Options?.MaxOutputTokens);
+        }
+
+        [Fact]
+        public async Task A_runner_built_with_a_reply_cap_stops_a_reply_there()
+        {
+            PiecesClient client = Thousands(200);
+            var runner = new PadAiRunner(() => new AiClientResult(client, null, false), _usage, () => _limit,
+                                         maxOutputTokens: 32000, maxReplyChars: 128000);
+
+            List<PadAiUpdate> updates = await RunAsync(runner);
+
+            Assert.Equal(128000, TextOf(updates).Length);         // twice what the fixed cap let through
+            Assert.Equal(new[] { PadAiUpdateKind.CutShort, PadAiUpdateKind.Done }, updates.Skip(updates.Count - 2).Select(u => u.Kind));
+            Assert.DoesNotContain(updates, u => u.Kind == PadAiUpdateKind.Error);
+            Assert.InRange(client.Pulled, 128, 130);              // it stopped reading
+            Assert.True(client.Cancelled);                        // and cancelled the request
+        }
+
+        [Fact]
+        public async Task Within_a_budget_the_runner_asks_for_its_output_limit_and_stops_at_its_reply_cap()
+        {
+            Assert.Equal(32000, Large.PadOutputTokens);
+            Assert.Equal(128000, Large.PadReplyChars);
+
+            _model.Reply("ok");
+            await RunAsync(Runner().Within(Large));
+            Assert.Equal(32000, Assert.Single(_model.Requests).Options?.MaxOutputTokens);
+
+            // 100,000 characters: over the fixed cap, under this budget's. The reply is whole.
+            PiecesClient whole = Thousands(100);
+            List<PadAiUpdate> updates = await RunAsync(Runner(whole).Within(Large));
+            Assert.Equal(100000, TextOf(updates).Length);
+            Assert.DoesNotContain(updates, u => u.Kind is PadAiUpdateKind.CutShort or PadAiUpdateKind.Error);
+            Assert.False(whole.Cancelled);
+
+            // 200,000: cut at the budget's 128,000.
+            PiecesClient flood = Thousands(200);
+            updates = await RunAsync(Runner(flood).Within(Large));
+            Assert.Equal(128000, TextOf(updates).Length);
+            Assert.Equal(new[] { PadAiUpdateKind.CutShort, PadAiUpdateKind.Done }, updates.Skip(updates.Count - 2).Select(u => u.Kind));
+            Assert.True(flood.Cancelled);
+        }
+
+        [Fact]
+        public async Task Within_a_small_window_the_runner_asks_for_less_than_the_fixed_limit()
+        {
+            AiBudget small = AiBudget.For(8192, 0, 0);
+            Assert.Equal(2048, small.PadOutputTokens);
+            _model.Reply("ok");
+
+            await RunAsync(Runner().Within(small));
+
+            Assert.Equal(2048, Assert.Single(_model.Requests).Options?.MaxOutputTokens);   // 4,096 would be half the window
+        }
+
+        [Fact]
+        public async Task Within_a_budget_whose_model_reports_a_largest_output_the_runner_asks_for_no_more()
+        {
+            AiBudget capped = AiBudget.For(262_144, 8192, 0);
+            Assert.Equal(8192, capped.PadOutputTokens);
+            _model.Reply("ok");
+
+            await RunAsync(Runner().Within(capped));
+
+            Assert.Equal(8192, Assert.Single(_model.Requests).Options?.MaxOutputTokens);
+        }
+
+        [Fact]
+        public async Task Within_the_standard_budget_or_none_the_limits_are_the_fixed_ones()
+        {
+            foreach (AiBudget? budget in new[] { AiBudget.Standard, null })
+            {
+                var model = new ScriptedChatClient().Reply("ok");
+                await RunAsync(Runner(model).Within(budget));
+                Assert.Equal(4096, Assert.Single(model.Requests).Options?.MaxOutputTokens);
+
+                PiecesClient flood = Thousands(200);
+                List<PadAiUpdate> updates = await RunAsync(Runner(flood).Within(budget));
+                Assert.Equal(64000, TextOf(updates).Length);
+                Assert.Equal(new[] { PadAiUpdateKind.CutShort, PadAiUpdateKind.Done }, updates.Skip(updates.Count - 2).Select(u => u.Kind));
+            }
+        }
+
+        [Fact]
+        public async Task A_limit_that_is_not_a_positive_number_is_the_fixed_one()
+        {
+            foreach (int bad in new[] { 0, -1, int.MinValue })
+            {
+                var model = new ScriptedChatClient().Reply("ok");
+                var runner = new PadAiRunner(() => new AiClientResult(model, null, false), _usage, () => _limit,
+                                             maxOutputTokens: bad, maxReplyChars: bad);
+                List<PadAiUpdate> updates = await RunAsync(runner);
+
+                Assert.Equal(4096, Assert.Single(model.Requests).Options?.MaxOutputTokens);
+                Assert.Equal("ok", TextOf(updates));              // a cap of nothing would cut every reply at once
+                Assert.DoesNotContain(updates, u => u.Kind == PadAiUpdateKind.CutShort);
+            }
+        }
+
+        [Fact]
+        public async Task Within_a_budget_the_runner_keeps_its_provider_its_daily_count_and_its_silence_deadline()
+        {
+            // The daily limit: one use, shared by the runner and the one sized from it.
+            _limit = 1;
+            _model.Reply("one");
+            PadAiRunner first = Runner();
+            await RunAsync(first.Within(Large));
+            List<PadAiUpdate> second = await RunAsync(first);
+
+            Assert.Equal(1, _usage.UsedToday);
+            Assert.Equal(AiAssistant.LimitText(1), second[0].Text);
+            Assert.Single(_model.Requests);                       // the same provider, asked once
+
+            // The silence deadline.
+            _limit = 100;
+            _model.Hang();
+            List<PadAiUpdate> silent = await RunAsync(Runner(silence: TimeSpan.FromMilliseconds(50)).Within(Large));
+            Assert.Equal(AiErrorText.TimedOut, silent[0].Text);
+        }
+
         /// <summary>A model that streams the pieces it is given, and tells how far the runner read and whether it cancelled.</summary>
         private sealed class PiecesClient : IChatClient
         {

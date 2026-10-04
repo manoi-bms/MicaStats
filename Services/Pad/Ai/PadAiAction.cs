@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Search;
 
 namespace Kil0bitSystemMonitor.Services.Pad.Ai
@@ -14,7 +15,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
     /// </summary>
     public sealed record PadAiAction(string Id, string Name, PadAiKind Kind, string Instruction)
     {
-        /// <summary>A rewrite must come back whole within the output cap, so it takes less text.</summary>
+        /// <summary>
+        /// A rewrite must come back whole within the output cap, so it takes less text. These two
+        /// are the limits while no context window is known; with one, the budget's shares of it
+        /// count (<see cref="TooLong(string, AiBudget)"/>).
+        /// </summary>
         public const int RewriteMaxChars = 8000;
         public const int ReadMaxChars = 24000;
 
@@ -162,6 +167,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// <summary>A rewrite works on a selection only; the others take the whole note when nothing is selected.</summary>
         public bool NeedsSelection => Kind == PadAiKind.Rewrite;
 
+        /// <summary>The most characters this action takes while no context window is known.</summary>
         public int MaxChars => Kind == PadAiKind.Rewrite ? RewriteMaxChars : ReadMaxChars;
 
         /// <summary>
@@ -173,7 +179,37 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// </summary>
         public bool RendersMarkdown => Kind != PadAiKind.Rewrite;
 
-        /// <summary>The sentence for text that is too long to send, or null when it fits.</summary>
+        /// <summary>
+        /// The sentence for text that is too long to send within <paramref name="budget"/>, or null
+        /// when it fits (AI model limits spec 2.4). No budget is the standard one.
+        ///
+        /// <para>
+        /// With no context window known the text counts in characters, and the limits and the
+        /// sentences are the fixed ones of <see cref="TooLong(int)"/>. With a window it counts in
+        /// estimated tokens, where a Thai character is a whole token and an ASCII one a quarter,
+        /// against the budget's share for a rewrite or for the other actions, and the sentence
+        /// names both numbers. Either way the size is the budget's own measure of the text
+        /// (<see cref="AiBudget.Measure"/>), never a count made here.
+        /// </para>
+        /// </summary>
+        public string? TooLong(string? text, AiBudget? budget)
+        {
+            budget ??= AiBudget.Standard;
+            int size = budget.Measure(text);
+            if (!budget.InTokens) return TooLong(size);   // characters: the limits and the sentences from before
+
+            int limit = Kind == PadAiKind.Rewrite ? budget.RewriteInput : budget.ReadInput;
+            if (size <= limit) return null;
+            return (Kind == PadAiKind.Rewrite ? "This text is too long for a rewrite with this model: about " : "This text is too long for this model: about ")
+                   + size.ToString("N0", CultureInfo.InvariantCulture) + " tokens, and it can take about "
+                   + limit.ToString("N0", CultureInfo.InvariantCulture) + ". Select less text.";
+        }
+
+        /// <summary>
+        /// The sentence for text of <paramref name="chars"/> characters that is too long to send
+        /// while no context window is known, or null when it fits: the fixed limits
+        /// (<see cref="MaxChars"/>), which <see cref="AiBudget.Standard"/> holds too.
+        /// </summary>
         public string? TooLong(int chars)
         {
             if (chars <= MaxChars) return null;

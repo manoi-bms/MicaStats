@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Search;
 using Xunit;
@@ -26,6 +27,60 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var hits = new List<Passage> { P(1), P(2) };
             Assert.Equal(hits, NotesQuestion.Sources(hits));
+        }
+
+        // ---- the model's own limits (AI model limits spec 2.2) ---------------------------------------
+
+        [Fact]
+        public void Sources_takes_twenty_at_a_window_of_262144_and_eight_with_none()
+        {
+            var hits = Enumerable.Range(1, 25).Select(P).ToList();
+
+            var large = NotesQuestion.Sources(hits, AiBudget.For(262_144, 0, 0).NotesSources);
+            Assert.Equal(20, large.Count);
+            Assert.Equal(hits.Take(20), large);                   // the first twenty, in order
+
+            var none = NotesQuestion.Sources(hits, AiBudget.Standard.NotesSources);
+            Assert.Equal(8, none.Count);
+            Assert.Equal(hits.Take(8), none);
+            Assert.Equal(NotesQuestion.Sources(hits), none);      // what it always took
+
+            Assert.Equal(12, NotesQuestion.Sources(hits, AiBudget.For(32_000, 0, 0).NotesSources).Count);
+            Assert.Equal(8, NotesQuestion.Sources(hits, AiBudget.For(8192, 0, 0).NotesSources).Count);
+        }
+
+        [Fact]
+        public void Sources_are_never_more_than_the_search_returned()
+        {
+            var hits = Enumerable.Range(1, 5).Select(P).ToList();
+
+            Assert.Equal(hits, NotesQuestion.Sources(hits, 20));
+            Assert.Empty(NotesQuestion.Sources(new List<Passage>(), 20));
+        }
+
+        [Fact]
+        public void Sources_with_no_room_are_none()
+        {
+            var hits = Enumerable.Range(1, 5).Select(P).ToList();
+
+            Assert.Empty(NotesQuestion.Sources(hits, 0));
+            Assert.Empty(NotesQuestion.Sources(hits, -3));
+        }
+
+        [Fact]
+        public void The_standard_budget_holds_the_fixed_number_of_sources()
+        {
+            Assert.Equal(8, NotesQuestion.MaxSources);
+            Assert.Equal(NotesQuestion.MaxSources, AiBudget.Standard.NotesSources);
+        }
+
+        [Fact]
+        public void The_search_returns_as_many_hits_as_any_budget_takes_as_sources()
+        {
+            // Ask your notes takes its sources from the hits of one search. If a budget ever took
+            // more than the search returns, the larger number would never be reached, silently.
+            foreach (int window in new[] { 0, 1024, 8192, 32_000, 128_000, 262_144, 1_048_576, 2_000_000, int.MaxValue })
+                Assert.InRange(AiBudget.For(window, 0, 0).NotesSources, 1, NoteSearch.Total);
         }
 
         [Fact]

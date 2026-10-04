@@ -513,6 +513,9 @@ public partial class App
     /// <summary>
     /// The runner for MicaPad's AI actions: the provider of Settings > AI, the shared key store
     /// and the shared daily count. Built per request, so a settings change applies at once.
+    /// It comes with the fixed limits; MicaPad sizes it for the request it is about to make with
+    /// the limits that request's text was measured against (<c>PadAiRunner.Within</c>), so
+    /// <see cref="CurrentBudget"/> is not read a second time here.
     /// </summary>
     internal static Kil0bitSystemMonitor.Services.Pad.Ai.PadAiRunner? CreatePadAiRunner()
     {
@@ -520,6 +523,47 @@ public partial class App
         if (config == null) return null;
         return new Kil0bitSystemMonitor.Services.Pad.Ai.PadAiRunner(
             () => Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets), AiUsage, () => config.AiDailyLimit);
+    }
+
+    // ---- The model's limits (AI model limits spec 2.2 and 2.3) ---------------------------
+
+    /// <summary>
+    /// The limits for the model of Settings > AI as the settings have them now: how much text may
+    /// be sent, how long an answer may be, how many passages a question gets. It reads the
+    /// settings and nothing else: no provider is asked and nothing is awaited, so it is safe to
+    /// call right where a request is built. The standard limits while the settings are not
+    /// loaded, and when reading them fails (logged by the exception's type). Never throws.
+    /// </summary>
+    internal static Kil0bitSystemMonitor.Services.Ai.AiBudget CurrentBudget()
+    {
+        try
+        {
+            return BudgetOf(ConfigService?.Config);
+        }
+        catch (Exception ex)
+        {
+            // The type only, as everywhere in the AI code: a message could quote an address.
+            DiagnosticsLog.Warn("ai", "Reading the model's limits failed (" + ex.GetType().Name + ")");
+            return Kil0bitSystemMonitor.Services.Ai.AiBudget.Standard;
+        }
+    }
+
+    /// <summary>
+    /// The limits <paramref name="config"/> gives; the standard ones for no settings. What the
+    /// provider reported for a model counts only while it belongs to the provider, address and
+    /// model the settings name now (<c>AiModelLimitsOf</c> is <c>ModelCatalog.KeyOf</c>, letter
+    /// for letter): learned for another, it is ignored, and the number set in Settings (0 is Auto)
+    /// is then the window by itself.
+    /// </summary>
+    internal static Kil0bitSystemMonitor.Services.Ai.AiBudget BudgetOf(AppConfig? config)
+    {
+        if (config == null) return Kil0bitSystemMonitor.Services.Ai.AiBudget.Standard;
+
+        bool learnedForThisModel = string.Equals(
+            config.AiModelLimitsOf, Kil0bitSystemMonitor.Services.Ai.ModelCatalog.KeyOf(config), StringComparison.Ordinal);
+        return learnedForThisModel
+            ? Kil0bitSystemMonitor.Services.Ai.AiBudget.For(config.AiModelContext, config.AiModelOutput, config.AiContextWindow)
+            : Kil0bitSystemMonitor.Services.Ai.AiBudget.For(0, 0, config.AiContextWindow);
     }
 
     // AI anchor: members

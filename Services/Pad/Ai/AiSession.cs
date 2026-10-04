@@ -94,8 +94,15 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// renders: the window says so for Ask AI on a note it does not show as Markdown. It is
         /// only how the pane starts; what goes into the note is the text either way.
         /// </param>
+        /// <param name="budget">
+        /// The limits this request runs within, sized for the model it goes to
+        /// (<see cref="AiBudget"/>); null is the standard limits, those of a model whose context
+        /// window is not known. The window reads it once, where it builds the session. It decides
+        /// whether the source text is refused as too long, and the window sizes the request with
+        /// this same object (<see cref="Budget"/>).
+        /// </param>
         public AiSession(PadAiAction action, string sourceText, bool fromSelection, string? instruction = null, string destination = "",
-                         string model = "", Func<DateTime>? utcNow = null, bool sourceFirst = false)
+                         string model = "", Func<DateTime>? utcNow = null, bool sourceFirst = false, AiBudget? budget = null)
         {
             Action = action;
             Original = sourceText ?? "";
@@ -103,9 +110,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             Destination = destination ?? "";
             Model = (model ?? "").Trim();
             SourceFirst = sourceFirst;
+            Budget = budget ?? AiBudget.Standard;
             _utcNow = utcNow ?? (() => DateTime.UtcNow);
             _mask = SecretMask.Of(Original);
-            Refusal = action.TooLong(Original.Length);
+            // The text as it was selected, before a credential becomes its placeholder: where it was always measured.
+            Refusal = action.TooLong(Original, Budget);
             // A refusal wins: text that cannot be sent is not asked an instruction for, which could never run.
             AwaitingInstruction = Refusal == null && ReferenceEquals(action, PadAiAction.Ask) && string.IsNullOrWhiteSpace(instruction);
             Instruction = ReferenceEquals(action, PadAiAction.Ask)
@@ -126,6 +135,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
         /// <summary>True when the pane is to start this request's rendered result with Source on.</summary>
         public bool SourceFirst { get; }
+
+        /// <summary>
+        /// The limits this request was built with, never null: what refused or accepted its source
+        /// text, and what its request is sized by (the output limit asked for, the length a reply
+        /// is kept to). One object for both, so the two can never be of different models.
+        /// </summary>
+        public AiBudget Budget { get; }
 
         public string Instruction { get; }
         public string? Refusal { get; }

@@ -152,9 +152,12 @@ namespace Kil0bitSystemMonitor.Tests
         /// <summary>An unshown window has no layout of its own: the editor area is laid out directly, this wide.</summary>
         private static void LayOut(MicaPadWindow window, double width = 1000)
         {
-            window.EditorArea.Measure(new System.Windows.Size(width, 500));
-            window.EditorArea.Arrange(new System.Windows.Rect(0, 0, width, 500));
-            window.EditorArea.UpdateLayout();
+            for (int pass = 0; pass < 3; pass++)   // SizeChanged sets the columns; the next pass lays them out
+            {
+                window.EditorArea.Measure(new System.Windows.Size(width, 500));
+                window.EditorArea.Arrange(new System.Windows.Rect(0, 0, width, 500));
+                window.EditorArea.UpdateLayout();
+            }
         }
 
         private static ColumnDefinition PaneColumn(MicaPadWindow w) => w.EditorArea.ColumnDefinitions[2];
@@ -185,7 +188,7 @@ namespace Kil0bitSystemMonitor.Tests
             LayOut(w);
             Assert.Equal(Visibility.Visible, w.PaneSplitter.Visibility);
             Assert.True(PaneColumn(w).Width.IsAbsolute);
-            Assert.Equal(PaneWidth.Fit(360, w.EditorArea.ActualWidth - 5), PaneColumn(w).Width.Value);
+            Assert.Equal(PaneWidth.Fit(360, w.EditorArea.ActualWidth - MicaPadWindow.SplitterWidth), PaneColumn(w).Width.Value);
             Assert.Equal(PaneColumn(w).Width.Value, w.AiPanel.ActualWidth);
         });
 
@@ -288,7 +291,7 @@ namespace Kil0bitSystemMonitor.Tests
             w.PaneDragEnded(double.NaN);
             Assert.Equal(360, c.PadPaneWidth);
             w.PaneDragEnded(5000);
-            Assert.Equal(PaneWidth.Fit(900, w.EditorArea.ActualWidth - 5), c.PadPaneWidth);
+            Assert.Equal(PaneWidth.Fit(900, w.EditorArea.ActualWidth - MicaPadWindow.SplitterWidth), c.PadPaneWidth);
         });
 
         [Fact]
@@ -372,6 +375,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             // The splitter's own handlers, called as the mouse would (no real input).
             Invoke(splitter, "OnDragStarted", new System.Windows.Controls.Primitives.DragStartedEventArgs(0, 0));
+            DragStarted(w);
             Invoke(splitter, "OnDragDelta", new System.Windows.Controls.Primitives.DragDeltaEventArgs(-100, 0));
             LayOut(w, 1200);
             string written = columns[0].Width + " | " + columns[1].Width + " | " + columns[2].Width;
@@ -413,6 +417,24 @@ namespace Kil0bitSystemMonitor.Tests
             protected override System.Windows.Media.CompositionTarget? GetCompositionTargetCore() => null;
         }
 
+        private static void KeyDown(MicaPadWindow w, System.Windows.Input.Key key) =>
+            w.PaneSplitter.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, new NoSource(), 0, key)
+            {
+                RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent,
+            });
+
+        private static void DragStarted(MicaPadWindow w) =>
+            w.PaneSplitter.RaiseEvent(new System.Windows.Controls.Primitives.DragStartedEventArgs(0, 0)
+            {
+                RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragStartedEvent,
+            });
+
+        private static void DragCompleted(MicaPadWindow w, double change, bool canceled = false) =>
+            w.PaneSplitter.RaiseEvent(new System.Windows.Controls.Primitives.DragCompletedEventArgs(change, 0, canceled)
+            {
+                RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragCompletedEvent,
+            });
+
         private static void KeyUp(MicaPadWindow w, System.Windows.Input.Key key) =>
             w.PaneSplitter.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, new NoSource(), 0, key)
             {
@@ -431,11 +453,13 @@ namespace Kil0bitSystemMonitor.Tests
             KeyUp(w, System.Windows.Input.Key.Up);
             Assert.Empty(writes);
 
+            KeyDown(w, System.Windows.Input.Key.Left);
             PaneColumn(w).Width = new GridLength(500);   // what the splitter's own arrow-key move leaves
             LayOut(w, 1200);
             KeyUp(w, System.Windows.Input.Key.Left);
             Assert.Equal(new[] { 500.0 }, writes);
 
+            KeyDown(w, System.Windows.Input.Key.Right);
             PaneColumn(w).Width = new GridLength(540);
             LayOut(w, 1200);
             KeyUp(w, System.Windows.Input.Key.Right);
@@ -457,6 +481,170 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(args.Handled);
             Assert.Equal(360, c.PadPaneWidth);
             Assert.Equal(360, PaneColumn(w).Width.Value);
+        });
+
+        // ---- a click or a key that moves nothing keeps the saved width ----
+
+        /// <summary>A saved 900 in an area where the pane shows 475.</summary>
+        private static void NarrowedWithSaved900(MicaPadWindow w, AppConfig c)
+        {
+            c.PadPaneWidth = 900;
+            LayOut(w, 800);   // the area is laid out before a pane is shown, as in the window
+            ShowAi(w);
+            LayOut(w, 800);
+            Assert.Equal(475, PaneColumn(w).Width.Value);
+        }
+
+        [Fact]
+        public Task A_drag_that_completes_without_moving_keeps_the_saved_width() => OnWindow((w, c) =>
+        {
+            NarrowedWithSaved900(w, c);
+            DragStarted(w);
+            DragCompleted(w, 0);
+            Assert.Equal(900, c.PadPaneWidth);
+            Assert.Equal(475, PaneColumn(w).Width.Value);
+            Assert.True(PaneColumn(w).Width.IsAbsolute);
+        });
+
+        [Fact]
+        public Task A_cancelled_drag_keeps_the_saved_width() => OnWindow((w, c) =>
+        {
+            NarrowedWithSaved900(w, c);
+            DragStarted(w);
+            PaneColumn(w).Width = new GridLength(400);
+            DragCompleted(w, -75, canceled: true);
+            Assert.Equal(900, c.PadPaneWidth);
+            Assert.Equal(475, PaneColumn(w).Width.Value);   // and the columns are put back
+        });
+
+        [Fact]
+        public Task A_Left_key_that_moves_nothing_keeps_the_saved_width() => OnWindow((w, c) =>
+        {
+            NarrowedWithSaved900(w, c);
+            KeyDown(w, System.Windows.Input.Key.Left);
+            KeyUp(w, System.Windows.Input.Key.Left);
+            Assert.Equal(900, c.PadPaneWidth);
+            KeyDown(w, System.Windows.Input.Key.Right);
+            KeyUp(w, System.Windows.Input.Key.Right);
+            Assert.Equal(900, c.PadPaneWidth);
+        });
+
+        [Fact]
+        public Task A_drag_that_moved_the_pane_writes_the_new_width() => OnWindow((w, c) =>
+        {
+            NarrowedWithSaved900(w, c);
+            DragStarted(w);
+            PaneColumn(w).Width = new GridLength(400);
+            DragCompleted(w, -75);
+            Assert.Equal(400, c.PadPaneWidth);
+            Assert.Equal(400, PaneColumn(w).Width.Value);
+        });
+
+        [Fact]
+        public Task The_double_click_sequence_as_it_arrives_ends_at_the_default_with_one_write() => OnWindow((w, c) =>
+        {
+            c.PadPaneWidth = 700;
+            LayOut(w, 800);
+            ShowAi(w);
+            LayOut(w, 800);
+            var writes = new List<double>();
+            c.PropertyChanged += (s, e) => { if (e.PropertyName == nameof(AppConfig.PadPaneWidth)) writes.Add(c.PadPaneWidth); };
+
+            DragStarted(w);
+            DragCompleted(w, 0);   // the first click, released
+            w.PaneSplitter.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+            {
+                RoutedEvent = System.Windows.Controls.Control.MouseDoubleClickEvent,
+            });
+
+            Assert.Equal(new[] { 360.0 }, writes);
+            Assert.Equal(360, PaneColumn(w).Width.Value);
+        });
+
+        [Fact]
+        public Task The_width_is_read_from_what_the_splitter_wrote_not_from_a_stale_layout() => OnWindow((w, c) =>
+        {
+            LayOut(w, 1200);
+            ShowAi(w);
+            LayOut(w, 1200);
+            DragStarted(w);
+            PaneColumn(w).Width = new GridLength(500);   // written by DragDelta; no layout has run since
+            Assert.Equal(360, w.AiPanel.ActualWidth);
+            DragCompleted(w, -140);
+            Assert.Equal(500, c.PadPaneWidth);
+        });
+
+        // ---- what makes the splitter stop at its limits ----
+
+        [Theory]
+        [InlineData(1000, 320)]
+        [InlineData(500, 235)]
+        [InlineData(200, 0)]
+        public Task The_columns_carry_the_limits_the_splitter_stops_at(double area, double editorMin) => OnWindow((w, c) =>
+        {
+            LayOut(w, area);
+            ShowAi(w);
+            LayOut(w, area);
+            Assert.Equal(PaneWidth.Min, PaneColumn(w).MinWidth);
+            Assert.Equal(PaneWidth.Max, PaneColumn(w).MaxWidth);
+            Assert.Equal(0, w.EditorColumn.MinWidth);   // at rest it would inflate the area's desired width
+            DragStarted(w);
+            Assert.Equal(editorMin, w.EditorColumn.MinWidth);   // held while the pane is moved
+            DragCompleted(w, 0);
+            Assert.Equal(0, w.EditorColumn.MinWidth);
+
+            w.AiPanel.Visibility = Visibility.Collapsed;
+            Assert.Equal(0, PaneColumn(w).MinWidth);
+            Assert.Equal(double.PositiveInfinity, PaneColumn(w).MaxWidth);
+            Assert.Equal(0, w.EditorColumn.MinWidth);
+        });
+
+        [Fact]
+        public Task Narrowing_and_widening_the_window_shows_700_475_260_700_and_never_touches_the_saved_value() => OnWindow((w, c) =>
+        {
+            c.PadPaneWidth = 700;
+            LayOut(w, 1200);
+            ShowAi(w);
+            foreach (var (area, shown) in new[] { (1200.0, 700.0), (800, 475), (500, 260), (1200, 700) })
+            {
+                LayOut(w, area);
+                Assert.Equal(shown, PaneColumn(w).Width.Value);
+                Assert.Equal(700, c.PadPaneWidth);
+            }
+        });
+
+        [Fact]
+        public Task Search_then_History_then_Search_changes_the_column_and_the_splitter_each_time() => OnWindow((w, c) =>
+        {
+            w.AiPanel.Visibility = Visibility.Collapsed;
+            w.SearchPanel.Visibility = Visibility.Visible;
+            LayOut(w, 1200);
+            Assert.Equal(360, PaneColumn(w).Width.Value);
+            Assert.Equal(Visibility.Visible, w.PaneSplitter.Visibility);
+
+            w.SearchPanel.Visibility = Visibility.Collapsed;
+            w.HistoryPanel.Visibility = Visibility.Visible;
+            LayOut(w, 1200);
+            Assert.True(PaneColumn(w).Width.IsAuto);
+            Assert.Equal(Visibility.Collapsed, w.PaneSplitter.Visibility);
+
+            w.HistoryPanel.Visibility = Visibility.Collapsed;
+            w.SearchPanel.Visibility = Visibility.Visible;
+            LayOut(w, 1200);
+            Assert.True(PaneColumn(w).Width.IsAbsolute);
+            Assert.Equal(360, PaneColumn(w).Width.Value);
+            Assert.Equal(Visibility.Visible, w.PaneSplitter.Visibility);
+        });
+
+        [Fact]
+        public Task The_area_given_to_Fit_has_the_splitter_taken_off_and_neither_more_nor_less() => OnWindow((w, c) =>
+        {
+            Assert.Equal(5, MicaPadWindow.SplitterWidth);
+            ShowAi(w);
+            LayOut(w, 1000);
+            w.PaneDragEnded(900);
+            Assert.Equal(1000 - MicaPadWindow.SplitterWidth - PaneWidth.EditorMin, c.PadPaneWidth);   // 675: not 680, not 670
+            Assert.Equal(675, PaneColumn(w).Width.Value);
         });
     }
 }

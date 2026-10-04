@@ -2250,7 +2250,7 @@ namespace Kil0bitSystemMonitor.Pad
         // PaneWidth.Fit is the only place that decides a width. The panes close with Visibility.Collapsed
         // (other code reads it); the splitter and the column follow their visibility.
 
-        private const double SplitterWidth = 5;
+        internal const double SplitterWidth = 5;
 
         // The descriptor is cached statically and holds each handler (and so this window) strongly:
         // Detach removes them.
@@ -2301,8 +2301,18 @@ namespace Kil0bitSystemMonitor.Pad
             double width = PaneWidth.Fit(_config.PadPaneWidth, area);
             PaneColumn.MinWidth = PaneWidth.Min;
             PaneColumn.MaxWidth = PaneWidth.Max;
-            EditorColumn.MinWidth = area > 0 ? Math.Min(PaneWidth.EditorMin, Math.Max(0, area - PaneWidth.Min)) : 0;
+            // The editor's minimum is held only while the pane is being moved (EditorMinWhileMoving). At rest it
+            // would count in the area's desired width, and a window narrowed below pane + minimum would be laid
+            // out at that wider size, so ActualWidth would never show the narrower window.
+            EditorColumn.MinWidth = 0;
             PaneColumn.Width = new GridLength(width);
+        }
+
+        /// <summary>The editor column's minimum for a drag or a key move: the splitter cannot take more than this from it.</summary>
+        private double EditorMinWhileMoving()
+        {
+            double area = EditorArea.ActualWidth - SplitterWidth;
+            return area > 0 ? Math.Min(PaneWidth.EditorMin, Math.Max(0, area - PaneWidth.Min)) : 0;
         }
 
         /// <summary>
@@ -2322,13 +2332,45 @@ namespace Kil0bitSystemMonitor.Pad
             ApplyPaneLayout();
         }
 
+        /// <summary>
+        /// The pane's width now: what the splitter wrote into the column when it is pixels (layout runs
+        /// later than input, so ActualWidth can be one frame behind), else the pane's own.
+        /// </summary>
         private double ShownPaneWidth() =>
-            AiPanel.Visibility == Visibility.Visible ? AiPanel.ActualWidth
+            PaneColumn.Width.IsAbsolute ? PaneColumn.Width.Value
+            : AiPanel.Visibility == Visibility.Visible ? AiPanel.ActualWidth
             : SearchPanel.Visibility == Visibility.Visible ? SearchPanel.ActualWidth
             : PaneColumn.ActualWidth;
 
+        // The width at the start of a drag or key move: the user chose a width only if it changed. A click,
+        // a cancelled drag or a key at the limit moves nothing and must not overwrite the saved width with
+        // the (possibly narrowed) width on show.
+        private double? _moveStartWidth;
+
+        private void StartPaneMove()
+        {
+            _moveStartWidth = ShownPaneWidth();
+            EditorColumn.MinWidth = EditorMinWhileMoving();
+        }
+
+        private void EndPaneMove(bool canceled)
+        {
+            double? start = _moveStartWidth;
+            _moveStartWidth = null;
+            if (canceled || start == null || Math.Abs(ShownPaneWidth() - start.Value) < 0.5) ApplyPaneLayout();   // columns back, nothing saved
+            else PaneDragEnded(ShownPaneWidth());
+        }
+
+        private void OnPaneSplitterDragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e) => StartPaneMove();
+
         private void OnPaneSplitterDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) =>
-            PaneDragEnded(ShownPaneWidth());
+            EndPaneMove(e.Canceled);
+
+        // Tunnelling: the splitter moves itself on KeyDown, and the width has to be read before that.
+        private void OnPaneSplitterPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key is Key.Left or Key.Right && !e.IsRepeat) StartPaneMove();
+        }
 
         private void OnPaneSplitterDoubleClick(object sender, MouseButtonEventArgs e)
         {
@@ -2338,7 +2380,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnPaneSplitterKeyUp(object sender, KeyEventArgs e)
         {
-            if (e.Key is Key.Left or Key.Right) PaneDragEnded(ShownPaneWidth());
+            if (e.Key is Key.Left or Key.Right) EndPaneMove(canceled: false);
         }
 
         private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)

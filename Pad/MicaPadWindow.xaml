@@ -200,8 +200,8 @@
                           ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" Focusable="True" Visibility="Collapsed"
                           Background="{DynamicResource Pad.Border}" Cursor="SizeWE"
                           ToolTip="Drag to resize; double-click to reset"
-                          DragCompleted="OnPaneSplitterDragCompleted" MouseDoubleClick="OnPaneSplitterDoubleClick"
-                          KeyUp="OnPaneSplitterKeyUp" />
+                          DragStarted="OnPaneSplitterDragStarted" DragCompleted="OnPaneSplitterDragCompleted" MouseDoubleClick="OnPaneSplitterDoubleClick"
+                          PreviewKeyDown="OnPaneSplitterPreviewKeyDown" KeyUp="OnPaneSplitterKeyUp" />
             <local:HistoryPane x:Name="HistoryPanel" Grid.Column="2" />
             <local:SearchPane x:Name="SearchPanel" Grid.Column="2" />
             <local:AiPane x:Name="AiPanel" Grid.Column="2" Visibility="Collapsed" />

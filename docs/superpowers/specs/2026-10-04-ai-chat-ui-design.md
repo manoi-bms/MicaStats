@@ -21,9 +21,10 @@ Not in scope: follow-up questions in MicaPad's AI pane (it stays one request at 
 ### 1.1 Tables
 
 - A Markdown pipe table is shown as a table: a header row, a delimiter row (`| --- | :---: | ---: |`), then body rows. The outer pipes are optional. A pipe inside a code span, or written `\|`, does not split a cell.
+- *(Added after Task 1's review.)* The delimiter row must hold a pipe itself: a line of only dashes under a line of text is a rule, as it always was. A pipe inside a code span does not make a line a header either.
 - The delimiter row sets the number of columns and each column's alignment (left, centre, right). A body row with fewer cells is padded; extra cells are dropped.
 - Cells hold the same inline styles as a paragraph: bold, italic, code, strike-through and links.
-- The table ends at a blank line or at a line that starts another block.
+- The table ends at a blank line or at a line that starts another block (a heading, a list item, a quote, a fence, a rule), whether or not that line holds a pipe. A line of plain text right under the last row is one more row, with one cell.
 - **Limits (R):** at most 12 columns and 100 body rows. A table over either limit is not a table: its lines stay as they are today, plain text with their pipes. Text is never lost.
 - A header row whose delimiter row has not arrived yet (an answer still streaming) is a paragraph until it does.
 - Look: header cells in semi-bold on the code background, a thin divider under each row, cell text wrapping inside its column. The table is as wide as the answer.

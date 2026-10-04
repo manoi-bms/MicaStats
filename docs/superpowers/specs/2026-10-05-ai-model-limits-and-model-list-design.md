@@ -25,15 +25,16 @@ Also fixed: `get_note` 16,000 characters and 400 lines a call, a kept tool resul
 A model's limits are read from the provider's model list.
 
 - **Claude.** The list (`GET /v1/models`, through the SDK) gives each model its name, its input window (`max_input_tokens`) and its largest output (`max_tokens`). It needs the saved key.
-- **OpenAI-compatible.** `GET {base URL}/models`, with the saved key when there is one. Every server gives the ids. The window is taken from the first of these fields a model has, in this order: `max_model_len` (vLLM, SGLang), `context_length`, `context_window`, `max_context_length`, `max_input_tokens`, `meta.n_ctx_train` (llama.cpp). The largest output from the first of: `max_output_tokens`, `max_completion_tokens`, `top_provider.max_completion_tokens`.
+- **OpenAI-compatible.** `GET {base URL}/models`, with the saved key when there is one. Every server gives the ids. The window is taken from the first of these fields a model has, in this order: `max_model_len` (vLLM, SGLang), `context_length`, `context_window`, `max_context_length`, `max_input_tokens`, `meta.n_ctx_train` (llama.cpp). The largest output from the first of: `max_output_tokens`, `max_completion_tokens`, `top_provider.max_completion_tokens`. A field that holds no usable number (null, a fraction, a value out of range) is passed over and the next one is tried.
 - **(R)** A server that reports no window (OpenAI itself, Ollama) leaves it unknown. No table of model names is kept in the app: it would go stale, and a wrong number is worse than none. The user can state the window (2.3).
 - **(R)** Ollama's `/api/show` is not asked. It reports what the model could take, not the window the server runs it with (`num_ctx`), and trusting the larger number would cut prompts silently.
 
 ### 1.2 What comes back is not trusted
 
-- A model id is shown as plain text: at most 200 characters, control and format characters removed; an empty one is dropped. At most 500 models are kept.
-- A window under 1,024 tokens or not a whole number is "unknown". A window over 2,000,000 counts as 2,000,000. An output limit over the window is the window.
+- A model id is shown as plain text: at most 200 characters; control, format, private-use and unassigned characters removed, and the characters that show as nothing (blank fillers, variation selectors); an empty or blank one is dropped. At most 500 models are kept.
+- A window under 1,024 tokens or not a whole number is "unknown". A window over 2,000,000 counts as 2,000,000. An output limit over the window is the window. *(Added in Task 2.)* An output limit under 256 tokens is "unknown": a provider's nonsense must not bring a limit to nothing.
 - The answer is read up to 4 MB; a longer one is a failure.
+- *(Added in Task 2.)* A redirect is not followed: the list is asked for at the configured address and nowhere else. A server that redirects is said so in a sentence.
 - A failure (no network, a refusal, an answer that is not the expected shape) is said in a sentence in Settings and logged by its exception type. It never stops a request: the limits are then unknown.
 
 ### 1.3 When the provider is asked
@@ -41,6 +42,7 @@ A model's limits are read from the provider's model list.
 - In **Settings → AI**: when the section is shown, when the provider is changed, when the base URL was changed and the box loses focus, when a key is saved or removed, and on **Refresh**. Never on a keystroke.
 - **(R)** Outside Settings: once per run, in the background, the first time an AI request is made with a model whose limits are not known for the current provider, address and model. That request uses what is known; the answer serves the next.
 - **(R)** Never while every AI feature is off, and never by itself at startup. Listing models sends the key to the provider, as a question does; it happens only when the user is setting AI up or using it.
+- *(Added after Task 2's review.)* The code that asks is told why: for Settings, or for an AI request. Asked for an AI request, it sends nothing while every AI feature is off, and it reads the two switches itself, right before each request it makes; a switch that cannot be read counts as off. No caller can forget the check.
 - What was learned for the chosen model is kept in the settings with what it belongs to (provider, address, model), so the next start has it at once. It is ignored when any of the three changed.
 
 ## 2. Limits that follow the window

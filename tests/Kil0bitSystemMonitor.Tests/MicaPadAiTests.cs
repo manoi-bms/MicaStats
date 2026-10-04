@@ -3086,6 +3086,55 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(h.Pane.ShowingSource);
         });
 
+        [Theory]
+        [InlineData(true, false)]    // Draw as diagram as it is shown first: the picture
+        [InlineData(true, true)]     // and with Source on: the fenced block
+        [InlineData(false, false)]   // Ask AI as it is shown first: a table, a heading in bold
+        [InlineData(false, true)]    // and with Source on: the Markdown
+        public Task Copy_Insert_below_and_Replace_selection_give_the_text_of_a_rendered_result_as_it_came_never_its_rendering_with_Source_off_or_on(bool diagram, bool source) => OnUiAsync(async h =>
+        {
+            const string table = "**Steps**\n\n| Step | Who |\n|---|---|\n| login | user |\n| pay | the **bank** |";
+            string reply = diagram ? DrawnReply : table;
+            WithPictures(h);
+            Write(h, Note, Picked);
+            h.Model.Reply(reply);
+
+            if (diagram) await h.Window.RunAiAsync(PadAiAction.Diagram);
+            else await h.Window.RunAiAsync(PadAiAction.Ask, "as a table");
+            if (source) h.Pane.SourceToggle.IsChecked = true;
+
+            // What is on screen: the rendering, which reads differently from the text, or with Source on the text itself.
+            Assert.Equal(source, h.Pane.ShowingSource);
+            string shown = Rendered(h.Pane);
+            if (source) Assert.Equal(reply, shown);
+            else
+            {
+                Assert.NotEqual(reply, shown);
+                foreach (string mark in new[] { "```", "**", "|---|" }) Assert.DoesNotContain(mark, shown, StringComparison.Ordinal);
+                if (diagram) Assert.Single(InResult<System.Windows.Controls.Image>(h.Pane));
+                else Assert.Single(h.Pane.ResultBox.Document.Blocks.OfType<System.Windows.Documents.Table>());
+            }
+
+            Click(h.Pane.CopyButton);
+
+            Assert.Equal(new[] { reply }, h.Copied);                  // the window's clipboard hook got the text, with every mark
+            Assert.Equal(Note, h.Editor.Document.Text);
+
+            Click(h.Pane.InsertButton);
+
+            Assert.Equal("Intro\n" + Picked + "\n\n" + reply + "\nOutro", h.Editor.Document.Text);
+            Assert.Equal(reply, h.Editor.SelectedText);
+            h.Editor.Undo();
+            Assert.Equal(Note, h.Editor.Document.Text);
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("Intro\n" + reply + "\nOutro", h.Editor.Document.Text);
+            Assert.Equal(reply, h.Editor.SelectedText);
+            Assert.Equal("Replaced the selection", h.Pane.StatusText.Text);
+            Assert.Equal(source, h.Pane.ShowingSource);               // and the view stays as it was chosen
+        });
+
         [Fact]
         public Task An_Ask_AI_answer_is_shown_rendered_and_what_goes_into_the_note_is_the_text_as_it_came() => OnUiAsync(async h =>
         {
@@ -3474,7 +3523,10 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Fix diagram", h.Pane.TitleText.Text);
             Assert.Equal("Selection, " + Count(FailingSource.Length) + " characters", h.Pane.SourceText.Text);
             Assert.Equal(FixedSource, h.Pane.ResultBox.Shown);
+            Assert.Equal(FixedSource, Rendered(h.Pane));                                    // as the text it would write, its indents kept: not rendered
             Assert.Equal(Visibility.Visible, h.Pane.ChangesToggle.Visibility);              // a rewrite: Changes shows the diff
+            Assert.Equal(Visibility.Collapsed, h.Pane.SourceToggle.Visibility);             // and it has no Source: the text is what is shown
+            Assert.False(h.Pane.ShowingSource);
             Assert.True(h.Pane.ReplaceButton.IsEnabled);
             Assert.Equal(TwoDiagrams, h.Editor.Document.Text);                              // nothing changes before a click
 
@@ -3494,6 +3546,36 @@ namespace Kil0bitSystemMonitor.Tests
 
             // The log has the action and the counts, never the renderer's message or the source.
             Assert.Equal(new[] { "AI fix-diagram: " + Count(sent.Length) + " chars in the request, " + Count(FixedSource.Length) + " chars back, ok" }, h.Log);
+        });
+
+        [Fact]
+        public Task A_fix_whose_source_is_Markdown_is_shown_as_its_text_with_Changes_and_no_Source_never_rendered() => OnUiAsync(async h =>
+        {
+            // A mind map's source is Markdown: rendered, its heading marks and its stars would be gone.
+            const string note = "```markmap\n# Rot\n## **Branch\n```\nafter";
+            const string fixedSource = "# Root\n## **Branch**\n- `leaf`";
+            var asMarkdown = new PadAnswerBox();
+            asMarkdown.ShowMarkdown(fixedSource);
+            string rendered = new System.Windows.Documents.TextRange(asMarkdown.Document.ContentStart, asMarkdown.Document.ContentEnd).Text;
+            foreach (string mark in new[] { "#", "**", "`" }) Assert.DoesNotContain(mark, rendered, StringComparison.Ordinal);   // what this test must not see in the pane
+            WithPictures(h);
+            Write(h, note);
+            h.Model.Reply(fixedSource);
+
+            await h.Window.FixDiagramAsync(1, 4, "markmap", "Parse error");
+
+            Assert.Equal("Fix diagram", h.Pane.TitleText.Text);
+            Assert.Equal("# Rot\n## **Branch", h.Editor.SelectedText);
+            Assert.Equal(fixedSource, h.Pane.ResultBox.Shown);
+            Assert.Equal(fixedSource, Rendered(h.Pane));              // a rewrite: the text exactly as Replace selection would write it
+            Assert.Equal(Visibility.Collapsed, h.Pane.SourceToggle.Visibility);
+            Assert.False(h.Pane.ShowingSource);
+            Assert.Equal(Visibility.Visible, h.Pane.ChangesToggle.Visibility);
+            Assert.Equal(Visibility.Collapsed, h.Pane.InsertButton.Visibility);
+
+            Click(h.Pane.ReplaceButton);
+
+            Assert.Equal("```markmap\n" + fixedSource + "\n```\nafter", h.Editor.Document.Text);
         });
 
         [Fact]

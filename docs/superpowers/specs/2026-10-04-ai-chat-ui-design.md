@@ -54,6 +54,15 @@ Not in scope: follow-up questions in MicaPad's AI pane (it stays one request at 
 - **The link rules do not change.** In MicaPad, and in Ask MicaStats once the conversation read notes, no link is clickable. That holds for a link inside a table cell too.
 - A diagram is a picture: nothing in it can be clicked.
 
+### 1.5 Keeping up while an answer streams
+
+*(Added during the build, after measuring: one redraw of an answer with a 100 by 12 table takes about 0.6 s, and a streaming answer was redrawn every 100 ms.)*
+
+- A streaming answer is drawn again no sooner than 100 ms after the last time, and no sooner than four times what that redraw took, measured to the end of its layout; never longer than 2 s. So a heavy answer takes a fifth of the window's time, not all of it.
+- A redraw on the timer waits while the left mouse button is held over the answer. The document is rebuilt on every redraw, so without this a click that began on **Copy** or **Source** could end on the button's replacement and be lost.
+- The last redraw, when the answer ends, is immediate and waits for nothing.
+- This holds in the Ask MicaStats window, the AI pane and the Search notes answer.
+
 ## 2. The model is told
 
 Both system prompts say what the answer is shown as, so the model writes for it.

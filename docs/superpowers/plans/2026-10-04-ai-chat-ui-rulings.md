@@ -8,7 +8,7 @@ Branch `feat/ai-chat-ui`, from main 46a0b85. It was executed subagent-driven on 
 - a whole-branch review by Claude opus and Codex in parallel;
 - one fix wave, re-checked by both.
 
-The final suite has 5,273 tests passing (4,713 before this branch), and the app builds with 0 warnings.
+The final suite has 5,276 tests passing (4,713 before this branch), and the app builds with 0 warnings.
 
 The owner asked: "please modify ai chat ui to more informative / user friendly , support markdown display / mermaid diagram (the llm should know this so it correct produce output to has best visual display) and has vertical splitter to allow user resize chat area".
 
@@ -44,7 +44,8 @@ Each ends with what it costs if wrong.
     - the AI pane, also when it was closed before (part 1 had parked that);
     - the Search notes answer;
     - the pictures kept for redrawing, and the diagram draws still waiting in the engine with their source text;
-    - an Ask MicaStats conversation that had read notes (older code): it is ended and says why.
+    - an Ask MicaStats conversation that had read notes (older code): it is ended and says why;
+    - an Ask answer still under way while Ask may read notes, though it has read none yet: its first note tool may be reading at that moment.
     Cost: a conversation or a result is lost.
 18. **A failure of a diagram is remembered and not retried by itself;** one that may pass has **Try again**. Cost: a click after the engine was slow to start.
 19. **A model-written tool name is plain text, cut at 40 characters,** with control, format and line-separator characters turned into spaces.
@@ -76,6 +77,10 @@ The two final reviewers did not overlap.
   - Ask AI's answer was rendered as Markdown even when it was code;
   - an Ask MicaStats conversation that had read notes was not cleared when a credential was stored (older code);
   - three diagram types the Draw as diagram instruction names were drawn by no test, and nothing pinned how the app wires answer diagrams.
+- **The re-check of the fix wave** (both reviewers confirmed the wave; Codex: three of its four fixed, the table one for the reported case):
+  - both found the same gap: a credential stored while an Ask conversation's first note read is still under way was not covered, because the conversation is marked only when the tool hands its result over. Fixed by the controller, test first;
+  - Claude: the Ask window relied on a MicaPad pane to forget the kept pictures. It now forgets them itself;
+  - Codex: a backtick inside a link's address in a table cell still merges columns. Parked: a model does not write that.
 - **The task reviews:**
   - a sentence above a rule turning into a table (Task 1);
   - picture memory, the Search notes answer keeping its pictures after a credential store, a diagram failure stuck for the session (Task 3);
@@ -121,6 +126,8 @@ The two final reviewers did not overlap.
 **MicaPad**
 
 - **History keeps its fixed 280 width,** with no splitter.
+- **Alt+Tab away and back with an arrow key still held on the splitter:** the move is saved at the focus loss, and what the held key moves after coming back is not.
+- **An indented fence loses its indent by characters, not columns:** a body indented with tabs under a four-space fence loses one level too many.
 - **A closed MicaPadWindow stays reachable (older code):** each note's `TextProvider` closure captures the window, and the shown document keeps change handlers that lead back to it. The running app hides a window on close and closes one for real only by merging or at exit, so it is an edge case. Proposed: a static provider that holds only the document, and in `Detach` let go of the shown document and unhook the occurrence handler.
 - **The Ask window's fit to its screen is unverified on a second screen and at a scaling other than 100%.**
 

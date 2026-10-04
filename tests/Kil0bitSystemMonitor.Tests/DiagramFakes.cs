@@ -98,11 +98,25 @@ namespace Kil0bitSystemMonitor.Tests
             return done.Task;
         }
 
+        /// <summary>Every <see cref="Forget"/> so far, oldest first.</summary>
+        public List<(string Key, object? Slot)> Forgotten { get; } = new();
+
+        /// <summary>
+        /// Drops the stored result for the key, and remembers the slot: a call forgotten while the
+        /// test still holds it open is a draw under way, whose result is not stored when it ends.
+        /// </summary>
+        public void Forget(string key, object? slot)
+        {
+            Forgotten.Add((key, slot));
+            Cache.Remove(key);
+        }
+
         /// <summary>Answers call <paramref name="index"/>; the caller's continuation runs at the next dispatcher pump.</summary>
         public void Finish(int index, DiagramResult result)
         {
             var call = Calls[index];
-            if (result.Lasting) Cache[call.Request.Key] = result;
+            bool forgotten = Forgotten.Exists(f => ReferenceEquals(f.Slot, call.Slot) && f.Key == call.Request.Key);
+            if (result.Lasting && !forgotten) Cache[call.Request.Key] = result;
             call.Done.TrySetResult(result);
         }
     }

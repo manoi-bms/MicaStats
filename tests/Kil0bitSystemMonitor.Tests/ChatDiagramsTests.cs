@@ -146,6 +146,10 @@ namespace Kil0bitSystemMonitor.Tests
                 Requests.Add(request);
                 return Task.FromResult(Answer(request));
             }
+
+            public void Forget(string key, object? slot)
+            {
+            }
         }
 
         [Fact]
@@ -438,14 +442,201 @@ namespace Kil0bitSystemMonitor.Tests
 
             diagrams.Clear();
 
-            // The failure is tried again; the picture comes from the engine's own store (which a
-            // Clear does not empty) as a new bitmap, not the one that was kept here.
+            // Nothing is left of either, here or in the engine's own store: both are drawn again.
+            Assert.Equal(0, diagrams.PicturesKept);
+            Assert.Equal(0, diagrams.FailuresKept);
+            Assert.Empty(renderer.Cache);
             Assert.Equal(ChatDiagramStatus.Drawing, diagrams.Get("pie", true, null).Status);
             Assert.Equal(3, renderer.Calls.Count);
+            Assert.Equal(ChatDiagramStatus.Drawing, diagrams.Get(Flow, true, null).Status);
+            Assert.Equal(4, renderer.Calls.Count);
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 3, DiagramFakes.Picture());
             var after = diagrams.Get(Flow, true, null);
             Assert.Equal(ChatDiagramStatus.Drawn, after.Status);
             Assert.NotSame(before, after.Picture);
-            Assert.Equal(3, renderer.Calls.Count);
+        });
+
+        // ---- the drawing engine forgets with it (the credential rule) ------------------------------
+
+        private static string KeyOf(string source, bool dark = true) =>
+            DiagramFakes.Request(source: source, theme: dark ? PadThemes.Dark : PadThemes.Light).Key;
+
+        [Fact]
+        public Task Clear_answers_the_draws_still_waiting_in_the_engine_and_the_one_being_drawn_is_kept_nowhere() => UiThread.RunAsync(async () =>
+        {
+            // The real queue, over a page the test answers by hand: the first of three diagrams is
+            // being drawn (slowly) and two wait behind it, each holding its source.
+            var page = new FakePage();
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            string[] sources = { "pie\n  \"hunter2\" : 1", "pie\n  \"hunter2\" : 2", "pie\n  \"hunter2\" : 3" };
+            var told = new List<string>();
+            foreach (string source in sources) Assert.Equal(ChatDiagramStatus.Drawing, diagrams.Get(source, true, () => told.Add(source)).Status);
+            await ChatDiagramFakes.Until(() => page.Requests.Count == 1, "the first draw to reach the page");
+
+            diagrams.Clear();   // a credential was stored: it comes back without waiting for the page
+
+            // The two that waited are answered at once, while the page still draws the first.
+            await ChatDiagramFakes.Until(() => told.Count == 2, "the two waiting draws to be answered");
+            Assert.Equal(new[] { sources[1], sources[2] }, told.OrderBy(s => s, StringComparer.Ordinal));
+            Assert.Single(page.Requests);
+
+            page.Finish(DiagramFakes.Drawn());
+            await ChatDiagramFakes.Until(() => told.Count == 3, "the draw that was running to end");
+            await Task.Delay(50);
+
+            Assert.Equal(sources[0], Assert.Single(page.Requests).Source);   // the two that waited never reached the page
+            Assert.All(sources, source => Assert.False(renderer.TryGetCached(KeyOf(source), out _)));
+            Assert.Equal(0, renderer.CachedCount);                           // the one that ran is not in the engine's store
+            Assert.Equal(0, diagrams.PicturesKept);                          // nor kept here
+            Assert.Equal(0, diagrams.FailuresKept);
+        });
+
+        [Fact]
+        public void After_Clear_the_engine_holds_nothing_the_adapter_asked_for_not_even_a_picture_the_adapter_had_dropped() => UiThread.Run(() =>
+        {
+            var page = new FakePage { Answer = _ => DiagramFakes.Drawn() };
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
+            BitmapSource heavy = ChatDiagramFakes.Counted(1600, 2400);   // counts as 15 MB: the ninth pushes the first out of the adapter
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { }, Decoder = (_, _, _) => heavy };
+
+            // A note of the owner's drew two diagrams of its own; an answer shows the first of them too.
+            var notesOwn = DiagramFakes.Request(source: "a note's own diagram");
+            var shared = DiagramFakes.Request(source: "in a note and in an answer");
+            Assert.True(renderer.RenderAsync(notesOwn, new object()).IsCompleted);
+            Assert.True(renderer.RenderAsync(shared, new object()).IsCompleted);
+            Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(shared.Source, true, null).Status);   // found in the engine: no draw
+            Assert.Equal(2, page.Requests.Count);
+
+            for (int i = 0; i < 9; i++) Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(Source(i), true, null).Status);
+            Assert.Equal(8, diagrams.PicturesKept);                              // the shared one and number 0 were dropped here
+            Assert.Equal(11, renderer.CachedCount);
+            Assert.True(renderer.TryGetCached(KeyOf(Source(0)), out _));         // but the engine still has them
+
+            diagrams.Clear();
+
+            for (int i = 0; i < 9; i++) Assert.False(renderer.TryGetCached(KeyOf(Source(i)), out _), "diagram " + i.ToString(CultureInfo.InvariantCulture));
+            Assert.False(renderer.TryGetCached(shared.Key, out _));              // the note draws it again when it next needs it
+            Assert.True(renderer.TryGetCached(notesOwn.Key, out _));             // never in an answer: not the adapter's to forget
+            Assert.Equal(1, renderer.CachedCount);
+
+            // The set of what was asked for went with it: a second Clear asks the engine nothing.
+            Assert.True(renderer.RenderAsync(shared, new object()).IsCompleted);
+            diagrams.Clear();
+            Assert.True(renderer.TryGetCached(shared.Key, out _));
+        });
+
+        [Fact]
+        public void Try_again_forgets_the_engines_stored_result_for_that_key_only() => UiThread.Run(() =>
+        {
+            var page = new FakePage { Answer = _ => new PageDrawing(null, null, 0, 0, "Parse error on line 2") };
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get(Flow, true, null).Status);
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get(Flow, false, null).Status);
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get("pie", true, null).Status);
+            Assert.Equal(3, renderer.CachedCount);   // a syntax error lasts: the engine stores it
+
+            diagrams.Forget(Flow, true);
+
+            Assert.False(renderer.TryGetCached(KeyOf(Flow), out _));
+            Assert.True(renderer.TryGetCached(KeyOf(Flow, dark: false), out _));
+            Assert.True(renderer.TryGetCached(KeyOf("pie"), out _));
+            Assert.Equal(2, diagrams.FailuresKept);
+
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get(Flow, true, null).Status);
+            Assert.Equal(4, page.Requests.Count);    // drawn again by the page, not handed back from the store
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get("pie", true, null).Status);
+            Assert.Equal(4, page.Requests.Count);
+        });
+
+        [Fact]
+        public Task Try_again_leaves_a_draw_of_that_diagram_that_is_under_way_in_the_engine_alone() => UiThread.RunAsync(async () =>
+        {
+            var page = new FakePage();
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            int told = 0;
+            diagrams.Get(Flow, true, () => told++);
+            diagrams.Get("pie", true, () => told++);              // waits behind it
+            await ChatDiagramFakes.Until(() => page.Requests.Count == 1, "the draw to reach the page");
+
+            diagrams.Forget(Flow, true);                          // a second answer's Try again, while the first one's draw runs
+            diagrams.Forget("pie", true);
+
+            page.Finish(DiagramFakes.Drawn());
+            await ChatDiagramFakes.Until(() => page.Requests.Count == 2, "the waiting draw to reach the page");
+            page.Finish(DiagramFakes.Drawn());
+            await ChatDiagramFakes.Until(() => told == 2, "both draws to end");
+            Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(Flow, true, null).Status);
+            Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get("pie", true, null).Status);
+            Assert.Equal(2, page.Requests.Count);
+        });
+
+        [Fact]
+        public void More_than_256_diagrams_since_the_last_Clear_are_forgotten_by_the_engine_as_they_leave_the_set() => UiThread.Run(() =>
+        {
+            // Only hashes are remembered, and no more than 256 of them. The one pushed out is
+            // forgotten by the engine there and then, so a Clear never leaves one behind.
+            Assert.Equal(256, ChatDiagrams.MaxRemembered);
+            var renderer = new FakeRenderer();
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            for (int i = 0; i < ChatDiagrams.MaxRemembered; i++) diagrams.Get(Source(i), true, null);
+            Assert.Equal(ChatDiagrams.MaxRemembered, diagrams.Remembered);
+            Assert.Empty(renderer.Forgotten);
+
+            diagrams.Get(Source(ChatDiagrams.MaxRemembered), true, null);
+
+            Assert.Equal(ChatDiagrams.MaxRemembered, diagrams.Remembered);
+            var first = Assert.Single(renderer.Forgotten);
+            Assert.Equal(renderer.Calls[0].Request.Key, first.Key);
+            Assert.Same(renderer.Calls[0].Slot, first.Slot);
+
+            diagrams.Clear();
+
+            Assert.Equal(0, diagrams.Remembered);
+            Assert.Equal(ChatDiagrams.MaxRemembered + 1, renderer.Forgotten.Count);
+            Assert.Equal(renderer.Calls.Select(c => c.Request.Key).OrderBy(k => k, StringComparer.Ordinal),
+                         renderer.Forgotten.Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal));
+            Assert.All(renderer.Forgotten, f => Assert.Equal(64, f.Key.Length));   // a SHA-256 in hex: never a source
+        });
+
+        [Fact]
+        public void Clear_and_Try_again_do_not_throw_when_the_engine_cannot_forget_and_say_so_by_the_type_only() => UiThread.Run(() =>
+        {
+            var warnings = new List<string>();
+            var diagrams = new ChatDiagrams(() => new ThrowingRenderer(), () => true) { Warn = warnings.Add };
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get(Flow, true, null).Status);
+            warnings.Clear();
+
+            diagrams.Forget(Flow, true);
+            diagrams.Clear();
+
+            Assert.Equal(2, warnings.Count);
+            Assert.All(warnings, warning =>
+            {
+                Assert.Contains("InvalidOperationException", warning, StringComparison.Ordinal);
+                Assert.DoesNotContain("the key was", warning, StringComparison.Ordinal);
+            });
+            Assert.Equal(0, diagrams.FailuresKept);
+            Assert.Equal(0, diagrams.Remembered);
+        });
+
+        [Fact]
+        public void Clear_with_nothing_asked_for_does_not_even_make_the_engine() => UiThread.Run(() =>
+        {
+            int made = 0;
+            var diagrams = new ChatDiagrams(() =>
+            {
+                made++;
+                return new FakeRenderer();
+            }, () => false);
+            diagrams.Get(Flow, true, null);   // the setting is off: nothing is asked of the engine
+
+            diagrams.Clear();
+            diagrams.Forget(Flow, true);
+
+            Assert.Equal(0, made);            // the app makes its engine (a browser page) on first use
         });
 
         [Fact]
@@ -502,6 +693,8 @@ namespace Kil0bitSystemMonitor.Tests
                 Calls++;
                 throw new InvalidOperationException("the source was " + request.Source);
             }
+
+            public void Forget(string key, object? slot) => throw new InvalidOperationException("the key was " + key);
         }
 
         [Fact]
@@ -716,8 +909,10 @@ namespace Kil0bitSystemMonitor.Tests
 
             scale = 2.0;
             Assert.Equal((400, 300), PixelsOf(diagrams.Get(Flow, true, null)));   // kept as it was decoded
-            diagrams.Clear();
-            Assert.Equal((800, 600), PixelsOf(diagrams.Get(Flow, true, null)));   // decoded again, from the engine's own store
+            diagrams.Clear();                                                     // forgotten, here and in the engine: it is drawn again
+            Assert.Equal(ChatDiagramStatus.Drawing, diagrams.Get(Flow, true, null).Status);
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramResult.Picture(ChatDiagramFakes.Png(2000, 1500), DiagramFakes.Svg, 400, 300, paper: false));
+            Assert.Equal((800, 600), PixelsOf(diagrams.Get(Flow, true, null)));   // and decoded for the scaling as it is now
         });
 
         [Fact]
@@ -932,11 +1127,19 @@ namespace Kil0bitSystemMonitor.Tests
             });
             Assert.Equal(sources, page.Requests.Select(r => r.Source));
 
-            // Forgotten here, the engine still has them: each is there at once, with no draw and nobody told.
-            diagrams.Clear();
-            Assert.All(sources, source => Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(source, true, redraw).Status));
+            // Each is kept: asking again draws nothing and tells nobody.
             Assert.Equal(3, page.Requests.Count);
             Assert.Equal(3, told);
+            Assert.Equal(3, renderer.CachedCount);
+
+            // Forgotten here, they are forgotten by the engine too: nothing drawn for an answer outlives it.
+            diagrams.Clear();
+            Assert.Equal(0, renderer.CachedCount);
+            Assert.Equal(ChatDiagramStatus.Drawing, diagrams.Get(sources[0], true, redraw).Status);
+            await ChatDiagramFakes.Until(() => page.Requests.Count == 4, "the draw after Clear to reach the page");
+            page.Finish(DiagramFakes.Drawn());
+            await ChatDiagramFakes.Until(() => told == 4, "the draw after Clear to end");
+            Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(sources[0], true, redraw).Status);
         });
 
         [Fact]

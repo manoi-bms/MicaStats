@@ -50,5 +50,13 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 _map.Remove(last.Value.Key);
             }
         }
+
+        /// <summary>Drops the result kept for <paramref name="key"/>; false when there was none.</summary>
+        public bool Remove(string key)
+        {
+            if (!_map.Remove(key, out var node)) return false;
+            _order.Remove(node);
+            return true;
+        }
     }
 }

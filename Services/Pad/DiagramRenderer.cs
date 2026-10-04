@@ -17,6 +17,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// Never throws: every failure is a result, and a warning names only the engine and the
     /// exception type. The queue and cache are locked; the page is created, used and dropped only by
     /// the pump (one draw at a time), and <see cref="Dispose"/> may come from any thread.
+    /// <see cref="Forget"/> takes one caller's request back, waiting, being drawn or stored (an AI
+    /// answer that was cleared); the note's own blocks never call it.
     /// </summary>
     public sealed class DiagramRenderer : IDiagramRenderer, IDisposable
     {
@@ -32,6 +34,12 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private readonly object _gate = new();
         private readonly CancellationTokenSource _shutdown = new();
         private IDiagramPage? _page;
+
+        /// <summary>
+        /// The job the pump is drawing now, which is no longer in <see cref="_waiting"/>; null
+        /// between draws. Under <see cref="_gate"/>, like the queue.
+        /// </summary>
+        private Job? _drawing;
         private bool _pumping;
         private bool _disposed;
 
@@ -67,7 +75,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 if (_disposed) return Task.FromResult(DiagramResult.Failure(DiagramText.Failed, lasting: false));
                 int waiting = _waiting.FindIndex(j => ReferenceEquals(j.Slot, slot));
-                if (_cache.TryGet(request.Key, out var cached))
+                string key = request.Key;
+                if (_cache.TryGet(key, out var cached))
                 {
                     if (waiting >= 0)
                     {
@@ -77,7 +86,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     return Task.FromResult(cached);
                 }
 
-                job = new Job(request, slot);
+                job = new Job(request, slot, key);
                 if (waiting >= 0)
                 {
                     _waiting[waiting].Done.TrySetResult(DiagramResult.Replaced);
@@ -92,6 +101,34 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
             _ = PumpAsync();
             return job.Done.Task;
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// The request is the one with this slot and this key: a slot whose request is another
+        /// one by now (a newer request took its place) names nothing. It only takes the lock, so
+        /// it may come from the UI thread while the pump waits for the page: the page is neither
+        /// waited for nor closed, and a draw under way ends by itself.
+        /// </remarks>
+        public void Forget(string key, object? slot)
+        {
+            Job? waited = null;
+            lock (_gate)
+            {
+                _cache.Remove(key);
+                if (slot != null)
+                {
+                    int waiting = _waiting.FindIndex(j => ReferenceEquals(j.Slot, slot) && j.Key == key);
+                    if (waiting >= 0)
+                    {
+                        waited = _waiting[waiting];
+                        _waiting.RemoveAt(waiting);
+                    }
+                    if (_drawing is { } drawing && ReferenceEquals(drawing.Slot, slot) && drawing.Key == key) drawing.Forgotten = true;
+                }
+            }
+            // Its task ends here, or whoever awaits it would wait for ever; the job, and the source it held, are let go.
+            waited?.Done.TrySetResult(DiagramResult.Failure(DiagramText.Failed, lasting: false));
         }
 
         /// <summary>Answers every draw still waiting, abandons the running one and closes the page.</summary>
@@ -127,7 +164,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     job = _waiting[0];
                     _waiting.RemoveAt(0);
                     // Another block with the same text may have been drawn while this one waited.
-                    _cache.TryGet(job.Request.Key, out drawnMeanwhile);
+                    _cache.TryGet(job.Key, out drawnMeanwhile);
+                    // It has left the queue: from here to the end of its draw, Forget finds it here.
+                    if (drawnMeanwhile == null) _drawing = job;
                 }
                 if (drawnMeanwhile != null)
                 {
@@ -149,8 +188,11 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
                 lock (_gate)
                 {
+                    _drawing = null;   // the page answered: the renderer holds this job, and its source, no longer
                     if (_disposed) result = DiagramResult.Failure(DiagramText.Failed, lasting: false);
-                    else if (result.Lasting) _cache.Add(job.Request.Key, result);
+                    // Forgotten while it was drawn: what was drawn is stored nowhere and handed to nobody.
+                    else if (job.Forgotten) result = DiagramResult.Failure(DiagramText.Failed, lasting: false);
+                    else if (result.Lasting) _cache.Add(job.Key, result);
                 }
                 job.Done.TrySetResult(result);
             }
@@ -326,15 +368,22 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private sealed class Job
         {
-            public Job(DiagramRequest request, object slot)
+            public Job(DiagramRequest request, object slot, string key)
             {
                 Request = request;
                 Slot = slot;
+                Key = key;
             }
 
             public DiagramRequest Request { get; }
 
             public object Slot { get; }
+
+            /// <summary>The request's <see cref="DiagramRequest.Key"/>, worked out once: a hash of the source, not the source.</summary>
+            public string Key { get; }
+
+            /// <summary>Set under the renderer's lock by <see cref="DiagramRenderer.Forget"/> while this job is drawn: its result is not stored.</summary>
+            public bool Forgotten { get; set; }
 
             public TaskCompletionSource<DiagramResult> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }

@@ -46,5 +46,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <see cref="DiagramResult.Replaced"/>). Never throws.
         /// </summary>
         Task<DiagramResult> RenderAsync(DiagramRequest request, object slot);
+
+        /// <summary>
+        /// Forgets what one caller asked for: the request it made with this <paramref name="key"/>
+        /// (<see cref="DiagramRequest.Key"/>, a hash: it holds no source text) and this
+        /// <paramref name="slot"/>. A draw that still waits is answered with a failure that does
+        /// not last, and is never drawn; one being drawn now is not stored when it ends, and ends
+        /// with that failure; and the result stored for <paramref name="key"/> is dropped, whoever
+        /// drew it. With no <paramref name="slot"/> only the stored result goes. The draws of
+        /// every other slot are left alone. Returns at once and never throws.
+        /// </summary>
+        void Forget(string key, object? slot);
     }
 }

@@ -368,5 +368,256 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.False(result.Paper);
             Assert.Equal(new PageRequest("math", "E = mc^2", true, "#EDEDF2", "#0E0E13"), Assert.Single(page.Requests));
         }
+
+        // ---- Forget: one caller's request goes, with what was drawn for it -------------------------
+
+        /// <summary>A failure that does not last and is no "replaced": what a forgotten draw ends with.</summary>
+        private static void AssertForgotten(DiagramResult result)
+        {
+            Assert.False(result.IsPicture);
+            Assert.Null(result.Svg);
+            Assert.Equal(DiagramText.Failed, result.Error);
+            Assert.False(result.Lasting);
+            Assert.False(result.IsReplaced);
+        }
+
+        [Fact]
+        public void Forget_answers_a_waiting_draw_at_once_and_it_never_reaches_the_page()
+        {
+            var page = new FakePage();
+            using var renderer = Over(page);
+            var running = renderer.RenderAsync(DiagramFakes.Request(source: "a"), new object());
+            DiagramFakes.WaitUntil(() => page.Requests.Count == 1, "the first draw");
+            var slot = new object();
+            var forgotten = DiagramFakes.Request(source: "the login is hunter2");
+            var kept = DiagramFakes.Request(source: "c");
+            var waiting = renderer.RenderAsync(forgotten, slot);
+            var stays = renderer.RenderAsync(kept, new object());
+
+            renderer.Forget(forgotten.Key, slot);
+
+            AssertForgotten(Wait(waiting));   // answered while the first draw still runs: nobody waits for ever
+            Assert.False(running.IsCompleted);
+            Assert.Single(page.Requests);
+
+            page.Finish(DiagramFakes.Drawn());
+            Assert.True(Wait(running).IsPicture);
+            DiagramFakes.WaitUntil(() => page.Requests.Count == 2, "the draw behind the forgotten one");
+            Assert.Equal("c", page.Requests[1].Source);
+            page.Finish(DiagramFakes.Drawn());
+            Assert.True(Wait(stays).IsPicture);
+            Thread.Sleep(50);
+            Assert.DoesNotContain(page.Requests, r => r.Source == forgotten.Source);
+            Assert.False(renderer.TryGetCached(forgotten.Key, out _));
+            Assert.Equal(2, renderer.CachedCount);
+        }
+
+        [Fact]
+        public void Forget_while_a_draw_runs_does_not_wait_for_the_page_and_its_result_is_not_stored_when_it_ends()
+        {
+            var page = new FakePage();
+            using var renderer = Over(page);
+            var slot = new object();
+            var request = DiagramFakes.Request(source: "the login is hunter2");
+            var running = renderer.RenderAsync(request, slot);
+            DiagramFakes.WaitUntil(() => page.Requests.Count == 1, "the draw");
+            var behind = DiagramFakes.Request(source: "behind");
+            var next = renderer.RenderAsync(behind, new object());
+
+            renderer.Forget(request.Key, slot);   // comes back while the page still draws
+
+            Assert.False(running.IsCompleted);
+            Assert.False(page.Disposed);          // the page is not closed for it: the draw ends by itself
+            page.Finish(DiagramFakes.Drawn());
+            AssertForgotten(Wait(running));       // the picture drawn from the forgotten source is handed to nobody
+            Assert.False(renderer.TryGetCached(request.Key, out _));
+
+            // The queue goes on, and what is drawn after it is stored as ever.
+            DiagramFakes.WaitUntil(() => page.Requests.Count == 2, "the draw behind it");
+            page.Finish(DiagramFakes.Drawn());
+            Assert.True(Wait(next).IsPicture);
+            Assert.True(renderer.TryGetCached(behind.Key, out _));
+            Assert.Equal(1, renderer.CachedCount);
+        }
+
+        [Fact]
+        public void Forget_drops_the_stored_result_of_that_key_only_and_the_next_request_draws_it_again()
+        {
+            var page = new FakePage { Answer = r => r.Source == "bad" ? new PageDrawing(null, null, 0, 0, "Parse error on line 1") : DiagramFakes.Drawn() };
+            using var renderer = Over(page);
+            var one = DiagramFakes.Request(source: "one");
+            var two = DiagramFakes.Request(source: "two");
+            var bad = DiagramFakes.Request(source: "bad");
+            Wait(renderer.RenderAsync(one, new object()));
+            Wait(renderer.RenderAsync(two, new object()));
+            Wait(renderer.RenderAsync(bad, new object()));
+            Assert.Equal(3, renderer.CachedCount);
+
+            renderer.Forget(one.Key, null);       // no slot: only what is stored
+            renderer.Forget(bad.Key, new object());
+
+            Assert.False(renderer.TryGetCached(one.Key, out _));
+            Assert.False(renderer.TryGetCached(bad.Key, out _));
+            Assert.True(renderer.TryGetCached(two.Key, out _));
+            Assert.Equal(1, renderer.CachedCount);
+            Assert.True(Wait(renderer.RenderAsync(one, new object())).IsPicture);
+            Assert.Equal(4, page.Requests.Count);   // drawn again, not found
+        }
+
+        [Fact]
+        public void Forget_leaves_the_draws_of_every_other_slot_alone_even_one_for_the_same_key()
+        {
+            // A note's own block and an answer hold the same diagram: the answer is cleared, the note's draw goes on.
+            var page = new FakePage();
+            using var renderer = Over(page);
+            var same = DiagramFakes.Request(source: "same");
+            var other = DiagramFakes.Request(source: "other");
+            var notesSlot = new object();
+            var answersSlot = new object();
+            var notes = renderer.RenderAsync(same, notesSlot);
+            DiagramFakes.WaitUntil(() => page.Requests.Count == 1, "the note's draw");
+            var answers = renderer.RenderAsync(same, answersSlot);
+            var waitingNote = renderer.RenderAsync(other, new object());
+            var reused = new object();
+            var newer = renderer.RenderAsync(DiagramFakes.Request(source: "newer"), reused);
+
+            renderer.Forget(same.Key, answersSlot);
+            renderer.Forget(other.Key, reused);   // a slot whose request is another one by now: that request is not the one named
+
+            AssertForgotten(Wait(answers));
+            Assert.False(notes.IsCompleted);
+            page.Finish(DiagramFakes.Drawn());
+            Assert.True(Wait(notes).IsPicture);                    // the running draw of another slot was not marked
+            Assert.True(renderer.TryGetCached(same.Key, out _));   // and is stored
+            DiagramFakes.WaitUntil(() => page.Requests.Count == 2, "the note's waiting draw");
+            Assert.Equal("other", page.Requests[1].Source);
+            page.Finish(DiagramFakes.Drawn());
+            Assert.True(Wait(waitingNote).IsPicture);
+            DiagramFakes.WaitUntil(() => page.Requests.Count == 3, "the newer draw");
+            Assert.Equal("newer", page.Requests[2].Source);
+            page.Finish(DiagramFakes.Drawn());
+            Assert.True(Wait(newer).IsPicture);
+        }
+
+        [Fact]
+        public void Forget_never_throws_for_a_request_it_never_had_or_after_Dispose()
+        {
+            var page = new FakePage { Answer = _ => DiagramFakes.Drawn() };
+            var renderer = Over(page);
+            var request = DiagramFakes.Request();
+            Wait(renderer.RenderAsync(request, new object()));
+
+            renderer.Forget("never asked for", new object());
+            renderer.Forget("never asked for", null);
+            Assert.True(renderer.TryGetCached(request.Key, out _));
+
+            renderer.Dispose();
+            renderer.Forget(request.Key, new object());   // as at exit, with an answer being cleared
+
+            Assert.False(renderer.TryGetCached(request.Key, out _));
+        }
+
+        /// <summary>A page that keeps nothing of what it is asked: what it drew can be collected.</summary>
+        private sealed class ForgetfulPage : IDiagramPage
+        {
+            private readonly object _gate = new();
+            private TaskCompletionSource<PageDrawing>? _drawing;
+
+            public int Draws { get; private set; }
+
+            public bool IsBroken => false;
+
+            public Task<PageDrawing> DrawAsync(PageRequest request, CancellationToken cancel)
+            {
+                var done = new TaskCompletionSource<PageDrawing>(TaskCreationOptions.RunContinuationsAsynchronously);
+                lock (_gate)
+                {
+                    Draws++;
+                    _drawing = done;
+                }
+                return done.Task;
+            }
+
+            public int DrawsNow
+            {
+                get { lock (_gate) return Draws; }
+            }
+
+            public void Finish()
+            {
+                TaskCompletionSource<PageDrawing>? done;
+                lock (_gate)
+                {
+                    done = _drawing;
+                    _drawing = null;
+                }
+                done?.TrySetResult(DiagramFakes.Drawn());
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+
+        /// <summary>Queues a draw behind the running one and forgets it; what comes back is all that is left of the request here.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static (WeakReference Request, Task<DiagramResult> Draw) QueueAndForget(DiagramRenderer renderer, int number)
+        {
+            var slot = new object();
+            var request = DiagramFakes.Request(source: "the login is hunter2, written " + number.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var draw = renderer.RenderAsync(request, slot);
+            renderer.Forget(request.Key, slot);
+            return (new WeakReference(request), draw);
+        }
+
+        /// <summary>Starts a draw and forgets it while the page draws it.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static (WeakReference Request, Task<DiagramResult> Draw) DrawAndForget(DiagramRenderer renderer, ForgetfulPage page)
+        {
+            var slot = new object();
+            var request = DiagramFakes.Request(source: "the login is hunter2");
+            var draw = renderer.RenderAsync(request, slot);
+            DiagramFakes.WaitUntil(() => page.DrawsNow == 1, "the draw");
+            renderer.Forget(request.Key, slot);
+            return (new WeakReference(request), draw);
+        }
+
+        private static bool Collected(WeakReference reference)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            return !reference.IsAlive;
+        }
+
+        [Fact]
+        public void A_forgotten_draw_that_waited_leaves_its_source_nowhere_in_the_renderer()
+        {
+            var page = new ForgetfulPage();
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
+            var running = renderer.RenderAsync(DiagramFakes.Request(source: "a"), new object());
+            DiagramFakes.WaitUntil(() => page.DrawsNow == 1, "the first draw");
+
+            var (request, draw) = QueueAndForget(renderer, 1);
+
+            AssertForgotten(Wait(draw));
+            DiagramFakes.WaitUntil(() => Collected(request), "the forgotten request to be let go");   // while the first draw still runs
+            Assert.False(running.IsCompleted);
+        }
+
+        [Fact]
+        public void A_forgotten_draw_that_ran_leaves_its_source_nowhere_in_the_renderer_once_the_page_answered()
+        {
+            var page = new ForgetfulPage();
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
+            var (request, draw) = DrawAndForget(renderer, page);
+
+            page.Finish();
+            AssertForgotten(Wait(draw));
+
+            // Nothing is drawn after it, so nothing takes its place in the renderer: it is let go because the draw ended.
+            DiagramFakes.WaitUntil(() => Collected(request), "the forgotten request to be let go");
+            Assert.Equal(0, renderer.CachedCount);
+        }
     }
 }

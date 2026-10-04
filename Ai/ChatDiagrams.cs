@@ -53,7 +53,10 @@ namespace Kil0bitSystemMonitor.Ai
         /// </summary>
         void Forget(string source, bool dark);
 
-        /// <summary>Forgets every picture and every remembered failure.</summary>
+        /// <summary>
+        /// Forgets every picture and every remembered failure, and has the drawing engine forget
+        /// what it was asked to draw for them: nothing drawn for an answer outlives it.
+        /// </summary>
         void Clear();
     }
 
@@ -80,6 +83,14 @@ namespace Kil0bitSystemMonitor.Ai
     /// kept apart, up to <see cref="MaxFailures"/>: a picture never pushes a failure out, nor a
     /// failure a picture. A picture dropped here stays with the answers that still show it, until
     /// those are built again or go.
+    /// </para>
+    ///
+    /// <para>
+    /// What the engine keeps for it. The engine holds a waiting draw's source, and stores what it
+    /// drew (a PNG and SVG text). So every request made of it is remembered here by its key and
+    /// its slot (hashes and empty objects only, at most <see cref="MaxRemembered"/>; never a
+    /// source), and <see cref="Clear"/> has the engine forget each one: when an answer goes
+    /// because text was stored as a credential, nothing of it is left in the engine either.
     /// </para>
     ///
     /// <para>
@@ -114,6 +125,12 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>The largest display scaling a picture is decoded for.</summary>
         internal const double MaxScale = 3;
 
+        /// <summary>
+        /// How many requests made of the engine are remembered, so that <see cref="Clear"/> can
+        /// have the engine forget each. One more, and the engine forgets the oldest there and then.
+        /// </summary>
+        internal const int MaxRemembered = 256;
+
         private static readonly ChatDiagramState Off = new(ChatDiagramStatus.Off);
         private static readonly ChatDiagramState Drawing = new(ChatDiagramStatus.Drawing);
 
@@ -126,6 +143,15 @@ namespace Kil0bitSystemMonitor.Ai
         private readonly Kept _pictures = new();
         private readonly Kept _failures = new();
         private readonly Dictionary<string, List<Action>> _waiting = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// What was asked of the engine since the last <see cref="Clear"/>: each request's key (a
+        /// SHA-256 in hex) and the slot it was made with (an empty object; null for a result that
+        /// was found in the engine's store). Hashes only: a diagram's source is never kept here.
+        /// The most recently asked first; at most <see cref="MaxRemembered"/>.
+        /// </summary>
+        private readonly Dictionary<string, LinkedListNode<(string Key, object? Slot)>> _asked = new(StringComparer.Ordinal);
+        private readonly LinkedList<(string Key, object? Slot)> _askedOrder = new();
 
         /// <summary>True once a failure to read the setting or the engine was reported; it is not reported again.</summary>
         private bool _unreadableSaid;
@@ -165,6 +191,9 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>How many failures are kept; for tests.</summary>
         internal int FailuresKept => _failures.Count;
 
+        /// <summary>How many requests are remembered for the engine to forget; for tests.</summary>
+        internal int Remembered => _asked.Count;
+
         /// <inheritdoc />
         public ChatDiagramState Get(string source, bool dark, Action? whenDone)
         {
@@ -184,13 +213,20 @@ namespace Kil0bitSystemMonitor.Ai
                     return Drawing;
                 }
                 // Drawn before, for a note or for an answer whose picture was dropped here: no draw, and nobody to tell.
-                if (renderer.TryGetCached(key, out DiagramResult? cached)) return Keep(key, StateOf(cached));
+                if (renderer.TryGetCached(key, out DiagramResult? cached))
+                {
+                    Remember(renderer, key, slot: null);
+                    return Keep(key, StateOf(cached));
+                }
 
                 waiters = new List<Action>();
                 _waiting.Add(key, waiters);
                 // A slot of its own: the renderer lets a newer request take the place of a waiting
                 // one with the same slot, and two diagrams of one answer must not cancel each other.
-                Task<DiagramResult> draw = renderer.RenderAsync(request, new object());
+                // Remembered before it is asked: from the call on, the engine may hold the source.
+                var slot = new object();
+                Remember(renderer, key, slot);
+                Task<DiagramResult> draw = renderer.RenderAsync(request, slot);
                 if (draw.IsCompleted)
                 {
                     // Answered at once: the caller is still building its document and has the answer
@@ -229,8 +265,11 @@ namespace Kil0bitSystemMonitor.Ai
 
         /// <inheritdoc />
         /// <remarks>
-        /// Only an outcome is forgotten. A draw still running goes on, and its outcome is kept
-        /// when it ends: forgetting starts nothing and stops nothing. Never throws.
+        /// Only an outcome is forgotten: the one kept here, and the one the engine stores for that
+        /// key (it may hold one a note's own block drew since, which the next <see cref="Get"/>
+        /// would be handed in place of a new draw). A draw still waiting or running goes on, and
+        /// its outcome is kept when it ends: forgetting starts nothing and stops nothing. Never
+        /// throws.
         /// </remarks>
         public void Forget(string source, bool dark)
         {
@@ -240,6 +279,9 @@ namespace Kil0bitSystemMonitor.Ai
                 string key = RequestFor(kind, source, dark).Key;
                 _pictures.Remove(key);
                 _failures.Remove(key);
+                // No slot is named, so the engine drops what it stores and leaves every draw alone.
+                // A key never asked of the engine has nothing there, and the engine is not made for it.
+                if (_asked.ContainsKey(key)) _renderer()?.Forget(key, slot: null);
             }
             catch (Exception ex)
             {
@@ -250,14 +292,85 @@ namespace Kil0bitSystemMonitor.Ai
         /// <inheritdoc />
         /// <remarks>
         /// A draw still running is forgotten too: its outcome is not kept when it ends. Whoever
-        /// waits for it is still told then, and asks again if it still shows that block. The
-        /// drawing engine's own store is not emptied (it also holds the pictures of the notes).
+        /// waits for it is still told then, and asks again if it still shows that block.
+        ///
+        /// <para>
+        /// The drawing engine forgets with it (the credential rule: the answer may quote what the
+        /// user has just stored as a credential). For every request made since the last Clear the
+        /// engine is told to forget it (<see cref="IDiagramRenderer.Forget"/>): a draw that still
+        /// waits is answered and never drawn, so its source is let go; the one being drawn is not
+        /// stored when it ends; and the picture and SVG text the engine stores for that key are
+        /// dropped, also when a note's own block had drawn the same source (the note draws it
+        /// again when it next needs it). Never throws.
+        /// </para>
         /// </remarks>
         public void Clear()
         {
             _pictures.Clear();
             _failures.Clear();
             _waiting.Clear();
+            ForgetInEngine();
+        }
+
+        /// <summary>
+        /// Remembers a request made of the engine, as the most recent: its key and its slot, never
+        /// its source. Over <see cref="MaxRemembered"/> the oldest leaves the set, and the engine
+        /// forgets it there and then, so there is never a request that a later
+        /// <see cref="Clear"/> could not reach. (What is kept here for that key stays until it is
+        /// pushed out or cleared; a draw of it that still waits ends as a failure that can be
+        /// tried again.)
+        /// </summary>
+        private void Remember(IDiagramRenderer renderer, string key, object? slot)
+        {
+            if (_asked.Remove(key, out var known)) _askedOrder.Remove(known);
+            _asked[key] = _askedOrder.AddFirst((key, slot));
+            while (_asked.Count > MaxRemembered && _askedOrder.Last is { } oldest)
+            {
+                _askedOrder.RemoveLast();
+                _asked.Remove(oldest.Value.Key);
+                try
+                {
+                    renderer.Forget(oldest.Value.Key, oldest.Value.Slot);
+                }
+                catch (Exception ex)
+                {
+                    Report("Having the drawing engine forget a diagram failed (" + ex.GetType().Name + ")");
+                }
+            }
+        }
+
+        /// <summary>Has the engine forget every request remembered, and forgets the set. Never throws.</summary>
+        private void ForgetInEngine()
+        {
+            if (_asked.Count == 0) return;   // nothing was asked of the engine: it is not made for this
+            var asked = new List<(string Key, object? Slot)>(_askedOrder);
+            _asked.Clear();
+            _askedOrder.Clear();
+
+            string? failed = null;
+            try
+            {
+                if (_renderer() is { } renderer)
+                {
+                    foreach ((string key, object? slot) in asked)
+                    {
+                        try
+                        {
+                            renderer.Forget(key, slot);
+                        }
+                        catch (Exception ex)
+                        {
+                            failed ??= ex.GetType().Name;   // the others are still forgotten
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                failed = ex.GetType().Name;
+            }
+            // Once for a Clear, and the type only.
+            if (failed != null) Report("Having the drawing engine forget an answer's diagrams failed (" + failed + ")");
         }
 
         /// <summary>

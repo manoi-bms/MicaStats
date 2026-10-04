@@ -446,6 +446,10 @@ namespace Kil0bitSystemMonitor.Tests
 
             public System.Threading.Tasks.Task<DiagramResult> RenderAsync(DiagramRequest request, object slot) =>
                 System.Threading.Tasks.Task.FromResult(Result);
+
+            public void Forget(string key, object? slot)
+            {
+            }
         }
 
         [Fact]

@@ -1286,6 +1286,42 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public Task DropAnswer_makes_the_drawing_engine_forget_the_answers_diagrams_drawn_being_drawn_and_waiting() => OnUi(async f =>
+        {
+            // The real adapter over the real queue, and a page the test answers by hand.
+            var page = new FakePage();
+            using var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            f.Pane.AnswerBox.Diagrams = diagrams;
+            f.Pane.AnswerBox.PointerHeld = () => false;
+            string[] sources = { "pie\n  \"hunter2\" : 1", "pie\n  \"hunter2\" : 2", "pie\n  \"hunter2\" : 3" };
+            Task ask = Ask(f);
+            f.Feed(Text(string.Join("\n\n", sources.Select(s => ChatDiagramFakes.Block(s)))));
+            f.End();
+            await ask;
+            await ChatDiagramFakes.Until(() => page.Requests.Count == 1, "the first diagram to reach the page");
+            page.Finish(DiagramFakes.Drawn());
+            await ChatDiagramFakes.Until(() => page.Requests.Count == 2, "the second diagram to reach the page");
+            Assert.Equal(1, renderer.CachedCount);                // the first is stored, the second is being drawn, the third waits
+            int told = 0;
+            foreach (string source in sources.Skip(1)) diagrams.Get(source, true, () => told++);   // behind the box's own waiters
+
+            f.Pane.DropAnswer();                                  // text of a note was stored as a credential
+
+            Assert.Equal(0, renderer.CachedCount);                // what was drawn went at once
+            await ChatDiagramFakes.Until(() => told == 1, "the waiting draw to be answered");
+            Assert.Equal(2, page.Requests.Count);
+            page.Finish(DiagramFakes.Drawn());
+            await ChatDiagramFakes.Until(() => told == 2, "the draw that was running to end");
+            await Task.Delay(50);
+
+            Assert.DoesNotContain(page.Requests, r => r.Source == sources[2]);   // the one that waited never reached the page
+            Assert.Equal(0, renderer.CachedCount);                // and the one that ran was not stored
+            Assert.Equal(0, diagrams.PicturesKept);
+            Assert.Equal("", Rendered(f.Pane));
+        });
+
+        [Fact]
         public Task Hiding_the_pane_drops_a_search_still_waiting_for_typing_to_pause() => OnUi(async f =>
         {
             f.Pane.Visibility = Visibility.Visible;

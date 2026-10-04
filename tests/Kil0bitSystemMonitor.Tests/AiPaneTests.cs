@@ -1246,6 +1246,40 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("bold and code", Rendered(pane));
         });
 
+        [Fact]
+        public System.Threading.Tasks.Task Clear_makes_the_drawing_engine_forget_the_results_diagrams_drawn_being_drawn_and_waiting() => UiThread.RunAsync(async () =>
+        {
+            // The real adapter over the real queue, and a page the test answers by hand.
+            var page = new FakePage();
+            using var renderer = new DiagramRenderer(() => System.Threading.Tasks.Task.FromResult<IDiagramPage>(page));
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            var pane = new AiPane();
+            pane.ResultBox.Diagrams = diagrams;
+            pane.ResultBox.PointerHeld = () => false;
+            string[] sources = { "pie\n  \"hunter2\" : 1", "pie\n  \"hunter2\" : 2", "pie\n  \"hunter2\" : 3" };
+            pane.Show(Read with { Result = string.Join("\n\n", sources.Select(s => ChatDiagramFakes.Block(s))) });
+            await ChatDiagramFakes.Until(() => page.Requests.Count == 1, "the first diagram to reach the page");
+            page.Finish(DiagramFakes.Drawn());
+            await ChatDiagramFakes.Until(() => page.Requests.Count == 2, "the second diagram to reach the page");
+            Assert.Equal(1, renderer.CachedCount);                // the first is stored, the second is being drawn, the third waits
+            int told = 0;
+            foreach (string source in sources.Skip(1)) diagrams.Get(source, true, () => told++);   // behind the box's own waiters
+
+            pane.Clear();                                         // text of the note was stored as a credential
+
+            Assert.Equal(0, renderer.CachedCount);                // what was drawn went at once
+            await ChatDiagramFakes.Until(() => told == 1, "the waiting draw to be answered");
+            Assert.Equal(2, page.Requests.Count);
+            page.Finish(DiagramFakes.Drawn());
+            await ChatDiagramFakes.Until(() => told == 2, "the draw that was running to end");
+            await System.Threading.Tasks.Task.Delay(50);
+
+            Assert.DoesNotContain(page.Requests, r => r.Source == sources[2]);   // the one that waited never reached the page
+            Assert.Equal(0, renderer.CachedCount);                // and the one that ran was not stored
+            Assert.Equal(0, diagrams.PicturesKept);
+            Assert.Equal("", Rendered(pane));
+        });
+
         // ---- keeping up while a reply streams (AI chat UI spec 1.5) ---------------------------------
 
         private static TimeSpan Ms(double ms) => TimeSpan.FromMilliseconds(ms);

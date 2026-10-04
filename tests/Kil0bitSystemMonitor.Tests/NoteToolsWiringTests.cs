@@ -989,6 +989,7 @@ public class NoteToolsWiringTests : IDisposable
         // As it is now: the text of the editor and a title worked out from it, not what was last saved.
         Assert.Equal(new NoteText(open.Id, "Draft plan", unsaved), openText);
         Assert.StartsWith("Untitled", open.Title, StringComparison.Ordinal);
+        env.Flush();   // the save NewNote queued (empty text) may still be at the file; nothing queued the typed text
         Assert.NotEqual(unsaved, env.DiskText(open));
     });
 

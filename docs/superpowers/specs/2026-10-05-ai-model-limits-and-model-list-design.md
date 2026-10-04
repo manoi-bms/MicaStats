@@ -58,17 +58,18 @@ With `W` known:
 
 | What | Rule | At 8,192 | At 262,144 | At 1,048,576 |
 |---|---|---|---|---|
-| Ask MicaStats output | `W / 8`, at least 2,000, at most 16,000 | 2,000 | 16,000 | 16,000 |
-| MicaPad output | `W / 4`, at least 2,048, at most 32,000 | 2,048 | 32,000 | 32,000 |
+| Ask MicaStats output | `W / 8`, at least 2,000, at most 16,000, and never over `W / 4` | 2,000 | 16,000 | 16,000 |
+| MicaPad output | `W / 4`, at least 2,048, at most 32,000, and never over `W / 2` | 2,048 | 32,000 | 32,000 |
 | MicaPad rewrite input | 80% of MicaPad's output (a rewrite must come back whole) | 1,638 | 25,600 | 25,600 |
-| MicaPad read input (Summarize, Explain, Ask AI, Draw as diagram) | `W / 2` less MicaPad's output, at least 1,000 | 2,048 | 99,072 | 492,288 |
+| MicaPad read input (Summarize, Explain, Ask AI, Draw as diagram) | `W / 2` less MicaPad's output, at least 1,000 or `W / 4` if that is less | 2,048 | 99,072 | 492,288 |
 | Ask conversation sent again | `W / 2` | 4,096 | 131,072 | 524,288 |
-| `get_note` in Ask, per call | `W / 16` tokens of text, between 4,000 and 64,000; lines: 400, 1,000 from a window of 32,000, 2,000 from 128,000, 4,000 from 1,000,000 | 4,000 | 16,384 | 64,000 |
-| A tool result kept in the conversation | the `get_note` share and a quarter more | 5,000 | 20,480 | 80,000 |
+| `get_note` in Ask, per call | `W / 16` tokens of text, between 4,000 and 64,000, and never over `W / 4`; lines: 400, 1,000 from a window of 32,000, 2,000 from 128,000, 4,000 from 1,000,000 | 2,048 | 16,384 | 64,000 |
+| A tool result kept in the conversation | the `get_note` share and a quarter more | 2,560 | 20,480 | 80,000 |
 | Passages for Ask your notes | 8; 12 from 32,000; 20 from 128,000 | 8 | 20 | 20 |
 | MicaPad reply, in characters | 4 for each output token, at least 64,000 | 64,000 | 128,000 | 128,000 |
 
 - Where the provider gave the model's largest output, the two output numbers are never above it.
+- *(Added after Task 1's review.)* **The pieces fit the window.** The "never over" parts of the rules are for small windows, where the floors alone would ask for more than the model has: for every window, MicaPad's input and output together are at most the window, and Ask's output and one note read are at most half of it. A very small model (under about 12,000 tokens) is still tight for Ask MicaStats, whose tools and instructions take a few thousand tokens by themselves; the provider's refusal is shown as it is today.
 - **A small model is protected too.** Today 24,000 characters go to an 8,192-token model and the provider refuses them. With the window known, the pane says the text is too long before anything is sent.
 - **(R)** MCP clients keep today's fixed limits for the note tools. They have a window of their own that MicaStats does not know.
 - **(R)** The nine PC tools keep their limits (history points, process counts, report sizes). They are sized for what is useful, not for the window.

@@ -451,7 +451,20 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// pipe, except inside a code span, where it becomes a plain pipe. At most
         /// <paramref name="limit"/> cells are returned; <paramref name="tooMany"/> says more followed;
         /// <paramref name="splits"/> says the line holds a pipe that splits (an outer one counts).
-        /// Linear in the line: code spans are matched by one pass over the backtick runs.
+        ///
+        /// <para>
+        /// A code span is found exactly as <see cref="Inline"/> finds one, so a cell's text holds
+        /// the same spans when it is parsed: outside a span a backslash before a marker makes it
+        /// literal (<c>\|</c> does not split, <c>\`</c> opens no span); a span opens at the
+        /// backticks standing there and closes at the next run of exactly as many
+        /// (<see cref="FindCodeClose"/>), and between the two a backslash escapes nothing, so
+        /// <c>`C:\`</c> is a whole span and the pipe after it splits.
+        /// </para>
+        ///
+        /// <para>
+        /// Linear in the line: the closing run is looked up (<see cref="BacktickRuns"/>), not
+        /// searched for, so a line of thousands of runs that close nothing is read once.
+        /// </para>
         /// </summary>
         private static List<string> SplitRow(string line, int limit, out bool tooMany, out bool splits)
         {
@@ -460,8 +473,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             string s = line.Trim();
             var cells = new List<string>();
             var cell = new StringBuilder();
-            List<(int Pos, int Len, int Next)> ticks = BacktickRuns(s);
-            int run = 0;
+            var ticks = new BacktickRuns(s);
             int i = 0;
             if (s.Length > 0 && s[0] == '|') { splits = true; i = 1; }
             bool trailing = false;   // the line ended with a separator: no cell follows it
@@ -477,24 +489,23 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 }
                 if (c == '`')
                 {
-                    while (run < ticks.Count && ticks[run].Pos < i) run++;
-                    (int pos, int len, int next) = ticks[run];
-                    if (next >= 0)
+                    // As CodeSpan: the backticks from here on (after an escaped one, the rest of its run).
+                    int n = Run(s, i, s.Length, '`');
+                    int close = ticks.CloseOf(i + n, n);
+                    if (close >= 0)
                     {
-                        int close = ticks[next].Pos + ticks[next].Len;
-                        for (int k = pos; k < close; k++)
+                        int end = close + n;
+                        for (int k = i; k < end; k++)
                         {
-                            if (s[k] == '\\' && k + 1 < close && s[k + 1] == '|') k++;   // an escaped pipe is a pipe in code
+                            if (s[k] == '\\' && k + 1 < end && s[k + 1] == '|') k++;   // an escaped pipe is a pipe in code
                             cell.Append(s[k]);
                         }
-                        i = close;
-                        run = next + 1;
+                        i = end;
                     }
                     else
                     {
-                        cell.Append(s, pos, len);
-                        i = pos + len;
-                        run++;
+                        cell.Append('`', n);
+                        i += n;
                     }
                     continue;
                 }
@@ -520,28 +531,45 @@ namespace Kil0bitSystemMonitor.Services.Ai
         }
 
         /// <summary>
-        /// The runs of backticks in a line (an escaped backtick is no run), each with the index of the
-        /// next run of the same length, which would close it, or -1. One pass from the right.
+        /// The runs of backticks in a line, as <see cref="FindCodeClose"/> sees them: every run of
+        /// backticks standing together, whatever comes before it (inside a code span a backslash
+        /// escapes nothing, so a closing run may follow one). It answers what FindCodeClose
+        /// searches for, the start of the next run of exactly <c>n</c> backticks, without the
+        /// search: the starts are kept by length, and since the splitter asks from left to right,
+        /// each list is walked once over the whole line.
         /// </summary>
-        private static List<(int Pos, int Len, int Next)> BacktickRuns(string s)
+        private sealed class BacktickRuns
         {
-            var runs = new List<(int Pos, int Len, int Next)>();
-            if (s.IndexOf('`') < 0) return runs;
-            for (int i = 0; i < s.Length;)
+            /// <summary>For each length, where the runs of that length start, in order, and how far the list has been walked.</summary>
+            private readonly Dictionary<int, (List<int> Starts, int Next)>? _byLength;
+
+            public BacktickRuns(string s)
             {
-                if (s[i] == '\\' && i + 1 < s.Length && IsEscapable(s[i + 1])) { i += 2; continue; }
-                if (s[i] != '`') { i++; continue; }
-                int n = Run(s, i, s.Length, '`');
-                runs.Add((i, n, -1));
-                i += n;
+                if (s.IndexOf('`') < 0) return;   // most lines: nothing is built
+                _byLength = new Dictionary<int, (List<int> Starts, int Next)>();
+                for (int i = 0; i < s.Length;)
+                {
+                    if (s[i] != '`') { i++; continue; }
+                    int n = Run(s, i, s.Length, '`');
+                    if (!_byLength.TryGetValue(n, out var runs)) _byLength[n] = runs = (new List<int>(), 0);
+                    runs.Starts.Add(i);
+                    i += n;
+                }
             }
-            var nextOfLength = new Dictionary<int, int>();
-            for (int r = runs.Count - 1; r >= 0; r--)
+
+            /// <summary>
+            /// The start of the first run of exactly <paramref name="n"/> backticks at or after
+            /// <paramref name="from"/>, or -1. <paramref name="from"/> must not go down from one
+            /// call to the next.
+            /// </summary>
+            public int CloseOf(int from, int n)
             {
-                runs[r] = (runs[r].Pos, runs[r].Len, nextOfLength.TryGetValue(runs[r].Len, out int next) ? next : -1);
-                nextOfLength[runs[r].Len] = r;
+                if (_byLength == null || !_byLength.TryGetValue(n, out var runs)) return -1;
+                int next = runs.Next;
+                while (next < runs.Starts.Count && runs.Starts[next] < from) next++;
+                _byLength[n] = (runs.Starts, next);
+                return next < runs.Starts.Count ? runs.Starts[next] : -1;
             }
-            return runs;
         }
 
         // ---- inline ----------------------------------------------------------------------------

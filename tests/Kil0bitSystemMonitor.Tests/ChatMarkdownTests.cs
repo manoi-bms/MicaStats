@@ -525,6 +525,172 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(new[] { "p | q", "r" }, Texts(table.Rows[1]));
         }
 
+        // ---- a code span in a cell ends where a paragraph's does: a backslash inside one escapes nothing ----
+
+        private static ChatRun CodeRun(string text) => new(text, Code: true);
+
+        [Fact]
+        public void A_backslash_before_a_code_spans_closing_backtick_does_not_merge_the_columns()
+        {
+            var table = TableOf("| Path | Status |\n| --- | --- |\n| `C:\\` | `ok` |");
+
+            var row = Assert.Single(table.Rows);
+            Assert.Equal(new[] { CodeRun("C:\\") }, row[0].Runs);
+            Assert.Equal(new[] { CodeRun("ok") }, row[1].Runs);
+        }
+
+        [Fact]
+        public void A_code_span_that_ends_in_a_backslash_is_followed_by_a_pipe_that_splits()
+        {
+            var table = TableOf("| a | b | c |\n|---|---|---|\n| `a\\` | b | c |\n| x `a\\`| y |\n|`a\\`|`b\\`|`c\\`|");
+
+            Assert.Equal(new[] { CodeRun("a\\") }, table.Rows[0][0].Runs);
+            Assert.Equal(new[] { "a\\", "b", "c" }, Texts(table.Rows[0]));
+            Assert.Equal(new[] { Plain("x "), CodeRun("a\\") }, table.Rows[1][0].Runs);
+            Assert.Equal(new[] { "x a\\", "y", "" }, Texts(table.Rows[1]));
+            Assert.Equal(new[] { "a\\", "b\\", "c\\" }, Texts(table.Rows[2]));
+            Assert.All(table.Rows[2], cell => Assert.True(cell.Runs.Single().Code));
+        }
+
+        [Fact]
+        public void A_path_with_several_backslashes_in_a_code_span_is_one_cell()
+        {
+            var table = TableOf("| Folder | Drive | Note |\n|---|---|---|\n| `C:\\Users\\me\\AppData\\` | `D:\\` | \\\\server\\share\\ |\n| `C:\\a\\|b\\` | x | y |");
+
+            Assert.Equal(new[] { CodeRun("C:\\Users\\me\\AppData\\") }, table.Rows[0][0].Runs);
+            Assert.Equal(new[] { CodeRun("D:\\") }, table.Rows[0][1].Runs);
+            Assert.Equal(new[] { Plain("\\\\server\\share\\") }, table.Rows[0][2].Runs);   // outside code a backslash before a letter is a backslash
+            // In a code span a backslash escapes nothing, but \| is still how a pipe is written in a cell.
+            Assert.Equal(new[] { CodeRun("C:\\a|b\\") }, table.Rows[1][0].Runs);
+            Assert.Equal(new[] { "C:\\a|b\\", "x", "y" }, Texts(table.Rows[1]));
+        }
+
+        [Fact]
+        public void Outside_a_code_span_an_escaped_pipe_stays_in_its_cell_and_an_escaped_backtick_opens_no_span()
+        {
+            var table = TableOf("| a | b |\n|---|---|\n| a \\| b | c |\n| \\`a | b` |\n| x \\` y | `z` |\n| \\``x` | y |");
+
+            Assert.Equal(new[] { "a | b", "c" }, Texts(table.Rows[0]));
+            // The escaped backtick is a backtick; the one in the next cell has nothing to close, so the pipe splits.
+            Assert.Equal(new[] { "`a", "b`" }, Texts(table.Rows[1]));
+            Assert.All(table.Rows[1], cell => Assert.DoesNotContain(cell.Runs, r => r.Code));
+            Assert.Equal(new[] { Plain("x ` y") }, table.Rows[2][0].Runs);
+            Assert.Equal(new[] { CodeRun("z") }, table.Rows[2][1].Runs);
+            // An escaped backtick right before a span: the span is the one after it, one backtick long.
+            Assert.Equal(new[] { Plain("`"), CodeRun("x") }, table.Rows[3][0].Runs);
+            Assert.Equal(new[] { Plain("y") }, table.Rows[3][1].Runs);
+        }
+
+        [Fact]
+        public void A_header_whose_code_span_ends_in_a_backslash_still_heads_a_table()
+        {
+            var table = TableOf("| `C:\\` | `D:\\` |\n|---|---|\n| 1 | 2 |");
+
+            Assert.Equal(new[] { CodeRun("C:\\") }, table.Header[0].Runs);
+            Assert.Equal(new[] { CodeRun("D:\\") }, table.Header[1].Runs);
+            Assert.Equal(new[] { "1", "2" }, Texts(table.Rows[0]));
+        }
+
+        private const char PipeMark = 'P';
+
+        private static int Backslashes(IEnumerable<ChatRun> runs) => runs.Sum(r => r.Text.Count(c => c == '\\'));
+
+        /// <summary>
+        /// The pipes of <paramref name="row"/> that split it, as the inline parser reads the row as a
+        /// line of a paragraph: not the ones in a code span, and not the ones written <c>\|</c>.
+        /// Only <see cref="ChatMarkdown.ParseInline"/> is asked. The pipe in question is swapped
+        /// for a letter no rule knows: a pipe means nothing to the inline parser but in
+        /// <c>\|</c>, so nothing else in the row is read differently. In a code run, the letter
+        /// says the pipe is in code; a backslash more than the row itself shows, that the pipe had
+        /// been escaped by it.
+        /// </summary>
+        private static List<int> SplittingPipes(string row)
+        {
+            int shown = Backslashes(ChatMarkdown.ParseInline(row));
+            var splitting = new List<int>();
+            for (int at = 0; at < row.Length; at++)
+            {
+                if (row[at] != '|') continue;
+                var runs = ChatMarkdown.ParseInline(row.Substring(0, at) + PipeMark + row.Substring(at + 1));
+                bool inCode = runs.Any(r => r.Code && r.Text.Contains(PipeMark));
+                bool escaped = !inCode && Backslashes(runs) > shown;
+                if (!inCode && !escaped) splitting.Add(at);
+            }
+            return splitting;
+        }
+
+        /// <summary>A cell's runs with a code span's <c>\|</c> read as the pipe it is in a table.</summary>
+        private static List<ChatRun> CellRuns(IEnumerable<ChatRun> runs) =>
+            runs.Select(r => r.Code ? r with { Text = r.Text.Replace("\\|", "|", StringComparison.Ordinal) } : r).ToList();
+
+        [Fact]
+        public void The_cell_splitter_and_the_inline_parser_agree_on_where_code_spans_are_over_random_rows()
+        {
+            // Backticks, backslashes and pipes in every order, with a little text between them.
+            const string alphabet = "``````\\\\\\\\|||| aab";
+            var random = new Random(20261004);
+            string head = "|" + string.Concat(Enumerable.Repeat(" h |", ChatMarkdown.MaxTableColumns));
+            string delimiter = "|" + string.Concat(Enumerable.Repeat("---|", ChatMarkdown.MaxTableColumns));
+            int withCode = 0, withEscapedPipe = 0, split = 0;
+
+            for (int n = 0; n < 600; n++)
+            {
+                var written = new System.Text.StringBuilder(n % 2 == 0 ? "| " : "x");   // never blank, never a fence line
+                int length = random.Next(1, 13);
+                for (int k = 0; k < length; k++) written.Append(alphabet[random.Next(alphabet.Length)]);
+                string line = written.ToString();
+                string row = line.Trim();
+
+                // What the inline parser says: cut at the pipes it shows as plain pipes.
+                List<int> pipes = SplittingPipes(row);
+                var expected = new List<string>();
+                int from = 0;
+                foreach (int pipe in pipes)
+                {
+                    if (pipe > 0) expected.Add(row.Substring(from, pipe - from).Trim());   // nothing stands before a leading pipe
+                    from = pipe + 1;
+                }
+                if (from < row.Length) expected.Add(row.Substring(from).Trim());            // nor after a closing one
+                Assert.True(expected.Count <= ChatMarkdown.MaxTableColumns, line);
+
+                var cells = Assert.Single(TableOf(head + "\n" + delimiter + "\n" + line).Rows);
+
+                for (int c = 0; c < cells.Count; c++)
+                {
+                    string cell = c < expected.Count ? expected[c] : "";
+                    Assert.True(CellRuns(ChatMarkdown.ParseInline(cell)).SequenceEqual(CellRuns(cells[c].Runs)),
+                        "row <" + line + ">, cell " + c + ": expected <" + cell + ">, got <" + Text(cells[c]) + ">");
+                }
+
+                if (cells.Any(cell => cell.Runs.Any(r => r.Code))) withCode++;
+                if (pipes.Count < row.Count(ch => ch == '|') && row.Contains("\\|", StringComparison.Ordinal)) withEscapedPipe++;
+                if (expected.Count > 1) split++;
+            }
+
+            // The rows were worth asking about: many hold code spans, escaped pipes and more than one cell.
+            Assert.True(withCode > 100, "rows with a code span: " + withCode);
+            Assert.True(withEscapedPipe > 50, "rows with an escaped pipe or a pipe in code: " + withEscapedPipe);
+            Assert.True(split > 300, "rows of more than one cell: " + split);
+        }
+
+        [Fact]
+        public void Two_hundred_thousand_escaped_backticks_before_a_run_that_nothing_closes_parse_in_linear_time()
+        {
+            // Each \`` is an escaped backtick and then a span opener of one backtick, with no run of
+            // one backtick anywhere after it. A splitter that walks the later runs for each opener
+            // looks at 200,000 runs 200,000 times: minutes. Ours asks once for each.
+            string openers = string.Concat(Enumerable.Repeat("\\``x", 200000));
+            string md = "| a | b |\n|---|---|\n| " + openers + " | y |";
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var blocks = ChatMarkdown.Parse(md);
+            watch.Stop();
+
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), "took " + watch.Elapsed);
+            var table = Assert.Single(blocks).Table!;
+            Assert.Equal(new[] { openers, "y" }, Texts(Assert.Single(table.Rows)));   // over the inline limit: shown as written
+        }
+
         [Fact]
         public void Bold_code_and_a_link_in_a_cell_are_runs()
         {

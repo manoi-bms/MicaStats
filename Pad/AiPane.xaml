@@ -5,7 +5,7 @@
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:local="clr-namespace:Kil0bitSystemMonitor.Pad"
     xmlns:ai="clr-namespace:Kil0bitSystemMonitor.Ai"
-    Width="320" Background="{DynamicResource Pad.Chrome}" Foreground="{DynamicResource Pad.WindowText}">
+    Background="{DynamicResource Pad.Chrome}" Foreground="{DynamicResource Pad.WindowText}">
 
     <!-- The AI pane (MicaPad AI spec 3.2, AI chat UI spec 3.2 and 3.3): what was asked, on what
          text and where that goes, what the request is doing, the result as it streams in, and

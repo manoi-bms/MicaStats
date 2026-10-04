@@ -161,8 +161,9 @@
 
         <Grid x:Name="EditorArea" Grid.Row="3">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="EditorColumn" Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="PaneColumn" Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <avalon:TextEditor x:Name="Editor" Grid.Column="0"
@@ -193,10 +194,17 @@
                                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
             </DockPanel>
 
-            <!-- One of the three at a time: they share the column. -->
-            <local:HistoryPane x:Name="HistoryPanel" Grid.Column="1" />
-            <local:SearchPane x:Name="SearchPanel" Grid.Column="1" />
-            <local:AiPane x:Name="AiPanel" Grid.Column="1" Visibility="Collapsed" />
+            <!-- One of the three at a time: they share the column. The splitter is for the AI pane and Search notes;
+                 History keeps its own width. -->
+            <GridSplitter x:Name="PaneSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                          ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" Focusable="True" Visibility="Collapsed"
+                          Background="{DynamicResource Pad.Border}" Cursor="SizeWE"
+                          ToolTip="Drag to resize; double-click to reset"
+                          DragCompleted="OnPaneSplitterDragCompleted" MouseDoubleClick="OnPaneSplitterDoubleClick"
+                          KeyUp="OnPaneSplitterKeyUp" />
+            <local:HistoryPane x:Name="HistoryPanel" Grid.Column="2" />
+            <local:SearchPane x:Name="SearchPanel" Grid.Column="2" />
+            <local:AiPane x:Name="AiPanel" Grid.Column="2" Visibility="Collapsed" />
 
             <Border x:Name="GoToLineBox" Grid.Column="0" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Margin="0,8,24,0" Padding="10,6" Background="{DynamicResource Pad.Popup}" BorderBrush="{DynamicResource Pad.PopupBorder}"

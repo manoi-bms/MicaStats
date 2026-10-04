@@ -162,10 +162,10 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
-        public void The_pane_is_320_wide_and_built_hidden_and_a_view_does_not_reveal_it() => UiThread.Run(() =>
+        public void The_pane_sets_no_width_of_its_own_and_is_built_hidden_and_a_view_does_not_reveal_it() => UiThread.Run(() =>
         {
             var pane = new AiPane();
-            Assert.Equal(320, pane.Width);
+            Assert.True(double.IsNaN(pane.Width), "the window's column gives it its width");
             Assert.Equal(Visibility.Collapsed, pane.Visibility);
 
             pane.Show(Done);

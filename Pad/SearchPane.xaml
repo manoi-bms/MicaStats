@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="clr-namespace:Kil0bitSystemMonitor.Pad"
-    Width="300" Background="{DynamicResource Pad.Chrome}">
+    Background="{DynamicResource Pad.Chrome}">
 
     <!-- Search notes (search spec 1): a query, how it ran, and the matching passages of every note.
          Ask (MicaPad AI spec 4) adds an answer drawn from those passages, above them.

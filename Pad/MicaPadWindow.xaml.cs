@@ -152,6 +152,7 @@ namespace Kil0bitSystemMonitor.Pad
             SearchPanel.ResultChosen += OpenSearchResult;
             SearchPanel.Run = RunSearchAsync;
             ConfigureAi();
+            InitPaneSplitter();
             FindBar.ReplacingAll += () =>
             {
                 if (_shown != null) _workspace.SnapshotNow(_shown, SnapshotReason.BeforeReplace);
@@ -2244,6 +2245,84 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
+        // ---- the side pane width ------------------------------------------------------------------
+        // PaneWidth.Fit is the only place that decides a width. The panes close with Visibility.Collapsed
+        // (other code reads it); the splitter and the column follow their visibility.
+
+        private const double SplitterWidth = 5;
+
+        private void InitPaneSplitter()
+        {
+            var descriptor = System.ComponentModel.DependencyPropertyDescriptor.FromProperty(UIElement.VisibilityProperty, typeof(UIElement));
+            foreach (UIElement pane in new UIElement[] { SearchPanel, AiPanel, HistoryPanel })
+                descriptor.AddValueChanged(pane, (s, args) => ApplyPaneLayout());
+            EditorArea.SizeChanged += (s, args) => ApplyPaneLayout();
+            ApplyPaneLayout();
+        }
+
+        /// <summary>
+        /// Sets the columns for what is shown. The AI pane or Search notes: the splitter is shown and
+        /// the pane column is the fitted width in pixels, the editor the star column. History alone,
+        /// or nothing: no splitter, and the column is as wide as its content (none, or History's own width).
+        /// It writes nothing to the config.
+        /// </summary>
+        private void ApplyPaneLayout()
+        {
+            bool resizable = SearchPanel.Visibility == Visibility.Visible || AiPanel.Visibility == Visibility.Visible;
+            PaneSplitter.Visibility = resizable ? Visibility.Visible : Visibility.Collapsed;
+            EditorColumn.Width = new GridLength(1, GridUnitType.Star);
+            if (!resizable)
+            {
+                PaneColumn.MinWidth = 0;
+                PaneColumn.MaxWidth = double.PositiveInfinity;
+                EditorColumn.MinWidth = 0;
+                PaneColumn.Width = GridLength.Auto;
+                return;
+            }
+            double area = EditorArea.ActualWidth - SplitterWidth;   // the splitter is not the editor's
+            double width = PaneWidth.Fit(_config.PadPaneWidth, area);
+            PaneColumn.MinWidth = PaneWidth.Min;
+            PaneColumn.MaxWidth = PaneWidth.Max;
+            EditorColumn.MinWidth = area > 0 ? Math.Min(PaneWidth.EditorMin, Math.Max(0, area - PaneWidth.Min)) : 0;
+            PaneColumn.Width = new GridLength(width);
+        }
+
+        /// <summary>
+        /// A drag or an arrow-key move ended with the pane this wide: the fitted width is remembered and
+        /// the columns are put back (the splitter may have turned them into star widths).
+        /// </summary>
+        internal void PaneDragEnded(double paneActualWidth)
+        {
+            _config.PadPaneWidth = PaneWidth.Fit(paneActualWidth, EditorArea.ActualWidth - SplitterWidth);
+            ApplyPaneLayout();   // the value may not have changed, so no notice would come
+        }
+
+        /// <summary>A double-click on the splitter.</summary>
+        internal void ResetPaneWidth()
+        {
+            _config.PadPaneWidth = PaneWidth.Default;
+            ApplyPaneLayout();
+        }
+
+        private double ShownPaneWidth() =>
+            AiPanel.Visibility == Visibility.Visible ? AiPanel.ActualWidth
+            : SearchPanel.Visibility == Visibility.Visible ? SearchPanel.ActualWidth
+            : PaneColumn.ActualWidth;
+
+        private void OnPaneSplitterDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) =>
+            PaneDragEnded(ShownPaneWidth());
+
+        private void OnPaneSplitterDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            ResetPaneWidth();
+            e.Handled = true;
+        }
+
+        private void OnPaneSplitterKeyUp(object sender, KeyEventArgs e)
+        {
+            if (e.Key is Key.Left or Key.Right) PaneDragEnded(ShownPaneWidth());
+        }
+
         private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName is nameof(AppConfig.PadFontFamily) or nameof(AppConfig.PadFontSize)
@@ -2251,6 +2330,11 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 if (Dispatcher.CheckAccess()) ApplyEditorSettings();
                 else Dispatcher.BeginInvoke(new Action(ApplyEditorSettings));
+            }
+            else if (e.PropertyName == nameof(AppConfig.PadPaneWidth))
+            {
+                if (Dispatcher.CheckAccess()) ApplyPaneLayout();
+                else Dispatcher.BeginInvoke(new Action(ApplyPaneLayout));
             }
             else if (e.PropertyName == nameof(AppConfig.PadTheme))
             {

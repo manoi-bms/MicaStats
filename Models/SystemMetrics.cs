@@ -639,6 +639,16 @@ namespace Kil0bitSystemMonitor.Models
         public bool PadWebImages { get => _padWebImages; set { Set(ref _padWebImages, value); } }
 
         /// <summary>
+        /// The width of MicaPad's side pane (the AI pane or Search notes), set by dragging the splitter.
+        /// Stored within 260..900 (NaN is the default 360); the window fits it again to its own size.
+        /// </summary>
+        public double PadPaneWidth
+        {
+            get => _padPaneWidth;
+            set { Set(ref _padPaneWidth, double.IsNaN(value) ? 360 : Math.Clamp(value, 260, 900)); }
+        }
+
+        /// <summary>
         /// Search notes by meaning (search spec 2): passages of the notes are sent to
         /// <see cref="PadEmbeddingServer"/>. Off by default: keyword search needs no server and
         /// nothing leaves the PC until it is on. Turning it off deletes the stored vectors.
@@ -698,6 +708,7 @@ namespace Kil0bitSystemMonitor.Models
         private string _aiCompatibleModel = "";
         private string _aiHotkey = "Ctrl+Alt+A";
         private int _aiDailyLimit = 100;
+        private double _padPaneWidth = 360;
         private bool _aiHistoryEnabled;
         private bool _aiNotesInAsk;
         private bool _aiNotesInMcp;

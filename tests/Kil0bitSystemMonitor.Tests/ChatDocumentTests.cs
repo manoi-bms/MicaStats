@@ -682,6 +682,69 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_failure_that_may_pass_has_a_Try_again_button_under_its_message_and_a_lasting_one_has_none() => UiThread.Run(() =>
+        {
+            var (passing, _) = Diagram(ChatDiagramFakes.Failed("Took too long to draw.", canRetry: true));
+
+            var parts = Assert.IsType<StackPanel>(Assert.IsType<BlockUIContainer>(Assert.Single(passing.Blocks)).Child).Children;
+            Assert.Equal(3, parts.Count);
+            Assert.IsType<Border>(parts[0]);
+            Assert.Equal("This diagram could not be drawn: Took too long to draw.", Assert.IsType<TextBlock>(parts[1]).Text);
+            var retry = Assert.IsType<Button>(parts[2]);
+            Assert.Equal("Try again", retry.Content);
+            Assert.Equal("Draw this diagram again", retry.ToolTip);
+            Assert.Equal(HorizontalAlignment.Left, retry.HorizontalAlignment);
+
+            var (lasting, _) = Diagram(ChatDiagramFakes.Failed("Parse error on line 2"));   // the same text fails the same way
+
+            Assert.Equal(2, Assert.IsType<StackPanel>(Assert.IsType<BlockUIContainer>(Assert.Single(lasting.Blocks)).Child).Children.Count);
+            Assert.DoesNotContain(ChatDocument.All<Button>(lasting), b => Equals(b.Content, "Try again"));
+        });
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Try_again_forgets_that_diagram_in_the_views_theme_and_asks_the_view_to_draw_again(bool dark) => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Failed("Took too long to draw.", canRetry: true) };
+            var asked = new List<string>();
+            var render = new ChatRender
+            {
+                Diagrams = diagrams,
+                Dark = dark,
+                // The view decides when it draws: the click only asks. Nothing is forgotten after the redraw was asked for.
+                Invalidate = () => asked.Add("redraw after " + diagrams.Forgotten.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            };
+            var document = BuildWith(ChatDiagramFakes.Block() + "\n\n" + ChatDiagramFakes.Block("pie"), render);
+            Assert.Equal(2, diagrams.Gets.Count);
+            var retry = ChatDocument.All<Button>(document.Blocks.First()).Single(b => Equals(b.Content, "Try again"));
+
+            RaiseClick(retry);
+
+            Assert.Equal(new[] { (Flow, dark) }, diagrams.Forgotten);   // that diagram only, not the other one of the answer
+            Assert.Equal(new[] { "redraw after 1" }, asked);
+            Assert.Equal(2, diagrams.Gets.Count);                        // the click draws nothing itself: the view's next build asks
+        });
+
+        [Fact]
+        public void A_Try_again_that_cannot_forget_or_whose_view_cannot_draw_does_not_throw() => UiThread.Run(() =>
+        {
+            var diagrams = new FakeChatDiagrams { Answer = (_, _) => ChatDiagramFakes.Failed("no", canRetry: true) };
+            var throwing = BuildWith(ChatDiagramFakes.Block(), new ChatRender { Diagrams = diagrams, Invalidate = () => throw new InvalidOperationException("gone") });
+            var silent = BuildWith(ChatDiagramFakes.Block(), new ChatRender { Diagrams = diagrams });   // a view that gave no redraw
+
+            int asked = 0;
+            var broken = BuildWith(ChatDiagramFakes.Block(), new ChatRender { Diagrams = new BrokenDiagrams(), Invalidate = () => asked++ });   // its Get and its Forget throw
+
+            RaiseClick(ButtonNamed(throwing, "Try again"));
+            RaiseClick(ButtonNamed(silent, "Try again"));
+            RaiseClick(ButtonNamed(broken, "Try again"));
+
+            Assert.Equal(2, diagrams.Forgotten.Count);
+            Assert.Equal(1, asked);   // the view is still asked to draw: its next build may fare better
+        });
+
+        [Fact]
         public void The_Source_toggle_swaps_the_picture_and_the_code_and_keeps_the_choice_in_the_views_set() => UiThread.Run(() =>
         {
             var shown = new HashSet<string>(StringComparer.Ordinal);
@@ -827,6 +890,8 @@ namespace Kil0bitSystemMonitor.Tests
         private sealed class BrokenDiagrams : IChatDiagrams
         {
             public ChatDiagramState Get(string source, bool dark, Action? whenDone) => throw new InvalidOperationException("the source was " + source);
+
+            public void Forget(string source, bool dark) => throw new InvalidOperationException("the source was " + source);
 
             public void Clear()
             {

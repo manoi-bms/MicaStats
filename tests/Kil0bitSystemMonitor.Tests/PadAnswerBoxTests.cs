@@ -485,6 +485,10 @@ namespace Kil0bitSystemMonitor.Tests
         {
             public ChatDiagramState Get(string source, bool dark, Action? whenDone) => new(ChatDiagramStatus.Off);
 
+            public void Forget(string source, bool dark)
+            {
+            }
+
             public void Clear() => throw new NotSupportedException("the answer was secret");
         }
 
@@ -596,6 +600,29 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2, builds());
             for (int i = 0; i < 50; i++) box.ShowMarkdown(text + "\n\n" + new string('x', i + 1));
             Assert.Single(renderer.Calls);
+        });
+
+        [Fact]
+        public Task Try_again_in_the_box_starts_one_new_draw_and_the_box_draws_itself_for_it() => UiThread.RunAsync(async () =>
+        {
+            var (box, diagrams, renderer) = DiagramBox();
+            string text = ChatDiagramFakes.Block();
+            box.ShowMarkdown(text);
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramResult.Failure(DiagramText.EngineStopped, lasting: false));
+            var retry = ButtonNamed(box, "Try again");
+            Assert.Equal("Draw this diagram again", retry.ToolTip);
+            Assert.True(MouseReaches(box, retry));
+
+            RaiseClick(retry);
+
+            Assert.Equal(2, renderer.Calls.Count);                    // one press, one draw; the pane was not handed the text again
+            Assert.Contains("Drawing the diagram…", Lines(box));
+            Assert.Equal(text, box.Shown);
+
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, DiagramFakes.Picture());
+            Assert.NotNull(Picture(box));
+            Assert.DoesNotContain(ChatDocument.All<System.Windows.Controls.Button>(box.Document), b => Equals(b.Content, "Try again"));
+            Assert.Equal(2, renderer.Calls.Count);
         });
 
         [Fact]

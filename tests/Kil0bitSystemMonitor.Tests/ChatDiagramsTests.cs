@@ -26,11 +26,16 @@ namespace Kil0bitSystemMonitor.Tests
 
         public int Cleared { get; private set; }
 
+        /// <summary>Every <see cref="Forget"/> so far, oldest first.</summary>
+        public List<(string Source, bool Dark)> Forgotten { get; } = new();
+
         public ChatDiagramState Get(string source, bool dark, Action? whenDone)
         {
             Gets.Add((source, dark, whenDone));
             return Answer(source, dark);
         }
+
+        public void Forget(string source, bool dark) => Forgotten.Add((source, dark));
 
         public void Clear() => Cleared++;
     }
@@ -77,7 +82,7 @@ namespace Kil0bitSystemMonitor.Tests
         public static ChatDiagramState Drawn(double width = 100, double height = 50) =>
             new(ChatDiagramStatus.Drawn, Bitmap((int)(width * 2), (int)(height * 2)), width, height);
 
-        public static ChatDiagramState Failed(string error) => new(ChatDiagramStatus.Failed, Error: error);
+        public static ChatDiagramState Failed(string error, bool canRetry = false) => new(ChatDiagramStatus.Failed, Error: error, CanRetry: canRetry);
 
         /// <summary>Waits, with the dispatcher free, until <paramref name="done"/> is true; at most 10 s.</summary>
         public static async Task Until(Func<bool> done, string what)
@@ -279,17 +284,19 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Empty(warnings);
         });
 
+        /// <summary>What it is, the renderer's result, the message shown, and whether drawing it again may help.</summary>
         public static IEnumerable<object[]> Failures() => new[]
         {
-            new object[] { "a syntax error", DiagramResult.Failure("Parse error on line 2", lasting: true), "Parse error on line 2" },
-            new object[] { "a draw that took too long", DiagramResult.Failure(DiagramText.TookTooLong, lasting: false), DiagramText.TookTooLong },
-            new object[] { "a missing runtime", DiagramResult.Failure(DiagramText.RuntimeMissing, lasting: false, DiagramText.RuntimeDownload), DiagramText.RuntimeMissing },
-            new object[] { "a draw another took the place of", DiagramResult.Replaced, DiagramText.Failed },
+            new object[] { "a syntax error", DiagramResult.Failure("Parse error on line 2", lasting: true), "Parse error on line 2", false },
+            new object[] { "a draw that took too long", DiagramResult.Failure(DiagramText.TookTooLong, lasting: false), DiagramText.TookTooLong, true },
+            new object[] { "an engine that stopped", DiagramResult.Failure(DiagramText.EngineStopped, lasting: false), DiagramText.EngineStopped, true },
+            new object[] { "a missing runtime", DiagramResult.Failure(DiagramText.RuntimeMissing, lasting: false, DiagramText.RuntimeDownload), DiagramText.RuntimeMissing, true },
+            new object[] { "a draw another took the place of", DiagramResult.Replaced, DiagramText.Failed, true },
         };
 
         [Theory]
         [MemberData(nameof(Failures))]
-        public Task A_failure_of_any_kind_is_remembered_and_never_drawn_again(string what, DiagramResult failure, string message) => UiThread.RunAsync(async () =>
+        public Task A_failure_of_any_kind_is_remembered_and_never_drawn_again(string what, DiagramResult failure, string message, bool canRetry) => UiThread.RunAsync(async () =>
         {
             var (diagrams, renderer, _) = New();
             int told = 0;
@@ -304,9 +311,116 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.True(state.Status == ChatDiagramStatus.Failed, what + " is a failure");
                 Assert.Equal(message, state.Error);
                 Assert.Null(state.Picture);
+                Assert.True(state.CanRetry == canRetry, what + (canRetry ? " may pass: it can be tried again" : " would fail the same way again"));
             }
             Assert.Single(renderer.Calls);   // what stops draw, fail, redraw, draw from going round for ever
             Assert.Equal(1, told);
+        });
+
+        [Fact]
+        public Task Forget_drops_that_one_outcome_so_the_next_Get_starts_exactly_one_new_draw() => UiThread.RunAsync(async () =>
+        {
+            var (diagrams, renderer, _) = New();
+            var passing = DiagramResult.Failure(DiagramText.TookTooLong, lasting: false);
+            diagrams.Get(Flow, true, null);
+            diagrams.Get(Flow, false, null);
+            diagrams.Get("pie", true, null);
+            for (int i = 0; i < 3; i++) await ChatDiagramFakes.FinishAsync(diagrams, renderer, i, passing);
+            Assert.Equal(3, diagrams.FailuresKept);
+
+            diagrams.Forget(Flow, true);
+
+            // That key only: the same source in the other theme and the other source are still kept.
+            Assert.Equal(2, diagrams.FailuresKept);
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get(Flow, false, null).Status);
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get("pie", true, null).Status);
+            Assert.Equal(3, renderer.Calls.Count);   // forgetting draws nothing
+
+            for (int i = 0; i < 10; i++) Assert.Equal(ChatDiagramStatus.Drawing, diagrams.Get(Flow, true, null).Status);
+            Assert.Equal(4, renderer.Calls.Count);   // one draw for one press, however often the view is built
+            Assert.Equal(Flow, renderer.Calls[3].Request.Source);
+            Assert.True(renderer.Calls[3].Request.Dark);
+
+            // It fails again: kept again, offered again, and nothing is drawn until the next press.
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 3, passing);
+            for (int i = 0; i < 10; i++)
+            {
+                var again = diagrams.Get(Flow, true, null);
+                Assert.Equal(ChatDiagramStatus.Failed, again.Status);
+                Assert.True(again.CanRetry);
+            }
+            Assert.Equal(4, renderer.Calls.Count);
+
+            diagrams.Forget(Flow, true);
+            diagrams.Get(Flow, true, null);
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 4, DiagramFakes.Picture());
+            Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(Flow, true, null).Status);   // the engine was up this time
+            Assert.Equal(5, renderer.Calls.Count);
+        });
+
+        [Fact]
+        public Task Forget_leaves_a_draw_that_is_still_running_alone_and_never_throws() => UiThread.RunAsync(async () =>
+        {
+            var (diagrams, renderer, warnings) = New();
+            int told = 0;
+            diagrams.Get(Flow, true, () => told++);
+
+            diagrams.Forget(Flow, true);                                              // nothing has ended yet: nothing to forget
+            diagrams.Forget("never asked for", false);
+            diagrams.Forget(new string('x', DiagramBlocks.MaxSourceLength + 1), true);
+
+            Assert.Equal(ChatDiagramStatus.Drawing, diagrams.Get(Flow, true, null).Status);
+            Assert.Single(renderer.Calls);                                            // the draw goes on; no second one
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramFakes.Picture());
+            Assert.Equal(1, told);
+            Assert.Equal(ChatDiagramStatus.Drawn, diagrams.Get(Flow, true, null).Status);
+            Assert.Empty(warnings);
+
+            diagrams.Forget(Flow, true);                                              // a picture can be forgotten too
+            Assert.Equal(0, diagrams.PicturesKept);
+        });
+
+        [Fact]
+        public void What_the_adapter_makes_of_its_own_failures_says_whether_trying_again_can_help() => UiThread.Run(() =>
+        {
+            // Too large, a picture without a size, a picture that cannot be decoded: the same source gives the same again.
+            var (diagrams, _, _) = New();
+            Assert.False(diagrams.Get(new string('x', DiagramBlocks.MaxSourceLength + 1), true, null).CanRetry);
+            var immediate = new ImmediateRenderer { Answer = _ => DiagramResult.Picture(DiagramFakes.Png, DiagramFakes.Svg, 0, 0, paper: false) };
+            Assert.False(new ChatDiagrams(() => immediate, () => true).Get(Flow, true, null).CanRetry);
+            immediate.Answer = _ => DiagramResult.Picture(new byte[] { 1, 2, 3 }, DiagramFakes.Svg, 100, 50, paper: false);
+            Assert.False(new ChatDiagrams(() => immediate, () => true) { Warn = _ => { } }.Get(Flow, true, null).CanRetry);
+
+            // Something threw: it may well work the next time.
+            var thrown = new ChatDiagrams(() => new ThrowingRenderer(), () => true) { Warn = _ => { } }.Get(Flow, true, null);
+            Assert.Equal(ChatDiagramStatus.Failed, thrown.Status);
+            Assert.True(thrown.CanRetry);
+            Assert.True(new ChatDiagrams(() => throw new NotSupportedException("y"), () => true) { Warn = _ => { } }.Get(Flow, true, null).CanRetry);
+
+            // A picture, a draw in progress and "off" are not failures.
+            immediate.Answer = _ => DiagramFakes.Picture();
+            Assert.False(new ChatDiagrams(() => immediate, () => true).Get(Flow, true, null).CanRetry);
+            Assert.False(diagrams.Get(Flow, true, null).CanRetry);
+            Assert.False(new ChatDiagrams(() => null, () => true).Get(Flow, true, null).CanRetry);
+        });
+
+        [Fact]
+        public void A_renderer_that_was_disposed_gives_a_failure_that_can_be_tried_again_and_does_not_throw() => UiThread.Run(() =>
+        {
+            var page = new FakePage();
+            var renderer = new DiagramRenderer(() => Task.FromResult<IDiagramPage>(page));
+            renderer.Dispose();   // as at exit, with an answer still on screen
+            var diagrams = new ChatDiagrams(() => renderer, () => true) { Warn = _ => { } };
+            int told = 0;
+
+            var state = diagrams.Get(Flow, true, () => told++);
+
+            Assert.Equal(ChatDiagramStatus.Failed, state.Status);
+            Assert.Equal(DiagramText.Failed, state.Error);
+            Assert.True(state.CanRetry);
+            Assert.Empty(page.Requests);
+            Assert.Equal(ChatDiagramStatus.Failed, diagrams.Get(Flow, true, () => told++).Status);   // kept: not asked for again by itself
+            Assert.Equal(0, told);
         });
 
         [Fact]

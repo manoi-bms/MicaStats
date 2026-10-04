@@ -30,9 +30,13 @@ namespace Kil0bitSystemMonitor.Ai
     /// <summary>
     /// The picture of one Mermaid block, or why there is none. <see cref="Width"/> and
     /// <see cref="Height"/> are the diagram's own size in device-independent pixels: it is shown at
-    /// most that large, however many pixels the bitmap was decoded with.
+    /// most that large, however many pixels the bitmap was decoded with. <see cref="CanRetry"/> is
+    /// true for a failure that may pass (the engine was still starting, a draw took too long, the
+    /// runtime is missing): drawing it again may give the picture. A failure the same source gives
+    /// again (a syntax error, a source too large) has it false.
     /// </summary>
-    internal sealed record ChatDiagramState(ChatDiagramStatus Status, ImageSource? Picture = null, double Width = 0, double Height = 0, string? Error = null);
+    internal sealed record ChatDiagramState(ChatDiagramStatus Status, ImageSource? Picture = null, double Width = 0, double Height = 0, string? Error = null,
+                                            bool CanRetry = false);
 
     /// <summary>The pictures of the Mermaid blocks in AI answers: the app's <see cref="ChatDiagrams"/>, or a test's fake.</summary>
     internal interface IChatDiagrams
@@ -42,6 +46,12 @@ namespace Kil0bitSystemMonitor.Ai
         /// <paramref name="whenDone"/> is called once, on the UI thread, when a draw this call is waiting for ends.
         /// </summary>
         ChatDiagramState Get(string source, bool dark, Action? whenDone);
+
+        /// <summary>
+        /// Forgets how the draw of this source in this theme ended, so the next <see cref="Get"/>
+        /// draws it again. One press of Try again is one call, and so one draw.
+        /// </summary>
+        void Forget(string source, bool dark);
 
         /// <summary>Forgets every picture and every remembered failure.</summary>
         void Clear();
@@ -56,9 +66,10 @@ namespace Kil0bitSystemMonitor.Ai
     /// An answer is built again from its whole text about ten times a second while it streams, so
     /// <see cref="Get"/> is asked for the same block over and over. It starts one draw for a
     /// source and a theme, and remembers how that draw ended: a picture, or a failure of any kind.
-    /// A failure is never tried again until <see cref="Clear"/>; otherwise a draw that fails would
-    /// tell its view, the view would build its document again, and that would ask for the draw
-    /// again, for ever.
+    /// A failure is never tried again by itself; otherwise a draw that fails would tell its view,
+    /// the view would build its document again, and that would ask for the draw again, for ever.
+    /// It is tried again when the user asks (<see cref="Forget"/>, behind the Try again button of
+    /// a failure that may pass: one press, one draw) and after <see cref="Clear"/>.
     /// </para>
     ///
     /// <para>
@@ -193,10 +204,30 @@ namespace Kil0bitSystemMonitor.Ai
             {
                 // The type only: the message could quote the source.
                 Report("Asking for a diagram in an answer failed (" + ex.GetType().Name + ")");
-                ChatDiagramState failed = Failed(DiagramText.Failed);
+                ChatDiagramState failed = Failed(DiagramText.Failed, canRetry: true);   // it may well work the next time
                 if (key == null) return failed;
                 _waiting.Remove(key);
                 return Keep(key, failed);
+            }
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Only an outcome is forgotten. A draw still running goes on, and its outcome is kept
+        /// when it ends: forgetting starts nothing and stops nothing. Never throws.
+        /// </remarks>
+        public void Forget(string source, bool dark)
+        {
+            try
+            {
+                if (Mermaid is not { } kind || source.Length > DiagramBlocks.MaxSourceLength) return;
+                string key = RequestFor(kind, source, dark).Key;
+                _pictures.Remove(key);
+                _failures.Remove(key);
+            }
+            catch (Exception ex)
+            {
+                Report("Forgetting a diagram in an answer failed (" + ex.GetType().Name + ")");
             }
         }
 
@@ -295,10 +326,18 @@ namespace Kil0bitSystemMonitor.Ai
         /// Everything else is a failure with the renderer's message: a syntax error, a missing
         /// WebView2 Runtime, a draw that took too long, and a result that says nothing at all. So
         /// is a picture without a size, or one that cannot be decoded.
+        ///
+        /// <para>
+        /// A failure can be tried again when the renderer says the same request may give another
+        /// result (it is not <see cref="DiagramResult.Lasting"/>: a timeout, an engine that stopped
+        /// or was still starting, a missing runtime, a draw another took the place of), and when
+        /// there is no result at all (the draw threw). A lasting error is the source's own, and a
+        /// picture that cannot be used comes back the same from the engine's store: neither can.
+        /// </para>
         /// </summary>
         private ChatDiagramState StateOf(DiagramResult? result)
         {
-            if (result is not { IsPicture: true }) return Failed(result?.Error ?? DiagramText.Failed);
+            if (result is not { IsPicture: true }) return Failed(result?.Error ?? DiagramText.Failed, canRetry: result is not { Lasting: true });
             if (!IsSize(result.Width) || !IsSize(result.Height)) return Failed(DiagramText.Failed);
             try
             {
@@ -372,7 +411,7 @@ namespace Kil0bitSystemMonitor.Ai
             return decoded;
         }
 
-        private static ChatDiagramState Failed(string error) => new(ChatDiagramStatus.Failed, Error: error);
+        private static ChatDiagramState Failed(string error, bool canRetry = false) => new(ChatDiagramStatus.Failed, Error: error, CanRetry: canRetry);
 
         /// <summary>
         /// Remembers an outcome as the most recently used of its kind. Pictures over

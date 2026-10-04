@@ -395,26 +395,65 @@ namespace Kil0bitSystemMonitor.Ai
             {
                 // The type only: the message could quote the source.
                 DiagnosticsLog.Warn("ai", "Asking for a diagram in an answer failed (" + ex.GetType().Name + ")");
-                state = new ChatDiagramState(ChatDiagramStatus.Failed);
+                state = new ChatDiagramState(ChatDiagramStatus.Failed, CanRetry: true);
             }
 
             return state.Status switch
             {
                 ChatDiagramStatus.Drawn when state.Picture != null => DiagramBlock(block, state, render),
                 ChatDiagramStatus.Drawing => Noted(CodeBox(block, render), above: DrawingText),
-                ChatDiagramStatus.Failed => Noted(CodeBox(block, render), below: NotDrawnText + (state.Error ?? DiagramText.Failed)),
+                ChatDiagramStatus.Failed => Noted(CodeBox(block, render), below: NotDrawnText + (state.Error ?? DiagramText.Failed),
+                                                  under: state.CanRetry ? RetryButton(pictures, block.Code, render) : null),
                 _ => CodeBlock(block, render),
             };
         }
 
-        /// <summary>A code box with one muted line above or below it.</summary>
-        private static BlockUIContainer Noted(Border code, string? above = null, string? below = null)
+        /// <summary>A code box with one muted line above or below it, and under that line what can be done about it.</summary>
+        private static BlockUIContainer Noted(Border code, string? above = null, string? below = null, UIElement? under = null)
         {
             var parts = new StackPanel();
             if (above != null) parts.Children.Add(Note(above, new Thickness(0, 0, 0, 4)));
             parts.Children.Add(code);
             if (below != null) parts.Children.Add(Note(below, new Thickness(0, 4, 0, 0)));
+            if (under != null) parts.Children.Add(under);
             return new BlockUIContainer(parts) { Margin = ParagraphSpacing };
+        }
+
+        /// <summary>
+        /// Try again, under the message of a failure that may pass (the engine was still starting,
+        /// a draw took too long). A press forgets how that one draw ended and asks the view to
+        /// draw: the view's next build then asks for the picture, which starts one draw. Nothing
+        /// here assumes the view draws at once, and nothing is drawn without a press, so it cannot
+        /// go round by itself. A failure the same source gives again has no such button.
+        /// </summary>
+        private static Button RetryButton(IChatDiagrams pictures, string source, ChatRender render)
+        {
+            Button retry = FlatButton("Try again");
+            retry.ToolTip = "Draw this diagram again";
+            retry.HorizontalAlignment = HorizontalAlignment.Left;
+            retry.Margin = new Thickness(-6, 2, 0, 0);   // its text lines up with the message above it
+            retry.Click += (s, e) =>
+            {
+                try
+                {
+                    pictures.Forget(source, render.Dark);
+                }
+                catch (Exception ex)
+                {
+                    // The type only: the message could quote the source.
+                    DiagnosticsLog.Warn("ai", "Forgetting a diagram to draw it again failed (" + ex.GetType().Name + ")");
+                }
+
+                try
+                {
+                    render.Invalidate?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Warn("ai", "Drawing an answer again for its diagram failed (" + ex.GetType().Name + ")");
+                }
+            };
+            return retry;
         }
 
         /// <summary>

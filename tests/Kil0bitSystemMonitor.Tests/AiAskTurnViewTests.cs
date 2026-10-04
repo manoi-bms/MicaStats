@@ -440,6 +440,55 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Contains("This diagram could not be drawn: " + DiagramText.TookTooLong, Lines(turn));
         });
 
+        private static Button? TryAgain(AskTurnView turn) =>
+            ChatDocument.All<Button>(turn.Answer.Document).SingleOrDefault(b => Equals(b.Content, "Try again"));
+
+        [Fact]
+        public Task Try_again_starts_exactly_one_new_draw_and_a_second_failure_offers_it_again_and_draws_nothing_by_itself() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, renderer) = DiagramTurn();
+            var passing = DiagramResult.Failure(DiagramText.TookTooLong, lasting: false);   // the engine was still starting
+            turn.AppendText(ChatDiagramFakes.Block() + "\n\nDone.");
+            turn.Complete(DateTime.Now);
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, passing);
+            Assert.Contains("This diagram could not be drawn: " + DiagramText.TookTooLong, Lines(turn));
+            var builds = CountBuilds(turn);
+
+            RaiseClick(TryAgain(turn)!);
+
+            Assert.Equal(2, renderer.Calls.Count);                   // one press, one draw
+            Assert.Equal(1, builds());
+            Assert.Contains("Drawing the diagram…", Lines(turn));    // the finished answer drew itself again
+            Assert.Null(TryAgain(turn));
+
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 1, passing);
+
+            Assert.NotNull(TryAgain(turn));                          // it failed again: the button is back
+            Assert.Equal(2, builds());
+            await Task.Delay(150);                                   // and left alone, nothing is drawn
+            Assert.Equal(2, renderer.Calls.Count);
+            Assert.Equal(2, builds());
+
+            RaiseClick(TryAgain(turn)!);
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 2, DiagramFakes.Picture());
+
+            Assert.Equal(3, renderer.Calls.Count);
+            Assert.NotNull(Picture(turn));                           // the engine was up this time
+            Assert.Null(TryAgain(turn));
+        });
+
+        [Fact]
+        public Task A_failure_that_would_come_again_has_no_Try_again_in_a_turn() => UiThread.RunAsync(async () =>
+        {
+            var (turn, diagrams, renderer) = DiagramTurn();
+            turn.AppendText(ChatDiagramFakes.Block());
+
+            await ChatDiagramFakes.FinishAsync(diagrams, renderer, 0, DiagramResult.Failure("Parse error on line 2", lasting: true));
+
+            Assert.Contains("This diagram could not be drawn: Parse error on line 2", Lines(turn));
+            Assert.Null(TryAgain(turn));
+        });
+
         [Fact]
         public Task A_turn_the_window_dropped_is_not_rendered_again_and_asks_for_no_picture() => UiThread.RunAsync(async () =>
         {

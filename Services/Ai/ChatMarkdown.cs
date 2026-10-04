@@ -361,7 +361,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         {
             table = null;
             last = i;
-            if (i + 1 >= lines.Length || fences[i + 1] != MdFence.None || !HasPipe(lines[i])) return false;
+            if (i + 1 >= lines.Length || fences[i + 1] != MdFence.None) return false;
 
             List<ChatAlign>? aligns = Delimiter(lines[i + 1]);
             if (aligns == null) return false;
@@ -372,13 +372,14 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 return false;
             }
 
-            List<string>? header = SplitRow(lines[i], columns, out bool tooMany);
-            if (tooMany || header == null || header.Count != columns) return false;
+            // The header must hold a pipe that splits, as the cell splitter sees it (not one in a code span).
+            List<string> header = SplitRow(lines[i], columns, out bool tooMany, out bool splits);
+            if (!splits || tooMany || header.Count != columns) return false;
 
             // Find where the body ends before splitting any cell, so a huge one costs a line scan only.
             int end = i + 2;
             while (end < lines.Length && fences[end] == MdFence.None && !string.IsNullOrWhiteSpace(lines[end])
-                   && (HasPipe(lines[end]) || !StartsBlock(lines[end]))) end++;
+                   && !StartsBlock(lines[end])) end++;
             if (end - (i + 2) > MaxTableRows)
             {
                 noTableThrough = end - 1;
@@ -392,7 +393,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
             var rows = new List<IReadOnlyList<ChatCell>>(end - (i + 2));
             for (int r = i + 2; r < end; r++)
             {
-                List<string> parts = SplitRow(lines[r], columns, out _)!;   // a cell past the last column is cut
+                List<string> parts = SplitRow(lines[r], columns, out _, out _);   // a cell past the last column is cut
                 bool styled = lines[r].Length <= MaxInlineLength;
                 var row = new List<ChatCell>(columns);
                 for (int c = 0; c < columns; c++) row.Add(MakeCell(c < parts.Count ? parts[c] : "", styled));
@@ -407,18 +408,10 @@ namespace Kil0bitSystemMonitor.Services.Ai
         private static ChatCell MakeCell(string text, bool styled) =>
             new(styled ? ParseInline(text) : (text.Length == 0 ? new List<ChatRun>() : new List<ChatRun> { new ChatRun(text) }));
 
-        /// <summary>True if a line holds a pipe that no backslash escapes.</summary>
-        private static bool HasPipe(string line)
-        {
-            for (int i = 0; i < line.Length; i++)
-            {
-                if (line[i] == '\\' && i + 1 < line.Length && line[i + 1] == '|') { i++; continue; }
-                if (line[i] == '|') return true;
-            }
-            return false;
-        }
-
-        /// <summary>Whether a line without a pipe starts a block of its own, so it ends a table.</summary>
+        /// <summary>
+        /// Whether a line (a heading, list item, quote or rule, with or without a pipe) starts a block
+        /// of its own, so it ends a table. Plain text does not: it is one more row.
+        /// </summary>
         private static bool StartsBlock(string line)
         {
             MdBlock kind = MarkdownLineTokenizer.BlockOf(line, MdFence.None);
@@ -434,7 +427,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         private static List<ChatAlign>? Delimiter(string line)
         {
-            List<string> cells = SplitRow(line, MaxTableColumns + 1, out _)!;
+            List<string> cells = SplitRow(line, MaxTableColumns + 1, out _, out bool splits);
+            if (!splits) return null;   // a line of only dashes is a rule, not a delimiter row
             var aligns = new List<ChatAlign>(cells.Count);
             foreach (string cell in cells)
             {
@@ -454,18 +448,21 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// The trimmed cells of a table line: the outer pipes dropped, split on pipes that are not
         /// escaped and not inside a code span. A <c>\|</c> stays for the inline parser, which shows a
         /// pipe, except inside a code span, where it becomes a plain pipe. At most
-        /// <paramref name="limit"/> cells are returned; <paramref name="tooMany"/> says more followed.
+        /// <paramref name="limit"/> cells are returned; <paramref name="tooMany"/> says more followed;
+        /// <paramref name="splits"/> says the line holds a pipe that splits (an outer one counts).
         /// Linear in the line: code spans are matched by one pass over the backtick runs.
         /// </summary>
-        private static List<string> SplitRow(string line, int limit, out bool tooMany)
+        private static List<string> SplitRow(string line, int limit, out bool tooMany, out bool splits)
         {
             tooMany = false;
+            splits = false;
             string s = line.Trim();
             var cells = new List<string>();
             var cell = new StringBuilder();
             List<(int Pos, int Len, int Next)> ticks = BacktickRuns(s);
             int run = 0;
-            int i = s.Length > 0 && s[0] == '|' ? 1 : 0;
+            int i = 0;
+            if (s.Length > 0 && s[0] == '|') { splits = true; i = 1; }
             bool trailing = false;   // the line ended with a separator: no cell follows it
 
             while (i < s.Length)
@@ -502,6 +499,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 }
                 if (c == '|')
                 {
+                    splits = true;
                     cells.Add(cell.ToString().Trim());
                     cell.Clear();
                     if (i == s.Length - 1) trailing = true;

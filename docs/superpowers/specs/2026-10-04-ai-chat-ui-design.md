@@ -96,7 +96,7 @@ Both system prompts say what the answer is shown as, so the model writes for it.
 ### 3.2 Preview and source
 
 - **Draw as diagram** and **Ask AI…** now show their result rendered, as **Summarize** and **Explain** do. So Draw as diagram shows the diagram itself before anything is inserted.
-- A **Source** toggle, beside **Changes**, shows the text exactly as **Insert below** and **Replace selection** would put it in the note. It is offered whenever the result is shown rendered.
+- A **Source** toggle, beside **Changes**, shows the text exactly as **Insert below** and **Replace selection** would put it in the note. It is offered whenever a result is shown rendered and there is text to show: not while the pane waits for an instruction, and not for a request that was refused or failed with nothing.
 - A rewrite (Improve, Fix, Shorten, Translate, Fix diagram) is still shown as its text, with **Changes**.
 - What is inserted or replaced does not change: always the text, never the rendering.
 
@@ -129,7 +129,7 @@ Nothing here sends anything new. What matters:
 - **No Kroki.** An answer's diagram is drawn only on this PC.
 - **Links.** `RemoveLinks` must leave no link anywhere in a document, tables included.
 - **Copy** goes through one replaceable hook, so a test never touches the real clipboard.
-- **The AI pane's Clear** (a credential was stored from the note) also drops the Source toggle, the diagrams shown and the answer pictures kept for redrawing. The Search notes answer is dropped the same way.
+- **The AI pane's Clear** (a credential was stored from the note) also drops the Source toggle, the diagrams shown and the answer pictures kept for redrawing. The Search notes answer is dropped the same way. *(Added after Task 4's review.)* A pane that was closed before the credential was stored is cleared too: it still held its last result, unseen. (Part 1 had parked this; with pictures kept as well, it is fixed here.)
 - **Consent.** No consent check in MicaPad's window files is moved, removed or reordered.
 
 Known limit: the drawing engine keeps the last 64 pictures in memory, as it does for a note's own diagrams. A picture drawn from a result that was later cleared stays there until it is pushed out or MicaStats exits. It is never shown again and never written to disk.

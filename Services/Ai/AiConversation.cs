@@ -19,17 +19,30 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         public List<SuggestedAction> Suggestions { get; } = new();
 
-        /// <summary>Where the notes went when they were read; null while none was. One field, so both properties change at once.</summary>
+        /// <summary>Where the notes went when they were read; null while none is held. One field, so <see cref="NotesRead"/> and <see cref="NotesDestination"/> change at once.</summary>
         private volatile string? _notesDestination;
 
+        /// <summary>Set by a read, and by nothing taken back: only <see cref="Clear"/> unsets it.</summary>
+        private volatile bool _notesEverRead;
+
         /// <summary>
-        /// True once a note tool handed note text to the model in this conversation. From then on
-        /// note text may steer its answers, this one and every later one (the tool's result is
-        /// sent again with each question), so the Ask window shows their links as text. Set by the
-        /// note functions themselves, on whatever thread they run: what the tool loop reports
-        /// about a call depends on the call ids a provider gives, and those can repeat.
+        /// True while what a note tool handed to the model counts as being in
+        /// <see cref="Messages"/>, and so in what the next question would send. It is the fact the
+        /// destination check rests on (with <see cref="NotesDestination"/>): a take-back for
+        /// another destination ends it, and a new read starts it again. Set by the note functions
+        /// themselves, on whatever thread they run: what the tool loop reports about a call
+        /// depends on the call ids a provider gives, and those can repeat.
         /// </summary>
         public bool NotesRead => _notesDestination != null;
+
+        /// <summary>
+        /// True once a note tool handed note text to the model in this conversation, and from
+        /// then on until <see cref="Clear"/>: a take-back does not undo that it happened. Note
+        /// text may have steered what the model wrote and what the user then asked, so for the
+        /// rest of the conversation the Ask window shows links as text and a suggestion to end a
+        /// process is dropped. Both rules read this one fact, so they cannot disagree.
+        /// </summary>
+        public bool NotesEverRead => _notesEverRead;
 
         /// <summary>
         /// Where the notes went when they were read (<c>PadAiPrivacy.Destination</c>:
@@ -38,22 +51,27 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         public string? NotesDestination => _notesDestination;
 
-        /// <summary>A note tool returned notes to a model at <paramref name="destination"/>; see <see cref="NotesRead"/>.</summary>
-        internal void MarkNotesRead(string destination) => _notesDestination = destination ?? "";
+        /// <summary>A note tool returned notes to a model at <paramref name="destination"/>; see <see cref="NotesRead"/> and <see cref="NotesEverRead"/>.</summary>
+        internal void MarkNotesRead(string destination)
+        {
+            _notesEverRead = true;   // first: whoever sees notes held also sees that notes were read
+            _notesDestination = destination ?? "";
+        }
 
         /// <summary>
         /// What was read was taken out of <see cref="Messages"/> because the next question goes to
-        /// another destination: for that one the conversation has read no notes, until a note
-        /// tool marks it again.
+        /// another destination: for that one the conversation holds no notes, until a note tool
+        /// marks it again. That it read notes once stays (<see cref="NotesEverRead"/>).
         /// </summary>
         internal void ForgetNotesRead() => _notesDestination = null;
 
-        /// <summary>Starts over: forgets every message and suggestion.</summary>
+        /// <summary>Starts over: forgets every message and suggestion, and that notes were ever read.</summary>
         public void Clear()
         {
             Messages.Clear();
             Suggestions.Clear();
             _notesDestination = null;
+            _notesEverRead = false;
         }
     }
 

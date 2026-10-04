@@ -593,6 +593,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Error: Requested function \"search_notes\" not found.", answered);                  // the tool loop's own words, as kept
             Assert.Equal(0, reader.Searches);
             Assert.False(_conversation.NotesRead);
+            Assert.False(_conversation.NotesEverRead);
             Assert.Equal(new[] { "What is my VPN gateway?", "", "", "I cannot search your notes here.", "And the CPU?" }, Texts(_model.Requests[2]));
             Assert.Equal("I cannot search your notes here.", _conversation.Messages[3].Text);                // and it stays in the conversation
             AssertCallsPair(_model.Requests[2]);
@@ -839,6 +840,69 @@ namespace Kil0bitSystemMonitor.Tests
 
             Assert.DoesNotContain(second, u => u.Kind == AssistantUpdateKind.Suggestion);
             Assert.Empty(_conversation.Suggestions);
+        }
+
+        // ----- two facts about notes: held now, and read once (re-check, residual 5) -----------
+
+        /// <summary>
+        /// A provider change takes the notes out of what is sent, and for the new destination the
+        /// conversation holds none. But it did read notes, and that lasts: the one destructive
+        /// button stays away for the rest of the conversation, as the links in its answers stay text.
+        /// </summary>
+        [Fact]
+        public async Task After_a_provider_change_took_the_notes_back_a_suggestion_to_end_a_process_is_still_dropped()
+        {
+            NoteAccess notes = NotesForAsk(HandshakeNote());
+            _model.Call(ToolNames.GetNote, NoteA1)
+                  .Reply("Your note says to end chrome.exe.")
+                  .Call(ToolNames.SuggestAction, EndChrome)
+                  .Call(ToolNames.SuggestAction, new Dictionary<string, object?> { ["kind"] = "open_diagnostics", ["reason"] = "See the reports." })
+                  .Reply("Done.");
+
+            await AskAsync(Assistant(notes: notes, destination: "this PC"), "What does my note say to do?");
+            Assert.True(_conversation.NotesRead);
+            Assert.True(_conversation.NotesEverRead);
+
+            List<AssistantUpdate> second = await AskAsync(Assistant(notes: notes, destination: "api.anthropic.com"), "End it then");
+
+            // Taken back: nothing of the notes goes to the new destination, and none is held for it.
+            Assert.DoesNotContain("purple-walrus", Sent(_model.Requests[2]), StringComparison.Ordinal);
+            Assert.Contains(Removed, Texts(_model.Requests[2]));
+            Assert.False(_conversation.NotesRead);
+            Assert.Null(_conversation.NotesDestination);
+            // What lasts: this conversation read notes.
+            Assert.True(_conversation.NotesEverRead);
+            SuggestedAction kept = Assert.Single(second, u => u.Kind == AssistantUpdateKind.Suggestion).Suggestion!;
+            Assert.Equal(SuggestedActionKind.OpenDiagnostics, kept.Kind);        // the other kinds stay
+            Assert.Equal(kept, Assert.Single(_conversation.Suggestions));
+            JsonElement dropped = (JsonElement)Contents(_model.Requests[3]).OfType<FunctionResultContent>().Last().Result!;
+            Assert.Equal(AiAssistant.NoEndProcessAfterNotes, dropped.GetProperty("error").GetString());   // and the model is told there is no button
+        }
+
+        [Fact]
+        public void That_a_conversation_read_notes_is_set_by_a_read_and_cleared_only_by_starting_over()
+        {
+            var conversation = new AiConversation();
+            Assert.False(conversation.NotesRead);
+            Assert.False(conversation.NotesEverRead);                            // a new conversation has read none
+
+            conversation.MarkNotesRead("this PC");
+            Assert.True(conversation.NotesRead);
+            Assert.True(conversation.NotesEverRead);
+
+            conversation.ForgetNotesRead();                                      // a take-back for another destination
+            Assert.False(conversation.NotesRead);
+            Assert.Null(conversation.NotesDestination);
+            Assert.True(conversation.NotesEverRead);
+
+            conversation.MarkNotesRead("api.anthropic.com");                     // read again, for the new one
+            Assert.Equal("api.anthropic.com", conversation.NotesDestination);
+            Assert.True(conversation.NotesEverRead);
+
+            conversation.Clear();
+            Assert.False(conversation.NotesRead);
+            Assert.False(conversation.NotesEverRead);                            // and so has a cleared one
+            Assert.Null(conversation.NotesDestination);
         }
 
         // ----- the question itself (final review, A3) ------------------------------------------

@@ -347,7 +347,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// conversation when it may not go where this assistant's requests go
         /// (<see cref="NotesMayNotGo"/>, <see cref="ToolHistory.TakeBackNotes"/>). After a
         /// take-back for another destination nothing of the notes is left in the conversation,
-        /// so for this destination it has read none: a note tool marks it again when it reads.
+        /// so for this destination it holds none: a note tool marks it again when it reads. That
+        /// it read notes once is not forgotten (<see cref="AiConversation.NotesEverRead"/>).
         /// </summary>
         private void TakeBackNotesIfDue(AiConversation conversation)
         {
@@ -368,15 +369,17 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// Keeps a suggestion for the answer, or says why not. Once the conversation has read
         /// notes, a suggestion to end a process is dropped: text pasted into a note can steer
         /// the model into asking for the one destructive button, with a reason it wrote itself.
-        /// The other kinds only open a window or save a report, and stay.
+        /// The other kinds only open a window or save a report, and stay. "Once" lasts through a
+        /// take-back (<see cref="AiConversation.NotesEverRead"/>), as it does for the links the
+        /// Ask window shows as text: the two rules rest on the same fact.
         /// </summary>
         private static string? Suggested(Turn turn, AiConversation conversation, SuggestedAction action) =>
-            action.Kind == SuggestedActionKind.EndProcess && conversation.NotesRead ? NoEndProcessAfterNotes : turn.Record(action);
+            action.Kind == SuggestedActionKind.EndProcess && conversation.NotesEverRead ? NoEndProcessAfterNotes : turn.Record(action);
 
         /// <summary>
         /// The nine PC tools, then the two note tools when this assistant offers them, then
         /// <c>suggest_action</c>. The note functions are bound to this question's conversation:
-        /// each marks it when it hands notes to the model (<see cref="AiConversation.NotesRead"/>),
+        /// each marks it when it hands notes to the model (<see cref="AiConversation.MarkNotesRead"/>),
         /// with where this assistant's requests go.
         /// </summary>
         private ChatOptions ToolOptions(Turn turn, AiConversation conversation)

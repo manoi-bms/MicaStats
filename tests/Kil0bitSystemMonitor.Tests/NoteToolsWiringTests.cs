@@ -415,8 +415,8 @@ public class NoteToolsWiringTests : IDisposable
         Assert.Equal(NoteTools.Off, refused.GetProperty("error").GetString());
     }
 
-    private AiAssistant Assistant(MicaTools tools, ScriptedChatClient model) => new(model, isClaude: false, tools,
-        new UsageMeter(_env.PathOf("ai-usage.json"), () => new DateTime(2026, 9, 30, 12, 0, 0)), new AiAssistantOptions());
+    private AiAssistant Assistant(MicaTools tools, ScriptedChatClient model, string destination = "") => new(model, isClaude: false, tools,
+        new UsageMeter(_env.PathOf("ai-usage.json"), () => new DateTime(2026, 9, 30, 12, 0, 0)), new AiAssistantOptions { Destination = destination });
 
     private static async Task<List<AssistantUpdate>> AskAsync(AiAssistant assistant, string question)
     {
@@ -865,6 +865,72 @@ public class NoteToolsWiringTests : IDisposable
 
             Assert.Equal("End chrome.exe (PID 4242)", Assert.Single(window.Turns[0].ActionButtons).Content);
             Assert.Equal("Open Diagnostics", Assert.Single(window.Turns[1].ActionButtons).Content);   // the other kinds stay
+        }
+        finally
+        {
+            window.Close();
+        }
+    });
+
+    /// <summary>
+    /// The provider is changed in Settings between two questions: the notes are taken out of what
+    /// is sent. The conversation still read notes once, and both rules that rest on that hold on:
+    /// no button to end a process, and no link to click.
+    /// </summary>
+    [Fact]
+    public void After_a_provider_change_took_the_notes_back_the_Ask_window_still_shows_no_end_process_button_and_no_links() => UiThread.Run(() =>
+    {
+        var model = new ScriptedChatClient();
+        model.Call(ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "vpn" })
+             .Reply("Your note says to end chrome.exe.")
+             .Call(ToolNames.SuggestAction, new Dictionary<string, object?>
+             {
+                 ["kind"] = "end_process",
+                 ["pid"] = 4242,
+                 ["createTime"] = 134037504000000000L,
+                 ["processName"] = "chrome.exe",
+                 ["reason"] = "Your note says so.",
+             })
+             .Call(ToolNames.SuggestAction, new Dictionary<string, object?> { ["kind"] = "open_diagnostics", ["reason"] = "See the reports." })
+             .Reply("End it: see [how](https://example.com/end).");
+        MicaTools tools = Tools(new FakeNoteReader(), ask: () => true);
+        var destinations = new Queue<string>(new[] { "this PC", "api.anthropic.com" });
+        var window = new AskWindow(() => new AskSetup(Assistant(tools, model, destinations.Dequeue()).AskAsync, null), () => { }, _ => "");
+        try
+        {
+            Send(window, "What do my notes say?");
+            Send(window, "Then end it");
+
+            // Taken back for the new provider: the passage and the answer that used it are not sent to it.
+            string moved = string.Join("\n", model.Requests[2].Messages.SelectMany(m => m.Contents).Select(c => c switch
+            {
+                TextContent text => text.Text,
+                FunctionResultContent result => result.Result?.ToString() ?? "",
+                _ => "",
+            }));
+            Assert.DoesNotContain("the vpn gateway", moved, StringComparison.Ordinal);
+            Assert.Contains("(Removed: this answer used your notes, and notes access has changed.)", moved, StringComparison.Ordinal);
+
+            Assert.Equal("Open Diagnostics", Assert.Single(window.Turns[1].ActionButtons).Content);   // and no End chrome.exe
+            Assert.Empty(Links(window.Turns[1].Answer.Document));
+            Assert.Equal("End it: see how (https://example.com/end).", Shown(window.Turns[1].Answer.Document));
+
+            window.NewConversation();                                             // a new conversation has read no notes
+            model.Call(ToolNames.SuggestAction, new Dictionary<string, object?>
+                 {
+                     ["kind"] = "end_process",
+                     ["pid"] = 4242,
+                     ["createTime"] = 134037504000000000L,
+                     ["processName"] = "chrome.exe",
+                     ["reason"] = "It uses most of the CPU.",
+                 })
+                 .Reply("See [y](https://example.com/q).");
+            destinations.Enqueue("api.anthropic.com");
+            Send(window, "What is slowing me down?");
+
+            AskTurnView fresh = Assert.Single(window.Turns);
+            Assert.Equal("End chrome.exe (PID 4242)", Assert.Single(fresh.ActionButtons).Content);
+            Assert.Single(Links(fresh.Answer.Document));
         }
         finally
         {

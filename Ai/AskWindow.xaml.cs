@@ -264,7 +264,8 @@ namespace Kil0bitSystemMonitor.Ai
                 {
                     // A note tool handed notes to the model: said by the tool itself, before its
                     // result reaches the model, so every answer text after it is shown this way.
-                    if (conversation.NotesRead) turn.ShowLinksAsText();
+                    // The lasting fact: a take-back for a new provider does not bring links back.
+                    if (conversation.NotesEverRead) turn.ShowLinksAsText();
 
                     switch (update.Kind)
                     {
@@ -318,7 +319,7 @@ namespace Kil0bitSystemMonitor.Ai
                 _cts = null;
                 cts.Dispose();
                 setup.Resource?.Dispose();
-                if (conversation.NotesRead) turn.ShowLinksAsText();
+                if (conversation.NotesEverRead) turn.ShowLinksAsText();
                 turn.Complete(DateTime.Now);
                 UpdateButtons();
             }
@@ -343,12 +344,13 @@ namespace Kil0bitSystemMonitor.Ai
         /// Once a note tool was used in this conversation, every later turn shows its links as
         /// text too: the conversation keeps that tool's result and sends it with each later
         /// question, so note text can steer those answers as well. The conversation says so itself
-        /// (<see cref="AiConversation.NotesRead"/>); a turn that saw a note tool's chip counts too.
-        /// New conversation starts clean.
+        /// (<see cref="AiConversation.NotesEverRead"/>, which a take-back does not undo: the same
+        /// fact that drops a suggestion to end a process); a turn that saw a note tool's chip
+        /// counts too. New conversation starts clean.
         /// </summary>
         private AskTurnView AddTurn(string question)
         {
-            var turn = new AskTurnView(question) { PlainLinks = _conversation.NotesRead || _turns.Any(t => t.PlainLinks) };
+            var turn = new AskTurnView(question) { PlainLinks = _conversation.NotesEverRead || _turns.Any(t => t.PlainLinks) };
             _turns.Add(turn);
             TranscriptPanel.Children.Add(turn.Root);
             EmptyState.Visibility = Visibility.Collapsed;

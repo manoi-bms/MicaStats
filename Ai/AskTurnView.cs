@@ -304,8 +304,8 @@ namespace Kil0bitSystemMonitor.Ai
         /// Note text may steer this answer from now on: its links are text, in what is shown
         /// already (text streamed before the tool ran may hold a link) and in everything rendered
         /// after. Called for a note tool's chip, and by the window once the conversation says a
-        /// note tool handed notes to the model (<see cref="AiConversation.NotesRead"/>), which does
-        /// not depend on the tool names a provider's call ids let through.
+        /// note tool handed notes to the model (<see cref="AiConversation.NotesEverRead"/>), which
+        /// does not depend on the tool names a provider's call ids let through.
         /// </summary>
         internal void ShowLinksAsText()
         {

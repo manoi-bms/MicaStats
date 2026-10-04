@@ -63,7 +63,7 @@ With `W` known:
 | MicaPad rewrite input | 80% of MicaPad's output (a rewrite must come back whole) | 1,638 | 25,600 | 25,600 |
 | MicaPad read input (Summarize, Explain, Ask AI, Draw as diagram) | `W / 2` less MicaPad's output, at least 1,000 | 2,048 | 99,072 | 492,288 |
 | Ask conversation sent again | `W / 2` | 4,096 | 131,072 | 524,288 |
-| `get_note` in Ask, per call | `W / 16` tokens of text, between 4,000 and 64,000; lines 400 up to 4,000 | 4,000 | 16,384 | 64,000 |
+| `get_note` in Ask, per call | `W / 16` tokens of text, between 4,000 and 64,000; lines: 400, 1,000 from a window of 32,000, 2,000 from 128,000, 4,000 from 1,000,000 | 4,000 | 16,384 | 64,000 |
 | A tool result kept in the conversation | the `get_note` share and a quarter more | 5,000 | 20,480 | 80,000 |
 | Passages for Ask your notes | 8; 12 from 32,000; 20 from 128,000 | 8 | 20 | 20 |
 | MicaPad reply, in characters | 4 for each output token, at least 64,000 | 64,000 | 128,000 | 128,000 |

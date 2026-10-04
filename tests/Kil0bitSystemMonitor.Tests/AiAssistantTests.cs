@@ -572,6 +572,146 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         /// <summary>
+        /// With the Ask switch off the note tools are not offered, but the system prompt names
+        /// them, so a model may call one all the same. The tool loop answers that call with a
+        /// sentence of its own, not with anything from the notes: the answer after it used none.
+        /// </summary>
+        [Fact]
+        public async Task An_answer_after_a_note_tool_that_was_never_offered_stays()
+        {
+            var reader = new FakeNoteReader();
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(reader), () => false, () => true);
+            _model.Call(ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "vpn" })
+                  .Reply("I cannot search your notes here.")
+                  .Reply("The CPU is fine.");
+
+            await AskAsync(Assistant(notes: notes), "What is my VPN gateway?");
+            object? answered = _conversation.Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single().Result;
+            await AskAsync(Assistant(notes: notes), "And the CPU?");
+
+            Assert.Equal(ToolNames.ReadOnly.Append(ToolNames.SuggestAction), _model.Requests[0].ToolNames);   // not offered
+            Assert.Equal("Error: Requested function \"search_notes\" not found.", answered);                  // the tool loop's own words, as kept
+            Assert.Equal(0, reader.Searches);
+            Assert.False(_conversation.NotesRead);
+            Assert.Equal(new[] { "What is my VPN gateway?", "", "", "I cannot search your notes here.", "And the CPU?" }, Texts(_model.Requests[2]));
+            Assert.Equal("I cannot search your notes here.", _conversation.Messages[3].Text);                // and it stays in the conversation
+            AssertCallsPair(_model.Requests[2]);
+        }
+
+        /// <summary>A conversation of one question that called <c>search_notes</c> and got <paramref name="result"/>, then an answer.</summary>
+        private static List<ChatMessage> AfterNoteTool(object? result, Exception? threw = null) => new()
+        {
+            new ChatMessage(ChatRole.User, "What is my VPN gateway?"),
+            new ChatMessage(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("c1", ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "vpn" }),
+            }),
+            new ChatMessage(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("c1", result) { Exception = threw } }),
+            new ChatMessage(ChatRole.Assistant, "The answer."),
+        };
+
+        private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();
+
+        /// <summary>What can hold no note text: the tool loop's own sentence, a tool's error, a function that threw.</summary>
+        [Fact]
+        public void A_note_tool_result_that_can_hold_no_note_text_is_no_note_read()
+        {
+            var noNotes = new (object? Result, Exception? Threw)[]
+            {
+                ("Error: Requested function \"search_notes\" not found.", null),
+                ("Error: Function failed.", new InvalidOperationException("boom")),
+                ("Error: Function failed. Exception: boom", new InvalidOperationException("boom")),
+                (Json("{\"error\":\"Notes are not ready: open MicaPad once\"}"), null),
+                (Json(OffResult), null),
+            };
+
+            foreach ((object? result, Exception? threw) in noNotes)
+            {
+                List<ChatMessage> messages = AfterNoteTool(result, threw);
+
+                ToolHistory.TakeBackNotes(messages);
+
+                Assert.Equal("The answer.", messages[3].Text);
+                // The call's own result reads as the refusal either way.
+                Assert.Equal(OffResult, ResultText(messages[2].Contents.OfType<FunctionResultContent>().Single()));
+            }
+        }
+
+        /// <summary>
+        /// Strict for a real read: a result as the tool gave it, and every shape that is not known
+        /// to be an error. A result shortened to text is a plain string too, and it holds notes.
+        /// </summary>
+        [Fact]
+        public void Every_other_note_tool_result_counts_as_a_note_read()
+        {
+            string found = "{\"query\":\"vpn\",\"results\":[{\"noteId\":\"a1\",\"text\":\"the vpn gateway is 10.0.0.7\"}],\"about\":\"x\"}";
+            var notes = new object?[]
+            {
+                Json(found),
+                found,                                                            // the same as text
+                ToolHistory.Cap("{\"noteId\":\"a1\",\"text\":\"" + new string('n', 30_000) + "\"}"),   // shortened to text: cut inside its JSON
+                ToolHistory.Cap("{\"noteId\":\"a1\",\"text\":\"Error: " + new string('n', 30_000) + "\"}"),   // and of a note that begins with "Error:"
+                "Error is what the note is about: the vpn gateway is 10.0.0.7",   // not the tool loop's "Error:" sentence
+                " Error: with a space before it",
+                "error: in small letters",
+                Json("[\"the vpn gateway is 10.0.0.7\"]"),
+                Json("\"the vpn gateway is 10.0.0.7\""),
+                null,
+            };
+
+            foreach (object? result in notes)
+            {
+                List<ChatMessage> messages = AfterNoteTool(result);
+
+                ToolHistory.TakeBackNotes(messages);
+
+                Assert.Equal(Removed, messages[3].Text);
+                Assert.Equal(OffResult, ResultText(messages[2].Contents.OfType<FunctionResultContent>().Single()));
+            }
+        }
+
+        /// <summary>
+        /// A note may itself begin with "Error:", in its title, a heading and its text. What a
+        /// note tool gives back is never that text alone: it is a JSON object and is kept as one,
+        /// so the note's first words cannot pass for the tool loop's sentence.
+        /// </summary>
+        [Fact]
+        public async Task A_note_that_begins_with_Error_is_still_taken_back_with_the_answer_that_used_it()
+        {
+            bool allowed = true;
+            const string title = "Error: Requested function \"search_notes\" not found.";
+            var reader = new FakeNoteReader
+            {
+                Note = new Kil0bitSystemMonitor.Services.Pad.Ai.NoteText("a1", title, "Error: the handshake is purple-walrus"),
+                Hits = new() { new Kil0bitSystemMonitor.Services.Pad.Ai.NoteHit("a1", title, "Error:", 1, 1, true, "Error: the handshake is purple-walrus") },
+            };
+            var notes = new NoteAccess(new Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools(reader), () => allowed, () => true);
+            _model.Call(ToolNames.SearchNotes, new Dictionary<string, object?> { ["query"] = "Error: handshake" })
+                  .Call(ToolNames.GetNote, NoteA1)
+                  .Reply("The handshake is purple-walrus.")
+                  .Reply("Fine.");
+
+            await AskAsync(Assistant(notes: notes), "What is the handshake?");
+            FunctionResultContent[] kept = _conversation.Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().ToArray();
+            string[] keptAs = kept.Select(ResultText).ToArray();
+            allowed = false;
+            await AskAsync(Assistant(notes: notes), "And the CPU?");
+
+            // The kept form of each result: a JSON object, whose text begins with its brace. The
+            // note's own "Error:" stands inside a field of it.
+            Assert.Equal(2, kept.Length);
+            Assert.All(kept, result => Assert.Equal(JsonValueKind.Object, Assert.IsType<JsonElement>(result.Result).ValueKind));
+            Assert.All(keptAs, form => Assert.StartsWith("{", form, StringComparison.Ordinal));
+            Assert.All(keptAs, form => Assert.Contains("Error: the handshake is purple-walrus", form, StringComparison.Ordinal));
+
+            ScriptedChatClient.Request afterOff = _model.Requests[3];
+            Assert.DoesNotContain("purple-walrus", Sent(afterOff), StringComparison.Ordinal);
+            Assert.Equal(new[] { "What is the handshake?", "", "", "", "", Removed, "And the CPU?" }, Texts(afterOff));
+            Assert.Equal(new[] { OffResult, OffResult }, Contents(afterOff).OfType<FunctionResultContent>().Select(ResultText));
+            AssertCallsPair(afterOff);
+        }
+
+        /// <summary>
         /// Between two rounds of one question: an assistant message can carry words and a tool call
         /// at once. Its words go, its call stays with its result.
         /// </summary>

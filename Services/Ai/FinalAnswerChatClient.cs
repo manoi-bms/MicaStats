@@ -228,14 +228,27 @@ namespace Kil0bitSystemMonitor.Services.Ai
             }
         }
 
+        /// <summary>How every sentence begins that the function-calling loop writes in place of a result: a function it does not have, one that failed.</summary>
+        private const string LoopError = "Error:";
+
         /// <summary>
-        /// True for a result that says only what went wrong: the <c>{"error": ...}</c> every
-        /// MicaStats tool gives for a problem, or a function that threw. A note tool's result
-        /// that is anything else held notes, a shortened one (<see cref="Cap"/>) included.
+        /// True for a result that says only what went wrong, and so holds no note text: the
+        /// <c>{"error": ...}</c> every MicaStats tool gives for a problem, a function that threw,
+        /// or the function-calling loop's own sentence. The loop writes one when the model calls
+        /// a note tool that was not offered (the Ask switch is off, and the system prompt still
+        /// names the tools): <c>Error: Requested function "search_notes" not found.</c> No note
+        /// was read then, and the answer after it is not taken out.
+        ///
+        /// <para>
+        /// A note tool's result that is anything else held notes. That is the strict side on
+        /// purpose: another plain string counts too, because a result shortened to text
+        /// (<see cref="Cap"/>) is one, and it begins with the tool's JSON, never with "Error:".
+        /// </para>
         /// </summary>
         private static bool IsError(FunctionResultContent result) =>
             result.Exception != null ||
-            (result.Result is JsonElement { ValueKind: JsonValueKind.Object } json && json.TryGetProperty("error", out _));
+            (result.Result is JsonElement { ValueKind: JsonValueKind.Object } json && json.TryGetProperty("error", out _)) ||
+            (result.Result is string said && said.StartsWith(LoopError, StringComparison.Ordinal));
 
         /// <summary>True for a result that is a tool's own data as it gave it: a JSON object, and no error.</summary>
         private static bool IsData(FunctionResultContent result) =>

@@ -123,10 +123,12 @@ namespace Kil0bitSystemMonitor.Tests
             }
         }
 
-        /// <summary>Runs an async test on the UI thread over a new pane; a test that hangs fails after a minute.</summary>
-        private static async Task OnUi(Func<Fake, Task> test)
-        {
-            Task body = UiThread.RunAsync(async () =>
+        /// <summary>
+        /// Runs an async test on the UI thread over a new pane; a test that hangs fails a minute
+        /// after it started (the wait for its turn on the UI thread does not count).
+        /// </summary>
+        private static Task OnUi(Func<Fake, Task> test) =>
+            UiThread.RunAsync(async () =>
             {
                 var f = new Fake();
                 try
@@ -139,9 +141,7 @@ namespace Kil0bitSystemMonitor.Tests
                     // is left to tick on the UI thread the other tests share.
                     f.Pane.StopAnswer();
                 }
-            });
-            await body.WaitAsync(TimeSpan.FromSeconds(60));
-        }
+            }, TimeSpan.FromSeconds(60));
 
         /// <summary>Lets the dispatcher run until <paramref name="done"/>, for at most ten seconds.</summary>
         private static async Task Until(Func<bool> done, string what)

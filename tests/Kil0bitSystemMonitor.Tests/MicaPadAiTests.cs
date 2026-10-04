@@ -198,13 +198,16 @@ namespace Kil0bitSystemMonitor.Tests
             }
         }
 
+        /// <summary>How long a test's body may run once it has started; the wait for its turn on the UI thread does not count.</summary>
+        private static readonly TimeSpan BodyLimit = TimeSpan.FromSeconds(60);
+
         /// <summary>
-        /// Runs an async test on the UI thread over a loaded window; a test that hangs fails after a
-        /// minute. With a <paramref name="renderer"/>, the window draws its diagrams through it.
+        /// Runs an async test on the UI thread over a loaded window; a test that hangs fails a
+        /// minute after it started. With a <paramref name="renderer"/>, the window draws its
+        /// diagrams through it.
         /// </summary>
-        private static async Task OnUiAsync(Func<Harness, Task> test, IDiagramRenderer? renderer = null, AppConfig? config = null)
-        {
-            Task body = UiThread.RunAsync(async () =>
+        private static Task OnUiAsync(Func<Harness, Task> test, IDiagramRenderer? renderer = null, AppConfig? config = null) =>
+            UiThread.RunAsync(async () =>
             {
                 var dispatcher = Dispatcher.CurrentDispatcher;
                 using var env = new PadTestEnv(post: action => dispatcher.BeginInvoke(action));
@@ -218,9 +221,7 @@ namespace Kil0bitSystemMonitor.Tests
                 {
                     h.Window.CloseForExit();
                 }
-            });
-            await body.WaitAsync(TimeSpan.FromSeconds(60));
-        }
+            }, BodyLimit);
 
         private static Task OnUi(Action<Harness> test) => OnUiAsync(h =>
         {
@@ -274,9 +275,8 @@ namespace Kil0bitSystemMonitor.Tests
         // ---- what the app runs with: every other test here replaces these --------------------------
 
         /// <summary>Runs a test over a window built as the app builds it, with nothing replaced.</summary>
-        private static Task OnUiWithDefaults(Func<MicaPadWindow, PadTestEnv, Task> test)
-        {
-            Task body = UiThread.RunAsync(async () =>
+        private static Task OnUiWithDefaults(Func<MicaPadWindow, PadTestEnv, Task> test) =>
+            UiThread.RunAsync(async () =>
             {
                 var dispatcher = Dispatcher.CurrentDispatcher;
                 using var env = new PadTestEnv(post: action => dispatcher.BeginInvoke(action));
@@ -293,9 +293,7 @@ namespace Kil0bitSystemMonitor.Tests
                 {
                     window.CloseForExit();
                 }
-            });
-            return body.WaitAsync(TimeSpan.FromSeconds(60));
-        }
+            }, BodyLimit);
 
         [Fact]
         public Task By_default_AI_is_read_from_the_apps_settings_and_is_off_while_there_are_none() => OnUiWithDefaults((window, env) =>

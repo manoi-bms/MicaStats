@@ -11,7 +11,7 @@ using NAudio.Wave;
 namespace Kil0bitSystemMonitor.Services.Conference;
 
 /// <summary>Captures a selected microphone and render endpoint as separate, bounded ASR chunks.</summary>
-public sealed class WasapiMeetingCapture : IMeetingCapture
+public sealed class WasapiMeetingCapture : IMeetingCapture, IMeetingAudioMonitor
 {
     private const string CaptureFault = "Audio capture stopped because a selected device became unavailable.";
     private static readonly TimeSpan NativeStopTimeout = TimeSpan.FromSeconds(5);
@@ -60,6 +60,24 @@ public sealed class WasapiMeetingCapture : IMeetingCapture
                 devices.Add(new MeetingDevice(endpoint.ID, endpoint.FriendlyName, endpoint.ID == defaultId));
         }
         return devices;
+    }
+
+    MeetingAudioSnapshot IMeetingAudioMonitor.GetAudioSnapshot(MeetingSource source)
+    {
+        SourceCapture? holder = source switch
+        {
+            MeetingSource.Microphone => Volatile.Read(ref _microphone),
+            MeetingSource.Output => Volatile.Read(ref _output),
+            _ => throw new ArgumentOutOfRangeException(nameof(source)),
+        };
+        if (holder is null)
+            return EmptyAudioSnapshot();
+
+        MeetingAudioSnapshot snapshot = holder.Monitor.GetSnapshot();
+        SourceCapture? current = source == MeetingSource.Microphone
+            ? Volatile.Read(ref _microphone)
+            : Volatile.Read(ref _output);
+        return ReferenceEquals(holder, current) ? snapshot : EmptyAudioSnapshot();
     }
 
     public async Task StartAsync(
@@ -252,7 +270,12 @@ public sealed class WasapiMeetingCapture : IMeetingCapture
             IWaveIn capture = source == MeetingSource.Microphone
                 ? new NAudio.CoreAudioApi.WasapiCapture(device) { ShareMode = AudioClientShareMode.Shared }
                 : new WasapiLoopbackCapture(device) { ShareMode = AudioClientShareMode.Shared };
-            var holder = new SourceCapture(device, capture, new MeetingPcmAdapter(source, capture.WaveFormat, DeliverChunk));
+            var monitor = new MeetingAudioMonitor(_timeProvider);
+            var holder = new SourceCapture(
+                device,
+                capture,
+                new MeetingPcmAdapter(source, capture.WaveFormat, DeliverChunk, monitor.RecordPeak),
+                monitor);
             capture.DataAvailable += (_, args) => OnData(holder, args);
             capture.RecordingStopped += (_, args) => OnStopped(holder, args);
             return holder;
@@ -266,7 +289,7 @@ public sealed class WasapiMeetingCapture : IMeetingCapture
 
     private void OnData(SourceCapture holder, WaveInEventArgs args)
     {
-        if (args.BytesRecorded <= 0 || holder.ExpectedStop)
+        if (args.BytesRecorded <= 0 || holder.ExpectedStop || !IsCurrent(holder))
             return;
 
         try
@@ -281,6 +304,10 @@ public sealed class WasapiMeetingCapture : IMeetingCapture
             BeginUnexpectedFault();
         }
     }
+
+    private bool IsCurrent(SourceCapture holder) =>
+        ReferenceEquals(holder, Volatile.Read(ref _microphone)) ||
+        ReferenceEquals(holder, Volatile.Read(ref _output));
 
     private void OnStopped(SourceCapture holder, StoppedEventArgs args)
     {
@@ -375,6 +402,7 @@ public sealed class WasapiMeetingCapture : IMeetingCapture
             foreach (SourceCapture source in sources)
             {
                 source.ExpectedStop = true;
+                source.Monitor.Reset();
                 source.PauseBoundary = pauseBoundary;
             }
 
@@ -487,6 +515,8 @@ public sealed class WasapiMeetingCapture : IMeetingCapture
             microphone?.Adapter.DiscardPartial();
             output?.Adapter.DiscardPartial();
         }
+        microphone?.Monitor.Reset();
+        output?.Monitor.Reset();
         microphone?.Dispose();
         output?.Dispose();
     }
@@ -503,20 +533,29 @@ public sealed class WasapiMeetingCapture : IMeetingCapture
         _onFault = null;
     }
 
+    private static MeetingAudioSnapshot EmptyAudioSnapshot() =>
+        new(new float[MeetingAudioMonitor.BinCount], 0f, null);
+
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private sealed class SourceCapture : IDisposable
     {
-        public SourceCapture(MMDevice device, IWaveIn capture, MeetingPcmAdapter adapter)
+        public SourceCapture(
+            MMDevice device,
+            IWaveIn capture,
+            MeetingPcmAdapter adapter,
+            MeetingAudioMonitor monitor)
         {
             Device = device;
             Capture = capture;
             Adapter = adapter;
+            Monitor = monitor;
         }
 
         public MMDevice Device { get; }
         public IWaveIn Capture { get; }
         public MeetingPcmAdapter Adapter { get; }
+        public MeetingAudioMonitor Monitor { get; }
         public TaskCompletionSource Stopped { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public volatile bool ExpectedStop;
         public FirstStopBoundary? PauseBoundary { get; set; }
@@ -598,6 +637,7 @@ internal sealed class MeetingPcmAdapter
     private readonly MeetingSource _source;
     private readonly WaveFormat _format;
     private readonly Action<MeetingAudioChunk> _onChunk;
+    private readonly Action<float, TimeSpan>? _onPeak;
     private readonly List<short> _samples = new(ChunkSamples);
     private byte[] _remainder = Array.Empty<byte>();
     private TimeSpan? _chunkStart;
@@ -607,11 +647,16 @@ internal sealed class MeetingPcmAdapter
     private double _downsampleSum;
     private int _downsampleCount;
 
-    internal MeetingPcmAdapter(MeetingSource source, WaveFormat format, Action<MeetingAudioChunk> onChunk)
+    internal MeetingPcmAdapter(
+        MeetingSource source,
+        WaveFormat format,
+        Action<MeetingAudioChunk> onChunk,
+        Action<float, TimeSpan>? onPeak = null)
     {
         _source = source;
         _format = format is WaveFormatExtensible extensible ? extensible.ToStandardWaveFormat() : format;
         _onChunk = onChunk;
+        _onPeak = onPeak;
         ValidateFormat(_format);
     }
 
@@ -653,9 +698,11 @@ internal sealed class MeetingPcmAdapter
 
         int frames = completeLength / frameBytes;
         int blockOutputSamples = 0;
+        float blockPeak = 0f;
         for (int frame = 0; frame < frames; frame++)
         {
-            float mono = ReadMono(input.AsSpan(frame * frameBytes, frameBytes));
+            float mono = ReadMono(input.AsSpan(frame * frameBytes, frameBytes), out float framePeak);
+            blockPeak = Math.Max(blockPeak, framePeak);
             long expectedOutput = ((_inputFrames + 1) * OutputRate) / _format.SampleRate;
             if (_format.SampleRate > OutputRate)
             {
@@ -677,6 +724,8 @@ internal sealed class MeetingPcmAdapter
             }
             _inputFrames++;
         }
+
+        try { _onPeak?.Invoke(blockPeak, TimeSpan.FromSeconds((double)frames / _format.SampleRate)); } catch { }
 
         _expectedNextBlockStart = blockStart + TimeSpan.FromSeconds((double)frames / _format.SampleRate);
     }
@@ -718,14 +767,15 @@ internal sealed class MeetingPcmAdapter
             CreateWave(payload)));
     }
 
-    private float ReadMono(ReadOnlySpan<byte> frame)
+    private float ReadMono(ReadOnlySpan<byte> frame, out float peak)
     {
         int bytesPerSample = _format.BitsPerSample / 8;
         double total = 0;
+        peak = 0f;
         for (int channel = 0; channel < _format.Channels; channel++)
         {
             ReadOnlySpan<byte> sample = frame.Slice(channel * bytesPerSample, bytesPerSample);
-            total += _format.Encoding switch
+            float value = _format.Encoding switch
             {
                 WaveFormatEncoding.IeeeFloat when bytesPerSample == 4 => BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(sample)),
                 WaveFormatEncoding.Pcm when bytesPerSample == 1 => (sample[0] - 128) / 128f,
@@ -734,6 +784,10 @@ internal sealed class MeetingPcmAdapter
                 WaveFormatEncoding.Pcm when bytesPerSample == 4 => BinaryPrimitives.ReadInt32LittleEndian(sample) / 2147483648f,
                 _ => throw new MeetingException("The selected audio device uses an unsupported sample format."),
             };
+            if (!float.IsFinite(value))
+                value = 0f;
+            total += value;
+            peak = Math.Max(peak, Math.Min(Math.Abs(value), 1f));
         }
         return (float)(total / _format.Channels);
     }

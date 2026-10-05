@@ -32,11 +32,17 @@ State precedes detail. Data density serves reading; spacing and alignment group 
 
 ## Visual language
 
-Reuse dynamic `Ask.*` palette resources and ModernWpf controls. Use the existing Segoe UI Variable / Segoe UI typefaces, approximately 13–14 px body text, 11–12 px secondary labels, 16–18 px section titles and a restrained 24–28 px window heading. Use a consistent 4/8 px spacing rhythm, 16–24 px region padding, subtle one-pixel borders and moderate corner radii. Accent the primary action and state sparingly. Avoid unnecessary gradients, large shadows and animation. Use familiar Segoe Fluent/MDL2 icons with text labels.
+Reuse dynamic `Ask.*` palette resources and ModernWpf controls. Use the existing Segoe UI Variable / Segoe UI typefaces, approximately 13–14 px body text, 11–12 px secondary labels, 16–18 px section titles and a restrained 20 px window heading. Use a consistent 4/8 px spacing rhythm, 16–24 px region padding, subtle one-pixel borders and moderate corner radii. Accent the primary action and state sparingly. Avoid unnecessary gradients, large shadows and animation. Use restrained emoji beside readable navigation, source and action labels, as requested by the user; retain explicit automation names and words for every state.
 
 ## Components
 
 Reuse buttons, text inputs, selectors, tab workspaces and existing theme tokens. Meeting-local card, caption and status styles may compose those tokens; do not add a second palette. Session facts may show source selection, finalized segment count, selected-reference count, actual latest transcript time, and AI allowance. Never label latest transcript time as elapsed live duration. Empty transcript/answer states explain the next step. Preserve selectable transcript and answer text.
+
+Two compact audio cards show the selected microphone and output device, a three-second peak waveform, digital peak level and a plain-language state. Read actual existing capture buffers; never animate invented activity or equate sound with recognized speech. Silence/no recent buffers become flat, near-clipping has a text warning, and paused/stopped/faulted capture clears the display. Keep source names available when Audio setup is collapsed. Poll bounded amplitude data at ten frames per second only while the visible window is listening; no extra capture client, network call or audio persistence. These are amplitude envelopes, not frequency spectra or speaker identification.
+
+Transcript rows use small source labels and time ranges above selectable body text. Keep internal source IDs in label tooltips and Markdown export, with clear ASR disagreement notes and listening gaps. Update existing content incrementally: follow incoming text at the bottom, preserve scroll position and selection while reading earlier content, and provide a Latest action.
+
+Summary & answers has visible empty-state guidance, AI settings access, a labeled question input and Enter-to-submit. Manual requests show progress and reject duplicate clicks; validation and failures stay visible. Preserve the selected question when it still exists after refreshed analysis. Copy includes the displayed answer, citations and missing information, with confirmation. Prepare speech transfers only the answer to Speech and explains the next explicit Speak action. Start is required for private questions; received answers remain copyable after Stop.
 
 ## Accessibility
 
@@ -45,6 +51,8 @@ Target WCAG 2.2 AA principles as applicable to desktop WPF; this is a target, no
 ## Responsive behavior
 
 Support the declared minimum window size and typical 1120–1280 px desktop widths, including Windows display scaling. Wrap long status/help text, give primary workspaces remaining height, and use scrolling where content exceeds space. Avoid rigid side panels that squeeze transcript content at minimum width. Verify normal and minimum sizes with hardware-free rendered fixtures.
+
+Audio setup can collapse after Start to give transcript and answers more room while keeping Stop and both waveforms visible. Keep session facts in the footer instead of squeezing the status text between buttons and counters. Small workspaces with multiple controls must scroll internally.
 
 ## Interaction states
 

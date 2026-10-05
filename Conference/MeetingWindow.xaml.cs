@@ -24,6 +24,7 @@ public partial class MeetingWindow : Window
     private readonly MeetingReferenceSelection _references;
     private readonly MeetingSpeech _speech;
     private readonly IMeetingTts _tts;
+    private readonly Action<string> _copyText;
     private readonly CancellationTokenSource _lifetime = new();
     private bool _closing;
     private bool _closed;
@@ -31,7 +32,7 @@ public partial class MeetingWindow : Window
 
     public MeetingWindow(AppConfig config, IMeetingCapture capture, MeetingSession session, IDisposable asrClient,
         MeetingIntelligence intelligence, Func<(int Used, int Limit)> usage,
-        MeetingReferenceSelection references, MeetingSpeech speech, IMeetingTts tts)
+        MeetingReferenceSelection references, MeetingSpeech speech, IMeetingTts tts, Action<string>? copyText = null)
     {
         _config = config;
         _capture = capture;
@@ -42,7 +43,9 @@ public partial class MeetingWindow : Window
         _references = references;
         _speech = speech;
         _tts = tts;
+        _copyText = copyText ?? System.Windows.Clipboard.SetText;
         InitializeComponent();
+        InitializeAudioMonitor();
         ServiceChoice.SelectedIndex = config.MeetingAsrService switch { "ASR1" => 1, "Both" => 2, _ => 0 };
         AiLanguageChoice.SelectedValue = config.MeetingAiResponseLanguage;
         ApplyTheme();
@@ -201,6 +204,7 @@ public partial class MeetingWindow : Window
             await _session.StartAsync(new(microphone.Id, output.Id,
                 ServiceChoice.SelectedIndex == 1 ? AsrService.Asr1 : AsrService.Asr2,
                 CompareBothServices: ServiceChoice.SelectedIndex == 2));
+            AudioSetup.IsExpanded = false;
         }
         catch { StatusText.Text = "Could not start listening. Check the selected devices."; }
         finally { _busy = false; RefreshState(); }
@@ -225,33 +229,29 @@ public partial class MeetingWindow : Window
         StartButton.IsEnabled = !_session.IsActive && !_busy && !_speech.IsBusy && IsSelectedAsrConfigured();
         StopButton.IsEnabled = _session.IsActive || _busy;
         SessionStateText.Text = _session.State.ToString();
-        SegmentCountText.Text = _session.Segments.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var latest = _session.Segments.OrderBy(segment => segment.Start + segment.Duration).LastOrDefault();
+        var segments = _session.Segments;
+        var gaps = _session.Gaps;
+        SegmentCountText.Text = segments.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var latest = segments.OrderBy(segment => segment.Start + segment.Duration).LastOrDefault();
         MeetingTimeText.Text = latest == null ? "—" : (latest.Start + latest.Duration).ToString(@"hh\:mm\:ss");
         ReferenceCountText.Text = _references.Selected.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
         RefreshServiceReadiness();
-        var text = new StringBuilder();
-        var rows = _session.Segments.Select(segment => (Time: segment.Start,
-                Text: FormatTranscriptSegment(segment)))
-            .Concat(_session.Gaps.Select(gap => (Time: gap.Start,
-                Text: $"[Listening gap {gap.Start:hh\\:mm\\:ss} – {(gap.End is { } end ? end.ToString(@"hh\:mm\:ss") : "ongoing")}]\n")));
-        foreach (var row in rows.OrderBy(row => row.Time)) text.AppendLine(row.Text);
-        string content = text.ToString();
-        if (TranscriptText.Text != content) { TranscriptText.Text = content; TranscriptText.ScrollToEnd(); }
+        TranscriptText.SetTranscript(segments, gaps);
+        TranscriptEmpty.Visibility = segments.Count == 0 && gaps.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        TranscriptEmptyHint.Text = _session.State switch
+        {
+            MeetingState.Listening => "Listening now. Text appears after each audio chunk is transcribed.",
+            MeetingState.Paused => "Listening is paused during speech playback.",
+            MeetingState.Faulted => "Check the session status, then start again when ready.",
+            _ => "Choose your devices and start listening.",
+        };
+        RefreshAudioMonitor();
         RefreshAnalysis();
         RefreshNotes();
         RefreshSpeech();
     }
 
-    private static string FormatTranscriptSegment(MeetingSegment segment)
-    {
-        string text = $"[{segment.Start:hh\\:mm\\:ss}] {segment.Source} · {segment.Id}\n";
-        if (segment.Comparison is not { } comparison) return text + segment.Text + "\n";
-        text += $"{comparison.Notice}\n{(comparison.PreferredService == AsrService.Asr2 ? "ASR2" : "ASR1")}: {segment.Text}\n";
-        if (comparison.AlternativeText is { } alternative)
-            text += $"ASR1 alternative: {alternative}\n";
-        return text;
-    }
+    private void LatestTranscript_Click(object sender, RoutedEventArgs e) => TranscriptText.ScrollToEnd();
 
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
@@ -269,6 +269,8 @@ public partial class MeetingWindow : Window
         e.Cancel = true;
         if (_closing) return;
         _closing = true;
+        _audioTimer.Stop();
+        _audioTimer.Tick -= AudioTimerTick;
         IsEnabled = false;
         _session.Changed -= SessionChanged;
         _intelligence.Changed -= SessionChanged;

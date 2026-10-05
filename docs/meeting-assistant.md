@@ -35,6 +35,18 @@ Speech input is limited to 4,096 characters and a single request/playback at a t
 
 If an audio driver cannot finish stopping, MicaStats stops the meeting and retains its resources until the native operation returns. Save received text and restart MicaStats if audio resources remain unavailable.
 
+## Reading the meeting workspace
+
+The transcript uses compact **Microphone / Conference audio** labels and time ranges. Hover a source label for its reference ID; Markdown exports keep the IDs. ASR alternatives and listening gaps remain visible. The view follows incoming text when you are at the bottom. Scroll upward to review earlier text without being moved on each update; use **↓ Latest** to return to the newest text. Text remains selectable and copyable.
+
+In **Summary & answers**, type into **Ask about this meeting** and press Enter or **Ask privately**. A meeting must be active; an in-progress question shows Preparing and blocks duplicate clicks. **Copy answer** copies the visible answer with sources and missing-information notes and confirms success. **Prepare speech** opens the Speech tab with only the answer text; press Speak there to play it. The AI settings shortcut and empty-state guidance explain missing setup or answers. The selected question stays selected after analysis refresh when it is still present.
+
+The **🎤 Microphone** and **🔊 Conference output** cards show the selected device and the last three seconds of sound amplitude. They use the same audio buffers already captured for transcription, with no additional capture device or network request. Expand **🎛 Audio setup** to change devices before starting. Setup collapses after Start so the conversation has more room.
+
+The waveform updates about ten times per second while the window is visible and listening. Its height uses a square-root scale to keep quiet sound visible; **dBFS** is the recent digital peak level (0 is full scale). **Sound detected** means audio energy, not identified speech or a successful transcription. **Quiet** indicates low incoming levels; **No recent audio** means no fresh buffers arrived, which is normal when output loopback is silent. Check the selected output if expected conference sound never appears. **Near clipping** warns of samples near full scale; reduce the source level if audio is distorted.
+
+Silence scrolls to a flat line. TTS pauses, Stop and capture faults clear both graphs and show a text state. The display retains only a small amplitude history in memory, never an audio recording. Minimizing or hiding the window stops display polling while the existing meeting capture continues.
+
 ## Running alongside a conference app
 
 Microphone capture, selected-output loopback capture and speech playback all explicitly use WASAPI **shared mode**. Windows supports multiple applications sharing an endpoint in this mode; loopback reads the selected output's audio mix. See Microsoft's [shared-mode contract](https://learn.microsoft.com/en-us/windows/win32/api/audiosessiontypes/ne-audiosessiontypes-audclnt_sharemode) and [loopback recording documentation](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording).
@@ -49,6 +61,7 @@ Automated tests use scripted audio and fake providers. Synthetic HTTP tests veri
 
 - With headphones, explicitly start a controlled test using the intended microphone and output. Speak Thai and English, including a sentence crossing a four-second chunk boundary. Check transcript text, source labels and elapsed times.
 - Keep the output silent, then play known speech through the selected endpoint. Check that timestamps reflect the later playback time.
+- Check that only the expected source waveform responds, quiet output becomes flat, and both graphs clear during speech playback, Stop and device faults. Hide/show the window while listening; display updates should resume without interrupting the meeting capture. Waveforms indicate amplitude, not recognition accuracy.
 - Disconnect each selected device in turn. Confirm listening stops visibly and received text remains available; reconnect and explicitly start again.
 - Configure the AI provider, ask a supported question and a question absent from the evidence. Check citations and missing-information labels. Exhaust a small test allowance and verify transcription continues.
 - Select a test note, ask about it, then remove it. Store harmless test text as a credential while analysis or speech is pending; confirm old derived content is cleared in both Ask and Meeting Assistant.
@@ -68,6 +81,10 @@ For a controlled coexistence check, repeat the following with Teams, Zoom, Webex
 การรับเสียงไมโครโฟน การรับเสียงขาออกแบบ loopback และการเล่นเสียง ใช้ WASAPI แบบ shared mode เพื่อใช้อุปกรณ์ร่วมกับแอปประชุม MicaStats ไม่เปลี่ยนอุปกรณ์เริ่มต้น การเลือกอุปกรณ์ของแอปอื่น ระดับเสียง หรือสถานะ mute และหยุดเฉพาะงานเสียงของตัวเอง เลือกอุปกรณ์ขาออกให้ตรงกับที่แอปประชุมใช้ การทำงานร่วมกับแต่ละแอปและไดรเวอร์ยังต้องทดสอบจริง; หากอุปกรณ์ถูกใช้งานแบบ exclusive โปรแกรมอาจรับเสียงไม่ได้และจะแสดงข้อผิดพลาด
 
 เปิด **Meeting Assistant** จากเมนู MicaStats แล้วเลือกไมโครโฟนและอุปกรณ์เสียงขาออกที่ใช้ฟังการประชุม โปรแกรมจะเริ่มรับเสียงเมื่อกด **Start listening** เท่านั้น เสียงขาออกครอบคลุมทุกแอปที่ใช้อุปกรณ์นั้น โดยค่าเริ่มต้นใช้ ASR2 และเลือก ASR1 หรือ ASR2 + ASR1 ได้ก่อนเริ่ม ข้อความจะทยอยปรากฏหลังส่งเสียงแต่ละช่วงประมาณสี่วินาทีและรอบริการประมวลผล
+
+การ์ด **🎤 Microphone** และ **🔊 Conference output** แสดงชื่ออุปกรณ์และกราฟระดับเสียงย้อนหลังสามวินาทีจากข้อมูลเสียงที่รับจริง กด **🎛 Audio setup** เพื่อเลือกอุปกรณ์ก่อนเริ่ม ค่า **dBFS** คือระดับสูงสุดของสัญญาณดิจิทัล โดย 0 คือเต็มสเกล **Sound detected** หมายถึงมีเสียง ไม่ได้รับรองว่าถอดเสียงสำเร็จ **Quiet** คือเสียงเบา และ **No recent audio** คือยังไม่มีข้อมูลเสียงใหม่ ซึ่งเกิดได้ตามปกติเมื่อเสียงขาออกเงียบ กราฟจะค่อย ๆ ราบเมื่อไม่มีเสียง และล้างพร้อมแสดงสถานะเมื่อหยุดฟัง เกิดข้อผิดพลาด หรือพักระหว่างเล่น TTS ไม่มีการเปิดอุปกรณ์เพิ่มหรือบันทึกไฟล์เสียงเพื่อแสดงกราฟ
+
+ข้อความถอดเสียงแสดงแหล่งเสียงและช่วงเวลาแบบกระชับ โดยเก็บรหัสอ้างอิงไว้ในคำแนะนำเมื่อชี้เมาส์และไฟล์ Markdown เมื่ออยู่ท้ายรายการ โปรแกรมจะตามข้อความใหม่ให้อัตโนมัติ หากเลื่อนกลับไปอ่านก่อนหน้า ตำแหน่งและข้อความที่เลือกจะคงอยู่ กด **↓ Latest** เพื่อกลับไปข้อความล่าสุด ในแท็บ **Summary & answers** พิมพ์คำถามแล้วกด Enter ได้ ระหว่างรอคำตอบจะป้องกันการกดซ้ำ ปุ่ม **Copy answer** คัดลอกคำตอบพร้อมข้อมูลอ้างอิงและแสดงข้อความยืนยัน ส่วน **Prepare speech** เปิดแท็บ Speech โดยยังไม่เล่นเสียงจนกด Speak
 
 เปิด Assistant และตั้งค่าโมเดลที่ **Settings → AI** เพื่อดูสรุป ประเด็นสำคัญ คำถาม และคำตอบที่แนะนำ ในแท็บ **Summary & answers** เลือก **AI language** เป็น **Follow transcript** (ตามภาษาบทสนทนา), **Thai · ไทย** หรือ **English** โปรแกรมจำตัวเลือกไว้ การเปลี่ยนภาษาจะล้างคำตอบและข้อความเตรียมพูดเดิม แล้ววิเคราะห์ใหม่ระหว่างที่การรับเสียงยังทำงาน โดยไม่แปลหรือแก้ข้อความถอดเสียง สามารถพิมพ์คำถามเองและเลือกโน้ต MicaPad ที่ต้องการใช้เป็นข้อมูลอ้างอิงได้ ตรวจสอบแหล่งอ้างอิงและข้อมูลที่ยังขาดก่อนนำคำตอบไปใช้ แต่ละรอบวิเคราะห์หรือคำถามจะใช้โควตา AI ร่วมกับ Ask; เมื่อโควตาหมด การถอดเสียงยังทำงานต่อ
 

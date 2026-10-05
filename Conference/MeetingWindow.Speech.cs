@@ -34,11 +34,14 @@ public partial class MeetingWindow
 
     private void UseForSpeech_Click(object sender, RoutedEventArgs e)
     {
-        if (QuestionChoice.SelectedItem is not MeetingQuestion question) return;
+        if (QuestionChoice.SelectedItem is not MeetingQuestion question || string.IsNullOrWhiteSpace(question.Answer)) return;
         SpeechText.Text = question.Answer;
         // Uncited answers are still derived context, and are invalidated with it.
         _speechSources = question.Sources.Count == 0 ? new[] { "unsupported-answer" } : question.Sources.ToArray();
         MeetingTabs.SelectedItem = SpeechTab;
+        SpeechStatus.Text = IsTtsConfigured()
+            ? "Answer prepared. Press Speak when ready."
+            : "Answer prepared. Configure the speech service to play it.";
     }
 
     private void SpeechText_Changed(object sender, TextChangedEventArgs e)

@@ -12,6 +12,10 @@ Status: approved for implementation on 2026-10-05. The user authorized continuat
 
 2026-10-05 response-language follow-up: ticket [10](issues/10-analysis-language.md) adds Follow transcript, Thai and English in Summary & answers. The default matches the transcript language; an explicit selection controls generated prose and invalidates old derived answers without changing capture or original transcript text.
 
+2026-10-05 live-audio follow-up: ticket [11](issues/11-live-audio-dashboard.md) adds restrained emoji and separate real microphone/output amplitude histories, device names, digital peak levels and honest listening states. The display observes existing shared capture without extra devices, requests or persistence. Compact setup and scrolling workspaces preserve access at the minimum window size.
+
+2026-10-05 readability follow-up: ticket [12](issues/12-transcript-and-analysis-usability.md) adds compact transcript source/time labels, preserves reading position during updates, and improves Summary & answers input validation, progress, copy feedback and question selection. The user reported scroll resets and apparently nonworking answer controls while the dashboard refresh was in progress.
+
 A conference attendee wants MicaStats to follow both their microphone and the audio they hear, transcribe the meeting automatically, keep useful context ready for questions, and synthesize a chosen response as speech. MicaStats currently provides AI chat and MicaPad notes, but no audio transcription, speech synthesis or meeting-session experience.
 
 ## Solution
@@ -135,3 +139,7 @@ See [implementation-review.md](implementation-review.md) for test timing finding
 ## Connection testing verification — 2026-10-05
 
 Ticket 07 is complete and independently approved. Full suite: 5,972 passed with zero failures/skips. Final focused checks after a status-copy correction and additional regression: 28/28 passed. Staged Release: zero warnings/errors. Fake HTTP tests verify ASR profiles, generated silence, TTS WAV validation, invalid URLs, safe errors, cancellation and timeout. WPF control tests verify explicit clicks, draft addresses, cancellation, loading saved values, stale results and close/disposal. Tests never contact live services or use audio hardware. Settings and the English/Thai guide now explicitly explain that only one ASR profile is required and TTS is optional.
+
+## Live audio and meeting workspace verification — 2026-10-05
+
+Tickets 11–12 are complete. Full suite: 6,032 passed with zero failures/skips; final UI tests after the last layout adjustment: 20 passed. Staged Release has zero warnings/errors. Synthetic rendered fixtures cover both themes, normal/minimum sizes, listening/paused audio cards, compact Thai/English transcripts, ASR disagreements, and Summary & answers. Scroll tests verify live follow and preserved reading position/selection; control tests exercise Ask, Enter, Copy and Prepare speech with fake boundaries. No live conference recording or endpoint requests were made. The 862 publication candidates contain no private endpoint addresses.

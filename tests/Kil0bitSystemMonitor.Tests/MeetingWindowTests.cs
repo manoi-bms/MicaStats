@@ -12,6 +12,239 @@ namespace Kil0bitSystemMonitor.Tests;
 
 public class MeetingWindowTests
 {
+    [Fact]
+    public Task Question_buttons_validate_show_progress_copy_context_and_prepare_speech() => UiThread.RunAsync(async () =>
+    {
+        var window = CreateWindow(Configured(), out var io, out _, out _);
+        try
+        {
+            window.MeetingTabs.SelectedIndex = 1;
+            Assert.False(window.AskButton.IsEnabled);
+            Assert.Contains("Start listening", window.QuestionStatus.Text);
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            window.AskButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Contains("Type a question", window.QuestionStatus.Text);
+            Assert.Equal(0, io.Requests);
+            io.PendingAnalysis = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            window.QuestionText.Text = "What should I say?";
+            window.QuestionText.RaiseEvent(new System.Windows.Input.KeyEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, PresentationSource.FromVisual(window), 0, System.Windows.Input.Key.Enter)
+                { RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent });
+            Assert.False(window.AskButton.IsEnabled);
+            Assert.True(window.QuestionText.IsReadOnly);
+            Assert.Contains("Preparing", window.QuestionStatus.Text);
+            window.AskButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Equal(1, io.Requests);
+            io.PendingAnalysis.SetResult(Answer("Confirm the date with the team."));
+            await WaitUntil(() => window.AskButton.IsEnabled && window.CopyButton.IsEnabled);
+            window.CopyButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Equal(window.AnswerText.Text, io.CopiedText);
+            Assert.Contains("Sources:", io.CopiedText);
+            Assert.Contains("copied", window.AnswerActionStatus.Text);
+            io.FailCopy = true;
+            window.CopyButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Contains("Could not copy", window.AnswerActionStatus.Text);
+            window.UseForSpeechButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Same(window.SpeechTab, window.MeetingTabs.SelectedItem);
+            Assert.Equal("Confirm the date with the team.", window.SpeechText.Text);
+            Assert.Contains("Press Speak", window.SpeechStatus.Text);
+            Assert.Equal(0, io.Playbacks);
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
+    [Fact]
+    public Task Refreshed_analysis_preserves_selected_question_and_explains_missing_answers() => UiThread.RunAsync(async () =>
+    {
+        var window = CreateWindow(Configured(), out var io, out _, out var intelligence);
+        try
+        {
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            io.Analysis = new("Summary", [], [new("First?", "First answer", "", []), new("Second?", "Second answer", "", [])]);
+            await intelligence.AskAsync("Questions?");
+            await WaitUntil(() => window.QuestionChoice.Items.Count == 2);
+            window.QuestionChoice.SelectedIndex = 1;
+            io.Analysis = new("Updated summary", [], [new("First?", "New first", "", []), new("Second?", "Updated second", "", [])]);
+            await intelligence.AskAsync("Update?");
+            await WaitUntil(() => window.SummaryText.Text.Contains("Updated summary", StringComparison.Ordinal));
+            Assert.Contains("Updated second", window.AnswerText.Text);
+            Assert.Equal(1, window.QuestionChoice.SelectedIndex);
+            io.Analysis = new("No detected questions yet", [], []);
+            await intelligence.AskAsync("Update?");
+            await WaitUntil(() => window.QuestionChoice.Items.Count == 0);
+            Assert.False(window.CopyButton.IsEnabled);
+            Assert.False(window.UseForSpeechButton.IsEnabled);
+            Assert.Equal(Visibility.Visible, window.AnswerEmpty.Visibility);
+            Assert.Contains("Ask a question", window.AnswerActionStatus.Text);
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
+    [Fact]
+    public Task Transcript_keeps_reading_position_selection_and_live_follow_across_refreshes() => UiThread.RunAsync(async () =>
+    {
+        var window = CreateWindow(Configured(), out _, out _, out _);
+        try
+        {
+            window.Width = 780;
+            window.Height = 600;
+            var rows = Enumerable.Range(0, 40).Select(i => new MeetingSegment($"private-source-{i}",
+                i % 2 == 0 ? MeetingSource.Microphone : MeetingSource.Output, TimeSpan.FromSeconds(i * 4), TimeSpan.FromSeconds(4),
+                $"Conversation {i}: กำหนดส่งงานวันพฤหัสบดี Please confirm the readiness checks with the team.")).ToList();
+            var view = window.TranscriptText;
+            view.SetTranscript(rows, []);
+            window.UpdateLayout();
+            await Task.Delay(30);
+            Assert.True(view.ExtentHeight > view.ViewportHeight * 2);
+            Assert.InRange(view.ExtentHeight - view.ViewportHeight - view.VerticalOffset, -1, 3);
+            Assert.DoesNotContain("private-source", view.Text);
+            Assert.Contains("Microphone", view.Text);
+            Assert.Contains("Conference audio", view.Text);
+            view.ScrollToVerticalOffset(view.ExtentHeight / 3);
+            window.UpdateLayout();
+            double offset = view.VerticalOffset;
+            var first = view.Document.Blocks.FirstBlock;
+            view.Selection.Select(first.ContentStart, first.ContentEnd);
+            string selected = view.Selection.Text;
+            rows.Add(new("new-source", MeetingSource.Output, TimeSpan.FromMinutes(3), TimeSpan.FromSeconds(4), "A new update."));
+            view.SetTranscript(rows, []);
+            window.UpdateLayout();
+            await Task.Delay(30);
+            Assert.InRange(Math.Abs(view.VerticalOffset - offset), 0, 2);
+            Assert.Equal(selected, view.Selection.Text);
+            view.Selection.Select(view.Document.ContentStart, view.Document.ContentStart);
+            view.ScrollToEnd();
+            window.UpdateLayout();
+            rows.Add(new("late-source", MeetingSource.Microphone, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(4), "Late recognition result."));
+            view.SetTranscript(rows, []);
+            window.UpdateLayout();
+            await Task.Delay(30);
+            Assert.InRange(view.ExtentHeight - view.ViewportHeight - view.VerticalOffset, -1, 3);
+            Assert.True(view.Text.IndexOf("Late recognition", StringComparison.Ordinal) < view.Text.IndexOf("Conversation 1:", StringComparison.Ordinal));
+            double latest = view.VerticalOffset;
+            view.SetTranscript(rows, []);
+            window.UpdateLayout();
+            Assert.Equal(latest, view.VerticalOffset);
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
+    [Fact]
+    public Task Hiding_and_closing_stop_display_polling_without_stopping_a_hidden_meeting() => UiThread.RunAsync(async () =>
+    {
+        var window = CreateWindow(Configured(), out var io, out var session, out _);
+        try
+        {
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            await Task.Yield();
+            Assert.Equal("Waiting for audio", window.MicrophoneAudioStatus.Text);
+            Assert.Equal("— dBFS", window.MicrophoneLevel.Text);
+            int initial = io.SnapshotReads;
+            await WaitUntil(() => io.SnapshotReads > initial);
+            window.Hide();
+            await Task.Yield();
+            int hidden = io.SnapshotReads;
+            await Task.Delay(300);
+            Assert.Equal(hidden, io.SnapshotReads);
+            Assert.Equal(MeetingState.Listening, session.State);
+            window.Show();
+            await WaitUntil(() => io.SnapshotReads > hidden);
+            window.Close();
+            await WaitUntil(() => io.Disposed);
+            int closed = io.SnapshotReads;
+            await Task.Delay(300);
+            Assert.Equal(closed, io.SnapshotReads);
+            Assert.False(session.IsActive);
+            Assert.Equal(0, io.Requests);
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
+    [Fact]
+    public Task Audio_cards_show_independent_real_levels_and_clear_during_pause_stop_and_fault() => UiThread.RunAsync(async () =>
+    {
+        var window = CreateWindow(Configured(), out var io, out var session, out _);
+        try
+        {
+            io.MicrophoneAudio = new([0.1f, 0.5f], 0.5f, TimeSpan.Zero);
+            io.OutputAudio = new([1f], 1f, TimeSpan.Zero);
+            window.RefreshAudioMonitor();
+            Assert.False(window.MicrophoneWaveform.HasSignal);
+            Assert.Equal(0, io.SnapshotReads);
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            window.RefreshAudioMonitor();
+            Assert.False(window.AudioSetup.IsExpanded);
+            Assert.True(window.MicrophoneWaveform.HasSignal);
+            Assert.Equal("-6 dBFS", window.MicrophoneLevel.Text);
+            Assert.Contains("Sound detected", window.MicrophoneAudioStatus.Text);
+            Assert.Contains("Near clipping", window.OutputAudioStatus.Text);
+            Assert.Equal("0 dBFS", window.OutputLevel.Text);
+
+            await session.PauseAsync();
+            window.RefreshAudioMonitor();
+            Assert.False(window.MicrophoneWaveform.HasSignal);
+            Assert.False(window.OutputWaveform.HasSignal);
+            Assert.Contains("Paused", window.MicrophoneAudioStatus.Text);
+            Assert.Equal("— dBFS", window.MicrophoneLevel.Text);
+            await session.ResumeAsync();
+            io.MicrophoneAudio = new([], 0, TimeSpan.FromSeconds(4));
+            io.OutputAudio = new([], 0, TimeSpan.Zero);
+            window.RefreshAudioMonitor();
+            Assert.Equal("No recent audio", window.MicrophoneAudioStatus.Text);
+            Assert.Equal("Quiet", window.OutputAudioStatus.Text);
+            Assert.False(window.MicrophoneWaveform.HasSignal);
+            Assert.Equal("−∞ dBFS", window.OutputLevel.Text);
+
+            await session.StopAsync();
+            window.RefreshAudioMonitor();
+            Assert.Equal("Not listening", window.MicrophoneAudioStatus.Text);
+            await session.StartAsync(new("mic", "out"));
+            io.FailCapture();
+            await WaitUntil(() => session.State == MeetingState.Faulted);
+            window.RefreshAudioMonitor();
+            Assert.Contains("Capture stopped", window.OutputAudioStatus.Text);
+            Assert.False(window.OutputWaveform.HasSignal);
+            Assert.Equal(0, io.Requests);
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
+    [Fact]
+    public Task Live_waveforms_render_both_themes_and_compact_pause_without_capturing_audio() => UiThread.RunAsync(async () =>
+    {
+        string output = Path.Combine(FindRepoRoot(), "artifacts", "meeting-ui");
+        Directory.CreateDirectory(output);
+        var config = Configured();
+        config.AskTheme = "Dark";
+        var window = CreateWindow(config, out var io, out var session, out _);
+        try
+        {
+            Assert.Equal(Visibility.Visible, window.TranscriptEmpty.Visibility);
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            // Fixed synthetic capture samples only; no device or HTTP boundary is contacted.
+            io.MicrophoneAudio = new(Enumerable.Range(0, 60).Select(i => i % 13 < 4 ? 0f : (float)(0.08 + 0.48 * Math.Abs(Math.Sin(i * 0.7)))).ToArray(), 0.48f, TimeSpan.Zero);
+            io.OutputAudio = new(Enumerable.Range(0, 60).Select(i => i < 20 || i > 48 ? 0f : (float)(0.03 + 0.25 * Math.Abs(Math.Cos(i * 0.9)))).ToArray(), 0.23f, TimeSpan.Zero);
+            window.RefreshAudioMonitor();
+            io.Emit(MeetingSource.Output, TimeSpan.Zero);
+            await WaitUntil(() => window.TranscriptText.Text.Contains("Thursday", StringComparison.Ordinal));
+            Assert.Equal(Visibility.Collapsed, window.TranscriptEmpty.Visibility);
+            RenderWindow(window, 1180, 820, Path.Combine(output, "meeting-waveforms-dark-1180x820.png"));
+            RenderWindow(window, 780, 600, Path.Combine(output, "meeting-waveforms-dark-780x600.png"));
+            Assert.True(window.TranscriptText.ActualHeight > 80);
+            Assert.True(window.MicrophoneWaveform.ActualWidth > 250);
+            Assert.True(window.StopButton.IsEnabled);
+            config.AskTheme = "Light";
+            await Task.Yield();
+            RenderWindow(window, 780, 600, Path.Combine(output, "meeting-waveforms-light-780x600.png"));
+            await session.PauseAsync();
+            await WaitUntil(() => window.SessionStateText.Text == "Paused");
+            window.RefreshAudioMonitor();
+            RenderWindow(window, 780, 600, Path.Combine(output, "meeting-waveforms-paused-780x600.png"));
+            Assert.False(window.OutputWaveform.HasSignal);
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -372,6 +605,7 @@ public class MeetingWindowTests
         try
         {
             RenderWindow(unconfigured, 1180, 820, Path.Combine(output, "meeting-unconfigured-1180x820.png"));
+            RenderWindow(unconfigured, 780, 600, Path.Combine(output, "meeting-unconfigured-780x600.png"));
         }
         finally { unconfigured.Close(); await Task.Yield(); }
 
@@ -394,6 +628,8 @@ public class MeetingWindowTests
             await WaitUntil(() => populated.UseForSpeechButton.IsEnabled);
             populated.MeetingTabs.SelectedIndex = 1;
             RenderWindow(populated, 1180, 820, Path.Combine(output, "meeting-summary-populated-light-1180x820.png"));
+            Assert.InRange(populated.AskButton.TranslatePoint(new System.Windows.Point(0, populated.AskButton.ActualHeight), populated.AnalysisScroll).Y,
+                0, populated.AnalysisScroll.ActualHeight);
 
             populated.UseForSpeechButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             RenderWindow(populated, 1180, 820, Path.Combine(output, "meeting-speech-prepared-light-1180x820.png"));
@@ -409,7 +645,9 @@ public class MeetingWindowTests
         intelligence = new MeetingIntelligence(session, io);
         var references = new MeetingReferenceSelection(io, intelligence);
         var speech = new MeetingSpeech(session, io, io);
-        var window = new MeetingWindow(config, io, session, io, intelligence, () => (2, 100), references, speech, io)
+        var boundary = io;
+        var window = new MeetingWindow(config, io, session, io, intelligence, () => (2, 100), references, speech, io,
+            text => { if (boundary.FailCopy) throw new InvalidOperationException("Synthetic clipboard failure"); boundary.CopiedText = text; })
         {
             ShowActivated = false,
             Left = -32000,
@@ -442,9 +680,11 @@ public class MeetingWindowTests
         return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root not found.");
     }
 
-    private sealed class Boundary : IMeetingCapture, IMeetingAsr, IMeetingAnalyzer, IMeetingNotes, IMeetingTts, IMeetingPlayback, IDisposable
+    private sealed class Boundary : IMeetingCapture, IMeetingAudioMonitor, IMeetingAsr, IMeetingAnalyzer, IMeetingNotes, IMeetingTts, IMeetingPlayback, IDisposable
     {
         public int Starts, Requests, Playbacks;
+        public string? CopiedText;
+        public bool FailCopy;
         public TaskCompletionSource<byte[]>? PendingSpeech;
         public TaskCompletionSource<IReadOnlyList<MeetingVoice>>? PendingVoices;
         public TaskCompletionSource<MeetingAnalysis>? PendingAnalysis;
@@ -453,9 +693,15 @@ public class MeetingWindowTests
         public System.Collections.Concurrent.ConcurrentQueue<AsrService> AsrServices = new();
         public MeetingAnalysis? Analysis;
         private Action<MeetingAudioChunk>? _onChunk;
+        private Action<string>? _onFault;
+        public MeetingAudioSnapshot MicrophoneAudio = new([], 0, null);
+        public MeetingAudioSnapshot OutputAudio = new([], 0, null);
+        public int SnapshotReads;
+        public MeetingAudioSnapshot GetAudioSnapshot(MeetingSource source) { SnapshotReads++; return source == MeetingSource.Microphone ? MicrophoneAudio : OutputAudio; }
+        public void FailCapture() => _onFault?.Invoke("Synthetic device failure");
         public bool Disposed;
         public IReadOnlyList<MeetingDevice> GetDevices(MeetingSource source) => new[] { new MeetingDevice(source == MeetingSource.Microphone ? "mic" : "out", "Test device", true) };
-        public Task StartAsync(string microphoneId, string outputId, Action<MeetingAudioChunk> onChunk, Action<string> onFault, CancellationToken cancellationToken) { Starts++; _onChunk = onChunk; return Task.CompletedTask; }
+        public Task StartAsync(string microphoneId, string outputId, Action<MeetingAudioChunk> onChunk, Action<string> onFault, CancellationToken cancellationToken) { Starts++; _onChunk = onChunk; _onFault = onFault; return Task.CompletedTask; }
         public Task PauseAsync(CancellationToken cancellationToken, Action<TimeSpan>? onFirstSourceStopped = null) { onFirstSourceStopped?.Invoke(TimeSpan.Zero); return Task.CompletedTask; }
         public Task ResumeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task StopAsync() => Task.CompletedTask;

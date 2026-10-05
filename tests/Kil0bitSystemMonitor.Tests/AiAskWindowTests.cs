@@ -140,6 +140,33 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void A_cut_short_answer_and_trimmed_history_show_their_exact_sentences() => WithWindow((window, h) =>
+        {
+            h.Setups.Enqueue(h.Answer(
+                new AssistantUpdate(AssistantUpdateKind.Trimmed),
+                new AssistantUpdate(AssistantUpdateKind.Text, "Partial answer"),
+                new AssistantUpdate(AssistantUpdateKind.CutShort),
+                new AssistantUpdate(AssistantUpdateKind.Done)));
+
+            Send(window, "A long question");
+
+            Assert.Equal(AskWindow.TrimmedStatus, window.StatusText.Text);
+            Assert.Equal(AskWindow.CutShortNote, Assert.Single(window.Turns).NoteText.Text);
+        });
+
+        [Fact]
+        public void A_length_finish_with_no_text_keeps_the_cut_short_note() => WithWindow((window, h) =>
+        {
+            h.Setups.Enqueue(h.Answer(
+                new AssistantUpdate(AssistantUpdateKind.CutShort),
+                new AssistantUpdate(AssistantUpdateKind.Done)));
+
+            Send(window, "Answer briefly");
+
+            Assert.Equal(AskWindow.CutShortNote, Assert.Single(window.Turns).NoteText.Text);
+        });
+
+        [Fact]
         public void The_answer_is_rendered_from_its_markdown() => WithWindow((window, h) =>
         {
             h.Setups.Enqueue(h.Answer(

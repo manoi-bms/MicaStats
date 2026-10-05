@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -36,13 +37,15 @@ namespace Kil0bitSystemMonitor.Tests
         private MicaTools Tools(NoteAccess? notes = null) => new(_data, new Redactor(@"C:\Users\alice", "alice", "DESK-7")) { Notes = notes };
 
         private AiAssistant Assistant(bool isClaude = false, IChatClient? client = null, TimeSpan? silence = null, NoteAccess? notes = null,
-                                      string destination = "") =>
+                                      string destination = "", AiBudget? budget = null, int? maxOutputTokens = null) =>
             new(client ?? _model, isClaude, Tools(notes), _usage,
                 new AiAssistantOptions
                 {
                     DailyLimit = () => _limit,
                     InactivityTimeout = silence ?? TimeSpan.FromSeconds(60),
                     Destination = destination,
+                    Budget = budget ?? AiBudget.Standard,
+                    MaxOutputTokens = maxOutputTokens,
                 });
 
         /// <summary>The note tools over a fake reader, allowed for Ask and not for MCP.</summary>
@@ -64,6 +67,43 @@ namespace Kil0bitSystemMonitor.Tests
 
         private static IEnumerable<AIContent> Contents(ScriptedChatClient.Request request) =>
             request.Messages.SelectMany(m => m.Contents);
+
+        public enum FinishScenario { FinalLength, ToolLengthThenFinal, LimitedLength }
+
+        private sealed class FinishClient : IChatClient
+        {
+            private readonly FinishScenario _scenario;
+            private int _request;
+
+            public FinishClient(FinishScenario scenario) => _scenario = scenario;
+
+            public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+                CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+            public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,
+                ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            {
+                int request = Interlocked.Increment(ref _request);
+                await Task.Yield();
+                if (_scenario == FinishScenario.LimitedLength && request == 1)
+                    throw new ClientResultException("registry.ollama.ai/library/gemma:2b does not support tools");
+                if (_scenario == FinishScenario.ToolLengthThenFinal && request == 1)
+                {
+                    yield return new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent>
+                    {
+                        new FunctionCallContent("c1", ToolNames.GetLiveStatus),
+                    }) { FinishReason = ChatFinishReason.Length };
+                    yield break;
+                }
+                yield return new ChatResponseUpdate(ChatRole.Assistant, "partial")
+                {
+                    FinishReason = _scenario == FinishScenario.ToolLengthThenFinal ? ChatFinishReason.Stop : ChatFinishReason.Length,
+                };
+            }
+
+            public object? GetService(Type serviceType, object? serviceKey = null) => null;
+            public void Dispose() { }
+        }
 
         // ----- the tool loop -----------------------------------------------------------------
 
@@ -110,6 +150,48 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(ToolNames.ReadOnly.Append(ToolNames.SuggestAction), request.ToolNames);
             Assert.Equal(2000, request.Options!.MaxOutputTokens);
             Assert.DoesNotContain(_conversation.Messages, m => m.Role == ChatRole.System);
+        }
+
+        [Fact]
+        public async Task The_budget_sets_the_output_cap_unless_an_explicit_test_override_is_given()
+        {
+            AiBudget budget = AiBudget.Standard with { AskOutputTokens = 3456 };
+            _model.Reply("budget").Reply("override");
+
+            await AskAsync(Assistant(budget: budget), "one");
+            await AskAsync(Assistant(budget: budget, maxOutputTokens: 17), "two");
+
+            Assert.Equal(3456, _model.Requests[0].Options!.MaxOutputTokens);
+            Assert.Equal(17, _model.Requests[1].Options!.MaxOutputTokens);
+        }
+
+        [Fact]
+        public async Task A_long_history_is_trimmed_on_every_tool_round_and_reported_once_without_changing_it()
+        {
+            _conversation.Messages.Add(new ChatMessage(ChatRole.User, new string('x', 400)));
+            _conversation.Messages.Add(new ChatMessage(ChatRole.Assistant, "old answer"));
+            _model.Call(ToolNames.GetLiveStatus).Reply("fine");
+            AiBudget budget = AiBudget.Standard with { HistoryTokens = 20 };
+
+            List<AssistantUpdate> updates = await AskAsync(Assistant(budget: budget), "new question");
+
+            Assert.Single(updates, u => u.Kind == AssistantUpdateKind.Trimmed);
+            Assert.Equal(2, _model.Requests.Count);
+            Assert.All(_model.Requests, r => Assert.DoesNotContain(r.Messages, m => m.Text.Contains(new string('x', 40), StringComparison.Ordinal)));
+            Assert.Equal(new string('x', 400), _conversation.Messages[0].Text);
+        }
+
+        [Theory]
+        [InlineData(FinishScenario.FinalLength, true, false)]
+        [InlineData(FinishScenario.ToolLengthThenFinal, false, false)]
+        [InlineData(FinishScenario.LimitedLength, true, true)]
+        public async Task Cut_short_is_only_reported_for_a_final_length_finish(
+            FinishScenario scenario, bool cutShort, bool limited)
+        {
+            List<AssistantUpdate> updates = await AskAsync(Assistant(client: new FinishClient(scenario)), "status?");
+
+            Assert.Equal(cutShort, updates.Any(u => u.Kind == AssistantUpdateKind.CutShort));
+            Assert.Equal(limited, updates.Any(u => u.Kind == AssistantUpdateKind.LimitedMode));
         }
 
         [Fact]
@@ -1012,6 +1094,55 @@ namespace Kil0bitSystemMonitor.Tests
             // A result under the cap is kept exactly as the model saw it.
             JsonElement small = Assert.IsType<JsonElement>(results[1].Result);
             Assert.Equal(80, small.GetProperty("percent").GetInt32());
+        }
+
+        [Fact]
+        public void Token_budget_caps_kept_and_flattened_tool_results_by_estimated_tokens()
+        {
+            string thai = new string((char)0x0E01, 5000);
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.Assistant, new List<AIContent> { new FunctionCallContent("c1", ToolNames.GetHardware) }),
+                new(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("c1", thai) }),
+            };
+
+            FunctionResultContent kept = ToolHistory.KeepAnswered(messages, 1000)
+                .SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single();
+            List<ChatMessage> flat = ToolHistory.Flatten(messages, 1000);
+
+            Assert.True(TokenEstimate.Of(Assert.IsType<string>(kept.Result)) <= 1000);
+            Assert.DoesNotContain(new string((char)0x0E01, 1200), flat[^1].Text, StringComparison.Ordinal);
+            Assert.Contains("MicaStats shortened this result", flat[^1].Text, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_token_capped_note_result_stays_valid_json_with_its_safety_fields()
+        {
+            JsonElement note = JsonSerializer.SerializeToElement(new
+            {
+                noteId = "n1",
+                title = "Long",
+                lines = 1,
+                firstLine = 1,
+                lastLine = 1,
+                truncated = false,
+                text = new string((char)0x0E01, 5000),
+                about = Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About,
+            });
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.Assistant, new List<AIContent> { new FunctionCallContent("c1", ToolNames.GetNote) }),
+                new(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("c1", note) }),
+            };
+
+            FunctionResultContent kept = ToolHistory.KeepAnswered(messages, 1000)
+                .SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single();
+            JsonElement json = Assert.IsType<JsonElement>(kept.Result);
+
+            Assert.True(TokenEstimate.Of(json.GetRawText()) <= 1000);
+            Assert.Equal(Kil0bitSystemMonitor.Services.Pad.Ai.NoteTools.About, json.GetProperty("about").GetString());
+            Assert.True(json.GetProperty("truncated").GetBoolean());
+            Assert.True(json.TryGetProperty("cutInLine", out _));
         }
 
         /// <summary>

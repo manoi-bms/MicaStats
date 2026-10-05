@@ -175,6 +175,7 @@ public partial class App
     /// </summary>
     internal static void StopAi()
     {
+        s_modelLimitLearner.Dispose();
         StopMcpServers();
         // AI anchor: stop
         try
@@ -491,12 +492,15 @@ public partial class App
                 return new Kil0bitSystemMonitor.Ai.AskSetup(null,
                     result.Problem ?? "The AI provider could not be set up. Check Settings > AI.");
 
+            var budget = CurrentBudget();
+            LearnModelLimitsOnce();
             var assistant = new Kil0bitSystemMonitor.Services.Ai.AiAssistant(
                 result.Client, result.IsClaude, tools, AiUsage,
                 new Kil0bitSystemMonitor.Services.Ai.AiAssistantOptions
                 {
                     DailyLimit = () => config.AiDailyLimit,
                     Destination = destination,
+                    Budget = budget,
                 });
             return new Kil0bitSystemMonitor.Ai.AskSetup(assistant.AskAsync, null, result.Client);
         }
@@ -521,11 +525,26 @@ public partial class App
     {
         AppConfig? config = ConfigService?.Config;
         if (config == null) return null;
+        LearnModelLimitsOnce();
         return new Kil0bitSystemMonitor.Services.Pad.Ai.PadAiRunner(
             () => Kil0bitSystemMonitor.Services.Ai.AiProviderFactory.Create(config, AiSecrets), AiUsage, () => config.AiDailyLimit);
     }
 
     // ---- The model's limits (AI model limits spec 2.2 and 2.3) ---------------------------
+
+    private static readonly Kil0bitSystemMonitor.Services.Ai.ModelLimitLearner s_modelLimitLearner =
+        new(message => DiagnosticsLog.Warn("ai", message));
+
+    /// <summary>Starts discovery only from an AI request; that request uses the limits already known.</summary>
+    internal static void LearnModelLimitsOnce()
+    {
+        var settings = ConfigService;
+        if (settings == null) return;
+        _ = s_modelLimitLearner.LearnAsync(settings.Config,
+            cancel => Kil0bitSystemMonitor.Services.Ai.ModelCatalog.ListAsync(settings.Config, AiSecrets,
+                Kil0bitSystemMonitor.Services.Ai.ModelListReason.AiRequest, null,
+                message => DiagnosticsLog.Warn("ai", message), cancel), settings.SaveConfig);
+    }
 
     /// <summary>
     /// The limits for the model of Settings > AI as the settings have them now: how much text may

@@ -19,7 +19,10 @@ namespace Kil0bitSystemMonitor.Services.Ai
         public int MaxToolRounds { get; init; } = 8;
 
         /// <summary>Output cap per request, in tokens.</summary>
-        public int MaxOutputTokens { get; init; } = 2000;
+        public int? MaxOutputTokens { get; init; }
+
+        /// <summary>The model-sized limits for this assistant.</summary>
+        public AiBudget Budget { get; init; } = AiBudget.Standard;
 
         /// <summary>Questions allowed per local day; read at each question so a Settings change applies at once.</summary>
         public Func<int> DailyLimit { get; init; } = () => 100;
@@ -92,6 +95,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         private AiConversation? _asking;
 
         private bool _toolsUnsupported;
+        private bool _requestTrimmed;
 
         /// <summary>
         /// Creates the assistant over a provider client (<see cref="AiProviderFactory"/>);
@@ -107,7 +111,12 @@ namespace Kil0bitSystemMonitor.Services.Ai
             _readOnlyTools = AiToolFunctions.ReadOnly(tools);
             _offerNotes = NotesAllowed();
             _destination = options.Destination ?? "";
-            _toolClient = new ChatClientBuilder(new FinalAnswerChatClient(client, () => _asking is { } asked && NotesMayNotGo(asked)))
+            _toolClient = new ChatClientBuilder(new FinalAnswerChatClient(
+                client,
+                () => _asking is { } asked && NotesMayNotGo(asked),
+                options.Budget.HistoryTokens,
+                () => _requestTrimmed = true,
+                options.Budget.KeptResultTokens))
                 .UseFunctionInvocation(configure: f =>
                 {
                     f.MaximumIterationsPerRequest = Math.Max(1, options.MaxToolRounds);
@@ -128,6 +137,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
             ArgumentNullException.ThrowIfNull(conversation);
             conversation.Suggestions.Clear();
             _asking = conversation;
+            _requestTrimmed = false;
+            bool trimmedSent = false;
 
             // Before any request is built, with tools or in limited mode: when what was read from
             // the notes may not go where this question goes, it is taken out of the conversation,
@@ -170,6 +181,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 var calls = new Dictionary<string, FunctionCallContent>();
                 bool anyText = false;
                 Exception? failure = null;
+                bool answerTextSinceToolCall = false;
+                bool cutShort = false;
 
                 IAsyncEnumerator<ChatResponseUpdate> stream = _toolClient
                     .GetStreamingResponseAsync(WithSystem(conversation.Messages), ToolOptions(turn, conversation), token)
@@ -179,6 +192,11 @@ namespace Kil0bitSystemMonitor.Services.Ai
                     while (true)
                     {
                         (bool moved, Exception? error) = await MoveAsync(stream);
+                        if (_requestTrimmed && !trimmedSent)
+                        {
+                            trimmedSent = true;
+                            yield return new AssistantUpdate(AssistantUpdateKind.Trimmed);
+                        }
                         if (error != null)
                         {
                             failure = error;
@@ -194,6 +212,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                             if (content is FunctionCallContent call)
                             {
                                 calls[call.CallId] = call;
+                                answerTextSinceToolCall = false;
                             }
                             else if (content is FunctionResultContent result &&
                                      calls.TryGetValue(result.CallId, out FunctionCallContent? ran) &&
@@ -206,8 +225,11 @@ namespace Kil0bitSystemMonitor.Services.Ai
                         if (!string.IsNullOrEmpty(update.Text))
                         {
                             anyText = true;
+                            answerTextSinceToolCall = true;
                             yield return new AssistantUpdate(AssistantUpdateKind.Text, update.Text);
                         }
+                        if (update.FinishReason is { } reason)
+                            cutShort = reason == ChatFinishReason.Length && answerTextSinceToolCall;
                         foreach (SuggestedAction action in turn.Drain())
                         {
                             conversation.Suggestions.Add(action);
@@ -222,12 +244,15 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
                 if (failure == null)
                 {
-                    conversation.Messages.AddRange(ToolHistory.KeepAnswered(updates.ToChatResponse().Messages));
+                    conversation.Messages.AddRange(ToolHistory.KeepAnswered(
+                        updates.ToChatResponse().Messages, _options.Budget.KeptResultTokens));
                     if (!anyText)
                     {
                         conversation.Messages.Add(new ChatMessage(ChatRole.Assistant, NoAnswer));
                         yield return new AssistantUpdate(AssistantUpdateKind.Text, NoAnswer);
                     }
+                    if (cutShort)
+                        yield return new AssistantUpdate(AssistantUpdateKind.CutShort);
                     yield return Done;
                     yield break;
                 }
@@ -253,13 +278,19 @@ namespace Kil0bitSystemMonitor.Services.Ai
             JsonNode? snapshot = await SnapshotAsync(token);
             var answer = new StringBuilder();
             Exception? limitedFailure = null;
+            ChatFinishReason? limitedFinish = null;
             if (snapshot != null)
             {
                 // This request does not pass the tool loop's client, so it is asked here.
                 TakeBackNotesIfDue(conversation);
-                List<ChatMessage> messages = LimitedMessages(conversation.Messages, text, snapshot);
+                IReadOnlyList<ChatMessage> messages = LimitedMessages(conversation.Messages, text, snapshot);
+                if (_requestTrimmed && !trimmedSent)
+                {
+                    trimmedSent = true;
+                    yield return new AssistantUpdate(AssistantUpdateKind.Trimmed);
+                }
                 IAsyncEnumerator<ChatResponseUpdate> plain = _client
-                    .GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = _options.MaxOutputTokens }, token)
+                    .GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = OutputTokens }, token)
                     .GetAsyncEnumerator(token);
                 try
                 {
@@ -273,6 +304,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                         }
                         if (!moved) break;
                         deadline.CancelAfter(silence);
+                        if (plain.Current.FinishReason is { } reason) limitedFinish = reason;
                         string piece = plain.Current.Text;
                         if (string.IsNullOrEmpty(piece)) continue;
                         answer.Append(piece);
@@ -297,6 +329,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
 
             if (answer.Length == 0) answer.Append(NoAnswer);
             conversation.Messages.Add(new ChatMessage(ChatRole.Assistant, answer.ToString()));
+            if (limitedFinish == ChatFinishReason.Length)
+                yield return new AssistantUpdate(AssistantUpdateKind.CutShort);
             yield return Done;
         }
 
@@ -386,18 +420,24 @@ namespace Kil0bitSystemMonitor.Services.Ai
         {
             var tools = new List<AITool>(_readOnlyTools.Count + 3);
             tools.AddRange(_readOnlyTools);
-            if (_offerNotes) tools.AddRange(AiToolFunctions.Notes(_tools, () => conversation.MarkNotesRead(_destination)));
+            if (_offerNotes) tools.AddRange(AiToolFunctions.Notes(
+                _tools, () => conversation.MarkNotesRead(_destination), _options.Budget));
             tools.Add(AiToolFunctions.SuggestAction(action => Suggested(turn, conversation, action)));
-            return new ChatOptions { Tools = tools, MaxOutputTokens = _options.MaxOutputTokens };
+            return new ChatOptions { Tools = tools, MaxOutputTokens = OutputTokens };
         }
 
+        private int OutputTokens => _options.MaxOutputTokens ?? _options.Budget.AskOutputTokens;
+
         /// <summary>System prompt, earlier turns as plain text, then the question with the snapshot appended.</summary>
-        private List<ChatMessage> LimitedMessages(List<ChatMessage> conversation, string question, JsonNode snapshot)
+        private IReadOnlyList<ChatMessage> LimitedMessages(List<ChatMessage> conversation, string question, JsonNode snapshot)
         {
             var messages = new List<ChatMessage> { SystemMessage() };
-            messages.AddRange(ToolHistory.Flatten(conversation.GetRange(0, conversation.Count - 1)));
+            messages.AddRange(ToolHistory.Flatten(
+                conversation.GetRange(0, conversation.Count - 1), _options.Budget.KeptResultTokens));
             messages.Add(new ChatMessage(ChatRole.User, question + "\n\n" + AiPrompts.LimitedModeContext(snapshot)));
-            return messages;
+            IReadOnlyList<ChatMessage> fitted = ConversationTrim.Fit(messages, _options.Budget.HistoryTokens, out bool dropped);
+            if (dropped) _requestTrimmed = true;
+            return fitted;
         }
 
         /// <summary>Live status plus the top five processes by CPU, or null when cancelled.</summary>

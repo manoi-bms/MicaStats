@@ -453,6 +453,42 @@ namespace Kil0bitSystemMonitor.Services.Ai
             return AiProviders.OpenAiCompatible + "|" + address + "|" + (config.AiCompatibleModel ?? "");
         }
 
+        /// <summary>The model the settings name for the provider in use.</summary>
+        public static string ChosenModel(AppConfig config)
+        {
+            ArgumentNullException.ThrowIfNull(config);
+            return (config.AiProvider == AiProviders.OpenAiCompatible ? config.AiCompatibleModel : config.AiClaudeModel) ?? "";
+        }
+
+        /// <summary>
+        /// Keeps what <paramref name="models"/> says of the chosen model: its window and its largest
+        /// output go to the settings together with what they belong to (<see cref="KeyOf"/>, written
+        /// last, so the numbers are there before they count). A model that is not in the list changes
+        /// nothing: what the settings hold then belongs to another model and is ignored. A model that
+        /// is in the list with no window is kept too, as "asked, and the provider reports none".
+        /// True when a setting changed.
+        /// </summary>
+        public static bool Learn(AppConfig config, IReadOnlyList<AiModelInfo> models)
+        {
+            ArgumentNullException.ThrowIfNull(config);
+            if (models == null) return false;
+
+            string chosen = ChosenModel(config);
+            foreach (AiModelInfo model in models)
+            {
+                if (!string.Equals(model.Id, chosen, StringComparison.Ordinal)) continue;
+
+                string key = KeyOf(config);
+                bool changed = config.AiModelContext != model.ContextTokens || config.AiModelOutput != model.MaxOutputTokens ||
+                               !string.Equals(config.AiModelLimitsOf, key, StringComparison.Ordinal);
+                config.AiModelContext = model.ContextTokens;
+                config.AiModelOutput = model.MaxOutputTokens;
+                config.AiModelLimitsOf = key;
+                return changed;
+            }
+            return false;
+        }
+
         // ----- Failures --------------------------------------------------------------------------
 
         /// <summary>The answer was JSON of another shape, or not JSON.</summary>

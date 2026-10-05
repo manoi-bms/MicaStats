@@ -41,6 +41,10 @@ namespace Kil0bitSystemMonitor.Ai
         private const string LimitedModeNote =
             "Limited mode: this model could not use MicaStats' tools, so the answer rests on a short summary of the PC right now.";
 
+        internal const string CutShortNote = "The answer was cut short at the length limit.";
+        internal const string TrimmedStatus =
+            "Earlier turns are no longer sent to the model: the conversation is longer than it can take.";
+
         /// <summary>The hint under the question box; the day's count is added to it while it is known.</summary>
         private const string HintBase = "Enter to send · Shift+Enter for a new line";
 
@@ -371,6 +375,8 @@ namespace Kil0bitSystemMonitor.Ai
             UpdateButtons();
             SetStatus("");
             bool failed = false;
+            bool trimmed = false;
+            bool cutShort = false;
             AiConversation conversation = _conversation;
 
             try
@@ -403,6 +409,14 @@ namespace Kil0bitSystemMonitor.Ai
                             // The model still has the answer to write; unlike an error or Stopped,
                             // this note does not end it. The row sits above the answer until text comes.
                             turn.ShowActivity(AskTurnView.Thinking);
+                            break;
+                        case AssistantUpdateKind.CutShort:
+                            cutShort = true;
+                            turn.ShowNote(CutShortNote);
+                            break;
+                        case AssistantUpdateKind.Trimmed:
+                            trimmed = true;
+                            SetStatus(TrimmedStatus);
                             break;
                         case AssistantUpdateKind.Error:
                             failed = true;
@@ -452,9 +466,10 @@ namespace Kil0bitSystemMonitor.Ai
 
             // Only the question that was answered is cleared; anything typed meanwhile stays.
             if (QuestionBox.Text.Trim() == question) QuestionBox.Clear();
-            if (turn.RawText.Length == 0 && turn.ActionButtons.Count == 0)
+            if (!cutShort && turn.RawText.Length == 0 && turn.ActionButtons.Count == 0)
                 turn.ShowNote("The model sent back no text. Try asking again.");
-            SetStatus(turn.ActionButtons.Count > 0 ? "Suggestions do nothing until you click them." : "");
+            SetStatus(trimmed ? TrimmedStatus :
+                turn.ActionButtons.Count > 0 ? "Suggestions do nothing until you click them." : "");
         }
 
         private void ShowStopped(AskTurnView turn, int generation)

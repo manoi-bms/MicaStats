@@ -90,6 +90,12 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// <summary>The endpoint cannot use tools; this answer comes from a snapshot. <see cref="AssistantUpdate.Text"/> explains.</summary>
         LimitedMode,
 
+        /// <summary>The final answer ended at the model's output limit; the window owns the sentence shown.</summary>
+        CutShort,
+
+        /// <summary>Older exchanges were left out of a request; yielded once for this question.</summary>
+        Trimmed,
+
         /// <summary>The question failed; <see cref="AssistantUpdate.Text"/> is a sentence for the user. The question is not kept.</summary>
         Error,
 

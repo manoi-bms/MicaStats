@@ -93,8 +93,9 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
             NoteToolAsync(ToolNames.SearchNotes, forAsk: true, args, ct);
 
         /// <summary><c>get_note</c> for Ask MicaStats: refused unless <see cref="NoteAccess.ForAsk"/> says yes now.</summary>
-        public Task<JsonNode> GetNoteForAskAsync(JsonObject? args, CancellationToken ct = default) =>
-            NoteToolAsync(ToolNames.GetNote, forAsk: true, args, ct);
+        public Task<JsonNode> GetNoteForAskAsync(JsonObject? args, CancellationToken ct = default,
+                                                 int maxTokens = 0, int maxLines = NoteTools.MaxLines) =>
+            NoteToolAsync(ToolNames.GetNote, forAsk: true, args, ct, maxTokens, maxLines);
 
         /// <summary>
         /// <c>get_live_status</c>: the latest snapshot (CPU, per-core summary, temperatures, memory,
@@ -192,7 +193,8 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
         /// exception becomes an error result and only the caller's cancellation escapes; unlike
         /// it, the result is not redacted.
         /// </summary>
-        private async Task<JsonNode> NoteToolAsync(string tool, bool forAsk, JsonObject? args, CancellationToken ct)
+        private async Task<JsonNode> NoteToolAsync(string tool, bool forAsk, JsonObject? args, CancellationToken ct,
+                                                   int maxTokens = 0, int maxLines = NoteTools.MaxLines)
         {
             ct.ThrowIfCancellationRequested();
             string who = "Note tool " + tool + (forAsk ? " (Ask): " : " (MCP): ");
@@ -215,7 +217,7 @@ namespace Kil0bitSystemMonitor.Services.Ai.Tools
             {
                 result = tool == ToolNames.SearchNotes
                     ? await access.Tools.SearchAsync(args, ct).ConfigureAwait(false)
-                    : await access.Tools.GetNoteAsync(args, ct).ConfigureAwait(false);
+                    : await access.Tools.GetNoteAsync(args, ct, maxTokens, maxLines).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

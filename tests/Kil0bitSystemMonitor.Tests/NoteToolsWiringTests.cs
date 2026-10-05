@@ -415,6 +415,21 @@ public class NoteToolsWiringTests : IDisposable
         Assert.Equal(NoteTools.Off, refused.GetProperty("error").GetString());
     }
 
+    [Fact]
+    public void Get_note_tool_description_names_the_current_budgets_line_limit()
+    {
+        MicaTools tools = Tools(new FakeNoteReader(), ask: () => true, mcp: () => false);
+
+        AIFunction standard = AiToolFunctions.Notes(tools)[1];
+        AIFunction larger = AiToolFunctions.Notes(
+            tools, budget: AiBudget.Standard with { NoteReadLines = 4000, NoteReadTokens = 64_000 })[1];
+
+        Assert.Contains("Up to 400 lines", standard.Description, StringComparison.Ordinal);
+        Assert.Contains("Up to 4000 lines", larger.Description, StringComparison.Ordinal);
+        Assert.Equal("How many lines to read; clamped to this model's per-call limit.",
+            larger.JsonSchema.GetProperty("properties").GetProperty("lineCount").GetProperty("description").GetString());
+    }
+
     private AiAssistant Assistant(MicaTools tools, ScriptedChatClient model, string destination = "") => new(model, isClaude: false, tools,
         new UsageMeter(_env.PathOf("ai-usage.json"), () => new DateTime(2026, 9, 30, 12, 0, 0)), new AiAssistantOptions { Destination = destination });
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Services.Ai.Tools;
@@ -30,10 +31,20 @@ namespace Kil0bitSystemMonitor.Services.Ai
     internal sealed class FinalAnswerChatClient : DelegatingChatClient
     {
         private readonly Func<bool>? _takeBackNotes;
+        private readonly int _historyTokens;
+        private readonly int _maxResultTokens;
+        private readonly Action? _trimmed;
 
         /// <param name="inner">The provider's client.</param>
         /// <param name="takeBackNotes">Whether what was read from the notes must be taken out before the request that is about to go; null never takes anything out.</param>
-        public FinalAnswerChatClient(IChatClient inner, Func<bool>? takeBackNotes = null) : base(inner) => _takeBackNotes = takeBackNotes;
+        public FinalAnswerChatClient(IChatClient inner, Func<bool>? takeBackNotes = null, int historyTokens = int.MaxValue,
+                                     Action? trimmed = null, int maxResultTokens = 0) : base(inner)
+        {
+            _takeBackNotes = takeBackNotes;
+            _historyTokens = historyTokens;
+            _trimmed = trimmed;
+            _maxResultTokens = maxResultTokens;
+        }
 
         public override Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
                                                             CancellationToken cancellationToken = default) =>
@@ -51,8 +62,16 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 ToolHistory.TakeBackNotes(messages);
             }
 
-            if (options?.Tools is { Count: > 0 }) return messages;
-            List<ChatMessage> flat = ToolHistory.Flatten(messages);
+            bool hasTools = options?.Tools is { Count: > 0 };
+            int historyTokens = hasTools
+                ? _historyTokens
+                : Math.Max(0, _historyTokens - TokenEstimate.Of(AiPrompts.ToolLimitReached));
+            IReadOnlyList<ChatMessage> list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
+            list = ConversationTrim.Fit(list, historyTokens, out bool dropped);
+            if (dropped) _trimmed?.Invoke();
+
+            if (hasTools) return list;
+            List<ChatMessage> flat = ToolHistory.Flatten(list, _maxResultTokens);
             flat.Add(new ChatMessage(ChatRole.User, AiPrompts.ToolLimitReached));
             return flat;
         }
@@ -72,7 +91,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// conversation is sent again with every later request, so one large lookup would
         /// otherwise cost its full size on every round of every later question.
         /// </summary>
-        public static List<ChatMessage> KeepAnswered(IEnumerable<ChatMessage> messages)
+        public static List<ChatMessage> KeepAnswered(IEnumerable<ChatMessage> messages, int maxResultTokens = 0)
         {
             List<ChatMessage> list = messages.ToList();
             var answered = new HashSet<string>(list.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.CallId));
@@ -94,7 +113,9 @@ namespace Kil0bitSystemMonitor.Services.Ai
                             break;
                         case FunctionResultContent result:
                             string full = ResultText(result.Result);
-                            contents.Add(full.Length <= MaxResultChars ? result : Shortened(result, full, noteCalls.Contains(result.CallId)));
+                            contents.Add(Fits(full, maxResultTokens)
+                                ? result
+                                : Shortened(result, full, noteCalls.Contains(result.CallId), maxResultTokens));
                             break;
                     }
                 }
@@ -114,8 +135,16 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// before. One that cannot be shortened that way is cut to text like any other; the
         /// take-back counts such a string as a note read.
         /// </summary>
-        private static FunctionResultContent Shortened(FunctionResultContent result, string full, bool ofNoteTool)
+        private static FunctionResultContent Shortened(FunctionResultContent result, string full, bool ofNoteTool,
+                                                        int maxResultTokens)
         {
+            if (maxResultTokens > 0)
+            {
+                if (ofNoteTool && result.Result is JsonElement tokenResult &&
+                    ShortenedNote(tokenResult, full, maxResultTokens) is { } tokenShorter)
+                    return new FunctionResultContent(result.CallId, AiToolFunctions.ToElement(tokenShorter));
+                return new FunctionResultContent(result.CallId, CapTokens(full, maxResultTokens));
+            }
             if (ofNoteTool && result.Result is JsonElement given &&
                 NoteTools.Shortened(given, full.Length - CapKeeps(full, CapNote(full.Length)), MaxResultChars) is { } shorter)
             {
@@ -123,6 +152,54 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 if (json.GetRawText().Length <= MaxResultChars) return new FunctionResultContent(result.CallId, json);
             }
             return new FunctionResultContent(result.CallId, Cap(full));
+        }
+
+        private static bool Fits(string full, int maxResultTokens) => maxResultTokens > 0
+            ? TokenEstimate.Of(full) <= maxResultTokens
+            : full.Length <= MaxResultChars;
+
+        private static JsonObject? ShortenedNote(JsonElement result, string full, int maxTokens)
+        {
+            int low = 1, high = Math.Max(1, full.Length);
+            JsonObject? answer = null;
+            while (low <= high)
+            {
+                int lose = low + (high - low) / 2;
+                JsonObject? candidate = NoteTools.Shortened(result, lose, int.MaxValue);
+                if (candidate == null) return answer;
+                if (TokenEstimate.Of(ToolJson.ToText(candidate)) <= maxTokens)
+                {
+                    answer = candidate;
+                    high = lose - 1;
+                }
+                else
+                {
+                    low = lose + 1;
+                }
+            }
+            return answer;
+        }
+
+        private static string CapTokens(string text, int maxTokens)
+        {
+            if (TokenEstimate.Of(text) <= maxTokens) return text;
+            string note = "\n[MicaStats shortened this result. Call the tool again if the rest is needed.]";
+            if (TokenEstimate.Of(note) >= maxTokens) return PrefixForTokens(note, maxTokens);
+            int keepTokens = maxTokens - TokenEstimate.Of(note);
+            return PrefixForTokens(text, keepTokens) + note;
+        }
+
+        private static string PrefixForTokens(string text, int maxTokens)
+        {
+            int low = 0, high = text.Length;
+            while (low < high)
+            {
+                int middle = low + (high - low + 1) / 2;
+                if (TokenEstimate.Of(text[..middle]) <= maxTokens) low = middle;
+                else high = middle - 1;
+            }
+            if (low > 0 && low < text.Length && char.IsHighSurrogate(text[low - 1])) low--;
+            return text[..low];
         }
 
         /// <summary>
@@ -298,7 +375,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// that offers no tools. System messages pass through unchanged (they may carry a cache
         /// breakpoint); tool results become user text.
         /// </summary>
-        public static List<ChatMessage> Flatten(IEnumerable<ChatMessage> messages)
+        public static List<ChatMessage> Flatten(IEnumerable<ChatMessage> messages, int maxResultTokens = 0)
         {
             var names = new Dictionary<string, string>();
             var flat = new List<ChatMessage>();
@@ -324,7 +401,9 @@ namespace Kil0bitSystemMonitor.Services.Ai
                             break;
                         case FunctionResultContent result:
                             string name = names.TryGetValue(result.CallId, out string? n) ? n : "a MicaStats tool";
-                            parts.Add("[Result of " + name + ": " + Cap(ResultText(result.Result)) + "]");
+                            string full = ResultText(result.Result);
+                            parts.Add("[Result of " + name + ": " +
+                                      (maxResultTokens > 0 ? CapTokens(full, maxResultTokens) : Cap(full)) + "]");
                             break;
                     }
                 }

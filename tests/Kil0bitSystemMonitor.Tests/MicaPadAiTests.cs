@@ -875,7 +875,7 @@ namespace Kil0bitSystemMonitor.Tests
             config.AiContextWindow = 32_000;
             Assert.Equal(AiBudget.For(0, 0, 32_000), App.BudgetOf(config));
             Assert.Equal(32_000, App.BudgetOf(config).ContextTokens);
-            Assert.Equal(8000, App.BudgetOf(config).PadOutputTokens);       // not held to the 2,048 the other model reported
+            Assert.Equal(4096, App.BudgetOf(config).PadOutputTokens);       // not the 2,048 the other model reported: the ceiling for a window nobody reported
         }
 
         [Fact]

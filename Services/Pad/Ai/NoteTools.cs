@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Services.Ai.Tools;
+using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Search;
 
 namespace Kil0bitSystemMonitor.Services.Pad.Ai
@@ -119,7 +120,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// longer than the cap is cut inside the line and reported with <c>cutInLine</c>; its
         /// remainder cannot be paged, because paging is by line.
         /// </summary>
-        public async Task<JsonNode> GetNoteAsync(JsonObject? args, CancellationToken ct)
+        public async Task<JsonNode> GetNoteAsync(JsonObject? args, CancellationToken ct, int maxTokens = 0,
+                                                 int maxLines = MaxLines)
         {
             string? id = Text(args, "noteId")?.Trim();
             if (string.IsNullOrEmpty(id)) return ToolJson.Error("noteId is required");
@@ -131,27 +133,33 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
                 string[] lines = note.Text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
                 int first = Clamp(Number(args, "firstLine") ?? 1, 1, lines.Length);
-                int count = Clamp(Number(args, "lineCount") ?? DefaultLines, 1, MaxLines);
+                int lineCap = Clamp(maxLines, 1, 4000);
+                int count = Clamp(Number(args, "lineCount") ?? DefaultLines, 1, lineCap);
                 int wanted = Math.Min(lines.Length, first + count - 1);
 
                 // Each line is cleaned once, before the cap, so a reference is never cut in half.
                 var kept = new List<string>();
                 int length = 0;
+                long units = 0;
                 for (int i = first - 1; i < wanted; i++)
                 {
                     string line = NotePassages.WithoutSecretsAndCutEnds(lines[i]);
                     int next = length + (kept.Count > 0 ? 1 : 0) + line.Length;
-                    if (kept.Count > 0 && next > MaxChars) break;
+                    long nextUnits = units + (kept.Count > 0 ? 1 : 0) + TokenUnits(line);
+                    bool over = maxTokens > 0 ? nextUnits > (long)maxTokens * 4 : next > MaxChars;
+                    if (kept.Count > 0 && over) break;
                     kept.Add(line);
                     length = next;
+                    units = nextUnits;
                 }
                 int last = first - 1 + kept.Count;
                 string text = string.Join("\n", kept);
 
                 bool cutInLine = false;
-                if (text.Length > MaxChars)
+                bool overLimit = maxTokens > 0 ? TokenEstimate.Of(text) > maxTokens : text.Length > MaxChars;
+                if (overLimit)
                 {
-                    int cut = MaxChars;
+                    int cut = maxTokens > 0 ? PrefixForTokens(text, maxTokens) : MaxChars;
                     if (char.IsLowSurrogate(text[cut]) && char.IsHighSurrogate(text[cut - 1])) cut--;
                     text = text.Substring(0, cut);
                     cutInLine = true;
@@ -174,6 +182,35 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             catch (OperationCanceledException) { throw; }
             catch (NotesNotReadyException) { return ToolJson.Error(NotReady); }
             catch (Exception ex) { return Failed(ex); }
+        }
+
+        private static long TokenUnits(string text)
+        {
+            long units = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c < 128) units++;
+                else
+                {
+                    units += 4;
+                    if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])) i++;
+                }
+            }
+            return units;
+        }
+
+        private static int PrefixForTokens(string text, int maxTokens)
+        {
+            int low = 0, high = text.Length;
+            while (low < high)
+            {
+                int middle = low + (high - low + 1) / 2;
+                if (TokenEstimate.Of(text[..middle]) <= maxTokens) low = middle;
+                else high = middle - 1;
+            }
+            if (low > 0 && low < text.Length && char.IsHighSurrogate(text[low - 1])) low--;
+            return low;
         }
 
         /// <summary>

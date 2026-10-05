@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Models;
+using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Ai.Tools;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
 using Xunit;
@@ -552,6 +553,37 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("t [credential]", (string?)o["title"]);
             Assert.Equal("pw [credential]\nmore", (string?)o["text"]);
             Assert.DoesNotContain("{{secret:", o.ToJsonString(), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Ask_token_limit_can_return_more_ascii_than_the_fixed_MCP_character_limit()
+        {
+            var r = new FakeReader { Note = new NoteText("n1", "title", new string('a', 30_000)) };
+
+            var o = (JsonObject)await new NoteTools(r).GetNoteAsync(
+                new JsonObject { ["noteId"] = "n1", ["lineCount"] = 4000 }, CancellationToken.None,
+                maxTokens: 16_384, maxLines: 4000);
+
+            string text = (string)o["text"]!;
+            Assert.Equal(30_000, text.Length);
+            Assert.True(text.Length > NoteTools.MaxChars);
+        }
+
+        [Fact]
+        public async Task Ask_token_limit_caps_Thai_by_estimated_tokens_and_clamps_the_requested_lines()
+        {
+            string line = new string((char)0x0E01, 30_000);
+            var r = new FakeReader { Note = new NoteText("n1", "title", line + "\nsecond") };
+
+            var o = (JsonObject)await new NoteTools(r).GetNoteAsync(
+                new JsonObject { ["noteId"] = "n1", ["lineCount"] = 4000 }, CancellationToken.None,
+                maxTokens: 16_384, maxLines: 1);
+
+            string text = (string)o["text"]!;
+            Assert.True(TokenEstimate.Of(text) <= 16_384);
+            Assert.Equal(16_384, text.Length);
+            Assert.Equal(1, (int?)o["lastLine"]);
+            Assert.True((bool?)o["cutInLine"]);
         }
 
         [Fact]

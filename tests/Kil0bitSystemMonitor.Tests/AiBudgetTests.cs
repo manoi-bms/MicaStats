@@ -76,7 +76,41 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void The_user_s_number_alone_is_the_window()
         {
-            Assert.Equal(AiBudget.For(262_144, 0, 0), AiBudget.For(0, 0, 262_144));
+            AiBudget reported = AiBudget.For(262_144, 0, 0);
+            AiBudget typed = AiBudget.For(0, 0, 262_144);
+
+            // What may be sent follows the user's window as it follows a reported one.
+            Assert.Equal(reported.ContextTokens, typed.ContextTokens);
+            Assert.Equal(reported.HistoryTokens, typed.HistoryTokens);
+            Assert.Equal(reported.NoteReadTokens, typed.NoteReadTokens);
+            Assert.Equal(reported.NoteReadLines, typed.NoteReadLines);
+            Assert.Equal(reported.KeptResultTokens, typed.KeptResultTokens);
+            Assert.Equal(reported.NotesSources, typed.NotesSources);
+        }
+
+        [Fact]
+        public void With_nothing_from_the_provider_the_answers_stay_at_4096()
+        {
+            // The window is the user's own number and no largest output is known: a model's largest
+            // answer is often far below its window, and a provider refuses a request that asks for more.
+            AiBudget typed = AiBudget.For(0, 0, 128_000);
+            Assert.Equal(4096, typed.AskOutputTokens);
+            Assert.Equal(4096, typed.PadOutputTokens);
+            Assert.Equal(3276, typed.RewriteInput);            // 80% of the answer
+            Assert.Equal(64_000 - 4096, typed.ReadInput);      // the input still follows the window
+            Assert.Equal(64_000, typed.PadReplyChars);
+
+            // A small window is under the ceiling anyway.
+            Assert.Equal(2000, AiBudget.For(0, 0, 8192).AskOutputTokens);
+            Assert.Equal(2048, AiBudget.For(0, 0, 8192).PadOutputTokens);
+
+            // A server that reports its window bounds an answer by the window alone: the table applies whole.
+            Assert.Equal(16_000, AiBudget.For(128_000, 0, 0).AskOutputTokens);
+            Assert.Equal(32_000, AiBudget.For(128_000, 0, 0).PadOutputTokens);
+            Assert.Equal(32_000, AiBudget.For(262_144, 0, 128_000).PadOutputTokens);   // the user's smaller number, a reported window
+
+            // A reported largest output is used as it is, with or without a reported window.
+            Assert.Equal(8192, AiBudget.For(0, 8192, 128_000).PadOutputTokens);
         }
 
         [Fact]
@@ -179,7 +213,7 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(2_000_000, AiBudget.WindowInUse(int.MaxValue, int.MaxValue));
             Assert.Equal(2_000_000, AiBudget.For(2_000_001, 0, 0).ContextTokens);
             Assert.Equal(AiBudget.For(2_000_000, 0, 0), AiBudget.For(int.MaxValue, 0, 0));
-            Assert.Equal(AiBudget.For(2_000_000, 0, 0), AiBudget.For(0, 0, 2_000_001));
+            Assert.Equal(AiBudget.For(0, 0, 2_000_000), AiBudget.For(0, 0, 2_000_001));
         }
 
         [Fact]

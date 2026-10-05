@@ -60,6 +60,9 @@ namespace Kil0bitSystemMonitor.Services.Ai
         private const int MinWindow = 1024;
         private const int MaxWindow = 2_000_000;
 
+        /// <summary>The most either answer asks for while the provider reported neither a window nor a largest output.</summary>
+        public const int UnreportedOutputCeiling = 4096;
+
         /// <summary>Today's numbers; no window.</summary>
         public static AiBudget Standard { get; } = new AiBudget
         {
@@ -95,6 +98,13 @@ namespace Kil0bitSystemMonitor.Services.Ai
             {
                 ask = Math.Min(ask, reportedOutput);
                 pad = Math.Min(pad, reportedOutput);
+            }
+            else if (Normalize(reportedContext) == 0)
+            {
+                // The provider gave nothing and the window is the user's own number: a model's largest
+                // answer is often far below its window, and a provider refuses a request that asks for more.
+                ask = Math.Min(ask, UnreportedOutputCeiling);
+                pad = Math.Min(pad, UnreportedOutputCeiling);
             }
 
             int noteRead = Math.Min(Math.Clamp(w / 16, 4000, 64000), w / 4);

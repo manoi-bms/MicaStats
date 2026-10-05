@@ -22,7 +22,9 @@ Primary user: a conference attendee monitoring live speech while multitasking. T
 
 Meeting Assistant has a session header, setup/readiness feedback, device and session controls, useful session facts, then Transcript / Summary & answers / Reference notes / Speech workspaces. Keep Stop reachable and distinct from Speak. The header links to dedicated Settings → Meeting. Settings groups the two ASR profiles and TTS separately, identifies compatible protocols/models, uses empty endpoint inputs and an explicit Save action.
 
-ASR profiles are alternatives: one compatible endpoint is sufficient for transcription, and TTS is optional for speech output. Report readiness by these capabilities, without implying all three settings are required. Each service card provides Test connection / Cancel test plus a wrapping inline result; tests act on draft inputs independently of Save and describe the synthetic request before dispatch.
+One compatible ASR endpoint is sufficient in single-service mode; the explicit ASR2 + ASR1 comparison mode requires both. Explain beside that choice that every audio chunk goes to both services and doubles uploads. Keep one segment per chunk with labeled alternative readings and honest uncertainty. A failed provider remains disabled until the next meeting, with a persistent status even during silence. TTS remains optional. Each service card provides Test connection / Cancel test plus a wrapping inline result; tests act on draft inputs independently of Save and describe the synthetic request before dispatch.
+
+Summary & answers contains an AI language selector: Follow transcript, Thai and English. Keep this distinct from ASR language capabilities. Remember the selection; changing it clears old derived answers/prepared speech and refreshes active analysis while capture continues. Preserve the source transcript and names/technical terms. Explicit language choices take precedence; Follow transcript uses the conversation language rather than the application's English labels.
 
 ## Design principles
 

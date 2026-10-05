@@ -106,6 +106,9 @@ namespace Kil0bitSystemMonitor
             string transcription = asr2 || asr1
                 ? $"Transcription configured ({(asr2 && asr1 ? "ASR2, ASR1" : asr2 ? "ASR2" : "ASR1")})."
                 : "Configure one ASR service for transcription.";
+            if (config.MeetingAsrService == "Both")
+                transcription = asr2 && asr1 ? "ASR2 + ASR1 comparison configured."
+                    : "ASR2 + ASR1 comparison needs both endpoints; configure both or select a single service.";
             string state = transcription + (tts ? " Speech output configured." : " Speech output not configured (optional).");
             return saved ? "Saved. " + state : state;
         }

@@ -19,7 +19,8 @@ public partial class App
                 ? config.MeetingAsr1BaseUrl : config.MeetingAsr2BaseUrl);
             var session = new MeetingSession(capture, asr);
             var analyzer = new MeetingAnalyzer(() => AiProviderFactory.Create(config, AiSecrets), AiUsage,
-                () => config.AiDailyLimit, CurrentBudget, () => config.AiAssistantEnabled);
+                () => config.AiDailyLimit, CurrentBudget, () => config.AiAssistantEnabled,
+                () => config.MeetingAiResponseLanguage);
             var intelligence = new MeetingIntelligence(session, analyzer);
             var notes = new MeetingNotes(() => PadHostIfStarted?.Workspace, () => PadHost.StartForNoteTools(), Current.Dispatcher,
                 new Kil0bitSystemMonitor.Pad.LiveNoteReader(() => PadHostIfStarted?.Workspace,

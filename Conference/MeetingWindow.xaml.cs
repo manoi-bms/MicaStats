@@ -43,7 +43,8 @@ public partial class MeetingWindow : Window
         _speech = speech;
         _tts = tts;
         InitializeComponent();
-        ServiceChoice.SelectedIndex = config.MeetingAsrService == "ASR1" ? 1 : 0;
+        ServiceChoice.SelectedIndex = config.MeetingAsrService switch { "ASR1" => 1, "Both" => 2, _ => 0 };
+        AiLanguageChoice.SelectedValue = config.MeetingAiResponseLanguage;
         ApplyTheme();
         _config.PropertyChanged += ConfigChanged;
         _session.Changed += SessionChanged;
@@ -69,10 +70,13 @@ public partial class MeetingWindow : Window
     private void ConfigChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(AppConfig.AskTheme)) Dispatcher.BeginInvoke(ApplyTheme);
-        if (e.PropertyName?.StartsWith("Ai", StringComparison.Ordinal) == true)
+        if (e.PropertyName?.StartsWith("Ai", StringComparison.Ordinal) == true ||
+            e.PropertyName == nameof(AppConfig.MeetingAiResponseLanguage))
         {
             _intelligence.RefreshConfiguration();
             ReferenceContextInvalidated();
+            if (e.PropertyName == nameof(AppConfig.MeetingAiResponseLanguage) && !Dispatcher.HasShutdownStarted)
+                Dispatcher.BeginInvoke(new Action(() => AiLanguageChoice.SelectedValue = _config.MeetingAiResponseLanguage));
         }
         if (e.PropertyName is nameof(AppConfig.MeetingAsr1BaseUrl) or nameof(AppConfig.MeetingAsr2BaseUrl) or nameof(AppConfig.MeetingTtsBaseUrl))
         {
@@ -86,8 +90,12 @@ public partial class MeetingWindow : Window
         }
     }
 
-    private bool IsSelectedAsrConfigured() => MeetingServiceEndpoints.TryNormalizeBaseUrl(
-        ServiceChoice.SelectedIndex == 1 ? _config.MeetingAsr1BaseUrl : _config.MeetingAsr2BaseUrl, out _);
+    private bool IsSelectedAsrConfigured()
+    {
+        bool asr2 = MeetingServiceEndpoints.TryNormalizeBaseUrl(_config.MeetingAsr2BaseUrl, out _);
+        bool asr1 = MeetingServiceEndpoints.TryNormalizeBaseUrl(_config.MeetingAsr1BaseUrl, out _);
+        return ServiceChoice.SelectedIndex switch { 1 => asr1, 2 => asr1 && asr2, _ => asr2 };
+    }
 
     private bool IsTtsConfigured() => MeetingServiceEndpoints.TryNormalizeBaseUrl(_config.MeetingTtsBaseUrl, out _);
 
@@ -95,13 +103,22 @@ public partial class MeetingWindow : Window
     {
         bool asrReady = IsSelectedAsrConfigured();
         bool ttsReady = IsTtsConfigured();
-        ServiceText.Text = $"{(ServiceChoice.SelectedIndex == 1 ? "ASR1 · typhoon-asr-realtime · Thai" : "ASR2 · Qwen3-ASR · automatic language")} · {(asrReady ? "configured" : "setup required")}";
+        string service = ServiceChoice.SelectedIndex switch
+        {
+            1 => "ASR1 · typhoon-asr-realtime · Thai",
+            2 => "ASR2 + ASR1 · compare both readings",
+            _ => "ASR2 · Qwen3-ASR · automatic language",
+        };
+        ServiceText.Text = $"{service} · {(asrReady ? "configured" : "setup required")}";
+        DualAsrNotice.Visibility = ServiceChoice.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
         if (asrReady && ttsReady)
         {
             ReadinessBanner.Visibility = Visibility.Collapsed;
             return;
         }
-        ReadinessText.Text = !asrReady && !ttsReady
+        ReadinessText.Text = !asrReady && ServiceChoice.SelectedIndex == 2
+            ? "ASR2 + ASR1 requires both transcription endpoints. Configure both services or select a single service."
+            : !asrReady && !ttsReady
             ? "Meeting services are not configured. Add a transcription endpoint to listen and a speech endpoint to speak."
             : !asrReady ? "The selected transcription service needs an endpoint before listening can start."
             : "Speech output needs an endpoint before voices can be loaded or text can be spoken.";
@@ -175,13 +192,15 @@ public partial class MeetingWindow : Window
             "New meeting", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         _config.MeetingMicrophoneId = microphone.Id;
         _config.MeetingOutputId = output.Id;
-        _config.MeetingAsrService = ServiceChoice.SelectedIndex == 1 ? "ASR1" : "ASR2";
+        _config.MeetingAsrService = ServiceChoice.SelectedIndex switch { 1 => "ASR1", 2 => "Both", _ => "ASR2" };
         _busy = true;
         RefreshState();
         try
         {
             if (_session.Generation > 0) _references.ResetForNewSession();
-            await _session.StartAsync(new(microphone.Id, output.Id, ServiceChoice.SelectedIndex == 1 ? AsrService.Asr1 : AsrService.Asr2));
+            await _session.StartAsync(new(microphone.Id, output.Id,
+                ServiceChoice.SelectedIndex == 1 ? AsrService.Asr1 : AsrService.Asr2,
+                CompareBothServices: ServiceChoice.SelectedIndex == 2));
         }
         catch { StatusText.Text = "Could not start listening. Check the selected devices."; }
         finally { _busy = false; RefreshState(); }
@@ -213,7 +232,7 @@ public partial class MeetingWindow : Window
         RefreshServiceReadiness();
         var text = new StringBuilder();
         var rows = _session.Segments.Select(segment => (Time: segment.Start,
-                Text: $"[{segment.Start:hh\\:mm\\:ss}] {segment.Source} · {segment.Id}\n{segment.Text}\n"))
+                Text: FormatTranscriptSegment(segment)))
             .Concat(_session.Gaps.Select(gap => (Time: gap.Start,
                 Text: $"[Listening gap {gap.Start:hh\\:mm\\:ss} – {(gap.End is { } end ? end.ToString(@"hh\:mm\:ss") : "ongoing")}]\n")));
         foreach (var row in rows.OrderBy(row => row.Time)) text.AppendLine(row.Text);
@@ -222,6 +241,16 @@ public partial class MeetingWindow : Window
         RefreshAnalysis();
         RefreshNotes();
         RefreshSpeech();
+    }
+
+    private static string FormatTranscriptSegment(MeetingSegment segment)
+    {
+        string text = $"[{segment.Start:hh\\:mm\\:ss}] {segment.Source} · {segment.Id}\n";
+        if (segment.Comparison is not { } comparison) return text + segment.Text + "\n";
+        text += $"{comparison.Notice}\n{(comparison.PreferredService == AsrService.Asr2 ? "ASR2" : "ASR1")}: {segment.Text}\n";
+        if (comparison.AlternativeText is { } alternative)
+            text += $"ASR1 alternative: {alternative}\n";
+        return text;
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e)

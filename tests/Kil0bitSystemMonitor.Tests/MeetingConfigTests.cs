@@ -6,6 +6,28 @@ namespace Kil0bitSystemMonitor.Tests;
 
 public class MeetingConfigTests
 {
+    [Theory]
+    [InlineData("Both", "Both")]
+    [InlineData("ASR1", "ASR1")]
+    [InlineData("unknown", "ASR2")]
+    public void Recognition_mode_round_trips_and_unknown_modes_keep_the_legacy_default(string input, string expected)
+    {
+        var saved = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { MeetingAsrService = input }))!;
+        Assert.Equal(expected, saved.MeetingAsrService);
+    }
+
+    [Theory]
+    [InlineData("auto", "auto")]
+    [InlineData("th", "th")]
+    [InlineData("en", "en")]
+    [InlineData("unknown", "auto")]
+    public void Ai_response_language_round_trips_and_unknown_languages_follow_the_transcript(string input, string expected)
+    {
+        var saved = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { MeetingAiResponseLanguage = input }))!;
+        Assert.Equal(expected, saved.MeetingAiResponseLanguage);
+        Assert.Equal("auto", JsonSerializer.Deserialize<AppConfig>("{}")!.MeetingAiResponseLanguage);
+    }
+
     [Fact]
     public void Old_configs_default_to_asr2_and_selected_devices_survive_a_round_trip()
     {

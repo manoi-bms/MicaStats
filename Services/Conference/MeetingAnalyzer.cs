@@ -29,6 +29,9 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
         {"summary":"...","points":[{"text":"...","sources":["source-id"]}],"questions":[{"question":"...","answer":"...","missingInformation":"...","sources":["source-id"]}]}
         Return at most 10 points and 10 questions. Source IDs must be copied only from supplied transcript
         segments or references. If an answer is unsupported, leave sources empty and explain what is missing.
+        A transcript segment may contain two ASR readings in its comparison object. Treat both readings as
+        alternate evidence from the same source ID, not independent corroboration. When they differ on names,
+        numbers, or negation, preserve the uncertainty instead of claiming that one reading is a verified correction.
         """;
 
     private readonly Func<AiClientResult> _createClient;
@@ -36,22 +39,24 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
     private readonly Func<int> _dailyLimit;
     private readonly Func<AiBudget> _budget;
     private readonly Func<bool> _enabled;
+    private readonly Func<string> _responseLanguage;
     private readonly TimeSpan _requestTimeout;
 
     public MeetingAnalyzer(Func<AiClientResult> createClient, UsageMeter usage, Func<int> dailyLimit,
-        Func<AiBudget> budget, Func<bool> enabled)
-        : this(createClient, usage, dailyLimit, budget, enabled, RequestTimeout)
+        Func<AiBudget> budget, Func<bool> enabled, Func<string>? responseLanguage = null)
+        : this(createClient, usage, dailyLimit, budget, enabled, RequestTimeout, responseLanguage)
     {
     }
 
     internal MeetingAnalyzer(Func<AiClientResult> createClient, UsageMeter usage, Func<int> dailyLimit,
-        Func<AiBudget> budget, Func<bool> enabled, TimeSpan requestTimeout)
+        Func<AiBudget> budget, Func<bool> enabled, TimeSpan requestTimeout, Func<string>? responseLanguage = null)
     {
         _createClient = createClient ?? throw new ArgumentNullException(nameof(createClient));
         _usage = usage ?? throw new ArgumentNullException(nameof(usage));
         _dailyLimit = dailyLimit ?? throw new ArgumentNullException(nameof(dailyLimit));
         _budget = budget ?? throw new ArgumentNullException(nameof(budget));
         _enabled = enabled ?? throw new ArgumentNullException(nameof(enabled));
+        _responseLanguage = responseLanguage ?? (() => "auto");
         if (requestTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(requestTimeout));
         _requestTimeout = requestTimeout;
     }
@@ -84,9 +89,11 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
         IChatClient client = configured.Client;
         using var clientLease = new ClientLease(client);
         AiBudget budget;
+        string selectedLanguage;
         try
         {
             budget = _budget() ?? AiBudget.Standard;
+            selectedLanguage = SanitizeLanguage(_responseLanguage());
         }
         catch (Exception)
         {
@@ -96,7 +103,8 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
         if (directQuestion?.Length > MaxQuestionLength)
             throw new MeetingException("Shorten the meeting question before asking again.");
 
-        PreparedInput input = PrepareInput(context, directQuestion, budget);
+        string systemPrompt = BuildSystemPrompt(selectedLanguage);
+        PreparedInput input = PrepareInput(context, directQuestion, budget, systemPrompt);
         cancellationToken.ThrowIfCancellationRequested();
 
         int dailyLimit;
@@ -118,14 +126,14 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
         {
             var messages = new List<ChatMessage>
             {
-                new(ChatRole.System, SystemPrompt),
+                new(ChatRole.System, systemPrompt),
                 new(ChatRole.User, input.UserMessage),
             };
             ChatResponse response = await client.GetResponseAsync(messages,
                 new ChatOptions { MaxOutputTokens = Math.Max(1, budget.AskOutputTokens) }, deadline.Token).ConfigureAwait(false);
             string reply = response.Text ?? "";
             if (reply.Length > ReplyCharacterLimit(budget)) throw InvalidAnalysis();
-            MeetingAnalysis analysis = Parse(reply, input.SourceIds, directQuestion != null);
+            MeetingAnalysis analysis = Parse(reply, input.SourceIds, directQuestion != null, selectedLanguage);
             return input.ContextNotice == null ? analysis : analysis with { ContextNotice = input.ContextNotice };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -151,7 +159,8 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
         }
     }
 
-    private static PreparedInput PrepareInput(MeetingContext context, string? question, AiBudget budget)
+    private static PreparedInput PrepareInput(MeetingContext context, string? question, AiBudget budget,
+        string systemPrompt)
     {
         IReadOnlyList<MeetingSegment> segments = context.Segments ?? [];
         IReadOnlyList<MeetingReference> references = context.References ?? [];
@@ -160,7 +169,7 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
             : Math.Max(1, budget.ReadInput);
         Func<string, int> measure = budget.ContextTokens > 0 ? TokenEstimate.Of : budget.Measure;
         string emptyUser = SerializeInput([], [], question);
-        int fixedSize = SaturatingAdd(measure(SystemPrompt), measure(emptyUser));
+        int fixedSize = SaturatingAdd(measure(systemPrompt), measure(emptyUser));
         if (fixedSize > inputLimit)
             throw new MeetingException("The selected model's context window is too small for meeting analysis.");
 
@@ -180,14 +189,31 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
         foreach (MeetingSegment segment in segments)
         {
             if (segment == null) throw new MeetingException("A meeting transcript segment could not be read.");
-            serializedSegments.Add(new SerializedSource(segment.Id, JsonSerializer.Serialize(new
-            {
-                id = segment.Id,
-                source = segment.Source.ToString(),
-                startMilliseconds = segment.Start.TotalMilliseconds,
-                durationMilliseconds = segment.Duration.TotalMilliseconds,
-                text = segment.Text,
-            })));
+            string serialized = segment.Comparison == null
+                ? JsonSerializer.Serialize(new
+                {
+                    id = segment.Id,
+                    source = segment.Source.ToString(),
+                    startMilliseconds = segment.Start.TotalMilliseconds,
+                    durationMilliseconds = segment.Duration.TotalMilliseconds,
+                    text = segment.Text,
+                })
+                : JsonSerializer.Serialize(new
+                {
+                    id = segment.Id,
+                    source = segment.Source.ToString(),
+                    startMilliseconds = segment.Start.TotalMilliseconds,
+                    durationMilliseconds = segment.Duration.TotalMilliseconds,
+                    text = segment.Text,
+                    comparison = new
+                    {
+                        asr2Text = segment.Comparison.Asr2Text,
+                        asr1Text = segment.Comparison.Asr1Text,
+                        asr2Succeeded = segment.Comparison.Asr2Succeeded,
+                        asr1Succeeded = segment.Comparison.Asr1Succeeded,
+                    },
+                });
+            serializedSegments.Add(new SerializedSource(segment.Id, serialized));
         }
 
         int available = inputLimit - fixedSize;
@@ -198,7 +224,7 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
             serializedSegments, available - referenceSize, int.MaxValue, measure, out _);
 
         string user = SerializeInput(selectedSegments, selectedReferences, question);
-        int exactSize = SaturatingAdd(measure(SystemPrompt), measure(user));
+        int exactSize = SaturatingAdd(measure(systemPrompt), measure(user));
         if (exactSize > inputLimit)
             throw new MeetingException("The selected model's context window is too small for meeting analysis.");
 
@@ -257,7 +283,8 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
     private static int SaturatingAdd(int left, int right) =>
         left > int.MaxValue - right ? int.MaxValue : left + right;
 
-    private static MeetingAnalysis Parse(string reply, HashSet<string> sourceIds, bool directQuestion)
+    private static MeetingAnalysis Parse(string reply, HashSet<string> sourceIds, bool directQuestion,
+        string responseLanguage)
     {
         try
         {
@@ -291,7 +318,12 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
                 IReadOnlyList<string> sources = ReadSources(item, sourceIds);
                 if (answer.Length == 0 && missing.Length == 0) throw InvalidAnalysis();
                 if (answer.Length > 0 && sources.Count == 0)
-                    missing = missing.Length == 0 ? Unsupported : missing + " " + Unsupported;
+                {
+                    string unsupported = responseLanguage == "th"
+                        ? "ไม่มีข้อมูลสนับสนุนจากแหล่งข้อมูลการประชุมที่ให้มา"
+                        : Unsupported;
+                    missing = missing.Length == 0 ? unsupported : missing + " " + unsupported;
+                }
                 questions.Add(new MeetingQuestion(text, answer, missing, sources));
             }
             return new MeetingAnalysis(summary, points, questions);
@@ -344,6 +376,25 @@ public sealed class MeetingAnalyzer : IMeetingAnalyzer
     private static MeetingException InvalidAnalysis() => new(InvalidReply);
     private static MeetingException SetupFailure() =>
         new("The AI provider could not be set up. Check Settings > AI.");
+
+    private static string SanitizeLanguage(string? language) => language?.Trim().ToLowerInvariant() switch
+    {
+        "th" => "th",
+        "en" => "en",
+        _ => "auto",
+    };
+
+    private static string BuildSystemPrompt(string responseLanguage)
+    {
+        string instruction = responseLanguage switch
+        {
+            "th" => "Write all generated summary, point text, question, answer, and missing-information prose in Thai. Preserve names and technical terms as spoken when translation would make them less precise.",
+            "en" => "Write all generated summary, point text, question, answer, and missing-information prose in English. Preserve names and technical terms as spoken when translation would make them less precise.",
+            _ => "Write all generated summary, point text, question, answer, and missing-information prose in the predominant language actually spoken in the transcript. For a direct question, honor an explicit request in that question to answer in a particular language. Preserve names and technical terms as spoken when translation would make them less precise.",
+        };
+        return SystemPrompt + Environment.NewLine + instruction + Environment.NewLine +
+               "The language rule is trusted application policy. Do not infer English from JSON field names, source labels, or UI wording.";
+    }
 
     private sealed record SerializedSource(string Id, string Json);
     private sealed record PreparedInput(string UserMessage, HashSet<string> SourceIds, string? ContextNotice);

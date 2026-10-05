@@ -1299,7 +1299,7 @@
                     <!-- Meeting services -->
                     <StackPanel x:Name="MeetingSection" Visibility="Collapsed">
                         <TextBlock Text="Meeting services" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="Configure one ASR service for transcription. ASR1 and ASR2 are alternatives; only the service selected in Meeting Assistant receives audio. Add TTS only if you want speech output."
+                        <TextBlock Text="Configure one ASR service for single-service transcription, or both for ASR2 + ASR1 comparison. Comparison sends the same audio to both services concurrently. Choose the mode in Meeting Assistant. Add TTS only for speech output."
                                    Opacity="0.68" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
                         <TextBlock Text="Test connection checks the address currently entered without saving it. ASR sends one second of generated silence; TTS sends a fixed test phrase and checks the audio without playing it. Tests run only when clicked and stop after 20 seconds."
                                    Opacity="0.68" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,20"/>
@@ -1317,7 +1317,7 @@
                                 </Border>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="ASR2 · Qwen speech recognition" FontWeight="SemiBold" FontSize="16"/>
-                                    <TextBlock Text="Qwen profile · Configure this or ASR1 · model Qwen/Qwen3-ASR-1.7B" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="Qwen profile · Single service or dual comparison · model Qwen/Qwen3-ASR-1.7B" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
                                     <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
                                     <TextBox x:Name="MeetingAsr2BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://asr.example/v1"/>
                                     <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
@@ -1343,7 +1343,7 @@
                                 </Border>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="ASR1 · Typhoon speech recognition" FontWeight="SemiBold" FontSize="16"/>
-                                    <TextBlock Text="Optional alternative to ASR2 · model typhoon-asr-realtime" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="Typhoon profile · Alternative or comparison partner to ASR2 · model typhoon-asr-realtime" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
                                     <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
                                     <TextBox x:Name="MeetingAsr1BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://asr.example/v1"/>
                                     <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>

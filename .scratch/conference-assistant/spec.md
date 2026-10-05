@@ -8,6 +8,10 @@ Status: approved for implementation on 2026-10-05. The user authorized continuat
 
 ## Problem Statement
 
+2026-10-05 dual-recognizer follow-up: the user requested ASR1 and ASR2 concurrently. Ticket [09](issues/09-dual-asr.md) adds an explicit dual mode while retaining the existing defaults. It compares both readings for the same audio, preserves disagreements for review and bounded AI analysis, and tolerates one provider failure. This supersedes the earlier alternatives-only constraint; single-provider operation still requires only one configured endpoint.
+
+2026-10-05 response-language follow-up: ticket [10](issues/10-analysis-language.md) adds Follow transcript, Thai and English in Summary & answers. The default matches the transcript language; an explicit selection controls generated prose and invalidates old derived answers without changing capture or original transcript text.
+
 A conference attendee wants MicaStats to follow both their microphone and the audio they hear, transcribe the meeting automatically, keep useful context ready for questions, and synthesize a chosen response as speech. MicaStats currently provides AI chat and MicaPad notes, but no audio transcription, speech synthesis or meeting-session experience.
 
 ## Solution

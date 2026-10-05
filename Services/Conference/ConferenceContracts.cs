@@ -15,7 +15,10 @@ public sealed record MeetingVoice(string Id, string Name)
     public string DisplayName => $"{Name} · {Id}";
 }
 public sealed record MeetingAudioChunk(MeetingSource Source, TimeSpan Start, TimeSpan Duration, byte[] Wav);
-public sealed record MeetingSegment(string Id, MeetingSource Source, TimeSpan Start, TimeSpan Duration, string Text);
+public sealed record MeetingSegment(string Id, MeetingSource Source, TimeSpan Start, TimeSpan Duration, string Text)
+{
+    public MeetingAsrComparison? Comparison { get; init; }
+}
 public sealed record MeetingGap(TimeSpan Start, TimeSpan? End);
 public sealed record MeetingNoteChoice(string Id, string Title);
 public sealed record MeetingReference(string Id, string Title, string Text);
@@ -26,7 +29,11 @@ public sealed record MeetingAnalysis(string Summary, IReadOnlyList<MeetingPoint>
     public string? ContextNotice { get; init; }
 }
 public sealed record MeetingContext(IReadOnlyList<MeetingSegment> Segments, IReadOnlyList<MeetingReference> References);
-public sealed record MeetingStartOptions(string MicrophoneId, string OutputId, AsrService Service = AsrService.Asr2);
+public sealed record MeetingStartOptions(
+    string MicrophoneId,
+    string OutputId,
+    AsrService Service = AsrService.Asr2,
+    bool CompareBothServices = false);
 
 /// <summary>Device IO boundary. Pause completes only after both sources stop delivering audio.</summary>
 public interface IMeetingCapture : IAsyncDisposable

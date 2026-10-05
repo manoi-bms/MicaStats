@@ -698,12 +698,15 @@ namespace Kil0bitSystemMonitor.Models
         private string _meetingMicrophoneId = "";
         private string _meetingOutputId = "";
         private string _meetingAsrService = "ASR2";
+        private string _meetingAiResponseLanguage = "auto";
         private string _meetingAsr1BaseUrl = "";
         private string _meetingAsr2BaseUrl = "";
         private string _meetingTtsBaseUrl = "";
         public string MeetingMicrophoneId { get => _meetingMicrophoneId; set => Set(ref _meetingMicrophoneId, value ?? ""); }
         public string MeetingOutputId { get => _meetingOutputId; set => Set(ref _meetingOutputId, value ?? ""); }
-        public string MeetingAsrService { get => _meetingAsrService; set => Set(ref _meetingAsrService, value == "ASR1" ? "ASR1" : "ASR2"); }
+        public string MeetingAsrService { get => _meetingAsrService; set => Set(ref _meetingAsrService, value is "ASR1" or "Both" ? value : "ASR2"); }
+        /// <summary>Language for generated meeting analysis; auto follows the conversation.</summary>
+        public string MeetingAiResponseLanguage { get => _meetingAiResponseLanguage; set => Set(ref _meetingAiResponseLanguage, value is "th" or "en" ? value : "auto"); }
         /// <summary>ASR1 service base URL including its API prefix, such as <c>https://asr.example/v1</c>. Empty means unconfigured.</summary>
         public string MeetingAsr1BaseUrl { get => _meetingAsr1BaseUrl; set => Set(ref _meetingAsr1BaseUrl, (value ?? "").Trim()); }
         /// <summary>ASR2 service base URL including its API prefix, such as <c>https://asr.example/v1</c>. Empty means unconfigured.</summary>

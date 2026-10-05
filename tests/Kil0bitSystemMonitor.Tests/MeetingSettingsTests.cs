@@ -101,6 +101,15 @@ public class MeetingSettingsTests
     }
 
     [Fact]
+    public void Dual_mode_readiness_requires_both_addresses()
+    {
+        var config = new AppConfig { MeetingAsrService = "Both", MeetingAsr2BaseUrl = "https://asr2.example/v1" };
+        Assert.Contains("needs both endpoints", SettingsWindow.DescribeMeetingReadiness(config));
+        config.MeetingAsr1BaseUrl = "https://asr1.example/v1";
+        Assert.StartsWith("ASR2 + ASR1 comparison configured.", SettingsWindow.DescribeMeetingReadiness(config));
+    }
+
+    [Fact]
     public void Meeting_has_a_dedicated_navigation_page_with_generic_examples_and_no_private_host()
     {
         string xaml = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml"));

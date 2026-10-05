@@ -21,6 +21,12 @@ The text recognized from the microphone and output sources during a meeting sess
 **Meeting analysis**:
 A running summary of the conversation, its questions, and its relevant points, shown privately to the user.
 
+**ASR comparison**:
+Two recognizers interpreting the same audio. Matching readings appear once; different readings remain alternative interpretations of one transcript segment, not independent evidence that a fact is correct.
+
+**AI response language**:
+The language used for summaries and suggested answers. The user can follow the conversation language or select Thai or English; this does not change the original transcript.
+
 **Suggested answer**:
 A private draft response grounded in the meeting transcript and any reference notes the user selected. The user decides whether and how to share it.
 _Avoid_: Automatic reply

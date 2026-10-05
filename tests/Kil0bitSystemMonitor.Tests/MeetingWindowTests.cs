@@ -12,6 +12,82 @@ namespace Kil0bitSystemMonitor.Tests;
 
 public class MeetingWindowTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public Task Dual_mode_requires_both_endpoints_and_shows_one_segment_with_both_readings(bool missingAsr1) => UiThread.RunAsync(async () =>
+    {
+        var config = Configured();
+        config.MeetingAsrService = "Both";
+        if (missingAsr1) config.MeetingAsr1BaseUrl = "";
+        else config.MeetingAsr2BaseUrl = "";
+        var window = CreateWindow(config, out var io, out var session, out _);
+        io.Asr1Text = "Could we move the rollout to Friday?";
+        try
+        {
+            Assert.Equal(2, window.ServiceChoice.SelectedIndex);
+            Assert.False(window.StartButton.IsEnabled);
+            Assert.Contains("both transcription endpoints", window.ReadinessText.Text);
+            Assert.Equal(Visibility.Visible, window.DualAsrNotice.Visibility);
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Equal(0, io.Starts);
+
+            window.ServiceChoice.SelectedIndex = missingAsr1 ? 0 : 1;
+            Assert.True(window.StartButton.IsEnabled);
+            window.ServiceChoice.SelectedIndex = 2;
+            if (missingAsr1) config.MeetingAsr1BaseUrl = "https://asr1.example";
+            else config.MeetingAsr2BaseUrl = "https://asr2.example";
+            await WaitUntil(() => window.StartButton.IsEnabled);
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            io.Emit(MeetingSource.Output, TimeSpan.Zero);
+            await WaitUntil(() => window.TranscriptText.Text.Contains("ASR1 alternative:", StringComparison.Ordinal));
+
+            var segment = Assert.Single(session.Segments);
+            Assert.NotNull(segment.Comparison);
+            Assert.Equal("Both", config.MeetingAsrService);
+            Assert.Equal(new[] { AsrService.Asr2, AsrService.Asr1 }.Order(), io.AsrServices.Order());
+            Assert.Contains("ASR2: Could we move the rollout to Thursday?", window.TranscriptText.Text);
+            Assert.Contains("ASR1 alternative: Could we move the rollout to Friday?", window.TranscriptText.Text);
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
+    [Theory]
+    [InlineData("auto", "th")]
+    [InlineData("th", "en")]
+    [InlineData("en", "auto")]
+    public Task Response_language_is_restored_and_changing_it_invalidates_answers_and_late_analysis(string initial, string next) => UiThread.RunAsync(async () =>
+    {
+        var config = Configured();
+        config.MeetingAiResponseLanguage = initial;
+        var window = CreateWindow(config, out var io, out var session, out var intelligence);
+        io.Analysis = Answer("Old language answer");
+        try
+        {
+            Assert.Equal(initial, window.AiLanguageChoice.SelectedValue);
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            await intelligence.AskAsync("What should I say?");
+            await WaitUntil(() => window.UseForSpeechButton.IsEnabled);
+            window.UseForSpeechButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            Assert.Equal("Old language answer", window.SpeechText.Text);
+            io.PendingAnalysis = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task pending = intelligence.AskAsync("Pending answer");
+
+            window.AiLanguageChoice.SelectedValue = next;
+            Assert.Equal(next, config.MeetingAiResponseLanguage);
+            Assert.Null(intelligence.Analysis);
+            io.PendingAnalysis.SetResult(Answer("Obsolete language result"));
+            await pending;
+            await WaitUntil(() => window.AnswerText.Text == "" && window.SpeechText.Text == "");
+
+            Assert.Null(intelligence.Analysis);
+            Assert.Equal(MeetingState.Listening, session.State);
+            Assert.Equal(1, io.Starts);
+            Assert.Equal(0, io.Playbacks);
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
     [Fact]
     public Task Replacing_the_selected_answer_cancels_its_speech_and_clears_the_prepared_text() => UiThread.RunAsync(async () =>
     {
@@ -249,6 +325,44 @@ public class MeetingWindowTests
     };
 
     [Fact]
+    public Task Dual_transcript_and_language_selector_render_at_minimum_width() => UiThread.RunAsync(async () =>
+    {
+        string output = Path.Combine(FindRepoRoot(), "artifacts", "meeting-ui");
+        Directory.CreateDirectory(output);
+        var config = Configured();
+        config.MeetingAsrService = "Both";
+        config.MeetingAiResponseLanguage = "th";
+        config.AskTheme = "Dark";
+        var window = CreateWindow(config, out var io, out var session, out var intelligence);
+        io.Asr2Text = "กำหนดส่งงานวันพฤหัสบดี";
+        io.Asr1Text = "กำหนดส่งงานวันศุกร์";
+        try
+        {
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            io.Emit(MeetingSource.Output, TimeSpan.Zero);
+            await WaitUntil(() => window.TranscriptText.Text.Contains("ASR1 alternative:", StringComparison.Ordinal));
+            RenderWindow(window, 780, 600, Path.Combine(output, "meeting-dual-transcript-780x600.png"));
+            string source = Assert.Single(session.Segments).Id;
+            io.Analysis = new MeetingAnalysis("กำหนดส่งงานยังไม่ชัดเจน: ผลถอดเสียงสองบริการระบุวันต่างกัน", [],
+                [new MeetingQuestion("กำหนดส่งเมื่อไร?", "ควรยืนยันกำหนดส่งอีกครั้ง", "วันพฤหัสบดีหรือวันศุกร์", [source])]);
+            await intelligence.AskAsync("กำหนดส่งเมื่อไร?");
+            await WaitUntil(() => window.AnswerText.Text.Contains("ยืนยัน", StringComparison.Ordinal));
+            window.MeetingTabs.SelectedIndex = 1;
+            RenderWindow(window, 780, 600, Path.Combine(output, "meeting-ai-language-780x600.png"));
+            Assert.True(window.AiLanguageChoice.IsVisible);
+            Assert.Equal("th", window.AiLanguageChoice.SelectedValue);
+            Assert.True(window.SummaryText.ActualHeight >= 40);
+            Assert.True(window.AnswerText.ActualHeight >= 40);
+            Assert.True(window.AnalysisScroll.ScrollableHeight > 0);
+            window.AnalysisScroll.ScrollToBottom();
+            RenderWindow(window, 780, 600, Path.Combine(output, "meeting-ai-language-scrolled-780x600.png"));
+            window.AnalysisScroll.ScrollToTop();
+            RenderWindow(window, 1180, 820, Path.Combine(output, "meeting-ai-language-1180x820.png"));
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
+    [Fact]
     public Task Meeting_dashboard_renders_normal_and_minimum_hardware_free_fixtures() => UiThread.RunAsync(async () =>
     {
         string output = Path.Combine(FindRepoRoot(), "artifacts", "meeting-ui");
@@ -333,6 +447,10 @@ public class MeetingWindowTests
         public int Starts, Requests, Playbacks;
         public TaskCompletionSource<byte[]>? PendingSpeech;
         public TaskCompletionSource<IReadOnlyList<MeetingVoice>>? PendingVoices;
+        public TaskCompletionSource<MeetingAnalysis>? PendingAnalysis;
+        public string? Asr1Text;
+        public string? Asr2Text;
+        public System.Collections.Concurrent.ConcurrentQueue<AsrService> AsrServices = new();
         public MeetingAnalysis? Analysis;
         private Action<MeetingAudioChunk>? _onChunk;
         public bool Disposed;
@@ -351,11 +469,14 @@ public class MeetingWindowTests
         public Task<string> TranscribeAsync(MeetingAudioChunk chunk, AsrService service, CancellationToken cancellationToken)
         {
             Requests++;
+            AsrServices.Enqueue(service);
+            if (service == AsrService.Asr1 && Asr1Text != null) return Task.FromResult(Asr1Text);
+            if (service == AsrService.Asr2 && Asr2Text != null) return Task.FromResult(Asr2Text);
             return Task.FromResult(chunk.Source == MeetingSource.Output
                 ? "Could we move the rollout to Thursday?"
                 : "Yes. I will confirm the readiness checks today.");
         }
-        public Task<MeetingAnalysis> AnalyzeAsync(MeetingContext context, string? question, CancellationToken cancellationToken) { Requests++; return Task.FromResult(Analysis ?? throw new InvalidOperationException("No implicit requests expected")); }
+        public Task<MeetingAnalysis> AnalyzeAsync(MeetingContext context, string? question, CancellationToken cancellationToken) { Requests++; return PendingAnalysis?.Task ?? Task.FromResult(Analysis ?? throw new InvalidOperationException("No implicit requests expected")); }
         public void Emit(MeetingSource source, TimeSpan start) => _onChunk?.Invoke(new MeetingAudioChunk(source, start, TimeSpan.FromSeconds(4), new byte[] { 1 }));
     }
 }

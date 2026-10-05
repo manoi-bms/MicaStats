@@ -11,6 +11,12 @@ public partial class MeetingWindow
 {
     private MeetingAnalysis? _displayedAnalysis;
 
+    private void AiLanguage_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (AiLanguageChoice?.SelectedValue is string language)
+            _config.MeetingAiResponseLanguage = language;
+    }
+
     private void RefreshAnalysis()
     {
         AnalysisStatus.Text = _intelligence.Status;

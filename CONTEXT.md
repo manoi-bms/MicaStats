@@ -35,7 +35,10 @@ _Avoid_: Automatic reply
 MicaPad notes explicitly selected by the user to inform a meeting session's analysis and suggested answers.
 
 **Saved transcript**:
-A transcript the user explicitly saves from a meeting session. Saving a transcript does not save its source audio.
+A local transcript retained automatically for recovery or exported explicitly as a Markdown report. Automatic recovery contains transcript evidence only; neither form saves source audio.
+
+**Transcript recovery**:
+The latest nonempty saved transcript restored in a stopped state when Meeting Assistant opens. Recovery does not start capture, network requests, or AI work.
 
 **Speech output**:
 Audio synthesized from text, such as a suggested answer, for the user to hear.

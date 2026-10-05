@@ -13,7 +13,7 @@ namespace Kil0bitSystemMonitor.Services.Conference;
 /// Device and provider implementations are supplied at the boundary so this type never
 /// opens hardware or performs HTTP work by itself.
 /// </summary>
-public sealed class MeetingSession : IAsyncDisposable
+public sealed partial class MeetingSession : IAsyncDisposable
 {
     private const int QueueCapacity = 8;
     private const int MaxTranscriptCharacters = 2_000_000;
@@ -40,16 +40,19 @@ public sealed class MeetingSession : IAsyncDisposable
     private CancellationTokenSource? _asr2Cancellation;
     private CancellationTokenSource? _asr1Cancellation;
     private long _generation;
+    private long _stopRequests;
     private int _transcriptCharacters;
     private bool _disposed;
     private MeetingState _state = MeetingState.Stopped;
     private string _status = "Ready.";
 
-    public MeetingSession(IMeetingCapture capture, IMeetingAsr asr, TimeProvider? clock = null)
+    public MeetingSession(IMeetingCapture capture, IMeetingAsr asr, TimeProvider? clock = null,
+        MeetingTranscriptStore? transcriptStore = null)
     {
         _capture = capture ?? throw new ArgumentNullException(nameof(capture));
         _asr = asr ?? throw new ArgumentNullException(nameof(asr));
         _clock = clock ?? TimeProvider.System;
+        InitializePersistence(transcriptStore);
     }
 
     public MeetingState State
@@ -97,10 +100,17 @@ public sealed class MeetingSession : IAsyncDisposable
         try
         {
             ThrowIfDisposed();
+            long stopRequests;
+            lock (_gate) stopRequests = _stopRequests;
+            if (!await FlushTranscriptAsync().ConfigureAwait(false))
+                throw new MeetingException("The previous transcript is not saved yet. Retry or save Markdown before starting another meeting.");
+            cancellationToken.ThrowIfCancellationRequested();
             long generation;
             CancellationToken runToken;
             lock (_gate)
             {
+                if (stopRequests != _stopRequests)
+                    throw new MeetingException("Listening was cancelled.");
                 if (IsActiveState(_state))
                     throw new MeetingException("A meeting session is already active.");
 
@@ -119,6 +129,9 @@ public sealed class MeetingSession : IAsyncDisposable
                 _outputQueue = CreateQueue();
                 _segments.Clear();
                 _gaps.Clear();
+                _transcriptId = "meeting-" + Guid.NewGuid().ToString("N");
+                _transcriptStartedAt = _clock.GetUtcNow();
+                ++_transcriptRevision;
                 _segmentIdCounts.Clear();
                 _transcriptCharacters = 0;
                 _startedTimestamp = _clock.GetTimestamp();
@@ -276,6 +289,7 @@ public sealed class MeetingSession : IAsyncDisposable
     {
         lock (_gate)
         {
+            ++_stopRequests;
             if (IsActiveState(_state))
             {
                 ++_generation;
@@ -310,6 +324,11 @@ public sealed class MeetingSession : IAsyncDisposable
             gaps = _gaps.ToArray();
         }
 
+        return ExportMarkdown(segments, gaps);
+    }
+
+    internal static string ExportMarkdown(IReadOnlyList<MeetingSegment> segments, IReadOnlyList<MeetingGap> gaps)
+    {
         var rows = new List<(TimeSpan Start, int Kind, MeetingSegment? Segment, MeetingGap? Gap)>();
         rows.AddRange(segments.Select(segment => (segment.Start, 0, (MeetingSegment?)segment, (MeetingGap?)null)));
         rows.AddRange(gaps.Select(gap => (gap.Start, 1, (MeetingSegment?)null, (MeetingGap?)gap)));
@@ -366,6 +385,8 @@ public sealed class MeetingSession : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopAsync().ConfigureAwait(false);
+        if (!await FlushTranscriptAsync().ConfigureAwait(false))
+            throw new MeetingException("Transcript save did not finish. Keep the meeting open and retry, or save Markdown.");
         lock (_gate)
         {
             if (_disposed)
@@ -378,7 +399,8 @@ public sealed class MeetingSession : IAsyncDisposable
             _asr1Cancellation?.Dispose();
             _asr1Cancellation = null;
         }
-        await _capture.DisposeAsync().ConfigureAwait(false);
+        try { await _capture.DisposeAsync().ConfigureAwait(false); }
+        finally { _transcriptWriter?.Dispose(); }
     }
 
     private static Channel<MeetingAudioChunk> CreateQueue() =>
@@ -615,6 +637,8 @@ public sealed class MeetingSession : IAsyncDisposable
                     Comparison = comparison
                 });
                 _segments.Sort(CompareSegments);
+                ++_transcriptRevision;
+                QueueTranscriptSave();
             }
         }
 
@@ -707,6 +731,8 @@ public sealed class MeetingSession : IAsyncDisposable
         if (_gaps.Count == 0 || _gaps[^1].End is not null)
             return;
         _gaps[^1] = _gaps[^1] with { End = ElapsedLocked() };
+        ++_transcriptRevision;
+        QueueTranscriptSave();
     }
 
     private void OpenGap(long generation, TimeSpan firstSourceStopped)
@@ -718,6 +744,8 @@ public sealed class MeetingSession : IAsyncDisposable
                 (_gaps.Count > 0 && _gaps[^1].End is null))
                 return;
             _gaps.Add(new MeetingGap(firstSourceStopped < TimeSpan.Zero ? TimeSpan.Zero : firstSourceStopped, null));
+            ++_transcriptRevision;
+            QueueTranscriptSave();
             changed = true;
         }
         if (changed) RaiseChanged();
@@ -775,6 +803,12 @@ public sealed class MeetingSession : IAsyncDisposable
     }
 
     private void RaiseChanged()
+    {
+        QueueTranscriptSave();
+        NotifyChanged();
+    }
+
+    private void NotifyChanged()
     {
         try { Changed?.Invoke(); }
         catch { }

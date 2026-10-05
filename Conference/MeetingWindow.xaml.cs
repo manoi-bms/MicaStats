@@ -191,7 +191,7 @@ public partial class MeetingWindow : Window
         if (MicrophoneChoice.SelectedItem is not MeetingDevice microphone || OutputChoice.SelectedItem is not MeetingDevice output)
         { StatusText.Text = "Choose an available microphone and output device."; return; }
         if (_session.Segments.Count > 0 && System.Windows.MessageBox.Show(this,
-            "Starting a new session clears the current transcript. Save it first if you want to keep it. Start a new session?",
+            "Start a new meeting? The current transcript stays in Saved transcripts. Use Save Markdown first if you also want to keep the current AI summary and answers.",
             "New meeting", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         _config.MeetingMicrophoneId = microphone.Id;
         _config.MeetingOutputId = output.Id;
@@ -225,6 +225,9 @@ public partial class MeetingWindow : Window
     {
         if (_closed) return;
         StatusText.Text = _session.Status;
+        AutosaveText.Text = _session.AutosaveStatus;
+        AutosaveText.ToolTip = _session.SavedTranscriptsFolder;
+        SavedTranscriptsButton.IsEnabled = _session.SavedTranscriptsFolder != null;
         CaptureChoices.IsEnabled = !_session.IsActive && !_busy;
         StartButton.IsEnabled = !_session.IsActive && !_busy && !_speech.IsBusy && IsSelectedAsrConfigured();
         StopButton.IsEnabled = _session.IsActive || _busy;
@@ -263,12 +266,46 @@ public partial class MeetingWindow : Window
 
     public Task StopForExitAsync() => Task.WhenAll(_session.StopAsync(), _speech.StopAsync());
 
+    private void SavedTranscripts_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session.SavedTranscriptsFolder is not { } folder) return;
+        try
+        {
+            Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
+        }
+        catch { StatusText.Text = "Could not open Saved transcripts. Check folder access."; }
+    }
+
+    internal async Task<bool> SaveBeforeExitAsync()
+    {
+        try { await StopForExitAsync().WaitAsync(TimeSpan.FromSeconds(6)); }
+        catch { /* Keep received text even if an audio driver cannot finish stopping. */ }
+        if (await _session.FlushTranscriptAsync()) return true;
+        RefreshState();
+        StatusText.Text = "Transcript save did not finish. Keep this window open to retry, or use Save Markdown.";
+        Activate();
+        System.Windows.MessageBox.Show(this,
+            "Your latest transcript could not be saved. The meeting is kept open so you can retry or use Save Markdown to choose another location.",
+            "Transcript not saved", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return false;
+    }
+
+    internal Task<bool> FlushTranscriptAsync() => _session.FlushTranscriptAsync();
+
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
         if (_closed) return;
         e.Cancel = true;
         if (_closing) return;
         _closing = true;
+        IsEnabled = false;
+        if (!await SaveBeforeExitAsync())
+        {
+            _closing = false;
+            IsEnabled = true;
+            return;
+        }
         _audioTimer.Stop();
         _audioTimer.Tick -= AudioTimerTick;
         IsEnabled = false;

@@ -17,7 +17,8 @@ public partial class App
             var capture = new WasapiMeetingCapture();
             var asr = new BmsAsrClient(service => service == AsrService.Asr1
                 ? config.MeetingAsr1BaseUrl : config.MeetingAsr2BaseUrl);
-            var session = new MeetingSession(capture, asr);
+            var session = new MeetingSession(capture, asr,
+                transcriptStore: new MeetingTranscriptStore(MeetingTranscriptStore.DefaultRoot));
             var analyzer = new MeetingAnalyzer(() => AiProviderFactory.Create(config, AiSecrets), AiUsage,
                 () => config.AiDailyLimit, CurrentBudget, () => config.AiAssistantEnabled,
                 () => config.MeetingAiResponseLanguage);
@@ -51,6 +52,8 @@ public partial class App
         if (window == null) return;
         try { await window.StopForExitAsync().WaitAsync(TimeSpan.FromSeconds(6)).ConfigureAwait(false); }
         catch { Services.DiagnosticsLog.Warn("meeting", "Audio shutdown did not finish before application exit."); }
+        if (!await window.FlushTranscriptAsync().ConfigureAwait(false))
+            Services.DiagnosticsLog.Warn("meeting", "Transcript save did not finish before application exit.");
     }
 
     // OnExit is synchronous. The normal Quit path has already awaited this bounded coordinator.

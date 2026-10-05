@@ -139,7 +139,8 @@
                 <TextBlock FontSize="11" Margin="0,0,16,0"><Run Text="Segments  "/><Run x:Name="SegmentCountText" Text="0" FontWeight="SemiBold"/></TextBlock>
                 <TextBlock FontSize="11" Margin="0,0,16,0"><Run Text="Latest  "/><Run x:Name="MeetingTimeText" Text="—" FontWeight="SemiBold"/></TextBlock>
                 <TextBlock FontSize="11" Margin="0,0,16,0"><Run Text="References  "/><Run x:Name="ReferenceCountText" Text="0" FontWeight="SemiBold"/></TextBlock>
-                <TextBlock Text="Audio stays in memory · Save to keep notes" FontSize="11" Foreground="{DynamicResource Ask.Muted}"/>
+                <TextBlock x:Name="AutosaveText" Text="💾 Transcript autosave on · audio is not saved" FontSize="11" Foreground="{DynamicResource Ask.Muted}" TextWrapping="Wrap" Margin="0,0,12,0" AutomationProperties.Name="Transcript save status"/>
+                <Button x:Name="SavedTranscriptsButton" Content="📂 Saved transcripts" Click="SavedTranscripts_Click" FontSize="11" Padding="6,2" AutomationProperties.Name="Open saved transcripts folder"/>
             </WrapPanel>
         </Border>
     </Grid>

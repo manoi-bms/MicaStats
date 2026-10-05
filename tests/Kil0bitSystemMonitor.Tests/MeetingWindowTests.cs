@@ -13,6 +13,46 @@ namespace Kil0bitSystemMonitor.Tests;
 public class MeetingWindowTests
 {
     [Fact]
+    public Task Closing_and_reopening_restores_autosaved_transcript_without_starting_any_service() => UiThread.RunAsync(async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "meeting-window-save-" + Guid.NewGuid().ToString("N"));
+        var store = new MeetingTranscriptStore(root);
+        MeetingWindow? window = null;
+        try
+        {
+            window = CreateWindow(Configured(), out var io, out var session, out _, store);
+            window.StartButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            await WaitUntil(() => session.IsActive && io.Starts == 1);
+            io.Asr2Text = "บันทึกข้อความการประชุมอัตโนมัติ";
+            io.Emit(MeetingSource.Output, TimeSpan.FromSeconds(4));
+            await WaitUntil(() => session.Segments.Count == 1);
+            window.Close();
+            await WaitUntil(() => io.Disposed);
+            window = CreateWindow(Configured(), out var restoredIo, out var restored, out _, store);
+            Assert.Equal("บันทึกข้อความการประชุมอัตโนมัติ", Assert.Single(restored.Segments).Text);
+            Assert.Contains("บันทึกข้อความการประชุมอัตโนมัติ", window.TranscriptText.Text);
+            Assert.Contains("saved locally", window.AutosaveText.Text);
+            Assert.True(window.SavedTranscriptsButton.IsEnabled);
+            Assert.Equal(root, window.AutosaveText.ToolTip);
+            Assert.Contains("Restored", window.StatusText.Text);
+            Assert.False(restored.IsActive);
+            Assert.Equal(0, restoredIo.Starts);
+            Assert.Equal(0, restoredIo.Requests);
+            var images = Path.Combine(FindRepoRoot(), "artifacts", "meeting-ui");
+            Directory.CreateDirectory(images);
+            RenderWindow(window, 780, 600, Path.Combine(images, "meeting-autosave-restored-780x600.png"));
+            window.Close();
+            await WaitUntil(() => restoredIo.Disposed);
+            window = null;
+        }
+        finally
+        {
+            window?.Close();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    });
+
+    [Fact]
     public Task Question_buttons_validate_show_progress_copy_context_and_prepare_speech() => UiThread.RunAsync(async () =>
     {
         var window = CreateWindow(Configured(), out var io, out _, out _);
@@ -638,10 +678,10 @@ public class MeetingWindowTests
     });
 
     private static MeetingWindow CreateWindow(AppConfig config, out Boundary io, out MeetingSession session,
-        out MeetingIntelligence intelligence)
+        out MeetingIntelligence intelligence, MeetingTranscriptStore? store = null)
     {
         io = new Boundary();
-        session = new MeetingSession(io, io);
+        session = new MeetingSession(io, io, transcriptStore: store);
         intelligence = new MeetingIntelligence(session, io);
         var references = new MeetingReferenceSelection(io, intelligence);
         var speech = new MeetingSpeech(session, io, io);

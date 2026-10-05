@@ -936,12 +936,13 @@ namespace Kil0bitSystemMonitor
         /// <summary>Records whether MicaPad is showing before shutdown closes it, then shuts the application down.</summary>
         public static void Quit()
         {
-            // Exit begins here: a note tool call must not start MicaPad's workspace behind the shutdown.
-            BeginPadExit();
             _ = CompleteQuitAsync();
 
             static async System.Threading.Tasks.Task CompleteQuitAsync()
             {
+                if (s_meetingWindow is { } meeting && !await meeting.SaveBeforeExitAsync()) return;
+                // A failed meeting save keeps the app usable; only commit the exit after it succeeds.
+                BeginPadExit();
                 try { await StopMeetingAsync(); }
                 catch { /* An audio teardown failure must not prevent application exit. */ }
                 // Record whether MicaPad is showing before shutdown closes it, so it reopens at next login.

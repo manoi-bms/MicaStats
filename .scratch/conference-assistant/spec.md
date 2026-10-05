@@ -4,6 +4,8 @@ Status: approved for implementation on 2026-10-05. The user authorized continuat
 
 2026-10-05 correction: all voice service addresses are private user configuration. Ship empty ASR1, ASR2 and TTS base URL settings and require configuration under Settings → Meeting before use. ASR2 is a protocol preference only; it never supplies a host. Previously supplied development addresses must not occur in source, tests, public documentation or reachable repository history. Changing service settings stops active voice work before applying them. The user also requested a modern, informative Meeting Assistant redesign, governed by `DESIGN.md`; tickets 05 and 06 track these changes.
 
+2026-10-05 settings follow-up: provide Test connection on each service card, operating only on the current draft URL after an explicit click. ASR tests upload one second of generated silence; TTS generates a fixed test phrase, validates WAV and discards it without playback. Tests use no real audio/meeting content, never save or change the meeting configuration, have a 20-second deadline, support cancellation and reject stale completions after edits/close. Settings must explain that a single ASR profile is sufficient and TTS is optional. Ticket 07 tracks implementation and verification.
+
 ## Problem Statement
 
 A conference attendee wants MicaStats to follow both their microphone and the audio they hear, transcribe the meeting automatically, keep useful context ready for questions, and synthesize a chosen response as speech. MicaStats currently provides AI chat and MicaPad notes, but no audio transcription, speech synthesis or meeting-session experience.
@@ -125,3 +127,7 @@ Manual validation remains for the actual microphone and selected output devices,
 Tickets 05–06 implement empty user-configured service settings and the modern Meeting Assistant dashboard. The independent privacy review is approved. Final repository verification passed 5,953 tests with zero failures/skips in 2 m 56 s; staged Release passed with zero warnings/errors. Four synthetic screenshots cover unconfigured dark, compact listening light, summary/answers and prepared speech. All 839 publication candidates were scanned without a private endpoint match. The unpublished feature commit is replaced so endpoint-bearing content is not retained in publishable branch history; no remote push is performed.
 
 See [implementation-review.md](implementation-review.md) for test timing findings, focused results and remaining manual hardware validation. All follow-up tests use fake devices/providers, with no live service requests or audio capture/playback.
+
+## Connection testing verification — 2026-10-05
+
+Ticket 07 is complete and independently approved. Full suite: 5,972 passed with zero failures/skips. Final focused checks after a status-copy correction and additional regression: 28/28 passed. Staged Release: zero warnings/errors. Fake HTTP tests verify ASR profiles, generated silence, TTS WAV validation, invalid URLs, safe errors, cancellation and timeout. WPF control tests verify explicit clicks, draft addresses, cancellation, loading saved values, stale results and close/disposal. Tests never contact live services or use audio hardware. Settings and the English/Thai guide now explicitly explain that only one ASR profile is required and TTS is optional.

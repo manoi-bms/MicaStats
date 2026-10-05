@@ -22,6 +22,8 @@ Primary user: a conference attendee monitoring live speech while multitasking. T
 
 Meeting Assistant has a session header, setup/readiness feedback, device and session controls, useful session facts, then Transcript / Summary & answers / Reference notes / Speech workspaces. Keep Stop reachable and distinct from Speak. The header links to dedicated Settings → Meeting. Settings groups the two ASR profiles and TTS separately, identifies compatible protocols/models, uses empty endpoint inputs and an explicit Save action.
 
+ASR profiles are alternatives: one compatible endpoint is sufficient for transcription, and TTS is optional for speech output. Report readiness by these capabilities, without implying all three settings are required. Each service card provides Test connection / Cancel test plus a wrapping inline result; tests act on draft inputs independently of Save and describe the synthetic request before dispatch.
+
 ## Design principles
 
 State precedes detail. Data density serves reading; spacing and alignment group related controls. Display real state and counts only. Use clear empty states and explain disabled actions. Configuration changes stop voice work before applying new destinations. Service URLs belong in user settings, never branded defaults or repository examples.
@@ -45,6 +47,8 @@ Support the declared minimum window size and typical 1120–1280 px desktop widt
 ## Interaction states
 
 Unconfigured: visible setup callout; relevant Start, Speak or voice refresh actions are unavailable and guards prevent programmatic activation. Configured/stopped: ready for an explicit action, with no service contact. Listening/paused/faulted: show actual state and precise available recovery. Synthesis and playback have separate informative statuses; TTS playback explains the listening gap. Empty, loading, unavailable references, missing evidence, quota exhaustion and provider errors retain readable context. Saving service settings first stops active voice work and resets service-specific voice choices.
+
+Settings tests contact a service only after an explicit Test connection click. Show protocol progress, cancellation, safe errors and elapsed time. A changed address clears its previous result and cancels pending work; a late completion must not replace the new state. Closing Settings cancels tests. A successful test confirms a compatible response to synthetic input, not recognition quality, saved configuration or device operation.
 
 ## Content voice
 

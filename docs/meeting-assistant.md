@@ -4,6 +4,10 @@ Open **Meeting Assistant** from the MicaStats menu. Nothing is recorded until yo
 
 First open **Configure services** or **Settings → Meeting**. Enter your compatible ASR and/or TTS API base URLs, including their API path, and save. All three addresses start empty. For example, `https://asr.example/v1` is a reserved-domain illustration, not a working service. Configure only the services you intend to use; transcription and speech have separate readiness checks. Saving new service addresses stops active voice work before applying them.
 
+**Only one ASR endpoint is needed.** ASR2 (Qwen) and ASR1 (Typhoon) are alternative request profiles, not a primary/backup pair. Configure the matching profile and select it in Meeting Assistant; audio goes only to the selected service, with no automatic fallback. TTS is separate and optional for the Speak feature.
+
+Each service has a **Test connection** button that checks the address currently entered, before you save. ASR sends one second of generated silence and validates the transcription response; TTS sends the fixed phrase “Connection test.” and validates the returned WAV without playing it. No microphone audio, meeting content or notes are used. Inline results include elapsed time; **Cancel test**, editing the address or closing Settings cancels the request. Tests time out after 20 seconds, never save settings, and do not prove recognition quality or hardware audio operation.
+
 | Setting | Compatible service | Routes appended to the base URL |
 | --- | --- | --- |
 | ASR2 | Qwen ASR, model `Qwen/Qwen3-ASR-1.7B` | `audio/transcriptions` |
@@ -42,6 +46,8 @@ Automated tests use scripted audio and fake providers. Synthetic HTTP tests veri
 ## วิธีใช้ภาษาไทย
 
 ก่อนใช้งาน เปิด **Configure services** หรือ **Settings → Meeting** แล้วกรอก API base URL ของบริการ ASR/TTS ที่ต้องการใช้ รวมส่วนพาธ API เช่น `/v1` จากนั้นบันทึก ค่าเริ่มต้นของทุกบริการเป็นช่องว่าง ไม่มีที่อยู่บริการส่วนตัวฝังในโปรแกรม การเปลี่ยนที่อยู่บริการจะหยุดงานเสียงที่กำลังทำงานก่อนใช้ค่าใหม่
+
+ตั้งค่า ASR เพียงหนึ่งบริการก็เพียงพอ: ASR1 และ ASR2 เป็นตัวเลือกแทนกัน ไม่ใช่บริการหลักและสำรองอัตโนมัติ ส่วน TTS จำเป็นเฉพาะเมื่อใช้ Speak ปุ่ม **Test connection** ทดสอบ URL ที่กรอกโดยไม่บันทึกค่า: ASR ใช้เสียงเงียบที่โปรแกรมสร้างขึ้น และ TTS ใช้ข้อความทดสอบคงที่โดยไม่เล่นเสียง ไม่มีการใช้ไมโครโฟนหรือเนื้อหาการประชุม กด **Cancel test** เพื่อยกเลิกได้ และการทดสอบจะหมดเวลาหลัง 20 วินาที
 
 เปิด **Meeting Assistant** จากเมนู MicaStats แล้วเลือกไมโครโฟนและอุปกรณ์เสียงขาออกที่ใช้ฟังการประชุม โปรแกรมจะเริ่มรับเสียงเมื่อกด **Start listening** เท่านั้น เสียงขาออกครอบคลุมทุกแอปที่ใช้อุปกรณ์นั้น โดยค่าเริ่มต้นใช้ ASR2 และเลือก ASR1 ได้ก่อนเริ่ม ข้อความจะทยอยปรากฏหลังส่งเสียงแต่ละช่วงประมาณสี่วินาทีและรอบริการประมวลผล
 

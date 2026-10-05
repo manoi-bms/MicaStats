@@ -1299,8 +1299,10 @@
                     <!-- Meeting services -->
                     <StackPanel x:Name="MeetingSection" Visibility="Collapsed">
                         <TextBlock Text="Meeting services" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="Connect the Meeting Assistant to speech recognition and speech output services you operate or trust. MicaStats does not include a public service address and makes no connection from this page."
+                        <TextBlock Text="Configure one ASR service for transcription. ASR1 and ASR2 are alternatives; only the service selected in Meeting Assistant receives audio. Add TTS only if you want speech output."
                                    Opacity="0.68" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <TextBlock Text="Test connection checks the address currently entered without saving it. ASR sends one second of generated silence; TTS sends a fixed test phrase and checks the audio without playing it. Tests run only when clicked and stop after 20 seconds."
+                                   Opacity="0.68" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                                 BorderBrush="{DynamicResource SystemControlElevationBorderBrush}"
@@ -1315,10 +1317,15 @@
                                 </Border>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="ASR2 · Qwen speech recognition" FontWeight="SemiBold" FontSize="16"/>
-                                    <TextBlock Text="Preferred recognizer · Multipart audio · model Qwen/Qwen3-ASR-1.7B" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="Qwen profile · Configure this or ASR1 · model Qwen/Qwen3-ASR-1.7B" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
                                     <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
                                     <TextBox x:Name="MeetingAsr2BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://asr.example/v1"/>
                                     <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
+                                    <Grid Margin="0,12,0,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Button x:Name="TestMeetingAsr2Button" Content="Test connection" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test ASR2 connection"/>
+                                        <TextBlock x:Name="MeetingAsr2TestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="ASR2 connection test result"/>
+                                    </Grid>
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -1336,10 +1343,15 @@
                                 </Border>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="ASR1 · Typhoon speech recognition" FontWeight="SemiBold" FontSize="16"/>
-                                    <TextBlock Text="Alternative recognizer · Multipart audio · model typhoon-asr-realtime" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="Optional alternative to ASR2 · model typhoon-asr-realtime" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
                                     <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
                                     <TextBox x:Name="MeetingAsr1BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://asr.example/v1"/>
                                     <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
+                                    <Grid Margin="0,12,0,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Button x:Name="TestMeetingAsr1Button" Content="Test connection" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test ASR1 connection"/>
+                                        <TextBlock x:Name="MeetingAsr1TestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="ASR1 connection test result"/>
+                                    </Grid>
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -1357,10 +1369,15 @@
                                 </Border>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="VoxCPM speech output" FontWeight="SemiBold" FontSize="16"/>
-                                    <TextBlock Text="Text-to-speech · JSON request and WAV response · model voxcpm-thai" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="Optional · Enable Speak with model voxcpm-thai" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
                                     <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
                                     <TextBox x:Name="MeetingTtsBaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://tts.example/v1"/>
                                     <TextBlock Text="Example: https://tts.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
+                                    <Grid Margin="0,12,0,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Button x:Name="TestMeetingTtsButton" Content="Test connection" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test TTS connection"/>
+                                        <TextBlock x:Name="MeetingTtsTestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="TTS connection test result"/>
+                                    </Grid>
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -1379,10 +1396,11 @@
                             </Grid>
                         </Border>
 
-                        <StackPanel Orientation="Horizontal">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                             <Button x:Name="SaveMeetingServicesButton" Content="Save service settings" Click="OnSaveMeetingServices" Style="{StaticResource AccentButtonStyle}" Padding="18,8" Margin="0,0,12,0"/>
-                            <TextBlock x:Name="MeetingServicesStatus" Text="Not configured" VerticalAlignment="Center" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"/>
-                        </StackPanel>
+                            <TextBlock x:Name="MeetingServicesStatus" Grid.Column="1" Text="Not configured" VerticalAlignment="Center" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"/>
+                        </Grid>
                     </StackPanel>
 
                     <!-- AI -->

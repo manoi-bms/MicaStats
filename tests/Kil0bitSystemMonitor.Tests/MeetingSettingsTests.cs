@@ -35,7 +35,7 @@ public class MeetingSettingsTests
         Assert.Equal("https://asr-two.example/v1/", config.MeetingAsr2BaseUrl);
         Assert.Equal("https://asr-one.example/v1/", config.MeetingAsr1BaseUrl);
         Assert.Equal("https://speech.example/v1/", config.MeetingTtsBaseUrl);
-        Assert.Equal("Saved. All meeting services are configured.", status);
+        Assert.Equal("Saved. Transcription configured (ASR2, ASR1). Speech output configured.", status);
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public class MeetingSettingsTests
         Assert.Equal(1, applied);
         Assert.Equal(1, saved);
         Assert.Equal("", config.MeetingAsr2BaseUrl);
-        Assert.Equal("Saved. No meeting services configured.", status);
+        Assert.Equal("Saved. Configure one ASR service for transcription. Speech output not configured (optional).", status);
     }
 
     [Fact]
@@ -89,7 +89,15 @@ public class MeetingSettingsTests
             MeetingTtsBaseUrl = "",
         };
 
-        Assert.Equal("1 of 3 meeting services configured.", SettingsWindow.DescribeMeetingReadiness(config));
+        Assert.Equal("Transcription configured (ASR1). Speech output not configured (optional).", SettingsWindow.DescribeMeetingReadiness(config));
+    }
+
+    [Fact]
+    public void One_asr_and_optional_speech_do_not_require_an_alternative_endpoint()
+    {
+        var config = new AppConfig { MeetingAsr2BaseUrl = "https://asr.example/v1", MeetingTtsBaseUrl = "https://tts.example/v1" };
+        Assert.Equal("Transcription configured (ASR2). Speech output configured.", SettingsWindow.DescribeMeetingReadiness(config));
+        Assert.Empty(config.MeetingAsr1BaseUrl);
     }
 
     [Fact]

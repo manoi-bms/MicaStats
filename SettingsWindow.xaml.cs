@@ -42,6 +42,7 @@ namespace Kil0bitSystemMonitor
             try 
             {
                 this.InitializeComponent();
+                InitializeMeetingServiceTests();
                 
                 // Set custom icon
                 string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "icon.ico");
@@ -618,6 +619,7 @@ namespace Kil0bitSystemMonitor
 
         protected override void OnClosed(EventArgs e)
         {
+            foreach (var test in _meetingServiceTests) test.Dispose();
             if (_padVaultSubscribed)
             {
                 _padVaultSubscribed = false;

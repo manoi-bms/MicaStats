@@ -7,6 +7,18 @@ namespace Kil0bitSystemMonitor
 {
     public partial class SettingsWindow
     {
+        private MeetingServiceTestAction[] _meetingServiceTests = Array.Empty<MeetingServiceTestAction>();
+
+        private void InitializeMeetingServiceTests()
+        {
+            _meetingServiceTests = new[]
+            {
+                new MeetingServiceTestAction(MeetingServiceKind.Asr2, MeetingAsr2BaseUrlBox, TestMeetingAsr2Button, MeetingAsr2TestStatus),
+                new MeetingServiceTestAction(MeetingServiceKind.Asr1, MeetingAsr1BaseUrlBox, TestMeetingAsr1Button, MeetingAsr1TestStatus),
+                new MeetingServiceTestAction(MeetingServiceKind.Tts, MeetingTtsBaseUrlBox, TestMeetingTtsButton, MeetingTtsTestStatus),
+            };
+        }
+
         private void LoadMeetingSettings()
         {
             AppConfig? config = _config?.Config;
@@ -20,6 +32,7 @@ namespace Kil0bitSystemMonitor
 
         private async void OnSaveMeetingServices(object sender, System.Windows.RoutedEventArgs e)
         {
+            foreach (var test in _meetingServiceTests) test.Cancel();
             SaveMeetingServicesButton.IsEnabled = false;
             MeetingServicesStatus.Text = "Saving…";
             try
@@ -87,17 +100,13 @@ namespace Kil0bitSystemMonitor
 
         internal static string DescribeMeetingReadiness(AppConfig config, bool saved = false)
         {
-            int configured = 0;
-            if (MeetingServiceEndpoints.TryNormalizeBaseUrl(config.MeetingAsr2BaseUrl, out _)) configured++;
-            if (MeetingServiceEndpoints.TryNormalizeBaseUrl(config.MeetingAsr1BaseUrl, out _)) configured++;
-            if (MeetingServiceEndpoints.TryNormalizeBaseUrl(config.MeetingTtsBaseUrl, out _)) configured++;
-
-            string state = configured switch
-            {
-                0 => "No meeting services configured.",
-                3 => "All meeting services are configured.",
-                _ => $"{configured} of 3 meeting services configured.",
-            };
+            bool asr2 = MeetingServiceEndpoints.TryNormalizeBaseUrl(config.MeetingAsr2BaseUrl, out _);
+            bool asr1 = MeetingServiceEndpoints.TryNormalizeBaseUrl(config.MeetingAsr1BaseUrl, out _);
+            bool tts = MeetingServiceEndpoints.TryNormalizeBaseUrl(config.MeetingTtsBaseUrl, out _);
+            string transcription = asr2 || asr1
+                ? $"Transcription configured ({(asr2 && asr1 ? "ASR2, ASR1" : asr2 ? "ASR2" : "ASR1")})."
+                : "Configure one ASR service for transcription.";
+            string state = transcription + (tts ? " Speech output configured." : " Speech output not configured (optional).");
             return saved ? "Saved. " + state : state;
         }
     }

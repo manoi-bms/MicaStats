@@ -753,7 +753,7 @@ internal sealed class MeetingPcmAdapter
             throw new MeetingException("The selected audio device uses an unsupported sample format.");
     }
 
-    private static byte[] CreateWave(short[] samples)
+    internal static byte[] CreateWave(short[] samples)
     {
         using var stream = new MemoryStream(44 + samples.Length * 2);
         using var writer = new BinaryWriter(stream);

@@ -250,8 +250,8 @@ public sealed class WasapiMeetingCapture : IMeetingCapture
         try
         {
             IWaveIn capture = source == MeetingSource.Microphone
-                ? new NAudio.CoreAudioApi.WasapiCapture(device)
-                : new WasapiLoopbackCapture(device);
+                ? new NAudio.CoreAudioApi.WasapiCapture(device) { ShareMode = AudioClientShareMode.Shared }
+                : new WasapiLoopbackCapture(device) { ShareMode = AudioClientShareMode.Shared };
             var holder = new SourceCapture(device, capture, new MeetingPcmAdapter(source, capture.WaveFormat, DeliverChunk));
             capture.DataAvailable += (_, args) => OnData(holder, args);
             capture.RecordingStopped += (_, args) => OnStopped(holder, args);

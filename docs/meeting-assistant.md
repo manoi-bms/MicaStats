@@ -31,6 +31,14 @@ Speech input is limited to 4,096 characters and a single request/playback at a t
 
 If an audio driver cannot finish stopping, MicaStats stops the meeting and retains its resources until the native operation returns. Save received text and restart MicaStats if audio resources remain unavailable.
 
+## Running alongside a conference app
+
+Microphone capture, selected-output loopback capture and speech playback all explicitly use WASAPI **shared mode**. Windows supports multiple applications sharing an endpoint in this mode; loopback reads the selected output's audio mix. See Microsoft's [shared-mode contract](https://learn.microsoft.com/en-us/windows/win32/api/audiosessiontypes/ne-audiosessiontypes-audclnt_sharemode) and [loopback recording documentation](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording).
+
+MicaStats does not change Windows default devices, application routing, endpoint volume or mute. Start, Stop and the pause around speech playback operate only on MicaStats' own audio clients. The conference app continues using its own clients. Select the same output device used by the conference app; loopback includes all applications playing through that device, and will not hear a conference routed elsewhere.
+
+This design supports coexistence with Teams, Zoom, Webex and browser calls, but is not a claim of completed live compatibility testing. An endpoint held exclusively by another app or a device/driver interruption can prevent or stop MicaStats capture; it reports a failure instead of taking over the endpoint. Speaker playback of TTS can still be heard by the conference microphone acoustically. Headphones reduce that path; TTS is not injected into the conference microphone stream.
+
 ## Manual validation checklist
 
 Automated tests use scripted audio and fake providers. Synthetic HTTP tests verified ASR upload contracts and a generated VoxCPM WAV round trip through ASR2. These checks do not prove hardware capture, language quality, or conference latency.
@@ -43,11 +51,15 @@ Automated tests use scripted audio and fake providers. Synthetic HTTP tests veri
 - Test Speak and Stop speaking during generation and playback, with each intended output device. Confirm the gap marker and capture resumption. Stop the meeting during playback and confirm capture stays stopped. Verify standalone speech and that Start stays disabled until speech finishes.
 - Save Markdown to a chosen location and inspect its transcript, source IDs, analysis and gap markers. Close/reopen the window and confirm content is not restored.
 
+For a controlled coexistence check, repeat the following with Teams, Zoom, Webex, a Chrome call and a Firefox call: confirm bidirectional call audio, select those same devices in MicaStats, start and stop monitoring, and verify the call audio and Windows/app volume, mute and device selections stay unchanged. Use harmless test speech and headphones. Check TTS separately: only MicaStats should show a listening gap while the call continues. Current status for each application: **not live-tested**; automated checks exercise owned-client lifecycle and failure handling. If evaluating exclusive-device conflicts, use a disposable test session rather than an ongoing meeting.
+
 ## วิธีใช้ภาษาไทย
 
 ก่อนใช้งาน เปิด **Configure services** หรือ **Settings → Meeting** แล้วกรอก API base URL ของบริการ ASR/TTS ที่ต้องการใช้ รวมส่วนพาธ API เช่น `/v1` จากนั้นบันทึก ค่าเริ่มต้นของทุกบริการเป็นช่องว่าง ไม่มีที่อยู่บริการส่วนตัวฝังในโปรแกรม การเปลี่ยนที่อยู่บริการจะหยุดงานเสียงที่กำลังทำงานก่อนใช้ค่าใหม่
 
 ตั้งค่า ASR เพียงหนึ่งบริการก็เพียงพอ: ASR1 และ ASR2 เป็นตัวเลือกแทนกัน ไม่ใช่บริการหลักและสำรองอัตโนมัติ ส่วน TTS จำเป็นเฉพาะเมื่อใช้ Speak ปุ่ม **Test connection** ทดสอบ URL ที่กรอกโดยไม่บันทึกค่า: ASR ใช้เสียงเงียบที่โปรแกรมสร้างขึ้น และ TTS ใช้ข้อความทดสอบคงที่โดยไม่เล่นเสียง ไม่มีการใช้ไมโครโฟนหรือเนื้อหาการประชุม กด **Cancel test** เพื่อยกเลิกได้ และการทดสอบจะหมดเวลาหลัง 20 วินาที
+
+การรับเสียงไมโครโฟน การรับเสียงขาออกแบบ loopback และการเล่นเสียง ใช้ WASAPI แบบ shared mode เพื่อใช้อุปกรณ์ร่วมกับแอปประชุม MicaStats ไม่เปลี่ยนอุปกรณ์เริ่มต้น การเลือกอุปกรณ์ของแอปอื่น ระดับเสียง หรือสถานะ mute และหยุดเฉพาะงานเสียงของตัวเอง เลือกอุปกรณ์ขาออกให้ตรงกับที่แอปประชุมใช้ การทำงานร่วมกับแต่ละแอปและไดรเวอร์ยังต้องทดสอบจริง; หากอุปกรณ์ถูกใช้งานแบบ exclusive โปรแกรมอาจรับเสียงไม่ได้และจะแสดงข้อผิดพลาด
 
 เปิด **Meeting Assistant** จากเมนู MicaStats แล้วเลือกไมโครโฟนและอุปกรณ์เสียงขาออกที่ใช้ฟังการประชุม โปรแกรมจะเริ่มรับเสียงเมื่อกด **Start listening** เท่านั้น เสียงขาออกครอบคลุมทุกแอปที่ใช้อุปกรณ์นั้น โดยค่าเริ่มต้นใช้ ASR2 และเลือก ASR1 ได้ก่อนเริ่ม ข้อความจะทยอยปรากฏหลังส่งเสียงแต่ละช่วงประมาณสี่วินาทีและรอบริการประมวลผล
 

@@ -56,6 +56,9 @@ namespace Kil0bitSystemMonitor
                 this.Close();
             };
 
+            var meetingItem = new MenuItem { Header = "Meeting Assistant…" };
+            meetingItem.Click += (s, e) => { App.OpenMeeting(); this.Close(); };
+
             var taskMgrItem = new MenuItem { Header = "Task Manager" };
             taskMgrItem.Click += (s, e) =>
             {
@@ -76,6 +79,7 @@ namespace Kil0bitSystemMonitor
             menu.Items.Add(settingsItem);
             menu.Items.Add(processesItem);
             menu.Items.Add(padItem);
+            menu.Items.Add(meetingItem);
             menu.Items.Add(taskMgrItem);
             menu.Items.Add(new Separator());
             menu.Items.Add(aboutItem);

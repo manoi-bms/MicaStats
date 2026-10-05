@@ -885,6 +885,7 @@ namespace Kil0bitSystemMonitor
 
         protected override void OnExit(ExitEventArgs e)
         {
+            StopMeetingBeforeExit();
             try
             {
                 // First of all: no note tool starts or reads anything from here on, and the two ways
@@ -937,9 +938,16 @@ namespace Kil0bitSystemMonitor
         {
             // Exit begins here: a note tool call must not start MicaPad's workspace behind the shutdown.
             BeginPadExit();
-            // Record whether MicaPad is showing before shutdown closes it, so it reopens at next login.
-            Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit();
-            Current.Shutdown();
+            _ = CompleteQuitAsync();
+
+            static async System.Threading.Tasks.Task CompleteQuitAsync()
+            {
+                try { await StopMeetingAsync(); }
+                catch { /* An audio teardown failure must not prevent application exit. */ }
+                // Record whether MicaPad is showing before shutdown closes it, so it reopens at next login.
+                try { Kil0bitSystemMonitor.Pad.MicaPadWindow.PrepareAllForExit(); }
+                finally { Current.Shutdown(); }
+            }
         }
 
         /// <summary>

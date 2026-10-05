@@ -1879,6 +1879,7 @@ namespace Kil0bitSystemMonitor
                     AppendMenu(hMenu, 0, 1011, "Processes");
                     AppendMenu(hMenu, 0, 1012, "MicaPad" + PadShortcutLabel());
                     if (AskMenuText(_config.Config) is string askText) AppendMenu(hMenu, 0, 1013, askText);
+                    AppendMenu(hMenu, 0, 1014, "Meeting Assistant…");
                     AppendMenu(hMenu, 0, 1002, "Task Manager");
                     AppendMenu(hMenu, 0x0800, 0, null);
                     AppendMenu(hMenu, 0, 1020, "Capture Region	Ctrl+Shift+1");
@@ -1933,6 +1934,7 @@ namespace Kil0bitSystemMonitor
                     else if (ch == 1011) _dispatcher.BeginInvoke(() => TaskManagerWindow.ShowOrActivate(App.SharedProcessSampler));
                     else if (ch == 1012) _dispatcher.BeginInvoke(() => App.OpenPad(null));
                     else if (ch == 1013) _dispatcher.BeginInvoke(() => App.OpenAsk(null));
+                    else if (ch == 1014) _dispatcher.BeginInvoke(() => App.OpenMeeting());
                     else if (ch == 1002) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("taskmgr") { UseShellExecute = true });
                     // Capture runs on the dispatcher: the selector is a WPF window, and this
                     // handler is inside the native menu's message loop.

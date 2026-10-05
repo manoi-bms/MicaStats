@@ -452,6 +452,7 @@ namespace Kil0bitSystemMonitor
                 DiagnosticsSection.Visibility = Visibility.Collapsed;
                 UpdatesSection.Visibility = Visibility.Collapsed;
                 PadSection.Visibility = Visibility.Collapsed;
+                MeetingSection.Visibility = Visibility.Collapsed;
                 AiSection.Visibility = Visibility.Collapsed;
 
                 switch (sectionName)
@@ -462,6 +463,7 @@ namespace Kil0bitSystemMonitor
                     case "Appearance": AppearanceSection.Visibility = Visibility.Visible; LoadOverlayTheme(); break;
                     case "Capture": CaptureSection.Visibility = Visibility.Visible; break;
                     case "MicaPad": PadSection.Visibility = Visibility.Visible; LoadPadSettings(); break;
+                    case "Meeting": MeetingSection.Visibility = Visibility.Visible; LoadMeetingSettings(); break;
                     case "AI": AiSection.Visibility = Visibility.Visible; LoadAiSettings(); break;
                     case "Diagnostics": DiagnosticsSection.Visibility = Visibility.Visible; LoadDiagnosticsSettings(); break;
                     case "Updates": UpdatesSection.Visibility = Visibility.Visible; break;

@@ -694,6 +694,27 @@ namespace Kil0bitSystemMonitor.Models
         /// </summary>
         public bool UseGpuRendering { get => _useGpuRendering; set { Set(ref _useGpuRendering, value); } }
 
+        // Meeting preferences only. Audio, transcript and selected notes never enter config.json.
+        private string _meetingMicrophoneId = "";
+        private string _meetingOutputId = "";
+        private string _meetingAsrService = "ASR2";
+        private string _meetingAsr1BaseUrl = "";
+        private string _meetingAsr2BaseUrl = "";
+        private string _meetingTtsBaseUrl = "";
+        public string MeetingMicrophoneId { get => _meetingMicrophoneId; set => Set(ref _meetingMicrophoneId, value ?? ""); }
+        public string MeetingOutputId { get => _meetingOutputId; set => Set(ref _meetingOutputId, value ?? ""); }
+        public string MeetingAsrService { get => _meetingAsrService; set => Set(ref _meetingAsrService, value == "ASR1" ? "ASR1" : "ASR2"); }
+        /// <summary>ASR1 service base URL including its API prefix, such as <c>https://asr.example/v1</c>. Empty means unconfigured.</summary>
+        public string MeetingAsr1BaseUrl { get => _meetingAsr1BaseUrl; set => Set(ref _meetingAsr1BaseUrl, (value ?? "").Trim()); }
+        /// <summary>ASR2 service base URL including its API prefix, such as <c>https://asr.example/v1</c>. Empty means unconfigured.</summary>
+        public string MeetingAsr2BaseUrl { get => _meetingAsr2BaseUrl; set => Set(ref _meetingAsr2BaseUrl, (value ?? "").Trim()); }
+        /// <summary>TTS service base URL including its API prefix, such as <c>https://tts.example/v1</c>. Empty means unconfigured.</summary>
+        public string MeetingTtsBaseUrl { get => _meetingTtsBaseUrl; set => Set(ref _meetingTtsBaseUrl, (value ?? "").Trim()); }
+        private string _meetingPlaybackDeviceId = "";
+        private string _meetingVoice = "default";
+        public string MeetingPlaybackDeviceId { get => _meetingPlaybackDeviceId; set => Set(ref _meetingPlaybackDeviceId, value ?? ""); }
+        public string MeetingVoice { get => _meetingVoice; set => Set(ref _meetingVoice, string.IsNullOrWhiteSpace(value) ? "default" : value.Trim()); }
+
         // ----- AI ---------------------------------------------------------------------------
         // Everything is off by default. No key or token is ever stored here: config.json is the
         // file people attach to bug reports, so secrets live in SecretStore (DPAPI) instead.

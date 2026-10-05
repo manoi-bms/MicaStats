@@ -66,6 +66,11 @@
                         <ui:FontIcon Glyph="&#xE70B;" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Meeting" Tag="Meeting">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:FontIcon Glyph="&#xE720;" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
                 <ui:NavigationViewItem Content="AI" Tag="AI">
                     <ui:NavigationViewItem.Icon>
                         <ui:FontIcon Glyph="&#xE8BD;" />
@@ -1289,6 +1294,95 @@
                         </Border>
                         <TextBlock x:Name="AiNotesInMcpText" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" Margin="4,0,0,8"/>
                         <Button x:Name="PadAiProviderButton" Content="AI provider settings…" Click="OnPadAiProviderSettings" Margin="0,0,0,12"/>
+                    </StackPanel>
+
+                    <!-- Meeting services -->
+                    <StackPanel x:Name="MeetingSection" Visibility="Collapsed">
+                        <TextBlock Text="Meeting services" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="Connect the Meeting Assistant to speech recognition and speech output services you operate or trust. MicaStats does not include a public service address and makes no connection from this page."
+                                   Opacity="0.68" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlElevationBorderBrush}"
+                                BorderThickness="1" CornerRadius="10" Padding="20,18" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Width="42" Height="42" CornerRadius="21" Background="#263B82F6" Margin="0,0,16,0" VerticalAlignment="Top">
+                                    <ui:FontIcon Glyph="&#xE8D4;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="ASR2 · Qwen speech recognition" FontWeight="SemiBold" FontSize="16"/>
+                                    <TextBlock Text="Preferred recognizer · Multipart audio · model Qwen/Qwen3-ASR-1.7B" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
+                                    <TextBox x:Name="MeetingAsr2BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://asr.example/v1"/>
+                                    <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlElevationBorderBrush}"
+                                BorderThickness="1" CornerRadius="10" Padding="20,18" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Width="42" Height="42" CornerRadius="21" Background="#263B82F6" Margin="0,0,16,0" VerticalAlignment="Top">
+                                    <ui:FontIcon Glyph="&#xE8D4;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="ASR1 · Typhoon speech recognition" FontWeight="SemiBold" FontSize="16"/>
+                                    <TextBlock Text="Alternative recognizer · Multipart audio · model typhoon-asr-realtime" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
+                                    <TextBox x:Name="MeetingAsr1BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://asr.example/v1"/>
+                                    <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlElevationBorderBrush}"
+                                BorderThickness="1" CornerRadius="10" Padding="20,18" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Width="42" Height="42" CornerRadius="21" Background="#263B82F6" Margin="0,0,16,0" VerticalAlignment="Top">
+                                    <ui:FontIcon Glyph="&#xE767;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="VoxCPM speech output" FontWeight="SemiBold" FontSize="16"/>
+                                    <TextBlock Text="Text-to-speech · JSON request and WAV response · model voxcpm-thai" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
+                                    <TextBox x:Name="MeetingTtsBaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://tts.example/v1"/>
+                                    <TextBlock Text="Example: https://tts.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlElevationBorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="14,11" Margin="0,2,0,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE946;" FontSize="16" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,1,10,0" VerticalAlignment="Top"/>
+                                <TextBlock Grid.Column="1" Text="Addresses are stored locally in config.json. Leave a service blank to keep it unavailable; the Meeting Assistant will show what still needs configuration before it starts or speaks."
+                                           Opacity="0.66" FontSize="12" TextWrapping="Wrap"/>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="SaveMeetingServicesButton" Content="Save service settings" Click="OnSaveMeetingServices" Style="{StaticResource AccentButtonStyle}" Padding="18,8" Margin="0,0,12,0"/>
+                            <TextBlock x:Name="MeetingServicesStatus" Text="Not configured" VerticalAlignment="Center" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"/>
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- AI -->

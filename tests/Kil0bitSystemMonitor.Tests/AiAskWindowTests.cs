@@ -1452,7 +1452,8 @@ namespace Kil0bitSystemMonitor.Tests
             string ai = System.Text.RegularExpressions.Regex.Replace(
                 System.IO.File.ReadAllText(System.IO.Path.Combine(PadWindowTests.RepoRoot(), "App.Ai.cs")), @"\s+", " ");
 
-            Assert.Contains("Kil0bitSystemMonitor.Pad.MicaPadWindow.CredentialStored = Kil0bitSystemMonitor.Ai.AskWindow.ClearCurrentAfterCredentialStored;",
+            Assert.Contains("Kil0bitSystemMonitor.Pad.MicaPadWindow.CredentialStored = () =>", ai, StringComparison.Ordinal);
+            Assert.Contains("try { Kil0bitSystemMonitor.Ai.AskWindow.ClearCurrentAfterCredentialStored(); } finally { ClearMeetingAfterCredentialStored(); }",
                             ai, StringComparison.Ordinal);
         }
 

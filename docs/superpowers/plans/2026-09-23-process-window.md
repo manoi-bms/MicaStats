@@ -1,5 +1,7 @@
 # Process window implementation plan
 
+Historical plan: parent-name search is superseded by the [2026-10-05 filter correction](../../../.scratch/process-filter/spec.md). Current text filters match the process's own name, with exact PID matching for numeric input.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Put MicaStats' own process window in the overlay's right-click menu, make its list informative (parent, uptime, threads, handles, filtered totals, a per-row detail pane), and add a guarded *End all filtered*.

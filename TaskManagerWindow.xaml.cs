@@ -41,7 +41,7 @@ namespace Kil0bitSystemMonitor
         /// <summary>The last kill that was refused for lack of privilege, for the retry button.</summary>
         private (int Pid, long CreateTime, string Name)? _pendingElevation;
 
-        private TaskManagerWindow(ProcessSampler sampler)
+        internal TaskManagerWindow(ProcessSampler sampler)
         {
             InitializeComponent();
 

@@ -2,6 +2,7 @@
 
 **Date:** 2026-09-23
 **Status:** approved, ready for implementation planning
+**Search correction (2026-10-05):** implicit parent-name matching below is superseded by [the process-filter specification](../../../.scratch/process-filter/spec.md). Text now matches only the process's own name; numeric input matches PID exactly. Parent display and sorting remain available.
 **Builds on:** the orphan search watchdog, merged to `main` at `3a820a4` — reuses `ProcessControl.HasExited(pid, createTime)`
 and the verified-kill sequence introduced there.
 

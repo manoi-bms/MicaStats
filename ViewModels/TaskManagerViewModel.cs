@@ -125,11 +125,7 @@ namespace Kil0bitSystemMonitor.ViewModels
             if (int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out int pid))
                 return all.Where(p => p.Pid == pid).ToList();
 
-            // The parent name is searched too, so typing "bash" shows everything a bash started
-            // — which is how a family of leaked children is found and then ended together.
-            return all.Where(p =>
-                    p.Name.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    p.ParentName.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
+            return all.Where(p => p.Name.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
                 .ToList();
         }
 
@@ -331,6 +327,9 @@ namespace Kil0bitSystemMonitor.ViewModels
 
         public ObservableCollection<ProcessRow> Rows { get; } = new();
 
+        public ProcessSortColumn SortColumn => _sortColumn;
+        public bool SortDescending => _sortDescending;
+
         public string SearchText
         {
             get => _searchText;
@@ -430,6 +429,8 @@ namespace Kil0bitSystemMonitor.ViewModels
         {
             if (_sortColumn == column) _sortDescending = !_sortDescending;
             else { _sortColumn = column; _sortDescending = column != ProcessSortColumn.Name; }
+            OnPropertyChanged(nameof(SortColumn));
+            OnPropertyChanged(nameof(SortDescending));
             Refresh();
         }
 

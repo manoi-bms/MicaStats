@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:vm="clr-namespace:Kil0bitSystemMonitor.ViewModels"
+    xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers"
     Title="MicaStats Processes"
     Width="900" Height="760" MinWidth="840" MinHeight="520"
     WindowStartupLocation="CenterScreen"
@@ -32,6 +33,31 @@
         <SolidColorBrush x:Key="DataCyan" Color="#3FD2E4" />
         <SolidColorBrush x:Key="RowInk" Color="#CFEDEDF2" />
         <SolidColorBrush x:Key="Muted" Color="#88EDEDF2" />
+
+        <helpers:ProcessSortGlyphConverter x:Key="ProcessSortGlyphConverter" />
+        <DataTemplate x:Key="ProcessColumnHeader">
+            <Grid IsHitTestVisible="False">
+                <Grid.RowDefinitions><RowDefinition Height="12"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <TextBlock x:Name="ProcessSortGlyph" HorizontalAlignment="Center" FontSize="10"
+                           Foreground="{StaticResource DataCyan}">
+                    <TextBlock.Text>
+                        <MultiBinding Converter="{StaticResource ProcessSortGlyphConverter}">
+                            <Binding />
+                            <Binding Path="DataContext.SortColumn" RelativeSource="{RelativeSource AncestorType=Window}"/>
+                            <Binding Path="DataContext.SortDescending" RelativeSource="{RelativeSource AncestorType=Window}"/>
+                        </MultiBinding>
+                    </TextBlock.Text>
+                    <AutomationProperties.Name>
+                        <MultiBinding Converter="{StaticResource ProcessSortGlyphConverter}" ConverterParameter="Description">
+                            <Binding />
+                            <Binding Path="DataContext.SortColumn" RelativeSource="{RelativeSource AncestorType=Window}"/>
+                            <Binding Path="DataContext.SortDescending" RelativeSource="{RelativeSource AncestorType=Window}"/>
+                        </MultiBinding>
+                    </AutomationProperties.Name>
+                </TextBlock>
+                <TextBlock Grid.Row="1" Text="{Binding}" HorizontalAlignment="Center"/>
+            </Grid>
+        </DataTemplate>
 
         <Style x:Key="ColumnText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11" />
@@ -112,7 +138,13 @@
                       SelectionChanged="OnSelectionChanged"
                       GridViewColumnHeader.Click="OnHeaderClick">
                 <ListView.View>
-                    <GridView AllowsColumnReorder="False">
+                    <GridView AllowsColumnReorder="False" ColumnHeaderTemplate="{StaticResource ProcessColumnHeader}">
+                        <GridView.ColumnHeaderContainerStyle>
+                            <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource {x:Type GridViewColumnHeader}}">
+                                <Setter Property="Padding" Value="5,2"/>
+                                <Setter Property="FontSize" Value="12"/>
+                            </Style>
+                        </GridView.ColumnHeaderContainerStyle>
                         <!-- Widths total 760, inside the client area at the 840 minimum width
                              once the margins, the list border and a vertical scrollbar are taken
                              out. Overflowing produces a horizontal scrollbar, and a process list

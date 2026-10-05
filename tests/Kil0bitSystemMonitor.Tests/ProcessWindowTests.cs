@@ -196,7 +196,7 @@ namespace Kil0bitSystemMonitor.Tests
         }
 
         [Fact]
-        public void Searching_a_parent_name_finds_its_children()
+        public void Searching_a_parent_name_does_not_match_its_differently_named_children()
         {
             var all = new[]
             {
@@ -206,7 +206,25 @@ namespace Kil0bitSystemMonitor.Tests
 
             var hits = TaskManagerViewModel.Filter(all, "bash");
 
-            Assert.Equal(new[] { 1 }, hits.Select(r => r.Pid));
+            Assert.Empty(hits);
+        }
+
+        [Theory]
+        [InlineData("codex.exe")]
+        [InlineData("CODEX.EXE")]
+        [InlineData(" codex.exe ")]
+        [InlineData("codex")]
+        public void Filtering_codex_does_not_include_differently_named_children(string query)
+        {
+            var all = new[]
+            {
+                R("codex.exe", 10),
+                R("pwsh.exe", 11) with { ParentName = "codex.exe", ParentPid = 10 },
+            };
+
+            var hits = TaskManagerViewModel.Filter(all, query);
+
+            Assert.Equal(new[] { 10 }, hits.Select(r => r.Pid));
         }
 
         [Fact]

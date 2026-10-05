@@ -1,5 +1,9 @@
 # AI: the model's own limits, and a model list in Settings — Implementation Plan
 
+> **Completed 2026-10-05:** Tasks 1–6 are implemented. The full suite passed **5,801 tests**.
+> See [implementation and verification](2026-10-05-ai-model-limits-rulings.md) for resolved review findings and live-provider checks.
+> The original per-step checkboxes below are retained as planning history, not an outstanding task list.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The app learns the selected model's context window and largest output from the provider, sizes what it sends and accepts from them, trims a long Ask conversation to fit, and lets the user pick the model from a list loaded from the provider.

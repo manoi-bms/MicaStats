@@ -289,9 +289,11 @@ sent while you type, when a note opens or in the background — only when you ru
   "· to llm.example.com (your-model)" for a server of your own, or "· to this PC" for a server on
   this PC; the line wraps, so the destination is always
   readable) and the result as it arrives. **Stop**, beside the close button, ends it and keeps what
-  came. For a rewrite, **Changes** shows a line diff of your text against the result. Size limits:
-  8,000 characters for a rewrite, 24,000 for the rest; over that, the pane says so and nothing is
-  sent.
+  came. For a rewrite, **Changes** shows a line diff of your text against the result. When the
+  model's context window is not known, the standard size limits are 8,000 characters for a rewrite
+  and 24,000 for the rest; over that, the pane says so and nothing is sent. With a known window,
+  the limits follow the model and the pane counts estimated tokens instead (see
+  [Limits and cost](#limits-and-cost)).
 * **Rendered, with a Source toggle.** **Summarize**, **Explain**, **Draw as diagram** and
   **Ask AI…** show their result as Markdown (see [What an answer can show](#what-an-answer-can-show)),
   so a diagram is seen before it is inserted. **Source**, beside **Changes**, shows the exact text
@@ -633,7 +635,15 @@ is sent anywhere until you press **Send**, **Explain** or **Test connection**.
      `http://localhost:11434/v1` and model `llama3.2`, with no key. LM Studio's server is
      `http://localhost:1234/v1`. OpenAI, Azure and OpenRouter work the same way with their URL
      and key.
-3. **Test connection** sends one tiny request and shows the reply. It does not count toward the
+3. **Model and limits**: the model box is an editable model list from the selected provider. Pick
+   a model or type a name that is not in the list; **Refresh** asks the provider again. The line
+   below reports, for example, "9 models from llm.example.com", and the next line shows the
+   context window, answer limit and how much MicaPad can read. **Context window** is **Auto** by
+   default, which uses the window reported by the provider. Enter a number when the server reports
+   none, or to hold down how much text is resent and therefore the cost; a number never raises a
+   lower limit reported by the provider. The model list is requested only in **Settings → AI** or
+   when AI is used, never on startup by itself or merely while typing a model name.
+4. **Test connection** sends one tiny request and shows the reply. It does not count toward the
    daily limit.
 
 A key is stored encrypted for your Windows account (DPAPI) in `%APPDATA%\MicaStats\secrets.bin`,
@@ -670,6 +680,12 @@ the model in use. Tables, code blocks and diagrams in an answer are described in
 The hint under the question box ends with the day's count ("Enter to send · Shift+Enter for a new
 line · 12 of 100 today"). When you have scrolled up, a round button at the lower right of the chat
 jumps to the latest text. The window remembers its size.
+
+If the provider stops a final reply at its output limit, the answer stays visible and says "The
+answer was cut short at the length limit." When a conversation is too long for the model, the
+oldest whole exchanges are left out of later requests while every turn stays on screen; the status
+line says "Earlier turns are no longer sent to the model: the conversation is longer than it can
+take."
 
 The send button turns into **Stop** while an answer streams (**Esc** stops too); the **+** at
 the top right starts a new chat; the sun or moon button beside it switches the window between
@@ -735,11 +751,29 @@ has read from your notes, no button to end a process is offered; the other butto
 
 - One **Send** or **Explain** counts as one question, however many lookups it takes. The default
   limit is **100 a day**, reset at local midnight; **Settings → AI** shows today's count
-- At most eight rounds of lookups per question and 2,000 output tokens per answer
+- At most eight rounds of lookups per question
 - A request that receives no data for 60 seconds ends with a timeout message; the provider is
   retried twice before that
 - A local model that cannot use tools still answers, in **limited mode**, from a short summary of
   the PC's current state
+
+When the context window is unknown, MicaStats uses its standard limits: 2,000 output tokens for an
+Ask answer, 4,096 for a MicaPad answer, 8,000 characters for a rewrite, 24,000 characters for other
+MicaPad actions, 48,000 estimated tokens of Ask conversation history, and 16,000 characters and
+400 lines for one `get_note` call in Ask. With a known window these limits follow the model. This
+short table shows the main token budgets; a rewrite can use 80% of the MicaPad answer budget.
+
+| Context window | Ask answer | MicaPad answer | MicaPad read | Ask history | `get_note` in Ask | Note passages |
+|---:|---:|---:|---:|---:|---:|---:|
+| 8,192 | 2,000 | 2,048 | 2,048 | 4,096 | 2,048 | 8 |
+| 262,144 | 16,000 | 32,000 | 99,072 | 131,072 | 16,384 | 20 |
+| 1,048,576 | 16,000 | 32,000 | 492,288 | 524,288 | 64,000 | 20 |
+
+A largest-output value reported by the provider can lower the two answer limits. When only your
+number is known because the provider reports neither a context window nor an output limit, how
+much may be read still follows that window, but the answer limits stay at 4,096 tokens. A larger
+window can resend more text and cost more with a paid provider, which is why **Context window** can
+be set below the reported value.
 
 ### Privacy
 
@@ -847,7 +881,9 @@ does not.
   best passages, each with its note id, title, heading and line numbers. The query is cut at 500
   characters. `searchedBy` in the result is "words" or "words and meaning".
 * **`get_note`** takes `noteId`, `firstLine` (1 if you leave it out) and `lineCount` (200 if you
-  leave it out, up to 400) and returns that part of the note, at most 16,000 characters per call.
+  leave it out). In Ask MicaStats its size follows a known model window and otherwise uses the
+  standard 400-line, 16,000-character limit. MCP clients keep the fixed limit of 400 lines and
+  16,000 characters because MicaStats does not know the MCP client's context window.
   It says `truncated` when more remains, so ask again from a later line. A line longer than that
   cap is cut, with `cutInLine`; the rest of such a line cannot be read.
 * **Notes are every note MicaPad has**: open tabs, closed notes, and files open in MicaPad tabs.

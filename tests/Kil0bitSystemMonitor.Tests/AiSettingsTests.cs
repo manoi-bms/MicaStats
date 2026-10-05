@@ -42,6 +42,7 @@ namespace Kil0bitSystemMonitor.Tests
             public string? McpProblem;
             public Func<AppConfig, SecretStore, AiClientResult> ClientFactory =
                 (config, secrets) => new AiClientResult(null, "No provider in this test.", false);
+            public Func<AppConfig, SecretStore, CancellationToken, Task<AiModelList>>? ModelList;
 
             public Rig()
             {
@@ -59,6 +60,7 @@ namespace Kil0bitSystemMonitor.Tests
                 Usage = () => Usage,
                 McpHttpProblem = () => McpProblem,
                 CreateClient = (config, secrets) => ClientFactory(config, secrets),
+                ListModels = ModelList,
                 CopyText = text =>
                 {
                     if (CopyFailure != null) throw CopyFailure;
@@ -137,6 +139,223 @@ namespace Kil0bitSystemMonitor.Tests
                 }
             }
         }
+
+        [Fact]
+        public void Loading_asks_once_and_shows_decorated_models_while_the_box_keeps_the_bare_id() => WithPanel((panel, rig) =>
+        {
+            int calls = 0;
+            rig.Config.AiClaudeModel = "alpha";
+            rig.ModelList = (config, secrets, cancel) =>
+            {
+                calls++;
+                return Task.FromResult(new AiModelList(new[]
+                {
+                    new AiModelInfo("alpha", 262144, 8192),
+                    new AiModelInfo("beta", 0, 0),
+                }, null, "api.anthropic.com"));
+            };
+
+            panel.Load(rig.Host());
+
+            Assert.Equal(1, calls);
+            Assert.Equal("alpha", panel.ClaudeModelBox.Text);
+            Assert.Equal("alpha · 262,144 tokens", ((AiSettingsPanel.ModelChoice)panel.ClaudeModelBox.Items[0]).Display);
+            Assert.Equal("beta", ((AiSettingsPanel.ModelChoice)panel.ClaudeModelBox.Items[1]).Display);
+            Assert.Equal("2 models from api.anthropic.com", panel.ModelStatusText.Text);
+            Assert.Equal(262144, rig.Config.AiModelContext);
+            Assert.Equal(8192, rig.Config.AiModelOutput);
+            Assert.Contains("262,144 tokens (from the server)", panel.ModelLimitsText.Text, StringComparison.Ordinal);
+        });
+
+        [Fact]
+        public void Picking_a_model_saves_its_bare_id_and_limits_once() => WithPanel((panel, rig) =>
+        {
+            rig.ModelList = (config, secrets, cancel) => Task.FromResult(new AiModelList(new[]
+            {
+                new AiModelInfo("picked", 128000, 4096),
+            }, null, "api.anthropic.com"));
+            panel.Load(rig.Host());
+            rig.Saves = 0;
+
+            panel.ClaudeModelBox.SelectedIndex = 0;
+
+            Assert.Equal("picked", panel.ClaudeModelBox.Text);
+            Assert.Equal("picked", rig.Config.AiClaudeModel);
+            Assert.Equal(128000, rig.Config.AiModelContext);
+            Assert.Equal(4096, rig.Config.AiModelOutput);
+            Assert.Equal(ModelCatalog.KeyOf(rig.Config), rig.Config.AiModelLimitsOf);
+            Assert.Equal(1, rig.Saves);
+        });
+
+        [Fact]
+        public void Typing_a_model_asks_nothing_and_keeps_an_unlisted_name() => WithPanel((panel, rig) =>
+        {
+            int calls = 0;
+            rig.ModelList = (config, secrets, cancel) =>
+            {
+                calls++;
+                return Task.FromResult(new AiModelList(new[] { new AiModelInfo("listed", 64000, 4000) }, null, "api.anthropic.com"));
+            };
+            panel.Load(rig.Host());
+            int afterLoad = calls;
+
+            panel.ClaudeModelBox.Text = "private-model";
+            Assert.Equal(afterLoad, calls);
+            LoseFocus(panel.ClaudeModelBox);
+
+            Assert.Equal(afterLoad, calls);
+            Assert.Equal("private-model", rig.Config.AiClaudeModel);
+            Assert.NotEqual(ModelCatalog.KeyOf(rig.Config), rig.Config.AiModelLimitsOf);
+        });
+
+        [Fact]
+        public void Provider_url_keys_and_refresh_each_load_the_list_once() => WithPanel((panel, rig) =>
+        {
+            int calls = 0;
+            rig.ModelList = (config, secrets, cancel) =>
+            {
+                calls++;
+                return Task.FromResult(new AiModelList(Array.Empty<AiModelInfo>(), null,
+                    config.AiProvider == AiProviders.OpenAiCompatible ? "llm.example.com" : "api.anthropic.com"));
+            };
+            panel.Load(rig.Host());
+            Assert.Equal(1, calls);
+
+            panel.ProviderBox.SelectedIndex = 1;
+            Assert.Equal(2, calls);
+            panel.CompatibleUrlBox.Text = "https://llm.example.com/v1";
+            LoseFocus(panel.CompatibleUrlBox);
+            Assert.Equal(3, calls);
+            panel.CompatibleKeyBox.Password = "test-key";
+            Click(panel.SaveCompatibleKeyButton);
+            Assert.Equal(4, calls);
+            Click(panel.RemoveCompatibleKeyButton);
+            Assert.Equal(5, calls);
+            Click(panel.RefreshModelsButton);
+            Assert.Equal(6, calls);
+        });
+
+        [Fact]
+        public void A_list_for_the_previous_provider_is_dropped() => WithPanel((panel, rig) =>
+        {
+            var first = new TaskCompletionSource<AiModelList>(TaskCreationOptions.RunContinuationsAsynchronously);
+            int calls = 0;
+            rig.ModelList = (config, secrets, cancel) =>
+            {
+                calls++;
+                if (calls == 1) return first.Task;
+                return Task.FromResult(new AiModelList(new[] { new AiModelInfo("compatible", 32000, 2048) }, null, "llm.example.com"));
+            };
+            panel.Load(rig.Host());
+            Assert.Equal("Loading…", panel.ModelStatusText.Text);
+
+            panel.ProviderBox.SelectedIndex = 1;
+            Assert.Equal("1 model from llm.example.com", panel.ModelStatusText.Text);
+            first.SetResult(new AiModelList(new[] { new AiModelInfo("stale", 200000, 8000) }, null, "api.anthropic.com"));
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+
+            Assert.Equal("1 model from llm.example.com", panel.ModelStatusText.Text);
+            Assert.Equal("compatible · 32,000 tokens", ((AiSettingsPanel.ModelChoice)panel.CompatibleModelBox.Items[0]).Display);
+        });
+
+        [Fact]
+        public void Changing_the_compatible_url_removes_old_server_choices_while_the_new_list_loads() => WithPanel((panel, rig) =>
+        {
+            rig.Config.AiProvider = AiProviders.OpenAiCompatible;
+            rig.Config.AiCompatibleBaseUrl = "https://old.llm.example.com/v1";
+            rig.Config.AiCompatibleModel = "old-model";
+            var next = new TaskCompletionSource<AiModelList>();
+            int calls = 0;
+            rig.ModelList = (config, secrets, cancel) =>
+            {
+                calls++;
+                return calls == 1
+                    ? Task.FromResult(new AiModelList(new[] { new AiModelInfo("old-model", 200000, 8000) }, null, "old.llm.example.com"))
+                    : next.Task;
+            };
+            panel.Load(rig.Host());
+            Assert.Single(panel.CompatibleModelBox.Items);
+
+            panel.CompatibleUrlBox.Text = "https://new.llm.example.com/v1";
+            LoseFocus(panel.CompatibleUrlBox);
+
+            Assert.Empty(panel.CompatibleModelBox.Items);
+            Assert.Equal("old-model", panel.CompatibleModelBox.Text);
+            Assert.NotEqual(ModelCatalog.KeyOf(rig.Config), rig.Config.AiModelLimitsOf);
+
+            next.SetResult(new AiModelList(Array.Empty<AiModelInfo>(), null, "new.llm.example.com"));
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+        });
+
+        [Fact]
+        public void A_list_failure_still_leaves_an_editable_model_box() => WithPanel((panel, rig) =>
+        {
+            rig.ModelList = (config, secrets, cancel) => Task.FromResult(new AiModelList(
+                Array.Empty<AiModelInfo>(), "The model list could not be loaded.", "llm.example.com"));
+            panel.Load(rig.Host());
+
+            Assert.Equal("The model list could not be loaded. You can still type a model name.", panel.ModelStatusText.Text);
+            panel.ClaudeModelBox.Text = "typed-anyway";
+            LoseFocus(panel.ClaudeModelBox);
+            Assert.Equal("typed-anyway", rig.Config.AiClaudeModel);
+        });
+
+        [Fact]
+        public void Context_window_accepts_auto_list_and_typed_values_and_restores_nonsense() => WithPanel((panel, rig) =>
+        {
+            Assert.Equal("Auto", panel.ContextWindowBox.Text);
+            Assert.Contains("Context window not known", panel.ModelLimitsText.Text, StringComparison.Ordinal);
+
+            panel.ContextWindowBox.SelectedIndex = 5; // 128,000
+            Assert.Equal(128000, rig.Config.AiContextWindow);
+            Assert.Contains("128,000 tokens (set here)", panel.ModelLimitsText.Text, StringComparison.Ordinal);
+
+            panel.ContextWindowBox.Text = "300,000";
+            LoseFocus(panel.ContextWindowBox);
+            Assert.Equal(300000, rig.Config.AiContextWindow);
+            panel.ContextWindowBox.Text = "3,000,000";
+            LoseFocus(panel.ContextWindowBox);
+            Assert.Equal(2000000, rig.Config.AiContextWindow);
+            panel.ContextWindowBox.Text = "9,999,999,999";
+            LoseFocus(panel.ContextWindowBox);
+            Assert.Equal(2000000, rig.Config.AiContextWindow);
+            panel.ContextWindowBox.Text = "nonsense";
+            LoseFocus(panel.ContextWindowBox);
+            Assert.Equal("2,000,000", panel.ContextWindowBox.Text);
+
+            panel.ContextWindowBox.SelectedIndex = 0;
+            Assert.Equal(0, rig.Config.AiContextWindow);
+            Assert.Equal("Auto", panel.ContextWindowBox.Text);
+        });
+
+        [Fact]
+        public void Test_connection_names_the_context_window_in_use() => WithPanel((panel, rig) =>
+        {
+            rig.Config.AiContextWindow = 64000;
+            panel.Load(rig.Host());
+            rig.ClientFactory = (config, secrets) => new AiClientResult(new ReplyClient("OK"), null, true);
+
+            UiPump.Wait(panel.TestConnectionAsync());
+
+            Assert.Equal("Connected. The model replied: OK · 64,000-token context", panel.TestResultText.Text);
+        });
+
+        [Fact]
+        public void Unloading_cancels_a_model_list_in_flight() => WithPanel((panel, rig) =>
+        {
+            CancellationToken token = default;
+            rig.ModelList = async (config, secrets, cancel) =>
+            {
+                token = cancel;
+                await Task.Delay(Timeout.Infinite, cancel);
+                return new AiModelList(Array.Empty<AiModelInfo>(), null, "api.anthropic.com");
+            };
+            panel.Load(rig.Host());
+
+            panel.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));
+
+            Assert.True(token.IsCancellationRequested);
+        });
 
         [Fact]
         public void Loading_fills_every_control_from_the_config() => WithPanel((panel, rig) =>

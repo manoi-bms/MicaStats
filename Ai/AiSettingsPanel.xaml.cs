@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -6,12 +7,14 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Ai.Mcp;
 using Kil0bitSystemMonitor.Services.Capture;
 using Microsoft.Extensions.AI;
 
 // UseWindowsForms puts System.Windows.Forms in scope, which has its own UserControl.
+using ComboBox = System.Windows.Controls.ComboBox;
 using UserControl = System.Windows.Controls.UserControl;
 
 namespace Kil0bitSystemMonitor.Ai
@@ -34,10 +37,25 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>Counts Test connection runs; a result from an earlier run is dropped.</summary>
         private int _testRun;
 
+        private int _modelRun;
+        private CancellationTokenSource? _modelCancel;
+        private IReadOnlyList<AiModelInfo> _models = Array.Empty<AiModelInfo>();
+        internal sealed record ModelChoice(AiModelInfo Model)
+        {
+            public string Id => Model.Id;
+
+            public string Display => Model.ContextTokens > 0
+                ? Model.Id + " · " + Model.ContextTokens.ToString("N0", CultureInfo.InvariantCulture) + " tokens"
+                : Model.Id;
+
+            public override string ToString() => Id;
+        }
+
         /// <summary>Builds the panel; nothing shows until <see cref="Load"/>.</summary>
         public AiSettingsPanel()
         {
             InitializeComponent();
+            Unloaded += OnUnloaded;
         }
 
         /// <summary>Fills the panel from the host's config and stores. Safe to call again.</summary>
@@ -53,6 +71,7 @@ namespace Kil0bitSystemMonitor.Ai
                 ClaudeModelBox.Text = cfg.AiClaudeModel;
                 CompatibleUrlBox.Text = cfg.AiCompatibleBaseUrl;
                 CompatibleModelBox.Text = cfg.AiCompatibleModel;
+                ShowContextWindow();
                 HotkeyBox.Text = cfg.AiHotkey;
                 HotkeyHint.Text = HotkeyHelp;
                 LimitBox.Text = cfg.AiDailyLimit.ToString(CultureInfo.InvariantCulture);
@@ -79,6 +98,8 @@ namespace Kil0bitSystemMonitor.Ai
             RefreshUsage();
             RefreshHistory();
             RefreshMcp();
+            RefreshModelLimits();
+            _ = RefreshModelsAsync();
         }
 
         // ---- assistant and provider --------------------------------------------------------
@@ -99,31 +120,90 @@ namespace Kil0bitSystemMonitor.Ai
             TestResultText.Text = "";
             TestButton.IsEnabled = true;
             RefreshProvider();
+            _ = RefreshModelsAsync();
         }
 
         private void OnClaudeModelChanged(object sender, RoutedEventArgs e)
         {
             if (_loading || _host == null) return;
+            string before = _host.Config.AiClaudeModel;
             _host.Config.AiClaudeModel = ClaudeModelBox.Text;
             ClaudeModelBox.Text = _host.Config.AiClaudeModel;   // the setter trims and restores the default when blank
-            _host.Save();
+            if (!string.Equals(before, _host.Config.AiClaudeModel, StringComparison.Ordinal))
+            {
+                ModelCatalog.Learn(_host.Config, _models);
+                _host.Save();
+                ModelChangedWithoutRequest();
+            }
+        }
+
+        private void OnClaudeModelPicked(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading || _host == null || ClaudeModelBox.SelectedItem is not ModelChoice choice) return;
+            SavePickedModel(choice.Model, claude: true);
         }
 
         private void OnCompatibleUrlChanged(object sender, RoutedEventArgs e)
         {
             if (_loading || _host == null) return;
+            string before = _host.Config.AiCompatibleBaseUrl;
             _host.Config.AiCompatibleBaseUrl = CompatibleUrlBox.Text;
             CompatibleUrlBox.Text = _host.Config.AiCompatibleBaseUrl;
             _host.Save();
             RefreshProvider();
+            if (!string.Equals(before, _host.Config.AiCompatibleBaseUrl, StringComparison.Ordinal))
+                _ = RefreshModelsAsync();
         }
 
         private void OnCompatibleModelChanged(object sender, RoutedEventArgs e)
         {
             if (_loading || _host == null) return;
+            string before = _host.Config.AiCompatibleModel;
             _host.Config.AiCompatibleModel = CompatibleModelBox.Text;
             CompatibleModelBox.Text = _host.Config.AiCompatibleModel;
+            if (!string.Equals(before, _host.Config.AiCompatibleModel, StringComparison.Ordinal))
+            {
+                ModelCatalog.Learn(_host.Config, _models);
+                _host.Save();
+                ModelChangedWithoutRequest();
+            }
+        }
+
+        private void OnCompatibleModelPicked(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading || _host == null || CompatibleModelBox.SelectedItem is not ModelChoice choice) return;
+            SavePickedModel(choice.Model, claude: false);
+        }
+
+        private void SavePickedModel(AiModelInfo model, bool claude)
+        {
+            if (_host == null) return;
+            bool wasLoading = _modelCancel != null;
+            if (wasLoading) CancelModelList(clearStatus: true);
+            _loading = true;
+            try
+            {
+                if (claude)
+                {
+                    _host.Config.AiClaudeModel = model.Id;
+                    ClaudeModelBox.Text = _host.Config.AiClaudeModel;
+                }
+                else
+                {
+                    _host.Config.AiCompatibleModel = model.Id;
+                    CompatibleModelBox.Text = _host.Config.AiCompatibleModel;
+                }
+                ModelCatalog.Learn(_host.Config, new[] { model });
+            }
+            finally { _loading = false; }
             _host.Save();
+            RefreshModelLimits();
+        }
+
+        private void ModelChangedWithoutRequest()
+        {
+            CancelModelList(clearStatus: _modelCancel != null);
+            RefreshModelLimits();
         }
 
         private void RefreshProvider()
@@ -178,6 +258,7 @@ namespace Kil0bitSystemMonitor.Ai
             box.Clear();
             ShowKeyHint("Saved. The key is stored encrypted for your Windows account and is not shown again.");
             RefreshKeys();
+            _ = RefreshModelsAsync();
         }
 
         private void RemoveKey(string name)
@@ -188,8 +269,164 @@ namespace Kil0bitSystemMonitor.Ai
             if (!_host.Secrets.CanRead() || _host.Secrets.Has(name))
                 ShowKeyHint("The key could not be removed. The file that holds it is not available; try again.");
             else
+            {
                 ShowKeyHint("Removed.");
+                _ = RefreshModelsAsync();
+            }
             RefreshKeys();
+        }
+
+        private void OnRefreshModels(object sender, RoutedEventArgs e) => _ = RefreshModelsAsync();
+
+        internal async Task RefreshModelsAsync()
+        {
+            if (_host?.ListModels == null) return;
+            CancelModelList(clearStatus: false);
+            int run = ++_modelRun;
+            var cancel = new CancellationTokenSource();
+            _modelCancel = cancel;
+            AppConfig snapshot = ModelListSnapshot(_host.Config);
+            string key = ModelCatalog.KeyOf(snapshot);
+            _models = Array.Empty<AiModelInfo>();
+            FillModelBox(CurrentModelBox(), _models);
+            ModelStatusText.Text = "Loading…";
+            RefreshModelsButton.IsEnabled = false;
+
+            AiModelList list;
+            try
+            {
+                list = await _host.ListModels(snapshot, _host.Secrets, cancel.Token);
+            }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested) { return; }
+            catch (Exception ex)
+            {
+                list = new AiModelList(Array.Empty<AiModelInfo>(), AiErrorText.Describe(ex), "");
+            }
+            finally
+            {
+                if (ReferenceEquals(_modelCancel, cancel)) _modelCancel = null;
+                cancel.Dispose();
+            }
+
+            if (_host == null || run != _modelRun || !string.Equals(key, ModelCatalog.KeyOf(_host.Config), StringComparison.Ordinal)) return;
+            _models = list.Models;
+            FillModelBox(CurrentModelBox(), list.Models);
+            ModelStatusText.Text = list.Problem == null
+                ? list.Models.Count.ToString(CultureInfo.InvariantCulture) + (list.Models.Count == 1 ? " model from " : " models from ") + list.Host
+                : list.Problem + " You can still type a model name.";
+            RefreshModelsButton.IsEnabled = true;
+
+            if (ModelCatalog.Learn(_host.Config, list.Models)) _host.Save();
+            RefreshModelLimits();
+        }
+
+        private ComboBox CurrentModelBox() => _host?.Config.AiProvider == AiProviders.OpenAiCompatible
+            ? CompatibleModelBox : ClaudeModelBox;
+
+        private static AppConfig ModelListSnapshot(AppConfig config) => new AppConfig
+        {
+            AiProvider = config.AiProvider,
+            AiClaudeModel = config.AiClaudeModel,
+            AiCompatibleBaseUrl = config.AiCompatibleBaseUrl,
+            AiCompatibleModel = config.AiCompatibleModel,
+            AiAssistantEnabled = config.AiAssistantEnabled,
+            PadAiEnabled = config.PadAiEnabled,
+        };
+
+        private void FillModelBox(ComboBox box, IReadOnlyList<AiModelInfo> models)
+        {
+            string text = box.Text;
+            _loading = true;
+            try
+            {
+                box.Items.Clear();
+                foreach (AiModelInfo model in models) box.Items.Add(new ModelChoice(model));
+                box.SelectedIndex = -1;
+                box.Text = text;
+            }
+            finally { _loading = false; }
+        }
+
+        private void CancelModelList(bool clearStatus)
+        {
+            _modelRun++;
+            _modelCancel?.Cancel();
+            _modelCancel = null;
+            RefreshModelsButton.IsEnabled = true;
+            if (clearStatus) ModelStatusText.Text = "";
+        }
+
+        private void OnUnloaded(object sender, RoutedEventArgs e) => CancelModelList(clearStatus: false);
+
+        private void OnContextWindowPicked(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading || _host == null || ContextWindowBox.SelectedItem is not ComboBoxItem item) return;
+            if (!int.TryParse(item.Tag?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) return;
+            SaveContextWindow(value, show: false);
+        }
+
+        private void OnContextWindowChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading || _host == null) return;
+            string text = ContextWindowBox.Text.Trim();
+            if (string.Equals(text, "Auto", StringComparison.OrdinalIgnoreCase))
+            {
+                SaveContextWindow(0);
+                return;
+            }
+            if (long.TryParse(text, NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out long value))
+            {
+                SaveContextWindow(value > int.MaxValue ? int.MaxValue : (int)value);
+                return;
+            }
+            ShowContextWindow();
+        }
+
+        private void SaveContextWindow(int value, bool show = true)
+        {
+            if (_host == null) return;
+            int before = _host.Config.AiContextWindow;
+            _host.Config.AiContextWindow = value;
+            if (before != _host.Config.AiContextWindow) _host.Save();
+            if (show) ShowContextWindow();
+            RefreshModelLimits();
+        }
+
+        private void ShowContextWindow()
+        {
+            if (_host == null) return;
+            bool wasLoading = _loading;
+            _loading = true;
+            try
+            {
+                ContextWindowBox.SelectedIndex = -1;
+                ContextWindowBox.Text = _host.Config.AiContextWindow == 0 ? "Auto"
+                    : _host.Config.AiContextWindow.ToString("N0", CultureInfo.InvariantCulture);
+            }
+            finally { _loading = wasLoading; }
+        }
+
+        private AiBudget CurrentBudget()
+        {
+            if (_host == null) return AiBudget.Standard;
+            bool matches = string.Equals(_host.Config.AiModelLimitsOf, ModelCatalog.KeyOf(_host.Config), StringComparison.Ordinal);
+            return AiBudget.For(matches ? _host.Config.AiModelContext : 0,
+                matches ? _host.Config.AiModelOutput : 0, _host.Config.AiContextWindow);
+        }
+
+        private void RefreshModelLimits()
+        {
+            if (_host == null) return;
+            AiBudget budget = CurrentBudget();
+            if (!budget.InTokens)
+            {
+                ModelLimitsText.Text = "Context window not known for this model: the standard limits are used. Set it below if you know it.";
+                return;
+            }
+            string source = _host.Config.AiContextWindow > 0 ? "set here" : "from the server";
+            ModelLimitsText.Text = "Context window " + budget.ContextTokens.ToString("N0", CultureInfo.InvariantCulture)
+                + " tokens (" + source + ") · answers up to " + budget.AskOutputTokens.ToString("N0", CultureInfo.InvariantCulture)
+                + " tokens · MicaPad reads up to about " + budget.ReadInput.ToString("N0", CultureInfo.InvariantCulture) + " tokens of text";
         }
 
         private void ShowKeyHint(string text)
@@ -251,9 +488,10 @@ namespace Kil0bitSystemMonitor.Ai
                     new ChatOptions { MaxOutputTokens = 32 },
                     timeout.Token));
                 string text = reply.Text.Trim();
-                Report(run, text.Length == 0
+                string outcome = text.Length == 0
                     ? "Connected, but the model sent back no text."
-                    : "Connected. The model replied: " + (text.Length > 60 ? text.Substring(0, 60) + "\u2026" : text));
+                    : "Connected. The model replied: " + (text.Length > 60 ? text.Substring(0, 60) + "\u2026" : text);
+                Report(run, outcome + ConnectionContextSuffix());
             }
             catch (Exception ex)
             {
@@ -271,6 +509,14 @@ namespace Kil0bitSystemMonitor.Ai
             if (run != _testRun) return;
             TestResultText.Text = text;
             TestButton.IsEnabled = true;
+        }
+
+        private string ConnectionContextSuffix()
+        {
+            AiBudget budget = CurrentBudget();
+            return budget.InTokens
+                ? " · " + budget.ContextTokens.ToString("N0", CultureInfo.InvariantCulture) + "-token context"
+                : "";
         }
 
         // ---- shortcut and limit --------------------------------------------------------------

@@ -811,6 +811,12 @@ namespace Kil0bitSystemMonitor
                     History = App.History,
                     Usage = () => App.AiUsage,
                     McpHttpProblem = () => App.AiMcpHttpProblem,
+                    // Off the UI thread: the key store is read and the provider asked. The user is
+                    // setting AI up here, so the list is asked for whatever the two switches say.
+                    ListModels = (config, secrets, cancel) => System.Threading.Tasks.Task.Run(() =>
+                        Kil0bitSystemMonitor.Services.Ai.ModelCatalog.ListAsync(config, secrets,
+                            Kil0bitSystemMonitor.Services.Ai.ModelListReason.Settings, null,
+                            line => Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", line), cancel)),
                 });
             }
             catch (Exception ex)

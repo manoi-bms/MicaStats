@@ -36,6 +36,13 @@ namespace Kil0bitSystemMonitor.Ai
             (config, secrets) => AiProviderFactory.Create(config, secrets);
 
         /// <summary>
+        /// Asks the provider of the settings for its models and their limits, for the model list.
+        /// Null (a test that has no provider) asks no one: the model boxes then take a typed name
+        /// only. The settings window supplies <see cref="ModelCatalog.ListAsync"/> for Settings.
+        /// </summary>
+        public Func<AppConfig, SecretStore, System.Threading.CancellationToken, System.Threading.Tasks.Task<AiModelList>>? ListModels { get; init; }
+
+        /// <summary>
         /// Puts text on the clipboard (tests record it instead). Throws <see cref="ExternalException"/>
         /// while another program holds the clipboard; the panel catches that.
         /// </summary>

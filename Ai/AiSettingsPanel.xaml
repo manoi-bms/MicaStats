@@ -40,6 +40,9 @@
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Margin" Value="0,0,0,4" />
         </Style>
+        <DataTemplate x:Key="ModelChoiceTemplate">
+            <TextBlock Text="{Binding Display}" />
+        </DataTemplate>
     </UserControl.Resources>
 
     <StackPanel>
@@ -87,7 +90,9 @@
                     <TextBlock Text="Model" Style="{StaticResource FieldLabel}" />
                     <TextBlock Style="{StaticResource CardHint}"
                                Text="claude-haiku-4-5 is quick and cheap; claude-sonnet-5-5 and claude-opus-5-5 think harder. Any model name works." />
-                    <TextBox x:Name="ClaudeModelBox" Width="260" HorizontalAlignment="Left" Margin="0,6,0,14" LostFocus="OnClaudeModelChanged" />
+                    <ComboBox x:Name="ClaudeModelBox" Width="320" HorizontalAlignment="Left" Margin="0,6,0,14"
+                              IsEditable="True" IsTextSearchEnabled="False" TextSearch.TextPath="Id" LostFocus="OnClaudeModelChanged"
+                              SelectionChanged="OnClaudeModelPicked" ItemTemplate="{StaticResource ModelChoiceTemplate}" />
                     <TextBlock Text="API key" Style="{StaticResource FieldLabel}" />
                     <StackPanel x:Name="ClaudeKeyEntry" Orientation="Horizontal">
                         <PasswordBox x:Name="ClaudeKeyBox" Width="260" />
@@ -103,7 +108,9 @@
                     <TextBlock Text="Base URL" Style="{StaticResource FieldLabel}" />
                     <TextBox x:Name="CompatibleUrlBox" Width="320" HorizontalAlignment="Left" Margin="0,0,0,14" LostFocus="OnCompatibleUrlChanged" />
                     <TextBlock Text="Model" Style="{StaticResource FieldLabel}" />
-                    <TextBox x:Name="CompatibleModelBox" Width="260" HorizontalAlignment="Left" Margin="0,0,0,14" LostFocus="OnCompatibleModelChanged" />
+                    <ComboBox x:Name="CompatibleModelBox" Width="320" HorizontalAlignment="Left" Margin="0,0,0,14"
+                              IsEditable="True" IsTextSearchEnabled="False" TextSearch.TextPath="Id" LostFocus="OnCompatibleModelChanged"
+                              SelectionChanged="OnCompatibleModelPicked" ItemTemplate="{StaticResource ModelChoiceTemplate}" />
                     <TextBlock Text="API key (not needed for Ollama or LM Studio)" Style="{StaticResource FieldLabel}" />
                     <StackPanel x:Name="CompatibleKeyEntry" Orientation="Horizontal">
                         <PasswordBox x:Name="CompatibleKeyBox" Width="260" />
@@ -113,6 +120,28 @@
                         <TextBlock Text="Saved" VerticalAlignment="Center" Opacity="0.8" />
                         <Button x:Name="RemoveCompatibleKeyButton" Content="Remove" Click="OnRemoveCompatibleKey" Margin="12,0,0,0" Padding="14,5" />
                     </StackPanel>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="40,12,0,0">
+                    <Button x:Name="RefreshModelsButton" Content="Refresh" Click="OnRefreshModels" Padding="14,5" />
+                    <TextBlock x:Name="ModelStatusText" VerticalAlignment="Center" Margin="12,0,0,0"
+                               Style="{StaticResource CardHint}" TextWrapping="Wrap" MaxWidth="520" />
+                </StackPanel>
+                <TextBlock x:Name="ModelLimitsText" Margin="40,10,0,0" Style="{StaticResource CardHint}" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Margin="40,12,0,0">
+                    <TextBlock Text="Context window" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <ComboBox x:Name="ContextWindowBox" Width="150" IsEditable="True" IsTextSearchEnabled="False"
+                              LostFocus="OnContextWindowChanged" SelectionChanged="OnContextWindowPicked">
+                        <ComboBoxItem Content="Auto" Tag="0" />
+                        <ComboBoxItem Content="8,000" Tag="8000" />
+                        <ComboBoxItem Content="16,000" Tag="16000" />
+                        <ComboBoxItem Content="32,000" Tag="32000" />
+                        <ComboBoxItem Content="64,000" Tag="64000" />
+                        <ComboBoxItem Content="128,000" Tag="128000" />
+                        <ComboBoxItem Content="200,000" Tag="200000" />
+                        <ComboBoxItem Content="256,000" Tag="256000" />
+                        <ComboBoxItem Content="1,000,000" Tag="1000000" />
+                    </ComboBox>
                 </StackPanel>
 
                 <TextBlock x:Name="KeyHint" Margin="40,8,0,0" Style="{StaticResource CardHint}" Visibility="Collapsed" />

@@ -20,7 +20,7 @@ namespace Kil0bitSystemMonitor.Tests
         public void The_same_number_of_lines_replaces_only_the_changed_lines_content()
         {
             var pieces = TextPieces.Plan("a  \nb\nc  ", "a\nb\nc");
-            Assert.Equal(new[] { new TextPiece(0, 3, "a"), new TextPiece(6, 3, "c") }, pieces);
+            Assert.Equal(new[] { new TextPiece(1, 2, ""), new TextPiece(7, 2, "") }, pieces);
         }
 
         [Fact]
@@ -42,6 +42,16 @@ namespace Kil0bitSystemMonitor.Tests
 
         [Fact]
         public void Equal_text_has_no_pieces() => Assert.Empty(TextPieces.Plan("same\ntext", "same\ntext"));
+
+        [Fact]
+        public void Wrapping_preserves_the_original_content_as_two_insertions()
+        {
+            const string text = "- [ ] task (created: 2026-10-06 07:30)";
+            string wrapped = "```\r\n" + text + "\r\n```";
+            var pieces = TextPieces.Plan(text, wrapped);
+            Assert.Equal(new[] { new TextPiece(0, 0, "```\r\n"), new TextPiece(text.Length, 0, "\r\n```") }, pieces);
+            Assert.Equal(wrapped, Apply(text, pieces));
+        }
 
         [Fact]
         public void Past_the_limit_the_lines_become_one_piece()

@@ -230,7 +230,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             // The line after each What's New list is blank, so the next paragraph is not folded into a bullet.
             string[] lines = readme.Split('\n');
-            foreach (string start in new[] { "**Since v1.14.0** —", "**หลัง v1.14.0** (" })
+            foreach (string start in new[] { "**v1.15.0** — task tracking", "**v1.15.0** — ติดตามงาน" })
             {
                 int i = Array.FindIndex(lines, l => l.StartsWith(start, StringComparison.Ordinal));
                 Assert.True(i >= 0);
@@ -270,8 +270,9 @@ namespace Kil0bitSystemMonitor.Tests
                 foreach (string needle in new[] { "**Try again**", "**Source**", "**Copy image**", "Drawing the diagram…", "splitter", "Finished in", "**Draw diagrams**" })
                     Assert.Contains(needle, part, StringComparison.Ordinal);
 
-                // The new items are in the "Since v1.14.0" block, which ends where v1.14.0 starts.
-                int since = part.IndexOf("Since v1.14.0", StringComparison.Ordinal) >= 0 ? part.IndexOf("Since v1.14.0", StringComparison.Ordinal) : part.IndexOf("หลัง v1.14.0", StringComparison.Ordinal);
+                // The new items are in the v1.15.0 block, which ends where v1.14.0 starts.
+                int since = part.IndexOf("**v1.15.0** —", StringComparison.Ordinal);
+                Assert.True(since >= 0);
                 int end = part.IndexOf("**v1.14.0** —", since, StringComparison.Ordinal);
                 string block = part.Substring(since, end - since);
                 Assert.Contains("splitter", block, StringComparison.Ordinal);
@@ -418,11 +419,11 @@ namespace Kil0bitSystemMonitor.Tests
             string english = readme.Substring(0, thai);
             string thaiPart = readme.Substring(thai);
 
-            Assert.True(english.IndexOf("**Since v1.14.0** — coming in the next release:", StringComparison.Ordinal)
-                        < english.IndexOf("**v1.14.0** —", StringComparison.Ordinal));
+            int englishRelease = english.IndexOf("**v1.15.0** —", StringComparison.Ordinal);
+            Assert.True(englishRelease >= 0 && englishRelease < english.IndexOf("**v1.14.0** —", StringComparison.Ordinal));
             Assert.Contains("\n#### AI\n", english);
-            Assert.True(thaiPart.IndexOf("**หลัง v1.14.0** (จะมาในรีลีสถัดไป):", StringComparison.Ordinal)
-                        < thaiPart.IndexOf("**v1.14.0** —", StringComparison.Ordinal));
+            int thaiRelease = thaiPart.IndexOf("**v1.15.0** —", StringComparison.Ordinal);
+            Assert.True(thaiRelease >= 0 && thaiRelease < thaiPart.IndexOf("**v1.14.0** —", StringComparison.Ordinal));
 
             foreach (string part in new[] { english, thaiPart })
             {

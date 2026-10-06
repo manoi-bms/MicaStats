@@ -2,6 +2,7 @@
     x:Class="Kil0bitSystemMonitor.Pad.HistoryPane"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers"
     Width="280" Background="{DynamicResource Pad.Chrome}">
 
     <!-- A note's versions, newest first, grouped by day. Selecting one previews it in the window.
@@ -12,6 +13,9 @@
             <DockPanel DockPanel.Dock="Top" Margin="12,8,6,8">
                 <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
                         FontSize="10" Padding="8,6" ToolTip="Close (Ctrl+Shift+H)" Click="OnCloseClick" />
+                <helpers:DecorativeIcon x:Name="HeadingGlyph" DockPanel.Dock="Left" Text="&#xE81C;" Margin="0,0,7,0"
+                                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
+                                        Foreground="{DynamicResource Pad.Accent}" VerticalAlignment="Center" />
                 <TextBlock Text="History" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
             </DockPanel>
             <TextBlock x:Name="EmptyText" DockPanel.Dock="Top" Margin="12,0,12,8" TextWrapping="Wrap"

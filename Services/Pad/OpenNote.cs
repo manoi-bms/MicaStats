@@ -27,12 +27,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private bool _isActive;
         private string _windowId = "";
         private SaveState _saveState = SaveState.Saved;
+        private int _tabColorHue;
 
         internal OpenNote(NoteMeta meta, string initialText)
         {
             Meta = meta;
             _title = meta.Title;
             _hasUnsavedEdits = meta.HasUnsavedEdits;
+            _tabColorHue = NoteTabColors.IsValidHue(meta.TabColorHue)
+                ? meta.TabColorHue!.Value
+                : NoteTabColors.HueForId(meta.Id);
             TextProvider = () => initialText;
         }
 
@@ -98,6 +102,18 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
             get => _saveState;
             internal set => Set(ref _saveState, value);
+        }
+
+        /// <summary>The stable hue used to distinguish this note's tab, from 0 through 359.</summary>
+        public int TabColorHue
+        {
+            get => _tabColorHue;
+            internal set
+            {
+                int resolved = NoteTabColors.IsValidHue(value) ? value : NoteTabColors.HueForId(Id);
+                Meta.TabColorHue = resolved;
+                Set(ref _tabColorHue, resolved);
+            }
         }
 
         /// <summary>When the last save finished, by the workspace clock.</summary>

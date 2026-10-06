@@ -89,6 +89,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private readonly int _ansiCodePage;
         private readonly Dictionary<string, OpenNote> _byId = new();
         private readonly Dictionary<string, NoteMeta> _recentlyClosed = new();
+        private readonly HashSet<string> _metadataOnly = new();
 
         /// <summary>
         /// Open notes whose text could not be read at <see cref="Restore"/>. Not shown, never
@@ -176,12 +177,25 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
             SyncTabs();
 
+            // Reserve every saved color before assigning legacy notes. This preserves the user's
+            // existing choices and prevents an earlier legacy tab from taking a later tab's hue.
+            var restoreMetas = new Dictionary<string, NoteMeta?>();
+            var restoreHues = new List<int>(Open.Select(note => note.TabColorHue));
+            foreach (string id in Windows.SelectMany(window => window.NoteIds).Distinct())
+            {
+                if (_byId.ContainsKey(id) || _unreadable.Contains(id)) continue;
+                NoteMeta? meta = _store.LoadMeta(id);
+                restoreMetas[id] = meta;
+                if (meta != null && !meta.IsClosed && NoteTabColors.IsValidHue(meta.TabColorHue))
+                    restoreHues.Add(meta.TabColorHue!.Value);
+            }
+
             foreach (var window in Windows)
             {
                 foreach (string id in window.NoteIds.ToList())
                 {
                     if (_byId.ContainsKey(id) || _unreadable.Contains(id)) continue;
-                    var meta = _store.LoadMeta(id);
+                    restoreMetas.TryGetValue(id, out NoteMeta? meta);
                     if (meta == null)
                     {
                         _warn("The session lists note " + id + " but it could not be loaded");
@@ -197,7 +211,15 @@ namespace Kil0bitSystemMonitor.Services.Pad
                         _unreadableWindow[id] = window.Id;
                         continue;
                     }
-                    AddOpen(meta, text, Open.Count, window.Id);
+                    bool needsColorSave = !NoteTabColors.IsValidHue(meta.TabColorHue);
+                    if (needsColorSave)
+                    {
+                        int assignedHue = NoteTabColors.ChooseHue(restoreHues);
+                        meta.TabColorHue = assignedHue;
+                        restoreHues.Add(assignedHue);
+                    }
+                    OpenNote note = AddOpen(meta, text, Open.Count, window.Id);
+                    if (needsColorSave) MarkMetadataChanged(note);
                 }
             }
 
@@ -294,12 +316,40 @@ namespace Kil0bitSystemMonitor.Services.Pad
             if (!_byId.ContainsKey(note.Id)) return;
 
             DateTime now = _clock();
+            _metadataOnly.Remove(note.Id);   // a pending text save includes the latest metadata too
             note.LastEditUtc = now;
             note.ChangedSinceSnapshot = true;
             note.EverHadText = true;
             if (markUnsaved && note.Meta.IsFileBacked) note.HasUnsavedEdits = true;
             _scheduler.MarkChanged(note.Id, now);
             NoteTextChanged?.Invoke(note);
+        }
+
+        /// <summary>
+        /// The protected task-date metadata changed without changing the note text. Debounces the
+        /// metadata save on the normal autosave clock, but does not mark a file dirty, create a
+        /// history version, or notify text/search listeners.
+        /// </summary>
+        public void NotifyTaskDatesChanged(OpenNote note)
+        {
+            if (!_byId.ContainsKey(note.Id)) return;
+            MarkMetadataChanged(note);
+        }
+
+        /// <summary>
+        /// Changes a note's identifying tab color. This persists only metadata and leaves the note
+        /// text, history, dirty state, and search index untouched.
+        /// </summary>
+        public bool SetTabColorHue(OpenNote note, int hue)
+        {
+            if (note == null) return false;
+            if (!NoteTabColors.IsValidHue(hue)) return false;
+            if (!_byId.TryGetValue(note.Id, out OpenNote? current) || !ReferenceEquals(current, note)) return false;
+            if (note.TabColorHue == hue && note.Meta.TabColorHue == hue) return true;
+
+            note.TabColorHue = hue;
+            MarkMetadataChanged(note);
+            return true;
         }
 
         /// <summary>A note's text or title changed (search indexing listens). Raised on the UI thread.</summary>
@@ -744,6 +794,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private OpenNote AddOpen(NoteMeta meta, string text, int index, string windowId)
         {
+            if (!NoteTabColors.IsValidHue(meta.TabColorHue))
+                meta.TabColorHue = NoteTabColors.ChooseHue(Open.Select(open => open.TabColorHue));
             var note = new OpenNote(meta, text)
             {
                 SnapshotClockUtc = _clock(),
@@ -755,6 +807,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return note;
         }
 
+        private void MarkMetadataChanged(OpenNote note)
+        {
+            // A text change already pending must keep its text payload; otherwise this id can be
+            // saved as metadata only. A full save already handed to the writer also protects a new
+            // note's first current.txt if another metadata change arrives immediately afterwards.
+            bool fullWriteInFlight = _unconfirmed.TryGetValue(note.Id, out var pending) && pending.Text != null;
+            if (!_scheduler.IsPending(note.Id) && !fullWriteInFlight) _metadataOnly.Add(note.Id);
+            _scheduler.MarkChanged(note.Id, _clock());
+        }
+
         /// <summary>
         /// Queues a save of the note's meta, and of its text when the text is authoritative (always
         /// for a scratch note; for a file-backed one only while it has unsaved edits).
@@ -764,7 +826,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
             _scheduler.Forget(note.Id);
 
             var meta = note.Meta;
-            bool writeText = !meta.IsFileBacked || meta.HasUnsavedEdits;
+            bool metadataOnly = _metadataOnly.Remove(note.Id);
+            bool writeText = !metadataOnly && (!meta.IsFileBacked || meta.HasUnsavedEdits);
             string? text = writeText ? note.TextProvider() : null;
             if (text != null && !meta.IsFileBacked && !meta.TitleIsCustom)
                 note.Title = NoteTitle.FromText(text, meta.UntitledNumber);

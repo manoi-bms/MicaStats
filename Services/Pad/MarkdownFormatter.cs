@@ -28,10 +28,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
     {
         private static readonly char[] LineBreaks = { '\r', '\n' };
         private static readonly Regex HeadingRx = new(@"^(#{1,6})[ \t]+", RegexOptions.CultureInvariant);
-        private static readonly Regex TaskRx = new(@"^[-*+][ \t]+\[[ xX]\][ \t]+", RegexOptions.CultureInvariant);
-        private static readonly Regex BulletRx = new(@"^[-*+][ \t]+(?!\[[ xX]\])", RegexOptions.CultureInvariant);
+        private static readonly Regex TaskRx = new(@"^[-*+][ \t]+\[[ xX]?\][ \t]+", RegexOptions.CultureInvariant);
+        private static readonly Regex BulletRx = new(@"^[-*+][ \t]+(?!\[[ xX]?\])", RegexOptions.CultureInvariant);
         private static readonly Regex NumberedRx = new(@"^\d{1,9}[.)][ \t]+", RegexOptions.CultureInvariant);
-        private static readonly Regex AnyListRx = new(@"^([-*+][ \t]+\[[ xX]\][ \t]+|[-*+][ \t]+|\d{1,9}[.)][ \t]+)", RegexOptions.CultureInvariant);
+        private static readonly Regex AnyListRx = new(@"^([-*+][ \t]+\[[ xX]?\][ \t]+|[-*+][ \t]+|\d{1,9}[.)][ \t]+)", RegexOptions.CultureInvariant);
         private static readonly Regex QuoteRx = new(@"^>[ \t]?", RegexOptions.CultureInvariant);
 
         /// <summary>

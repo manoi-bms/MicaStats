@@ -106,11 +106,13 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace = workspace;
             _config = config;
             _requestedWindowId = windowId;
+            ConfigureOpenNotesNavigation();
 
             ConfigureEditor();
             ConfigureLinks(Editor);
             ConfigureLinks(PreviewEditor);
             ConfigureVault();
+            ConfigureTaskDates();
             Editor.TextArea.TextView.MouseHover += OnEditorMouseHover;
             Editor.TextArea.TextView.MouseHoverStopped += (s, e) => _linkTip.IsOpen = false;
             FindBar.Attach(Editor);
@@ -363,6 +365,8 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Hides the last window, keeping its tabs for the next show.</summary>
         private void HideKeepingTabs()
         {
+            CloseTaskDateEditor();
+            CloseOpenNotes();
             CaptureViewState();                    // the placement from before full screen, if any
             if (IsFullScreen) ToggleFullScreen();  // so MicaPad comes back windowed (GUIDE; Part 4 fix wave)
             _hidden = true;
@@ -413,6 +417,7 @@ namespace Kil0bitSystemMonitor.Pad
                      ?? throw new InvalidOperationException("MicaPad has no window " + _windowId);
             var tabs = _workspace.TabsOf(_windowId);
             TabStrip.ItemsSource = tabs;
+            BindOpenNotesNavigation(tabs);
             if (tabs.Count == 0) _workspace.NewNote(_windowId);
             foreach (var note in tabs.ToList()) EnsureDocument(note);
 
@@ -432,6 +437,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (_exiting) return;
             _exiting = true;
+            CloseOpenNotes();
             CaptureViewState();
             if (_state != null) _state.Open = !_hidden;
         }
@@ -475,6 +481,10 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         internal bool HandleShortcut(Key key, ModifierKeys modifiers)
         {
+            if (TaskDatesPopup.IsOpen) return false;
+            if (modifiers == ModifierKeys.Control && key == Key.P) { ToggleOpenNotes(); return true; }
+            if (OpenNotesPopup.IsOpen) return NotesPicker.HandleKey(key, modifiers);
+            if (HandleTaskKey(key, modifiers)) return true;
             bool ctrl = modifiers == ModifierKeys.Control;
             bool ctrlShift = modifiers == (ModifierKeys.Control | ModifierKeys.Shift);
             bool alt = modifiers == ModifierKeys.Alt;
@@ -634,10 +644,12 @@ namespace Kil0bitSystemMonitor.Pad
             _occurrenceTimer?.Stop();
             _statusTimer?.Stop();
             _config.PropertyChanged -= OnConfigChanged;
+            DetachOpenNotesNavigation();
             DetachPaneSplitter();
             _workspace.Open.CollectionChanged -= OnOpenChanged;
             foreach (var (document, changed) in _docHandlers) document.Changed -= changed;
             _docHandlers.Clear();
+            DetachTaskDates();
             DetachVault();
             DetachAi();
             s_windows.Remove(this);
@@ -686,6 +698,7 @@ namespace Kil0bitSystemMonitor.Pad
             _docs[note.Id] = document;
             if (_workspace.Session.Tabs.TryGetValue(note.Id, out var view) && view.Bookmarks != null)
                 _bookmarks.Load(document, view.Bookmarks);
+            TrackTaskDates(note, document);
         }
 
         /// <summary>
@@ -702,6 +715,7 @@ namespace Kil0bitSystemMonitor.Pad
             _workspace.SetBookmarks(note, _bookmarks.Lines(document));
             _bookmarks.Forget(document);
             if (_docHandlers.Remove(document, out var changed)) document.Changed -= changed;
+            UntrackTaskDates(document);
             _docs.Remove(note.Id);
             return document;
         }
@@ -773,6 +787,7 @@ namespace Kil0bitSystemMonitor.Pad
                     {
                         _bookmarks.Forget(gone);
                         if (_docHandlers.Remove(gone, out var changed)) gone.Changed -= changed;
+                        UntrackTaskDates(gone);
                     }
                     _docs.Remove(note.Id);
                 }
@@ -780,6 +795,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void ShowNote(OpenNote note)
         {
+            CloseTaskDateEditor();
             if (note.WindowId != _windowId)
             {
                 // Another window shows this tab (a file already open there): that window comes forward on it (spec 5.3).
@@ -971,17 +987,18 @@ namespace Kil0bitSystemMonitor.Pad
             FrameworkElement target = anchor ?? TabStrip;
             var menu = NewMenu(target, PlacementMode.MousePoint);
             menu.Items.Add(Item("Rename…", null, () => BeginRename(note, target), icon: "\uE8AC"));
+            menu.Items.Add(BuildTabColorMenu(note));
             menu.Items.Add(Item("Close", null, () => CloseTab(note), icon: "\uE711"));
-            menu.Items.Add(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.TabsOf(_windowId).Count > 1));
+            menu.Items.Add(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.TabsOf(_windowId).Count > 1, icon: "\uE89F"));
 
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Move to new window", null, () => MoveToNewWindow(note), _workspace.TabsOf(_windowId).Count > 1, icon: "\uE8A7"));
             var others = OtherWindows();
             if (others.Count > 0)
             {
-                var moveTo = new MenuItem { Header = "Move to" };
+                var moveTo = new MenuItem { Header = "Move to", Icon = "\uE7C2" };
                 // Doubled: a menu header reads "_" as an access key, and file names are full of them.
-                foreach (var other in others) moveTo.Items.Add(Item(other.ActiveTitle.Replace("_", "__"), null, () => MoveToWindow(note, other)));
+                foreach (var other in others) moveTo.Items.Add(Item(other.ActiveTitle.Replace("_", "__"), null, () => MoveToWindow(note, other), icon: "\uE7C2"));
                 menu.Items.Add(moveTo);
             }
 
@@ -1162,14 +1179,17 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnTabScrollChanged(object sender, ScrollChangedEventArgs e)
         {
+            if (TabScroller.ViewportWidth > 0) TabHeaderWidth = Math.Clamp(TabScroller.ViewportWidth, 100, 180);
             var visibility = TabScroller.ScrollableWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
             ScrollLeftButton.Visibility = visibility;
             ScrollRightButton.Visibility = visibility;
+            ScrollLeftButton.IsEnabled = TabScroller.HorizontalOffset > 0;
+            ScrollRightButton.IsEnabled = TabScroller.HorizontalOffset < TabScroller.ScrollableWidth;
         }
 
-        private void OnScrollTabsLeft(object sender, RoutedEventArgs e) => TabScroller.LineLeft();
+        private void OnScrollTabsLeft(object sender, RoutedEventArgs e) => TabScroller.ScrollToHorizontalOffset(TabScroller.HorizontalOffset - 160);
 
-        private void OnScrollTabsRight(object sender, RoutedEventArgs e) => TabScroller.LineRight();
+        private void OnScrollTabsRight(object sender, RoutedEventArgs e) => TabScroller.ScrollToHorizontalOffset(TabScroller.HorizontalOffset + 160);
 
         private void BeginRename(OpenNote note, FrameworkElement anchor)
         {
@@ -1261,11 +1281,23 @@ namespace Kil0bitSystemMonitor.Pad
             _infoPrimary = primary;
             _infoSecondary = secondary;
             InfoPrimary.Content = primaryLabel;
+            ButtonIcon.SetGlyph(InfoPrimary, InfoActionIcon(primaryLabel));
             InfoPrimary.Visibility = primary == null ? Visibility.Collapsed : Visibility.Visible;
             InfoSecondary.Content = secondaryLabel;
+            ButtonIcon.SetGlyph(InfoSecondary, InfoActionIcon(secondaryLabel));
             InfoSecondary.Visibility = secondary == null ? Visibility.Collapsed : Visibility.Visible;
             InfoBar.Visibility = Visibility.Visible;
         }
+
+        private static string InfoActionIcon(string? label) => label switch
+        {
+            "Show folder" => "\uE838",
+            "Reload from disk" => "\uE72C",
+            "Keep mine" or "Keep as note" or "Overwrite" or "Overwrite anyway" or "Save as UTF-8" => "\uE74E",
+            "Save As…" => "\uE792",
+            "Cancel" => "\uE711",
+            _ => "\uE72A",
+        };
 
         /// <summary>
         /// Once per run: the notes this Windows account could not decrypt were moved to
@@ -1542,7 +1574,7 @@ namespace Kil0bitSystemMonitor.Pad
                 {
                     _workspace.SetEncoding(note, chosen, chosenPage);
                     UpdateFileText();
-                }));
+                }, icon: "\uE8C1"));
             }
             menu.IsOpen = true;
         }
@@ -1556,7 +1588,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 var chosen = ending;
                 menu.Items.Add(Check(TextFileCodec.Describe(ending), null, note.Meta.LineEnding == ending,
-                    () => ConvertLineEndings(note, chosen)));
+                    () => ConvertLineEndings(note, chosen), icon: "\uE751"));
             }
             menu.IsOpen = true;
         }
@@ -1985,26 +2017,27 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Save", "Ctrl+S", SaveShown, icon: "\uE74E"));
             menu.Items.Add(Item("Save As…", "Ctrl+Shift+S", () => { if (_shown != null) SaveAs(_shown); }, icon: "\uE792"));
             // Off while a history version covers the note: it would copy the hidden note, not what is shown.
-            menu.Items.Add(Item("Copy as RTF", null, CopyAsRtf, enabled: PreviewPanel.Visibility != Visibility.Visible));
+            menu.Items.Add(Item("Copy as RTF", null, CopyAsRtf, enabled: PreviewPanel.Visibility != Visibility.Visible, icon: "\uE8C8"));
             menu.Items.Add(Item("Close tab", "Ctrl+W", CloseActiveTab, icon: "\uE711"));
-            menu.Items.Add(Item("Reopen closed tab", "Ctrl+Shift+T", ReopenClosed));
+            menu.Items.Add(Item("Reopen closed tab", "Ctrl+Shift+T", ReopenClosed, icon: "\uE7A7"));
+            menu.Items.Add(Item("Open notes", "Ctrl+P", ToggleOpenNotes, icon: "\uE8FD"));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));
             menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true), icon: "\uE8AB"));
             menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine, icon: "\uE8AD"));
             menu.Items.Add(Item("History", "Ctrl+Shift+H", ToggleHistory, icon: "\uE81C"));
-            menu.Items.Add(Item("Clear bookmarks", null, ClearBookmarks, enabled: BookmarkLines.Count > 0));
+            menu.Items.Add(Item("Clear bookmarks", null, ClearBookmarks, enabled: BookmarkLines.Count > 0, icon: "\uE894"));
             var tools = ToolsMenu(Editor, ShowStatus, () => Now());
             tools.IsEnabled = PreviewPanel.Visibility != Visibility.Visible;   // never edit a note hidden under the history preview
             menu.Items.Add(tools);
             menu.Items.Add(new Separator());
-            menu.Items.Add(Check("Word wrap", "Alt+Z", _config.PadWordWrap, ToggleWordWrap));
+            menu.Items.Add(Check("Word wrap", "Alt+Z", _config.PadWordWrap, ToggleWordWrap, icon: "\uE751"));
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,
-                () => _config.PadShowLineNumbers = !_config.PadShowLineNumbers));
-            menu.Items.Add(Check("Markdown formatting", null, _config.PadMarkdown, () => _config.PadMarkdown = !_config.PadMarkdown));
-            menu.Items.Add(Check("Auto-close brackets and quotes", null, _config.PadAutoClose, () => _config.PadAutoClose = !_config.PadAutoClose));
-            menu.Items.Add(Check("Always on top", null, Topmost, ToggleTopmost));
-            menu.Items.Add(Check("Full screen", "F11", IsFullScreen, ToggleFullScreen));
+                () => _config.PadShowLineNumbers = !_config.PadShowLineNumbers, icon: "\uEA37"));
+            menu.Items.Add(Check("Markdown formatting", null, _config.PadMarkdown, () => _config.PadMarkdown = !_config.PadMarkdown, icon: "\uE8D2"));
+            menu.Items.Add(Check("Auto-close brackets and quotes", null, _config.PadAutoClose, () => _config.PadAutoClose = !_config.PadAutoClose, icon: "\uE943"));
+            menu.Items.Add(Check("Always on top", null, Topmost, ToggleTopmost, icon: "\uE718"));
+            menu.Items.Add(Check("Full screen", "F11", IsFullScreen, ToggleFullScreen, icon: "\uE740"));
             menu.Items.Add(Item("Font…", null, ChooseFont, icon: "\uE8D2"));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Open notes folder", null, OpenNotesFolder, icon: "\uE838"));
@@ -2061,13 +2094,16 @@ namespace Kil0bitSystemMonitor.Pad
             if (ReferenceEquals(editor, Editor))
             {
                 int copyAt = menu.Items.Cast<object>().ToList().FindIndex(i => i is MenuItem { Header: "Copy" });
-                if (copyAt >= 0) menu.Items.Insert(copyAt + 1, Item("Copy as RTF", null, CopyAsRtf));
+                if (copyAt >= 0) menu.Items.Insert(copyAt + 1, Item("Copy as RTF", null, CopyAsRtf, icon: "\uE8C8"));
                 AddStoreItem(menu);
             }
 
             menu.Items.Add(new Separator());
             if (ReferenceEquals(editor, Editor) && ReferenceEquals(_resolved.Effective, PadLanguages.Markdown))
+            {
+                AddTaskMenuItem(menu);
                 menu.Items.Add(FormatMenu(editor));
+            }
             menu.Items.Add(LinesMenu(editor, MoveLines));
             menu.Items.Add(ToolsMenu(editor, ShowStatus, () => Now()));
             if (ReferenceEquals(editor, Editor)) menu.Items.Add(BuildAiMenu());
@@ -2544,6 +2580,8 @@ namespace Kil0bitSystemMonitor.Pad
         private void ApplyTheme()
         {
             _palette = PadPalette.For(_config.PadTheme);
+            TabPalette = _palette;
+            NotesPicker.TabPalette = _palette;
             PadThemeApplier.ApplyResources(Resources, _palette);
             ModernWpf.ThemeManager.SetRequestedTheme(this, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
 
@@ -2655,6 +2693,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (_shown == null) return;
             _resolved = PadLanguages.Resolve(_shown.Meta.Language, _shown.Meta.SourcePath, _config.PadMarkdown, Editor.Document.TextLength);
+            if (_taskDates.TryGetValue(Editor.Document, out var tasks)) tasks.Initialize();
             LanguageButton.Content = _resolved.DisplayName;
             _language.Apply(_resolved.Effective);
             ApplyEditorFont();
@@ -2670,12 +2709,12 @@ namespace Kil0bitSystemMonitor.Pad
         internal ContextMenu BuildLanguageMenu(OpenNote note)
         {
             var menu = NewMenu(LanguageButton, PlacementMode.Top);
-            menu.Items.Add(Check("Auto (by file type)", null, note.Meta.Language == null, () => ChooseLanguage(note, null)));
+            menu.Items.Add(Check("Auto (by file type)", null, note.Meta.Language == null, () => ChooseLanguage(note, null), icon: "\uE8A5"));
             menu.Items.Add(new Separator());
             foreach (var language in PadLanguages.All)
             {
                 string id = language.Id;
-                menu.Items.Add(Check(language.Name, null, note.Meta.Language == id, () => ChooseLanguage(note, id)));
+                menu.Items.Add(Check(language.Name, null, note.Meta.Language == id, () => ChooseLanguage(note, id), icon: "\uE943"));
             }
             return menu;
         }

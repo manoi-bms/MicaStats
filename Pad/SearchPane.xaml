@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="clr-namespace:Kil0bitSystemMonitor.Pad"
+    xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers"
     Background="{DynamicResource Pad.Chrome}">
 
     <!-- Search notes (search spec 1): a query, how it ran, and the matching passages of every note.
@@ -14,10 +15,14 @@
             <DockPanel DockPanel.Dock="Top" Margin="12,8,6,8">
                 <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
                         FontSize="10" Padding="8,6" ToolTip="Close (Ctrl+Shift+F)" Click="OnCloseClick" />
+                <helpers:DecorativeIcon x:Name="HeadingGlyph" DockPanel.Dock="Left" Text="&#xE721;" Margin="0,0,7,0"
+                                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
+                                        Foreground="{DynamicResource Pad.Accent}" VerticalAlignment="Center" />
                 <TextBlock Text="Search notes" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
             </DockPanel>
             <DockPanel DockPanel.Dock="Top" Margin="12,0,12,4">
                 <Button x:Name="AskButton" DockPanel.Dock="Right" Content="Ask" FontSize="12" Padding="10,4" Margin="6,0,0,0"
+                        helpers:ButtonIcon.Glyph="&#xE8BD;"
                         VerticalAlignment="Stretch" ToolTip="Answer from your notes (Ctrl+Enter)" Click="OnAskClick" />
                 <TextBox x:Name="QueryBox"
                          Background="{DynamicResource Pad.Background}" Foreground="{DynamicResource Pad.Text}"
@@ -42,8 +47,10 @@
                                Foreground="{DynamicResource Pad.TextSoft}" FontSize="12" />
                     <WrapPanel>
                         <Button x:Name="AnswerStop" Content="Stop" FontSize="12" Padding="10,4" Margin="0,6,6,0"
+                                helpers:ButtonIcon.Glyph="&#xE71A;"
                                 Visibility="Collapsed" Click="OnAnswerStopClick" />
                         <Button x:Name="AnswerCopy" Content="Copy" FontSize="12" Padding="10,4" Margin="0,6,6,0"
+                                helpers:ButtonIcon.Glyph="&#xE8C8;"
                                 Visibility="Collapsed" ToolTip="Copy the answer" Click="OnAnswerCopyClick" />
                     </WrapPanel>
                 </StackPanel>

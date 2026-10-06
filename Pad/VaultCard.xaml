@@ -2,18 +2,12 @@
     x:Class="Kil0bitSystemMonitor.Pad.VaultCard"
     x:ClassModifier="internal"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers">
 
     <!-- Every vault question MicaPad asks, and a revealed value, in one card over the editor area.
          Colors are the MicaPad window's Pad.* brushes, so the card follows its theme.
          A PIN or a value lives only in the boxes below: never in a tooltip, an automation name or a log. -->
-
-    <UserControl.Resources>
-        <!-- The Confirm card's primary label, in the alert color; a template keeps Content a plain string. -->
-        <DataTemplate x:Key="AlertLabel">
-            <TextBlock Text="{Binding}" Foreground="{DynamicResource Pad.AlertRed}" />
-        </DataTemplate>
-    </UserControl.Resources>
 
     <!-- Tab cycles inside the card: leaving it would answer the question with Cancel. -->
     <Grid x:Name="Root" Visibility="Collapsed" KeyDown="OnCardKeyDown" MouseDown="OnCardMouseDown"
@@ -52,6 +46,7 @@
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
                     <Button x:Name="CopyButton" Content="Copy" MinWidth="80" Margin="0,0,8,0"
+                            helpers:ButtonIcon.Glyph="&#xE8C8;"
                             Style="{DynamicResource AccentButtonStyle}" Click="OnCopyClick" />
                     <Button x:Name="PrimaryButton" MinWidth="80" Margin="0,0,8,0"
                             Style="{DynamicResource AccentButtonStyle}" Click="OnPrimaryClick" />

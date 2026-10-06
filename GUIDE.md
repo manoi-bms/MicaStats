@@ -426,13 +426,32 @@ that is a real file also has **Copy file path** and **Show in folder**.
 ### Markdown
 
 Notes and `.md`/`.txt` files are shown the way Wiki.js shows Markdown, as you type. Every
-character stays visible and editable — the markers are dimmed, not hidden — and the file never
-changes unless you run a command such as Format table. Turn it all off with
+character stays visible and editable — the markers are dimmed, not hidden. Task dates appear as
+read-only labels beside the text; formatting changes text only through commands such as Format table. Turn it all off with
 **☰ → Markdown formatting** or in **Settings → MicaPad**.
 
 **Reading font**: prose is shown in Segoe UI; fenced code, inline code, tables, front matter and
 `<kbd>` keys stay in the editor font, so code and columns line up. Turn it off in
 **Settings → MicaPad → Reading font** to see everything in the editor font.
+
+**Todo tracking**: type `- [] Send report` or `- [ ] Send report`. MicaPad displays a muted, read-only
+`(created: 2026-10-06 07:30)` automatically. **Ctrl+Enter** on the task, or right-click →
+**Complete task**, checks it and displays `; finished: 2026-10-06 08:30` in the label.
+**Reopen task** clears the finished date and keeps creation.
+Completing it again records a new finished time. **Enter** starts a fresh checkbox on the next
+line; Enter on an empty checkbox exits the list. Dates are stored separately in encrypted metadata;
+they cannot be typed over or selected in the note. Right-click a task → **Edit task dates…** to
+correct **Start** or **Finish** in a popup. Enter `yyyy-MM-dd HH:mm` in local time, or choose **Now**.
+**Clear** finish keeps the task open; setting finish completes it. Finish cannot precede Start.
+**Save** applies both the dates and checkbox together; **Cancel**, Escape or clicking outside
+discards the draft. Date corrections undo with Ctrl+Z, including changes that leave task text intact.
+Copy, history, exported Markdown and file saves
+contain just your Markdown text. **End** and **Shift+End** work on the task text normally.
+Each action and its dates undo together with **Ctrl+Z**; redo restores the same dates.
+Dates use local time and Gregorian years. Existing generated date suffixes migrate automatically
+into separate storage when the note is opened; saved versions also lose the former generated suffixes.
+Undated tasks get the time they are first tracked,
+since their original dates are unknown. Fenced code, math, front matter and tables are excluded.
 
 - **Headings**: `# Title` to `###### Title`, or a line of `===` or `---` right under a line of
   text (after a blank line, `---` is a rule).
@@ -571,7 +590,20 @@ in your browser or mail program. Nothing else in a note is ever opened — not f
 protocols. A link ends at a space, a quote, a brace or a square bracket, and before closing
 punctuation; parentheses stay in it only as a pair, as in Wikipedia addresses.
 
-**Tabs**: drag a tab to move it; the order is kept after a restart.
+**Tabs**: drag a tab to move it; the order is kept after a restart. Hover to read the full title
+and file path. Each note has a saved color, shown as a small marker and soft tab tint, with a
+matching marker in **Notes**. New notes get separated colors automatically. Right-click a tab →
+**Tab color** to choose a named color; renaming, reordering, moving or reopening keeps it.
+The active tab has a matching underline and semibold title, and the close button appears on active
+or hovered tabs. Use the mouse wheel or arrows to scroll a crowded strip; the **+** for New note
+stays available.
+
+**Find an open note**: click **Notes** beside the tabs or press **Ctrl+P**. The count shows notes
+in this window; the picker lists notes from every MicaPad window. Type part of a title or file
+path, then use **↑ / ↓** and **Enter**, or click the note. File paths distinguish matching names;
+scratch notes show their note number, and notes elsewhere say **Other window**. Highlighting a
+result leaves your current note alone. **Esc** or **Ctrl+P** cancels and returns to writing.
+**Ctrl+Tab / Ctrl+Shift+Tab** still follow tab order, and **Ctrl+1…9** selects a numbered tab.
 
 **Full screen**: **F11** hides the title bar and fills the screen; **F11** again (or **Win+↓**) brings the window back. MicaPad always reopens windowed.
 

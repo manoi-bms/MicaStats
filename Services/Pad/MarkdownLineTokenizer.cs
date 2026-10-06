@@ -88,7 +88,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private static readonly Regex HeadingRx = new(@"^ {0,3}(#{1,6})(?:[ \t]+|$)", RegexOptions.CultureInvariant);
         private static readonly Regex RuleRx = new(@"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$", RegexOptions.CultureInvariant);
-        private static readonly Regex TaskRx = new(@"^[ \t]*([-*+])[ \t]+(\[[ xX]\])(?=[ \t]|$)[ \t]*", RegexOptions.CultureInvariant);
+        private static readonly Regex TaskRx = new(@"^[ \t]*([-*+])[ \t]+(\[[ xX]?\])(?=[ \t]|$)[ \t]*", RegexOptions.CultureInvariant);
         private static readonly Regex BulletRx = new(@"^[ \t]*([-*+])[ \t]+", RegexOptions.CultureInvariant);
         private static readonly Regex NumberedRx = new(@"^[ \t]*(\d{1,9}[.)])[ \t]+", RegexOptions.CultureInvariant);
         private static readonly Regex QuoteRx = new(@"^ {0,3}(>)[ \t]?", RegexOptions.CultureInvariant);
@@ -148,9 +148,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
                     break;
                 case MdBlock.Task:
                     Add(spans, m!.Groups[1].Index, 1, MdStyle.ListMarker);
-                    if (m.Groups[2].Value[1] != ' ') Add(spans, m.Length, line.Length - m.Length, MdStyle.TaskDone);
+                    if (m.Groups[2].Value is "[x]" or "[X]") Add(spans, m.Length, line.Length - m.Length, MdStyle.TaskDone);
                     Inline(line, m.Length, line.Length, spans);
-                    Add(spans, m.Groups[2].Index, 3, MdStyle.Marker);
+                    Add(spans, m.Groups[2].Index, m.Groups[2].Length, MdStyle.Marker);
                     break;
                 case MdBlock.Bullet:
                 case MdBlock.Numbered:

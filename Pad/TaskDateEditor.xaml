@@ -1,0 +1,140 @@
+<UserControl
+    x:Class="Kil0bitSystemMonitor.Pad.TaskDateEditor"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Width="360" MaxWidth="360" MinWidth="220"
+    Background="{DynamicResource Pad.Popup}"
+    Foreground="{DynamicResource Pad.WindowText}"
+    FontFamily="Segoe UI Variable Text, Segoe UI"
+    PreviewKeyDown="OnPreviewKeyDown">
+
+    <UserControl.Resources>
+        <Style x:Key="TaskDateIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="LineHeight" Value="16" />
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="{DynamicResource Pad.Popup}"
+            BorderBrush="{DynamicResource Pad.PopupBorder}"
+            BorderThickness="1" CornerRadius="7">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <ScrollViewer x:Name="EditorScroll" x:FieldModifier="internal" Grid.Row="0"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          Padding="12,12,12,0">
+            <Grid x:Name="ContentGrid" x:FieldModifier="internal">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal">
+                <TextBlock Text="&#xE787;" Style="{StaticResource TaskDateIcon}"
+                           Foreground="{DynamicResource Pad.Accent}" />
+                <TextBlock Text="Edit task dates" FontSize="14" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Pad.Text}" />
+            </StackPanel>
+            <TextBlock Grid.Row="1" Margin="0,3,0,8" FontSize="11.5" TextWrapping="Wrap"
+                       Foreground="{DynamicResource Pad.Muted}"
+                       Text="Use yyyy-MM-dd HH:mm. Finish is optional." />
+
+            <TextBlock Grid.Row="2" Text="Start" Margin="0,0,0,3"
+                       Foreground="{DynamicResource Pad.TextSoft}" />
+            <Grid Grid.Row="3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="StartInput" x:FieldModifier="internal" Grid.Column="0"
+                         Padding="7,4" VerticalContentAlignment="Center"
+                         Background="{DynamicResource Pad.Background}" Foreground="{DynamicResource Pad.Text}"
+                         BorderBrush="{DynamicResource Pad.Border}" CaretBrush="{DynamicResource Pad.Text}"
+                         AutomationProperties.Name="Task start date and time" />
+                <Button x:Name="StartNowButton" x:FieldModifier="internal" Grid.Column="1"
+                        Style="{DynamicResource FlatButton}" Margin="6,0,0,0"
+                        ToolTip="Set start to now" AutomationProperties.Name="Set task start to now"
+                        Click="OnStartNowClick">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE823;" Style="{StaticResource TaskDateIcon}" />
+                        <TextBlock Text="Now" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <TextBlock Grid.Row="4" Text="Finish (optional)" Margin="0,6,0,3"
+                       Foreground="{DynamicResource Pad.TextSoft}" />
+            <Grid Grid.Row="5">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="FinishInput" x:FieldModifier="internal" Grid.Column="0"
+                         Padding="7,4" VerticalContentAlignment="Center"
+                         Background="{DynamicResource Pad.Background}" Foreground="{DynamicResource Pad.Text}"
+                         BorderBrush="{DynamicResource Pad.Border}" CaretBrush="{DynamicResource Pad.Text}"
+                         AutomationProperties.Name="Task finish date and time" />
+                <Button x:Name="FinishNowButton" x:FieldModifier="internal" Grid.Column="1"
+                        Style="{DynamicResource FlatButton}" Margin="6,0,0,0"
+                        ToolTip="Set finish to now" AutomationProperties.Name="Set task finish to now"
+                        Click="OnFinishNowClick">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE823;" Style="{StaticResource TaskDateIcon}" />
+                        <TextBlock Text="Now" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="ClearFinishButton" x:FieldModifier="internal" Grid.Column="2"
+                        Style="{DynamicResource FlatButton}" Margin="2,0,0,0"
+                        ToolTip="Reopen this task" AutomationProperties.Name="Clear task finish date"
+                        Click="OnClearFinishClick">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE894;" Style="{StaticResource TaskDateIcon}" />
+                        <TextBlock Text="Clear" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <TextBlock x:Name="ErrorText" x:FieldModifier="internal" Grid.Row="6" Margin="0,9,0,0"
+                       FontSize="11.5" TextWrapping="Wrap" Visibility="Collapsed"
+                       Foreground="{DynamicResource Pad.AlertRed}"
+                       AutomationProperties.LiveSetting="Assertive" />
+
+            </Grid>
+            </ScrollViewer>
+
+            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="12,8,12,12">
+                <Button x:Name="CancelButton" x:FieldModifier="internal" Style="{DynamicResource FlatButton}"
+                        Margin="0,0,4,0" AutomationProperties.Name="Cancel editing task dates"
+                        Click="OnCancelClick">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE711;" Style="{StaticResource TaskDateIcon}" />
+                        <TextBlock Text="Cancel" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="SaveButton" x:FieldModifier="internal" Style="{DynamicResource FlatButton}"
+                        Foreground="{DynamicResource Pad.Accent}"
+                        AutomationProperties.Name="Save task dates" Click="OnSaveClick">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE74E;" Style="{StaticResource TaskDateIcon}" />
+                        <TextBlock Text="Save" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

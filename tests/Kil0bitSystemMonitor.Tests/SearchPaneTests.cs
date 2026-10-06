@@ -123,15 +123,19 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("Words", window.SearchPanel.StatusText.Text);
         });
 
-        /// <summary>Embeds every text as [1, 0] at once, and notes whether the query was embedded on a thread with a dispatcher (the UI thread).</summary>
+        /// <summary>Embeds every text as [1, 0] at once, and checks whether the query ran on the window's UI dispatcher.</summary>
         private sealed class ThreadNotingEmbedder : IEmbedder
         {
+            public Dispatcher? UiDispatcher { get; set; }
             public System.Collections.Generic.List<bool> QueryOnUiThread { get; } = new();
 
             public Task<EmbeddingResult> EmbedAsync(SearchServer server, System.Collections.Generic.IReadOnlyList<string> texts, TimeSpan timeout, System.Threading.CancellationToken cancel)
             {
                 if (texts.Count == 1 && texts[0] == "needle")
-                    lock (QueryOnUiThread) QueryOnUiThread.Add(Dispatcher.FromThread(System.Threading.Thread.CurrentThread) != null);
+                {
+                    var dispatcher = UiDispatcher ?? throw new InvalidOperationException("The window dispatcher must be assigned before searching.");
+                    lock (QueryOnUiThread) QueryOnUiThread.Add(dispatcher.CheckAccess());
+                }
                 return Task.FromResult(new EmbeddingResult(texts.Select(_ => new[] { 1f, 0f }).ToList(), SearchFailure.None, 200));
             }
         }
@@ -142,6 +146,7 @@ namespace Kil0bitSystemMonitor.Tests
             var embedder = new ThreadNotingEmbedder();
             WithWindow((window, env, service) =>
             {
+                embedder.UiDispatcher = window.Dispatcher;
                 var note = env.Workspace.Open.First();
                 window.Editor.Document.Text = "a needle in here";
                 service.Indexer.SetNote(note.Id, note.Title, window.Editor.Document.Text, DateTime.UtcNow);

@@ -92,7 +92,7 @@ reimplemented on AvalonEdit:
 - Clickable URLs, copy as RTF, full screen
 - A line diff in the history pane; drag-to-reorder tabs; more than one MicaPad window
 
-## MicaStats AI — ships in the next release
+## MicaStats AI — available in v1.15.0
 
 An *Ask MicaStats* window and Explain buttons backed by Claude or any OpenAI-compatible endpoint
 (Ollama and LM Studio included), an MCP data source for Claude Desktop and Claude Code (stdio

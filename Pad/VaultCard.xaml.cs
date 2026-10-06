@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Pad;
 
 using ContextMenu = System.Windows.Controls.ContextMenu;
@@ -171,7 +172,8 @@ namespace Kil0bitSystemMonitor.Pad
         {
             Begin("Confirm", title, message, confirmLabel, "Cancel");
             PrimaryButton.ClearValue(StyleProperty);
-            PrimaryButton.ContentTemplate = (DataTemplate)Resources["AlertLabel"];
+            PrimaryButton.SetResourceReference(ForegroundProperty, "Pad.AlertRed");
+            ButtonIcon.SetGlyph(PrimaryButton, PrimaryGlyph("Confirm", confirmLabel));
             _confirm = confirm;
             FocusFirst();
         }
@@ -389,9 +391,12 @@ namespace Kil0bitSystemMonitor.Pad
 
                 PrimaryButton.Content = primary;
                 PrimaryButton.ContentTemplate = null;
+                PrimaryButton.ClearValue(ForegroundProperty);
                 PrimaryButton.SetResourceReference(StyleProperty, "AccentButtonStyle");
+                ButtonIcon.SetGlyph(PrimaryButton, PrimaryGlyph(mode, primary));
                 PrimaryButton.Visibility = Visibility.Visible;
                 SecondaryButton.Content = secondary;
+                ButtonIcon.SetGlyph(SecondaryButton, mode == "Reveal" ? "\uE890" : "\uE711");
                 Root.Visibility = Visibility.Visible;
             }
             finally
@@ -399,6 +404,18 @@ namespace Kil0bitSystemMonitor.Pad
                 _reconfiguring = false;
             }
         }
+
+        private static string PrimaryGlyph(string mode, string label) => mode switch
+        {
+            "CreatePin" => "\uE72E",
+            "EnterPin" => "\uE785",
+            "ChangePin" => "\uE70F",
+            "Store" => "\uE74E",
+            "Rename" => "\uE8AC",
+            "Confirm" when label.Equals("Delete", StringComparison.OrdinalIgnoreCase) => "\uE74D",
+            "Confirm" => "\uE8FB",
+            _ => string.Empty,
+        };
 
         private static void ShowField(TextBlock caption, UIElement field, string text)
         {

@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Editing;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
@@ -81,9 +82,9 @@ namespace Kil0bitSystemMonitor.Pad
             return item;
         }
 
-        public static MenuItem Check(string header, string? gesture, bool isChecked, Action action)
+        public static MenuItem Check(string header, string? gesture, bool isChecked, Action action, string? icon = null)
         {
-            var item = Item(header, gesture, action);
+            var item = Item(header, gesture, action, icon: icon);
             item.IsCheckable = true;
             item.IsChecked = isChecked;
             return item;
@@ -129,14 +130,14 @@ namespace Kil0bitSystemMonitor.Pad
             Add("Code", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "`"), "\uE943");
             Add("Link", MarkdownFormatter.Link, "\uE71B");
             format.Items.Add(new Separator());
-            Add("Heading 1", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading1));
-            Add("Heading 2", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading2));
-            Add("Heading 3", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading3));
+            Add("Heading 1", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading1), "\uE8E9");
+            Add("Heading 2", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading2), "\uE8E9");
+            Add("Heading 3", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading3), "\uE8E9");
             format.Items.Add(new Separator());
             Add("Bullet list", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Bullet), "\uE8FD");
-            Add("Numbered list", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Numbered));
-            Add("Task", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Task));
-            Add("Quote", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Quote));
+            Add("Numbered list", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Numbered), "\uEA37");
+            Add("Task", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Task), "\uE73A");
+            Add("Quote", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Quote), "\uE90A");
             Add("Code block", MarkdownFormatter.CodeBlock, "\uE943");
             format.Items.Add(new Separator());
             bool inTable = TableFormatter.TableAt(editor.Document.Text, editor.CaretOffset) != null;
@@ -162,19 +163,19 @@ namespace Kil0bitSystemMonitor.Pad
             bool lastLine = blockEnd >= text.Length;
             bool oneLine = text.IndexOfAny(new[] { '\r', '\n' }, blockStart, blockEnd - blockStart) < 0;
 
-            var lines = new MenuItem { Header = "Lines", Icon = "\uE8A4" };
+            var lines = new MenuItem { Header = "Lines", Icon = "\uEA37" };
             void Add(string header, string? gesture, Func<string, int, int, TextEdit?> operation, string? icon = null, bool enabled = true) =>
                 lines.Items.Add(Item(header, gesture, () => RunLineOperation(editor, operation), enabled, icon));
 
             lines.Items.Add(Item("Duplicate", "Ctrl+D", () => Duplicate(editor), icon: "\uE8C8"));
             lines.Items.Add(Item("Move up", "Ctrl+Shift+Up", () => moveLines(false), !firstLine, "\uE74A"));
             lines.Items.Add(Item("Move down", "Ctrl+Shift+Down", () => moveLines(true), !lastLine, "\uE74B"));
-            Add("Join lines", "Ctrl+J", LineOperations.Join, enabled: !(oneLine && lastLine));
+            Add("Join lines", "Ctrl+J", LineOperations.Join, "\uE71B", enabled: !(oneLine && lastLine));
             lines.Items.Add(new Separator());
             Add("Sort ascending", null, (t, s, l) => LineOperations.Sort(t, s, l, false, System.Globalization.CultureInfo.CurrentCulture), "\uE8CB");
-            Add("Sort descending", null, (t, s, l) => LineOperations.Sort(t, s, l, true, System.Globalization.CultureInfo.CurrentCulture));
-            Add("Remove duplicate lines", null, LineOperations.RemoveDuplicates);
-            Add("Trim trailing whitespace", null, LineOperations.TrimTrailing);
+            Add("Sort descending", null, (t, s, l) => LineOperations.Sort(t, s, l, true, System.Globalization.CultureInfo.CurrentCulture), "\uE8CB");
+            Add("Remove duplicate lines", null, LineOperations.RemoveDuplicates, "\uE738");
+            Add("Trim trailing whitespace", null, LineOperations.TrimTrailing, "\uE78A");
             return lines;
         }
 
@@ -190,26 +191,26 @@ namespace Kil0bitSystemMonitor.Pad
         {
             bool selected = editor.SelectionLength > 0;
             var tools = new MenuItem { Header = "Tools", Icon = "\uE90F" };
-            MenuItem Tool(string header, Func<string, int, int, ToolOutcome> tool, bool enabled = true) =>
-                Item(header, null, () => RunTool(editor, report, tool), enabled);
+            MenuItem Tool(string header, Func<string, int, int, ToolOutcome> tool, bool enabled = true, string icon = "\uE943") =>
+                Item(header, null, () => RunTool(editor, report, tool), enabled, icon);
 
             tools.Items.Add(Tool("Base64 encode", (t, s, l) => TextTools.OnSelection(t, s, l, x => (TextTools.Base64Encode(x), null)), selected));
             tools.Items.Add(Tool("Base64 decode", (t, s, l) => TextTools.OnSelection(t, s, l, TextTools.Base64Decode), selected));
 
-            var convert = new MenuItem { Header = "Convert number", IsEnabled = selected };
+            var convert = new MenuItem { Header = "Convert number", Icon = "\uE8EF", IsEnabled = selected };
             foreach (var (header, target) in new[] { ("Decimal", NumberBase.Decimal), ("Hex", NumberBase.Hex), ("Binary", NumberBase.Binary), ("Octal", NumberBase.Octal) })
                 convert.Items.Add(Tool(header, (t, s, l) => TextTools.OnSelection(t, s, l, x => NumberConverter.Convert(x, target))));
             tools.Items.Add(convert);
 
-            tools.Items.Add(Tool("Insert GUID", (t, s, l) => TextTools.Insert(s, l, TextTools.FormatGuid(Guid.NewGuid()))));
+            tools.Items.Add(Tool("Insert GUID", (t, s, l) => TextTools.Insert(s, l, TextTools.FormatGuid(Guid.NewGuid())), icon: "\uE943"));
 
-            var stamp = new MenuItem { Header = "Insert timestamp" };
-            stamp.Items.Add(Tool("ISO 8601", (t, s, l) => TextTools.Insert(s, l, TextTools.Iso8601(now()))));
-            stamp.Items.Add(Tool("Date", (t, s, l) => TextTools.Insert(s, l, TextTools.Date(now()))));
-            stamp.Items.Add(Tool("Unix seconds", (t, s, l) => TextTools.Insert(s, l, TextTools.UnixSeconds(now()))));
+            var stamp = new MenuItem { Header = "Insert timestamp", Icon = "\uE787" };
+            stamp.Items.Add(Tool("ISO 8601", (t, s, l) => TextTools.Insert(s, l, TextTools.Iso8601(now())), icon: "\uE787"));
+            stamp.Items.Add(Tool("Date", (t, s, l) => TextTools.Insert(s, l, TextTools.Date(now())), icon: "\uE787"));
+            stamp.Items.Add(Tool("Unix seconds", (t, s, l) => TextTools.Insert(s, l, TextTools.UnixSeconds(now())), icon: "\uE917"));
             tools.Items.Add(stamp);
 
-            tools.Items.Add(Tool("Evaluate", TextTools.Evaluate, selected));
+            tools.Items.Add(Tool("Evaluate", TextTools.Evaluate, selected, "\uE8EF"));
             return tools;
         }
 
@@ -235,7 +236,7 @@ namespace Kil0bitSystemMonitor.Pad
             var ai = new MenuItem { Header = "AI", Icon = ((char)0xE99A).ToString() };
             if (!enabled)
             {
-                ai.Items.Add(Item(SetUpAiText, null, setUp));
+                ai.Items.Add(Item(SetUpAiText, null, setUp, icon: "\uE713"));
                 return ai;
             }
 
@@ -247,18 +248,31 @@ namespace Kil0bitSystemMonitor.Pad
                 {
                     // The instruction is typed in the pane, hence the ellipsis.
                     ai.Items.Add(new Separator());
-                    ai.Items.Add(Item(action.Name + "…", "Ctrl+Shift+A", () => run(chosen)));
+                    ai.Items.Add(Item(action.Name + "…", "Ctrl+Shift+A", () => run(chosen), icon: AiActionIcon(action)));
                 }
                 else if (diagrams || !ReferenceEquals(action, PadAiAction.Diagram))
                 {
-                    ai.Items.Add(Item(action.Name, null, () => run(chosen), selected || !action.NeedsSelection));
+                    ai.Items.Add(Item(action.Name, null, () => run(chosen), selected || !action.NeedsSelection, AiActionIcon(action)));
                     // It takes the failing block's source, whatever is selected: no selection to wait for.
                     if (fixDiagram != null && ReferenceEquals(action, PadAiAction.Diagram))
-                        ai.Items.Add(Item(FixDiagramText, null, fixDiagram));
+                        ai.Items.Add(Item(FixDiagramText, null, fixDiagram, icon: "\uE90F"));
                 }
             }
             return ai;
         }
+
+        private static string AiActionIcon(PadAiAction action) => action.Id switch
+        {
+            "improve" => "\uE70F",
+            "fix" => "\uE73E",
+            "shorten" => "\uE78A",
+            "to-english" or "to-thai" => "\uE775",
+            "summarize" => "\uE8FD",
+            "explain" => "\uE946",
+            "diagram" => "\uE8A9",
+            "ask" => "\uE90A",
+            _ => "\uE99A",
+        };
 
         /// <summary>Runs a tool: its edit is one undoable change; a problem is reported and the text left alone. True when it edited.</summary>
         public static bool RunTool(TextEditor editor, Action<string> report, Func<string, int, int, ToolOutcome> tool)
@@ -313,9 +327,8 @@ namespace Kil0bitSystemMonitor.Pad
                 for (int i = pieces.Count - 1; i >= 0; i--)
                     document.Replace(edit.Offset + pieces[i].Offset, pieces[i].Length, pieces[i].Text);
             }
-            int textLength = document.TextLength;
-            int start = Math.Clamp(edit.SelectionStart, 0, textLength);
-            editor.Select(start, Math.Clamp(edit.SelectionLength, 0, textLength - start));
+            int start = Math.Clamp(edit.SelectionStart, 0, document.TextLength);
+            editor.Select(start, Math.Clamp(edit.SelectionLength, 0, document.TextLength - start));
         }
 
         /// <summary>True when Paste has something to paste. A busy clipboard counts as yes: Paste itself then tries.</summary>

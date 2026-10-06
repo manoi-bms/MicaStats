@@ -120,6 +120,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
 
             if (VaultCard.Mode == "Reveal" && Vault is { IsUnlocked: false }) VaultCard.Hide();
+            CloseOpenNotes();
 
             if (_pillRedrawQueued) return;
             _pillRedrawQueued = true;

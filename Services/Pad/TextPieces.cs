@@ -21,13 +21,22 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>
         /// The pieces turning <paramref name="oldText"/> into <paramref name="newText"/>: offsets into
         /// the old text, ascending, never overlapping (apply them from the last). With the same
-        /// number of lines, one piece per line whose content changed (the whole content, so an anchor
-        /// at the line start stays there) and one per changed line break. Otherwise, or past
+        /// number of lines, one piece per changed line, retaining common edges, and one per changed
+        /// line break. Wrapping unchanged content uses two insertions. Otherwise, or past
         /// <see cref="MaxPieces"/>, a single piece from the first difference to the last. Empty when equal.
         /// </summary>
         public static IReadOnlyList<TextPiece> Plan(string oldText, string newText)
         {
             if (string.Equals(oldText, newText, StringComparison.Ordinal)) return Array.Empty<TextPiece>();
+
+            // Wrapping (such as a code fence) inserts around the content. Preserve its anchors.
+            int wrappedAt = oldText.Length > 0 ? newText.IndexOf(oldText, StringComparison.Ordinal) : -1;
+            if (wrappedAt > 0 && wrappedAt + oldText.Length < newText.Length)
+                return new[]
+                {
+                    new TextPiece(0, 0, newText.Substring(0, wrappedAt)),
+                    new TextPiece(oldText.Length, 0, newText.Substring(wrappedAt + oldText.Length)),
+                };
 
             var (oldLines, oldBreaks) = TextLines.Split(oldText);
             var (newLines, newBreaks) = TextLines.Split(newText);
@@ -38,7 +47,10 @@ namespace Kil0bitSystemMonitor.Services.Pad
                 for (int i = 0; i < oldLines.Count && pieces.Count <= MaxPieces; i++)
                 {
                     if (!string.Equals(oldLines[i], newLines[i], StringComparison.Ordinal))
-                        pieces.Add(new TextPiece(offset, oldLines[i].Length, newLines[i]));
+                    {
+                        var change = Around(oldLines[i], newLines[i]);
+                        pieces.Add(change with { Offset = offset + change.Offset });
+                    }
                     offset += oldLines[i].Length;
                     if (i < oldBreaks.Count)
                     {

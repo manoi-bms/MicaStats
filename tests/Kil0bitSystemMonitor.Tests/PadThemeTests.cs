@@ -21,6 +21,7 @@ namespace Kil0bitSystemMonitor.Tests
             Path.Combine("Pad", "MicaPadWindow.xaml"),
             Path.Combine("Pad", "FindReplaceBar.xaml"),
             Path.Combine("Pad", "HistoryPane.xaml"),
+            Path.Combine("Pad", "OpenNotesPicker.xaml"),
         };
 
         private static void WithWindow(string theme, Action<MicaPadWindow, AppConfig> test) => UiThread.Run(() =>

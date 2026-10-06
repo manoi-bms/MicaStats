@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:local="clr-namespace:Kil0bitSystemMonitor.Pad"
+    xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers"
     xmlns:ai="clr-namespace:Kil0bitSystemMonitor.Ai"
     Background="{DynamicResource Pad.Chrome}" Foreground="{DynamicResource Pad.WindowText}">
 
@@ -45,8 +46,12 @@
                 <!-- Stop has this place to itself, shown or not: no button that edits the note ever appears where
                      Stop was, so a click on Stop that lands a moment after the reply ended changes nothing. -->
                 <Button x:Name="StopButton" DockPanel.Dock="Right" Content="Stop" FontSize="12" Padding="10,4" Margin="8,0,6,0"
+                        helpers:ButtonIcon.Glyph="&#xE71A;"
                         VerticalAlignment="Center" Visibility="Collapsed" ToolTip="Stop the request and keep what came"
                         Click="OnStopClick" />
+                <helpers:DecorativeIcon x:Name="HeadingGlyph" DockPanel.Dock="Left" Text="&#xE99A;" Margin="0,0,7,0"
+                                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
+                                        Foreground="{DynamicResource Pad.Accent}" VerticalAlignment="Center" />
                 <TextBlock x:Name="TitleText" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
             </DockPanel>
 
@@ -87,13 +92,17 @@
                  request that finished whole took. Stop is in the header. -->
             <WrapPanel DockPanel.Dock="Bottom" Margin="12,0,6,6">
                 <Button x:Name="ReplaceButton" Content="Replace selection" FontSize="12" Padding="10,4" Margin="0,0,6,6"
+                        helpers:ButtonIcon.Glyph="&#xE8AB;"
                         Foreground="{DynamicResource Pad.Accent}"
                         ToolTip="Put the result in place of the selected text" Click="OnReplaceClick" />
                 <Button x:Name="InsertButton" Content="Insert below" FontSize="12" Padding="10,4" Margin="0,0,6,6"
+                        helpers:ButtonIcon.Glyph="&#xE710;"
                         ToolTip="Add the result as a new paragraph after the text" Click="OnInsertClick" />
                 <Button x:Name="CopyButton" Content="Copy" FontSize="12" Padding="10,4" Margin="0,0,6,6"
+                        helpers:ButtonIcon.Glyph="&#xE8C8;"
                         Click="OnCopyClick" />
                 <Button x:Name="RetryButton" Content="Try again" FontSize="12" Padding="10,4" Margin="0,0,6,6"
+                        helpers:ButtonIcon.Glyph="&#xE72C;"
                         Click="OnRetryClick" />
             </WrapPanel>
             <TextBlock x:Name="StatusText" DockPanel.Dock="Bottom" Margin="12,0,12,8" TextWrapping="Wrap"

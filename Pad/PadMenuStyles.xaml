@@ -53,8 +53,8 @@
                             <ContentPresenter x:Name="Glyph" ContentSource="Icon" VerticalAlignment="Center" HorizontalAlignment="Left"
                                               TextElement.FontFamily="{StaticResource Pad.IconFont}" TextElement.FontSize="15"
                                               TextElement.Foreground="{DynamicResource Pad.TextSoft}" />
-                            <TextBlock x:Name="Check" Text="&#xE73E;" FontFamily="{StaticResource Pad.IconFont}" FontSize="13"
-                                       VerticalAlignment="Center" Foreground="{DynamicResource Pad.Accent}" Visibility="Collapsed" />
+                            <TextBlock x:Name="Check" Grid.Column="3" Text="&#xE73E;" FontFamily="{StaticResource Pad.IconFont}" FontSize="13"
+                                       VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{DynamicResource Pad.Accent}" Visibility="Collapsed" />
                             <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center" Margin="0,0,28,0" />
                             <TextBlock x:Name="Gesture" Grid.Column="2" Text="{TemplateBinding InputGestureText}" VerticalAlignment="Center"
                                        FontSize="12" Foreground="{DynamicResource Pad.Muted}" />
@@ -83,7 +83,6 @@
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Check" Property="Visibility" Value="Visible" />
-                            <Setter TargetName="Glyph" Property="Visibility" Value="Collapsed" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource Pad.Muted}" />

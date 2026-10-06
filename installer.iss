@@ -1,6 +1,10 @@
 ; MicaStats - Inno Setup Script
 ; Compile with: ISCC.exe /DAppVersion=x.y.z installer.iss
 
+#ifndef PublishDir
+  #define PublishDir "release-output"
+#endif
+
 [Setup]
 ; New AppId: MicaStats installs and uninstalls independently of the upstream
 ; kil0bit System Monitor it forked from.
@@ -32,8 +36,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; The source path will be where dotnet publish outputs the files
-Source: "release-output\MicaStats.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "release-output\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PublishDir}\MicaStats.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Include the icon for the installer itself
 Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 

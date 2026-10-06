@@ -67,6 +67,35 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>When the newest snapshot was written.</summary>
         public DateTime? LastSnapshotUtc { get; set; }
 
+        /// <summary>
+        /// The note tab's user-recognizable color as a hue from 0 through 359. Null in metadata
+        /// written before colored tabs were introduced.
+        /// </summary>
+        public int? TabColorHue { get; set; }
+
+        /// <summary>
+        /// Version of the task-date metadata shape. Zero means metadata written before task-date
+        /// tracking, or a legacy record with no version field.
+        /// </summary>
+        public int TaskDatesVersion { get; set; }
+
+        /// <summary>
+        /// Dates tracked for Markdown tasks. Kept in encrypted <c>meta.json</c>, separate from the
+        /// editable text in <c>current.txt</c>. Older metadata has an empty list.
+        /// </summary>
+        private List<TaskDateRecord> _taskDates = new();
+
+        public List<TaskDateRecord> TaskDates
+        {
+            get => _taskDates;
+            set => _taskDates = value ?? new List<TaskDateRecord>();
+        }
+
+        // Metadata-only undo does not raise a document change. The current controller
+        // listens here; undo operations never retain a previous window or controller.
+        internal event Action? TaskDatesRestored;
+        internal void NotifyTaskDatesRestored() => TaskDatesRestored?.Invoke();
+
         /// <summary>True when this note shadows a file; false for scratch notes.</summary>
         [JsonIgnore]
         public bool IsFileBacked => SourcePath != null;
@@ -87,8 +116,14 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
         }
 
-        /// <summary>A copy for the background writer. Every member is a value or an immutable string.</summary>
-        public NoteMeta Clone() => (NoteMeta)MemberwiseClone();
+        /// <summary>A copy for the background writer, including its own mutable task-date list.</summary>
+        public NoteMeta Clone()
+        {
+            var copy = (NoteMeta)MemberwiseClone();
+            copy.TaskDates = new List<TaskDateRecord>(TaskDates);
+            copy.TaskDatesRestored = null;
+            return copy;
+        }
     }
 
     /// <summary>MicaPad's windows and their tabs, persisted as <c>session.json</c>.</summary>

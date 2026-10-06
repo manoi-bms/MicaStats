@@ -39,6 +39,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
 
         private readonly ConcurrentDictionary<string, object> _locks = new();
         private readonly ConcurrentDictionary<string, long> _written = new();
+        private readonly ConcurrentDictionary<string, byte> _taskDateMigrationChecked = new();
         private readonly object _sessionLock = new();
         private readonly Action<string> _warn;
         private long _version;
@@ -93,6 +94,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
             SourcePath = sourcePath,
             CreatedUtc = utcNow,
             ModifiedUtc = utcNow,
+            TaskDatesVersion = 1,
         };
 
         /// <summary>
@@ -339,12 +341,52 @@ namespace Kil0bitSystemMonitor.Services.Pad
             {
                 if (_written.TryGetValue(meta.Id, out long done) && version <= done) return false;
 
+                bool migrationChecked = PrepareTaskDateMigration(meta);
                 Directory.CreateDirectory(NoteDir(meta.Id));
                 if (text != null) WriteData(CurrentPath(meta.Id), Utf8NoBom.GetBytes(text));
                 WriteData(MetaPath(meta.Id), JsonSerializer.SerializeToUtf8Bytes(meta, Json));
                 _written[meta.Id] = version;
+                if (migrationChecked) _taskDateMigrationChecked.TryAdd(meta.Id, 0);
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Before the first version-1 metadata save, removes inline dates left in history by the
+        /// former implementation. Any failed read or rewrite escapes to the writer so its normal
+        /// retry keeps the transition pending.
+        /// </summary>
+        private bool PrepareTaskDateMigration(NoteMeta incoming)
+        {
+            if (incoming.TaskDatesVersion < 1)
+            {
+                _taskDateMigrationChecked.TryRemove(incoming.Id, out _);
+                return false;
+            }
+            if (_taskDateMigrationChecked.ContainsKey(incoming.Id)) return false;
+
+            string? json = ReadStoreText(MetaPath(incoming.Id));
+            if (json == null) return true;   // a genuinely new note has no legacy history
+
+            int previousVersion;
+            try
+            {
+                previousVersion = JsonSerializer.Deserialize<NoteMeta>(json, Json)?.TaskDatesVersion ?? 0;
+            }
+            catch (JsonException)
+            {
+                previousVersion = 0;        // unknown old metadata: scrub conservatively
+            }
+            if (previousVersion >= 1) return true;
+
+            foreach (SnapshotInfo snapshot in ListSnapshots(incoming.Id))
+            {
+                string? history = ReadStoreText(snapshot.FilePath);
+                if (history == null) continue;
+                string scrubbed = MarkdownTasks.RemoveLegacyDateSuffixes(history, out int removed);
+                if (removed > 0) WriteData(snapshot.FilePath, Utf8NoBom.GetBytes(scrubbed));
+            }
+            return true;
         }
 
         /// <summary>

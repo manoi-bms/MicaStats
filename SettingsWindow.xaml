@@ -8,6 +8,7 @@
     xmlns:local="clr-namespace:Kil0bitSystemMonitor"
     xmlns:ai="clr-namespace:Kil0bitSystemMonitor.Ai"
     xmlns:pad="clr-namespace:Kil0bitSystemMonitor.Pad"
+    xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers"
     mc:Ignorable="d"
     Title="MicaStats Settings"
     Height="720" Width="1000"
@@ -830,12 +831,12 @@
                         <TextBlock Text="Capture" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <TextBlock Text="Region, window, screen and scrolling capture with an annotation editor. Shortcuts work anywhere in Windows." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                            <Button Content="Capture region now" Click="OnCaptureRegion" Margin="0,0,8,0" Padding="14,7"/>
-                            <Button Content="Capture window" Click="OnCaptureWindow" Margin="0,0,8,0" Padding="14,7"/>
-                            <Button Content="Capture scrolling" Click="OnCaptureScrolling" Margin="0,0,8,0" Padding="14,7"/>
-                            <Button Content="Open folder" Click="OnOpenCaptureFolder" Padding="14,7"/>
-                        </StackPanel>
+                        <WrapPanel Margin="0,0,0,16">
+                            <Button Content="Capture region now" helpers:ButtonIcon.Glyph="&#xE722;" Click="OnCaptureRegion" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="Capture window" helpers:ButtonIcon.Glyph="&#xE7C4;" Click="OnCaptureWindow" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="Capture scrolling" helpers:ButtonIcon.Glyph="&#xECE7;" Click="OnCaptureScrolling" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="Open folder" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnOpenCaptureFolder" Padding="14,7"/>
+                        </WrapPanel>
 
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
                             <Grid>
@@ -989,10 +990,10 @@
                                     <TextBlock Text="Captures folder" FontWeight="SemiBold" FontSize="15"/>
                                     <TextBlock Text="Where saved captures are written." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                <WrapPanel Grid.Column="2" MaxWidth="380" VerticalAlignment="Center">
                                     <TextBox x:Name="CaptureFolderBox" Width="250" VerticalAlignment="Center" Margin="0,0,8,0" LostFocus="OnCaptureFolderChanged"/>
-                                    <Button Content="Browse" Click="OnBrowseCaptureFolder" Padding="12,6"/>
-                                </StackPanel>
+                                    <Button Content="Browse" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnBrowseCaptureFolder" Padding="12,6"/>
+                                </WrapPanel>
                             </Grid>
                         </Border>
 
@@ -1003,10 +1004,10 @@
                         <TextBlock Text="MicaPad" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <TextBlock Text="A notepad that saves every note by itself and keeps its history. Nothing to name, and nothing to confirm when Windows restarts." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                            <Button Content="Open MicaPad" Click="OnOpenPad" Margin="0,0,8,0" Padding="14,7"/>
-                            <Button Content="Open notes folder" Click="OnOpenPadFolder" Padding="14,7"/>
-                        </StackPanel>
+                        <WrapPanel Margin="0,0,0,16">
+                            <Button Content="Open MicaPad" helpers:ButtonIcon.Glyph="&#xE8A7;" Click="OnOpenPad" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="Open notes folder" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnOpenPadFolder" Padding="14,7"/>
+                        </WrapPanel>
 
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
                             <Grid>
@@ -1070,11 +1071,11 @@
                                     <TextBlock Text="Credentials" FontWeight="SemiBold" FontSize="15"/>
                                     <TextBlock x:Name="PadVaultStatus" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button x:Name="PadVaultChangePin" Content="Change PIN&#x2026;" Click="OnPadVaultChangePin" Padding="12,6" Margin="0,0,8,0"/>
-                                    <Button x:Name="PadVaultLock" Content="Lock now" Click="OnPadVaultLock" Padding="12,6" Margin="0,0,8,0"/>
-                                    <Button x:Name="PadVaultReset" Content="Reset vault&#x2026;" Click="OnPadVaultReset" Padding="12,6"/>
-                                </StackPanel>
+                                <WrapPanel Grid.Column="2" MaxWidth="380" VerticalAlignment="Center">
+                                    <Button x:Name="PadVaultChangePin" Content="Change PIN&#x2026;" helpers:ButtonIcon.Glyph="&#xE8D7;" Click="OnPadVaultChangePin" Padding="12,6" Margin="0,0,8,0"/>
+                                    <Button x:Name="PadVaultLock" Content="Lock now" helpers:ButtonIcon.Glyph="&#xE72E;" Click="OnPadVaultLock" Padding="12,6" Margin="0,0,8,0"/>
+                                    <Button x:Name="PadVaultReset" Content="Reset vault&#x2026;" helpers:ButtonIcon.Glyph="&#xE74D;" Click="OnPadVaultReset" Padding="12,6"/>
+                                </WrapPanel>
                             </Grid>
                         </Border>
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
@@ -1293,7 +1294,7 @@
                             </Grid>
                         </Border>
                         <TextBlock x:Name="AiNotesInMcpText" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" Margin="4,0,0,8"/>
-                        <Button x:Name="PadAiProviderButton" Content="AI provider settings…" Click="OnPadAiProviderSettings" Margin="0,0,0,12"/>
+                        <Button x:Name="PadAiProviderButton" Content="AI provider settings…" helpers:ButtonIcon.Glyph="&#xE713;" Click="OnPadAiProviderSettings" Margin="0,0,0,12"/>
                     </StackPanel>
 
                     <!-- Meeting services -->
@@ -1323,7 +1324,7 @@
                                     <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
                                     <Grid Margin="0,12,0,0">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <Button x:Name="TestMeetingAsr2Button" Content="Test connection" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test ASR2 connection"/>
+                                        <Button x:Name="TestMeetingAsr2Button" Content="Test connection" helpers:ButtonIcon.Glyph="&#xE703;" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test ASR2 connection"/>
                                         <TextBlock x:Name="MeetingAsr2TestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="ASR2 connection test result"/>
                                     </Grid>
                                 </StackPanel>
@@ -1349,7 +1350,7 @@
                                     <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
                                     <Grid Margin="0,12,0,0">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <Button x:Name="TestMeetingAsr1Button" Content="Test connection" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test ASR1 connection"/>
+                                        <Button x:Name="TestMeetingAsr1Button" Content="Test connection" helpers:ButtonIcon.Glyph="&#xE703;" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test ASR1 connection"/>
                                         <TextBlock x:Name="MeetingAsr1TestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="ASR1 connection test result"/>
                                     </Grid>
                                 </StackPanel>
@@ -1375,7 +1376,7 @@
                                     <TextBlock Text="Example: https://tts.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
                                     <Grid Margin="0,12,0,0">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <Button x:Name="TestMeetingTtsButton" Content="Test connection" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test TTS connection"/>
+                                        <Button x:Name="TestMeetingTtsButton" Content="Test connection" helpers:ButtonIcon.Glyph="&#xE703;" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test TTS connection"/>
                                         <TextBlock x:Name="MeetingTtsTestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="TTS connection test result"/>
                                     </Grid>
                                 </StackPanel>
@@ -1398,7 +1399,7 @@
 
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <Button x:Name="SaveMeetingServicesButton" Content="Save service settings" Click="OnSaveMeetingServices" Style="{StaticResource AccentButtonStyle}" Padding="18,8" Margin="0,0,12,0"/>
+                            <Button x:Name="SaveMeetingServicesButton" Content="Save service settings" helpers:ButtonIcon.Glyph="&#xE74E;" Click="OnSaveMeetingServices" Style="{StaticResource AccentButtonStyle}" Padding="18,8" Margin="0,0,12,0"/>
                             <TextBlock x:Name="MeetingServicesStatus" Grid.Column="1" Text="Not configured" VerticalAlignment="Center" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"/>
                         </Grid>
                     </StackPanel>
@@ -1510,10 +1511,10 @@
                             </Grid>
                         </Border>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <Button Content="Open Diagnostics" Click="OnOpenDiagnosticsWindow" Padding="16,7" Margin="0,0,8,0"/>
-                            <Button Content="Open data folder" Click="OnOpenDiagnosticsFolder" Padding="16,7"/>
-                        </StackPanel>
+                        <WrapPanel Margin="0,4,0,0">
+                            <Button Content="Open Diagnostics" helpers:ButtonIcon.Glyph="&#xE9D9;" Click="OnOpenDiagnosticsWindow" Padding="16,7" Margin="0,0,8,0"/>
+                            <Button Content="Open data folder" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnOpenDiagnosticsFolder" Padding="16,7"/>
+                        </WrapPanel>
                     </StackPanel>
 
                     <!-- Updates -->
@@ -1534,16 +1535,16 @@
                                         <TextBlock x:Name="UpdateHeadline" Text="MicaStats" FontWeight="SemiBold" FontSize="16"/>
                                         <TextBlock x:Name="UpdateStatusText" Text="" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <Button x:Name="CheckUpdatesButton" Grid.Column="2" Content="Check now" Click="OnCheckUpdates" Padding="16,7" VerticalAlignment="Center"/>
+                                    <Button x:Name="CheckUpdatesButton" Grid.Column="2" Content="Check now" helpers:ButtonIcon.Glyph="&#xE895;" Click="OnCheckUpdates" Padding="16,7" VerticalAlignment="Center"/>
                                 </Grid>
 
                                 <ProgressBar x:Name="UpdateProgress" Height="4" Margin="0,16,0,0" Minimum="0" Maximum="100" Visibility="Collapsed"/>
 
-                                <StackPanel x:Name="UpdateActionPanel" Orientation="Horizontal" Margin="0,16,0,0" Visibility="Collapsed">
-                                    <Button x:Name="InstallUpdateButton" Content="Download and install" Click="OnInstallUpdate" Padding="16,7" Margin="0,0,8,0"/>
-                                    <Button Content="Release notes" Click="OnOpenReleases" Padding="16,7" Margin="0,0,8,0"/>
-                                    <Button x:Name="SkipUpdateButton" Content="Skip this version" Click="OnSkipUpdate" Padding="16,7"/>
-                                </StackPanel>
+                                <WrapPanel x:Name="UpdateActionPanel" Margin="0,16,0,0" Visibility="Collapsed">
+                                    <Button x:Name="InstallUpdateButton" Content="Download and install" helpers:ButtonIcon.Glyph="&#xE896;" Click="OnInstallUpdate" Padding="16,7" Margin="0,0,8,0"/>
+                                    <Button Content="Release notes" helpers:ButtonIcon.Glyph="&#xE8A5;" Click="OnOpenReleases" Padding="16,7" Margin="0,0,8,0"/>
+                                    <Button x:Name="SkipUpdateButton" Content="Skip this version" helpers:ButtonIcon.Glyph="&#xE71A;" Click="OnSkipUpdate" Padding="16,7"/>
+                                </WrapPanel>
 
                                 <TextBlock Text="Installing requires administrator rights, so Windows will ask for permission. MicaStats closes and reopens itself as part of the upgrade." Opacity="0.55" FontSize="11.5" TextWrapping="Wrap" Margin="0,14,0,0"/>
                             </StackPanel>
@@ -1606,7 +1607,7 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Button x:Name="QuitBtn" Grid.Column="0" Content="Quit Application" Click="QuitButton_Click" 
+                <Button x:Name="QuitBtn" Grid.Column="0" Content="Quit Application" helpers:ButtonIcon.Glyph="&#xE7E8;" Click="QuitButton_Click"
                         Style="{StaticResource AccentButtonStyle}"
                         Background="#D32F2F" Foreground="White" 
                         HorizontalAlignment="Left" Padding="16,8" ui:ControlHelper.CornerRadius="4"/>
@@ -1620,7 +1621,7 @@
                     </StackPanel>
                 </Button>
 
-                <Button x:Name="SaveCloseBtn" Grid.Column="2" Content="Save &amp; Close" Click="SaveButton_Click" 
+                <Button x:Name="SaveCloseBtn" Grid.Column="2" Content="Save &amp; Close" helpers:ButtonIcon.Glyph="&#xE74E;" Click="SaveButton_Click"
                         Style="{StaticResource AccentButtonStyle}"
                         HorizontalAlignment="Right" Padding="24,8" ui:ControlHelper.CornerRadius="4"/>
             </Grid>

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Controls;
+using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Conference;
 using Button = System.Windows.Controls.Button;
 using TextBox = System.Windows.Controls.TextBox;
@@ -94,6 +95,7 @@ internal sealed class MeetingServiceTestAction : IDisposable
     private void RefreshButton()
     {
         _button.Content = _operation == null ? "Test connection" : "Cancel test";
+        ButtonIcon.SetGlyph(_button, _operation == null ? "\uE703" : "\uE711");
         string service = _kind == MeetingServiceKind.Tts ? "TTS" : _kind == MeetingServiceKind.Asr1 ? "ASR1" : "ASR2";
         System.Windows.Automation.AutomationProperties.SetName(_button,
             _operation == null ? $"Test {service} connection" : $"Cancel {service} connection test");

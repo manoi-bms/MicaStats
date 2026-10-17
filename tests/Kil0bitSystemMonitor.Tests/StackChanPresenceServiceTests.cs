@@ -451,6 +451,27 @@ public sealed class StackChanPresenceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task head_finds_the_face_again_after_a_manual_move_pushed_it_away()
+    {
+        _config.StackChanAllowAutoMotion = true;
+        await ConnectAsync();
+        // The person sits straight ahead; the camera sees them only within 15° of yaw 0.
+        _detector.FaceFor = () =>
+        {
+            var pose = _transport.LastPose();
+            return Math.Abs(pose.Yaw) <= 15
+                ? new DetectedFace((float)(0.5 - pose.Yaw / 40), 0.5f, 0.3f, 0.4f, 0.95f) : null;
+        };
+        await SeeAsync(3);
+        await _robot.MoveAsync(-40, 25);
+
+        await SeeAsync(45);
+
+        Assert.InRange(_transport.LastPose().Yaw, -15, 15);
+        Assert.NotNull(_service.Status.Face);
+    }
+
+    [Fact]
     public async Task head_holds_still_while_present_and_briefly_out_of_view()
     {
         _config.StackChanAllowAutoMotion = true;

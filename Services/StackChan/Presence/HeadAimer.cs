@@ -24,6 +24,10 @@ public sealed class HeadAimer
     private const double Noticeable = 0.02, Steady = 0.08;
     private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(600);
     private static readonly TimeSpan Confirm = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan EdgeTurnAfter = TimeSpan.FromSeconds(1), ReturnAfter = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan LostAfterMove = TimeSpan.FromSeconds(1.5);
+    private const double NearEdge = 0.5;
+    private const int MaxEdgeTurns = 2;
     private static readonly TimeSpan SearchAfter = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan Dwell = TimeSpan.FromSeconds(1.2);
     private static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(2);
@@ -38,7 +42,11 @@ public sealed class HeadAimer
     private DateTimeOffset? _lastCommand, _lastFace, _stepStarted, _retryAt;
     private Move? _pending;
     private (double X, double Y)? _seen;
+    private (HeadPose Pose, double Ex, double Ey)? _lastSeen;
+    private int _edgeTurns;
+    private bool _returned;
     private int _step = -1;
+    private HeadPose[] _route = Sweep;
 
     public HeadAimer(bool invertYaw, bool invertPitch)
     {
@@ -51,10 +59,21 @@ public sealed class HeadAimer
     public bool InvertPitch => _pitch.Sign < 0;
     public bool Learned => _yaw.Confirmed && _pitch.Confirmed;
 
-    public HeadPose? Next(DateTimeOffset at, DetectedFace? face, HeadPose current)
+    /// <param name="present">The person is still at the desk but not in this picture.</param>
+    public HeadPose? Next(DateTimeOffset at, DetectedFace? face, HeadPose current, bool present = false)
     {
+        if (face != null)
+        {
+            // Every picture says where the face was last seen, also while waiting for the servo.
+            _lastFace = at;
+            _lastSeen = (current, (face.CenterX - 0.5) / 0.5, (face.CenterY - 0.5) / 0.5);
+        }
         if (_lastCommand is { } last && at - last < Settle) return null;
-        var pose = face != null ? Follow(at, face, current) : Search(at);
+        bool judged = true;
+        HeadPose? pose = null;
+        if (face == null && _pending != null) pose = AfterMove(at, out judged);
+        if (pose == null && judged)
+            pose = face != null ? Follow(at, face, current) : present ? Lost(at, current) : Search(at);
         if (pose != null) _lastCommand = at;
         return pose;
     }
@@ -69,11 +88,18 @@ public sealed class HeadAimer
 
     private HeadPose? Follow(DateTimeOffset at, DetectedFace face, HeadPose current)
     {
-        _lastFace = at;
         _step = -1;
         _retryAt = null;
         // Offset from the picture centre, -1..1 on each axis.
         double ex = (face.CenterX - 0.5) / 0.5, ey = (face.CenterY - 0.5) / 0.5;
+        if (_edgeTurns > 0)
+        {
+            // Found again past a recorded limit: the head can move there after all.
+            _yaw.ForgetLimits();
+            _pitch.ForgetLimits();
+        }
+        _edgeTurns = 0;
+        _returned = false;
 
         if (_pending is { } move)
         {
@@ -101,6 +127,54 @@ public sealed class HeadAimer
     private static bool Unchanged(double moved, double before, double after) =>
         Math.Abs(moved) >= MinimumChange && Math.Abs(before) >= DeadZone && Math.Abs(after - before) < Noticeable;
 
+    /// <summary>
+    /// The face vanished after our last move. Pictures taken while the head turns can miss it, so
+    /// judge only once it stays gone; a move that could have carried it out counts against that
+    /// axis's direction, and the head goes back to where the face was.
+    /// </summary>
+    private HeadPose? AfterMove(DateTimeOffset at, out bool judged)
+    {
+        judged = false;
+        if (_pending is not { } move || (_lastCommand is { } moved && at - moved < LostAfterMove)) return null;
+        judged = true;
+        _pending = null;
+        _seen = null;
+        // Both axes learn, so no short-circuit.
+        bool pushed = _yaw.Pushed(move.Ex, move.Yaw) | _pitch.Pushed(move.Ey, move.Pitch);
+        if (!pushed || _lastSeen is not { } seen) return null;
+        _returned = true;
+        return seen.Pose;
+    }
+
+    /// <summary>
+    /// The person is here but out of the picture. A face that was near the edge walked out, so turn
+    /// that way; a head that is no longer where it saw the face goes back there; otherwise it was
+    /// only a glance away, so hold still.
+    /// </summary>
+    private HeadPose? Lost(DateTimeOffset at, HeadPose current)
+    {
+        _seen = null;
+        if (_lastSeen is not { } seen || _lastFace is not { } lastFace) return null;
+        var gone = at - lastFace;
+        if (gone >= EdgeTurnAfter && _edgeTurns < MaxEdgeTurns &&
+            (Math.Abs(seen.Ex) >= NearEdge || Math.Abs(seen.Ey) >= NearEdge))
+        {
+            _edgeTurns++;
+            // A person who keeps pace with the head looks like a servo limit, so this turn ignores
+            // learned limits; a real limit only stops the servo, and the pose stays in the safe range.
+            double yaw = Math.Abs(seen.Ex) >= NearEdge ? _yaw.Toward(current.Yaw, seen.Ex) : current.Yaw;
+            double pitch = Math.Abs(seen.Ey) >= NearEdge ? _pitch.Toward(current.Pitch, seen.Ey) : current.Pitch;
+            return new HeadPose(yaw, pitch);
+        }
+        if (gone >= ReturnAfter && !_returned &&
+            (Math.Abs(current.Yaw - seen.Pose.Yaw) > 2 || Math.Abs(current.Pitch - seen.Pose.Pitch) > 2))
+        {
+            _returned = true;
+            return seen.Pose;
+        }
+        return null;
+    }
+
     private HeadPose? Search(DateTimeOffset at)
     {
         _pending = null;
@@ -111,16 +185,28 @@ public sealed class HeadAimer
             _retryAt = null;
             _step = 0;
             _stepStarted = at;
-            return Sweep[0];
+            _route = Route();
+            return _route[0];
         }
         if (at - _stepStarted < Dwell) return null;
         _step++;
         _stepStarted = at;
-        if (_step < Sweep.Length) return Sweep[_step];
+        if (_step < _route.Length) return _route[_step];
         // Nobody found: rest quietly and try again later instead of sweeping forever.
         _step = -1;
         _retryAt = at + RetryAfter;
         return Rest;
+    }
+
+    /// <summary>
+    /// Where to look: first where the face was last seen, then side to side at that tilt (a low desk
+    /// camera may see faces only there), then the usual two rows.
+    /// </summary>
+    private HeadPose[] Route()
+    {
+        if (_lastSeen is not { } seen) return Sweep;
+        double pitch = seen.Pose.Pitch;
+        return [seen.Pose, new(-40, pitch), new(-20, pitch), new(0, pitch), new(20, pitch), new(40, pitch), .. Sweep];
     }
 
     private sealed record Move(double Ex, double Ey, double Yaw, double Pitch, double YawBefore, double PitchBefore);
@@ -160,6 +246,29 @@ public sealed class HeadAimer
             if (step < 0 && _limitLow is { } low) target = Math.Max(target, low);
             if (step > 0 && _limitHigh is { } high) target = Math.Min(target, high);
             return target;
+        }
+
+        /// <summary>The face left the picture after a move of <paramref name="moved"/> degrees.</summary>
+        /// <summary>One full step toward the face, ignoring learned limits.</summary>
+        public double Toward(double current, double error) =>
+            Math.Clamp(current + Math.Clamp(-gain * error * Sign, -MaxStep, MaxStep), min, max);
+
+        public void ForgetLimits() => _limitLow = _limitHigh = null;
+
+        /// <returns>True when this counts against the learned direction.</returns>
+        public bool Pushed(double before, double moved)
+        {
+            // Only a move that would have carried the face near or past the edge, had it gone the
+            // wrong way, can explain losing it; once the direction is learned, the person moved.
+            if (Math.Abs(moved) < MinimumChange || Confirmed ||
+                Math.Abs(before) + Math.Abs(moved) * 0.8 / gain < 0.8) return false;
+            _stuck = 0;
+            if (++_away < 2) return true;
+            _away = 0;
+            _good = 0;
+            Sign = -Sign;
+            _limitLow = _limitHigh = null;
+            return true;
         }
 
         /// <summary>Compares the offset before and after a move of <paramref name="moved"/> degrees.</summary>

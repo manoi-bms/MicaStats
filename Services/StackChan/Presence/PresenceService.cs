@@ -579,8 +579,10 @@ public sealed class PresenceService : IDisposable
         _robot.SetHeadTracking(allowed);
         lock (_gate) { if (_checkingDirection) return; }
         if (!allowed || state == PresenceState.Unknown) return;
-        // Present but briefly out of view (a glance at another screen): hold still; search only once away.
-        if (state == PresenceState.Present && face == null) return;
+        // A person is holding the head: pause, so no search or return is spent on refused moves.
+        if (_robot.ManualHoldActive) return;
+        // Start from where the head really is: a person or a gesture may have moved it.
+        if (_robot.HeadPosition is { } head) lock (_gate) _pose = new HeadPose(head.Yaw, head.Pitch);
         // The aimer follows at once and calibrates itself from how the face moves after each step.
         HeadPose? pose;
         bool learned;
@@ -594,7 +596,8 @@ public sealed class PresenceService : IDisposable
                 _aimer = new HeadAimer(saved.Item1, saved.Item2);
                 _aimerInverts = saved;
             }
-            pose = _aimer.Next(now, face, _pose);
+            // Present but out of view: the aimer looks where the person went, or holds still for a glance.
+            pose = _aimer.Next(now, face, _pose, present: state == PresenceState.Present);
             learned = _aimer.Learned;
             inverts = (_aimer.InvertYaw, _aimer.InvertPitch);
             if (learned) _aimerInverts = inverts;

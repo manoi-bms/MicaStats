@@ -198,6 +198,71 @@ public sealed class StackChanHeadAimerTests
     }
 
     [Fact]
+    public void search_looks_first_where_the_face_was_last_seen_and_at_its_tilt()
+    {
+        var aimer = new HeadAimer(false, false);
+        var seenAt = new HeadPose(10, 8); // A low desk camera: the face shows only at a low tilt.
+        Assert.Null(aimer.Next(T0, FaceAt(0.5f, 0.5f), seenAt));
+        var poses = new List<HeadPose>();
+        for (var at = T0.AddSeconds(4); at < T0.AddSeconds(30); at = at.AddMilliseconds(250))
+            if (aimer.Next(at, null, new HeadPose(-40, 25)) is { } pose) poses.Add(pose);
+
+        Assert.Equal(seenAt, poses[0]);
+        Assert.Contains(poses, pose => pose.Pitch == 8 && pose.Yaw <= -20);
+        Assert.Contains(poses, pose => pose.Pitch == 8 && pose.Yaw >= 20);
+    }
+
+    [Fact]
+    public void a_glance_away_from_the_centre_holds_the_head_still()
+    {
+        var aimer = new HeadAimer(false, false);
+        Assert.Null(aimer.Next(T0, FaceAt(0.5f, 0.5f), Centre));
+        for (var at = T0.AddSeconds(0.25); at < T0.AddSeconds(15); at = at.AddMilliseconds(250))
+            Assert.Null(aimer.Next(at, null, Centre, present: true));
+    }
+
+    [Fact]
+    public void returns_to_where_the_face_was_after_the_head_was_moved_away()
+    {
+        var aimer = new HeadAimer(false, false);
+        Assert.Null(aimer.Next(T0, FaceAt(0.5f, 0.5f), Centre));
+        var pushed = new HeadPose(-30, 15);
+        HeadPose? back = null;
+        for (var at = T0.AddSeconds(0.25); back == null && at < T0.AddSeconds(5); at = at.AddMilliseconds(250))
+            back = aimer.Next(at, null, pushed, present: true);
+
+        Assert.Equal(Centre, back);
+    }
+
+    [Fact]
+    public void turns_toward_the_edge_a_walking_person_left_by()
+    {
+        // A narrow picture, so the walk takes the face fully out of view.
+        var camera = new Camera(faceYaw: 10, facePitch: 30, frameDegrees: 40);
+        var aimer = new HeadAimer(false, false);
+        var pose = new HeadPose(0, 30);
+        var at = T0;
+        bool lost = false;
+        void Run(double seconds, double walkPerSecond)
+        {
+            for (var end = at.AddSeconds(seconds); at < end; at = at.AddMilliseconds(250))
+            {
+                camera.FaceYaw = Math.Min(camera.FaceYaw + walkPerSecond * 0.25, 45);
+                var face = camera.See(pose);
+                lost |= face == null;
+                if (aimer.Next(at, face, pose, present: true) is { } next) pose = next;
+            }
+        }
+        Run(15, 0); // Learns the direction while centring.
+        Run(3, 25); // Walks out of the picture faster than the head follows.
+        Run(10, 0);
+
+        Assert.True(lost, "the walk should take the face out of the picture");
+        Assert.True(camera.See(pose) != null, $"head at {pose}, inverted {aimer.InvertYaw}, face at yaw {camera.FaceYaw}");
+        Assert.InRange(camera.Error(pose).X, -0.12, 0.12);
+    }
+
+    [Fact]
     public void a_move_that_was_never_sent_is_not_learned_as_a_limit()
     {
         // The robot link was busy, so these moves were dropped; the face cannot have moved.

@@ -25,6 +25,7 @@ public sealed class StackChanService : IDisposable
     private StackChanSnapshot _snapshot = new(StackChanConnectionState.Disconnected, "",
         StackChanCapabilities.None, "Disconnected");
     private DateTimeOffset _alertUntil, _manualUntil, _nextUpdate, _nextReconnect;
+    private (double Yaw, double Pitch)? _headPosition;
     private DateTimeOffset _nextAutomaticGesture;
     private StackChanDashboardAlert? _dashboardAlert;
     private static readonly TimeSpan ManualWriterWait = TimeSpan.FromSeconds(1.5);
@@ -66,6 +67,18 @@ public sealed class StackChanService : IDisposable
     /// <summary>Best-effort presence command (camera, gaze, scene); skipped while another command is in flight.</summary>
     public Task<bool> SendPresenceAsync(byte[] json, CancellationToken cancellationToken = default) =>
         SendAsync([(StackChanChannel.Dashboard, json)], true, cancellationToken);
+
+    /// <summary>A person moved the head in the last 30 s; automatic aim waits until this ends.</summary>
+    public bool ManualHoldActive
+    {
+        get { lock (_gate) return _clock.GetUtcNow() < _manualUntil; }
+    }
+
+    /// <summary>The last head position actually sent to the robot by anyone: a person, a gesture or presence.</summary>
+    public (double Yaw, double Pitch)? HeadPosition
+    {
+        get { lock (_gate) return _headPosition; }
+    }
 
     /// <summary>Automatic head aim; refused in Quiet mode or without "Allow automatic head movement".</summary>
     public Task<bool> AimHeadAsync(double yawDegrees, double pitchDegrees, CancellationToken cancellationToken = default)
@@ -458,6 +471,8 @@ public sealed class StackChanService : IDisposable
                         throw new InvalidOperationException("This device does not expose the requested control.");
                 }
                 await _transport.WriteAsync(command.Channel, command.Json, cancellation.Token).ConfigureAwait(false);
+                if (command.Channel == StackChanChannel.Motion && ReadHeadPosition(command.Json) is { } head)
+                    lock (_gate) _headPosition = head;
             }
             return true;
         }
@@ -477,6 +492,20 @@ public sealed class StackChanService : IDisposable
             throw;
         }
         finally { _writer.Release(); }
+    }
+
+    private static (double Yaw, double Pitch)? ReadHeadPosition(byte[] json)
+    {
+        try
+        {
+            var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
+            return (root.GetProperty("yawServo").GetProperty("angle").GetInt32() / 10.0,
+                root.GetProperty("pitchServo").GetProperty("angle").GetInt32() / 10.0);
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private CancellationTokenSource CreateSessionToken(CancellationToken token)

@@ -134,6 +134,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         public async IAsyncEnumerable<AssistantUpdate> AskAsync(AiConversation conversation, string question,
                                                                 [EnumeratorCancellation] CancellationToken ct)
         {
+            using var companionActivity = StackChan.CompanionActivity.Enter(StackChan.StackChanActivity.Ai);
             ArgumentNullException.ThrowIfNull(conversation);
             conversation.Suggestions.Clear();
             _asking = conversation;

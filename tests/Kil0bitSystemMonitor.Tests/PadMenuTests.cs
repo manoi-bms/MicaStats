@@ -31,12 +31,22 @@ namespace Kil0bitSystemMonitor.Tests
             }
         });
 
-        /// <summary>Headers in order, with "-" for each separator.</summary>
+        /// <summary>Command headers in order, with "-" for a plain separator; contextual captions are tested separately.</summary>
         internal static string[] Headers(ContextMenu menu) =>
-            menu.Items.Cast<object>().Select(i => i is MenuItem m ? (string)m.Header : "-").ToArray();
+            menu.Items.Cast<object>().Where(i => i is not Separator { DataContext: not null })
+                .Select(i => i is MenuItem m ? (string)m.Header : "-").ToArray();
 
         internal static MenuItem ItemOf(ContextMenu menu, string header) =>
-            menu.Items.OfType<MenuItem>().Single(m => (string)m.Header == header);
+            AllItems(menu.Items).Single(m => Equals(m.Header, header));
+
+        private static System.Collections.Generic.IEnumerable<MenuItem> AllItems(ItemCollection items)
+        {
+            foreach (MenuItem item in items.OfType<MenuItem>())
+            {
+                yield return item;
+                foreach (MenuItem child in AllItems(item.Items)) yield return child;
+            }
+        }
 
         internal static void Click(MenuItem item) => item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
 
@@ -45,10 +55,12 @@ namespace Kil0bitSystemMonitor.Tests
         {
             window.RefreshEditorMenu();
 
-            Assert.Equal(new[] { "Undo", "Redo", "-", "Cut", "Copy", "Copy as RTF", "Store as credential\u2026", "Paste", "Delete", "Select all", "-", "Format", "Lines", "Tools", "AI", "-", "Find", "Replace", "Go to line…" },
+            Assert.Equal(new[] { "Undo", "Redo", "-", "Cut", "Copy", "Copy as RTF", "Store as credential\u2026", "Paste", "Delete", "Select all", "Format", "Lines", "Tools", "AI", "Find & navigate" },
                          Headers(window.EditorMenu));
             Assert.Equal("Ctrl+Z", ItemOf(window.EditorMenu, "Undo").InputGestureText);
             Assert.Equal("Ctrl+G", ItemOf(window.EditorMenu, "Go to line…").InputGestureText);
+            Assert.Equal(new[] { "Find", "Replace", "Go to line…" },
+                ItemOf(window.EditorMenu, "Find & navigate").Items.OfType<MenuItem>().Select(i => i.Header));
         });
 
         [Fact]
@@ -399,7 +411,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             var menu = window.BuildTabMenu(note, null);
 
-            Assert.Equal(new[] { "Rename…", "Tab color", "Close", "Close other tabs", "-", "Move to new window" }, Headers(menu));
+            Assert.Equal(new[] { "Rename…", "Tab color", "Move to new window", "Close", "Close other tabs" }, Headers(menu));
             Assert.False(ItemOf(menu, "Move to new window").IsEnabled);
             Assert.False(ItemOf(menu, "Close other tabs").IsEnabled);   // it is the only tab
         });
@@ -414,7 +426,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             var menu = window.BuildTabMenu(note, null);
 
-            Assert.Equal(new[] { "Rename…", "Tab color", "Close", "Close other tabs", "-", "Move to new window", "-", "Copy file path", "Show in folder" }, Headers(menu));
+            Assert.Equal(new[] { "Rename…", "Tab color", "Move to new window", "Copy file path", "Show in folder", "Close", "Close other tabs" }, Headers(menu));
             Assert.True(ItemOf(menu, "Close other tabs").IsEnabled);
         });
 

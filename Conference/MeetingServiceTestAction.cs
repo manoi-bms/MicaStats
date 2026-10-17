@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Windows.Controls;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Conference;
+using Kil0bitSystemMonitor.Services.Localization;
 using Button = System.Windows.Controls.Button;
 using TextBox = System.Windows.Controls.TextBox;
 
@@ -41,7 +42,7 @@ internal sealed class MeetingServiceTestAction : IDisposable
     {
         _revision++;
         _operation?.Cancel();
-        _status.Text = "Not tested for this address.";
+            _status.Text = UiText.Tr("Not tested for this address.");
         RefreshButton();
     }
 
@@ -51,7 +52,7 @@ internal sealed class MeetingServiceTestAction : IDisposable
         if (_operation != null) { Cancel(); return; }
         if (!MeetingServiceEndpoints.TryNormalizeBaseUrl(_address.Text, out string url))
         {
-            _status.Text = "Enter a valid HTTP or HTTPS API base URL to test.";
+            _status.Text = UiText.Tr("Enter a valid HTTP or HTTPS API base URL to test.");
             return;
         }
 
@@ -59,8 +60,8 @@ internal sealed class MeetingServiceTestAction : IDisposable
         _operation = operation;
         long revision = _revision;
         _status.Text = _kind == MeetingServiceKind.Tts
-            ? "Testing speech generation…"
-            : "Testing transcription with generated silence…";
+                ? UiText.Tr("Testing speech generation…")
+                : UiText.Tr("Testing transcription with generated silence…");
         RefreshButton();
         var elapsed = Stopwatch.StartNew();
         try
@@ -71,7 +72,7 @@ internal sealed class MeetingServiceTestAction : IDisposable
         }
         catch (OperationCanceledException) when (operation.IsCancellationRequested)
         {
-            if (IsCurrent(operation, revision)) _status.Text = "Test cancelled.";
+            if (IsCurrent(operation, revision)) _status.Text = UiText.Tr("Test cancelled.");
         }
         catch (MeetingException error)
         {
@@ -80,7 +81,7 @@ internal sealed class MeetingServiceTestAction : IDisposable
         catch
         {
             if (IsCurrent(operation, revision) && !operation.IsCancellationRequested)
-                _status.Text = "Test failed. Check the service address, API path and network, then try again.";
+                _status.Text = UiText.Tr("Test failed. Check the service address, API path and network, then try again.");
         }
         finally
         {
@@ -94,11 +95,11 @@ internal sealed class MeetingServiceTestAction : IDisposable
 
     private void RefreshButton()
     {
-        _button.Content = _operation == null ? "Test connection" : "Cancel test";
+        _button.Content = UiText.Tr(_operation == null ? "Test connection" : "Cancel test");
         ButtonIcon.SetGlyph(_button, _operation == null ? "\uE703" : "\uE711");
         string service = _kind == MeetingServiceKind.Tts ? "TTS" : _kind == MeetingServiceKind.Asr1 ? "ASR1" : "ASR2";
         System.Windows.Automation.AutomationProperties.SetName(_button,
-            _operation == null ? $"Test {service} connection" : $"Cancel {service} connection test");
+            _operation == null ? UiText.Format("Test {0} connection", service) : UiText.Format("Cancel {0} connection test", service));
         _button.IsEnabled = !_disposed && (_operation != null
             ? !_operation.IsCancellationRequested
             : MeetingServiceEndpoints.TryNormalizeBaseUrl(_address.Text, out _));
@@ -108,7 +109,7 @@ internal sealed class MeetingServiceTestAction : IDisposable
     {
         if (_disposed || _operation == null) return;
         _operation.Cancel();
-        _status.Text = "Test cancelled.";
+        _status.Text = UiText.Tr("Test cancelled.");
         RefreshButton();
     }
 

@@ -8,7 +8,7 @@ using Microsoft.Extensions.AI;
 
 namespace Kil0bitSystemMonitor.Services.Pad.Ai
 {
-    public enum PadAiUpdateKind { Text, Error, CutShort, Done }
+    public enum PadAiUpdateKind { Text, Tool, Error, CutShort, Done }
 
     /// <summary>One step of a MicaPad AI request: a piece of text, a worded error, a cut-short notice, or the end.</summary>
     public sealed record PadAiUpdate(PadAiUpdateKind Kind, string? Text = null);
@@ -39,6 +39,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         internal const int MaxOutputTokens = 4096;
         internal const int MaxReplyChars = 64000;
         internal const string StoppedByFilter = "The AI provider stopped the reply (content filter).";
+        internal const string ToolFailed = "A MicaPad tool could not finish this request. Try again.";
 
         private static readonly PadAiUpdate Done = new(PadAiUpdateKind.Done);
 
@@ -82,8 +83,11 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             return new PadAiRunner(_client, _usage, _dailyLimit, _silence, budget.PadOutputTokens, budget.PadReplyChars);
         }
 
-        public async IAsyncEnumerable<PadAiUpdate> RunAsync(string userMessage, [EnumeratorCancellation] CancellationToken ct)
+        public async IAsyncEnumerable<PadAiUpdate> RunAsync(string userMessage, [EnumeratorCancellation] CancellationToken ct,
+                                                             IReadOnlyList<AITool>? tools = null,
+                                                             string? additionalSystemPrompt = null)
         {
+            using var companionActivity = StackChan.CompanionActivity.Enter(StackChan.StackChanActivity.Ai);
             AiClientResult? result = null;
             Exception? setupFailure = null;
             try
@@ -112,6 +116,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                 yield break;
             }
 
+            IChatClient ownedClient = client;
             try
             {
                 // Checked before the count, so a request already cancelled spends no use.
@@ -147,14 +152,46 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                     yield break;
                 }
 
+                bool usingTools = tools is { Count: > 0 };
+                Exception? toolClientFailure = null;
+                if (usingTools)
+                {
+                    try
+                    {
+                        ownedClient = new ChatClientBuilder(new FinalAnswerChatClient(client))
+                            .UseFunctionInvocation(configure: f =>
+                            {
+                                f.MaximumIterationsPerRequest = 8;
+                                f.AllowConcurrentInvocation = false;
+                                f.MaximumConsecutiveErrorsPerRequest = 2;
+                                f.IncludeDetailedErrors = false;
+                                f.TerminateOnUnknownCalls = true;
+                            })
+                            .Build();
+                    }
+                    catch (Exception ex)
+                    {
+                        toolClientFailure = ex;
+                    }
+                }
+                if (toolClientFailure != null)
+                {
+                    DiagnosticsLog.Log("pad", "AI request failed: " + toolClientFailure.GetType().Name);
+                    yield return new PadAiUpdate(PadAiUpdateKind.Error, AiErrorText.Describe(toolClientFailure));
+                    yield return Done;
+                    yield break;
+                }
+
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 deadline.CancelAfter(_silence);
                 CancellationToken token = deadline.Token;
 
                 Exception? failure = null;
-                bool cutShort = false, filtered = false, capped = false;
+                bool cutShort = false, filtered = false, capped = false, toolFailed = false;
                 int length = 0;
-                (IAsyncEnumerator<ChatResponseUpdate>? stream, Exception? openError) = Open(client, result.IsClaude, userMessage, _maxOutputTokens, token);
+                var calls = new Dictionary<string, string>(StringComparer.Ordinal);
+                (IAsyncEnumerator<ChatResponseUpdate>? stream, Exception? openError) = Open(
+                    ownedClient, result.IsClaude, userMessage, _maxOutputTokens, token, tools, additionalSystemPrompt);
                 if (stream == null) failure = openError;
                 else
                 {
@@ -176,7 +213,27 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                             if (update.FinishReason is { } reason)
                             {
                                 if (reason == ChatFinishReason.ContentFilter) filtered = true;
-                                else if (reason != ChatFinishReason.Stop) cutShort = true;   // the length limit, or anything else that is not a normal end
+                                else if (reason != ChatFinishReason.Stop &&
+                                         !(usingTools && reason == ChatFinishReason.ToolCalls))
+                                    cutShort = true;   // the length limit, or anything else that is not a normal end
+                            }
+
+                            foreach (AIContent content in update.Contents)
+                            {
+                                if (content is FunctionCallContent call)
+                                {
+                                    calls[call.CallId] = call.Name;
+                                }
+                                else if (content is FunctionResultContent functionResult &&
+                                         calls.Remove(functionResult.CallId, out string? toolName))
+                                {
+                                    if (functionResult.Exception != null) toolFailed = true;
+                                    // Tool arguments and results can contain note or credential data. The UI gets only
+                                    // the registered name, after the invocation has completed.
+                                    deadline.CancelAfter(Timeout.InfiniteTimeSpan);
+                                    yield return new PadAiUpdate(PadAiUpdateKind.Tool, toolName);
+                                    deadline.CancelAfter(_silence);
+                                }
                             }
 
                             string? text = update.Text;
@@ -215,7 +272,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                         if (!timedOut)
                             DiagnosticsLog.Log("pad", "AI request failed: " + failure.GetType().Name);
                         yield return new PadAiUpdate(PadAiUpdateKind.Error,
-                            timedOut ? AiErrorText.TimedOut : AiErrorText.Describe(failure));
+                            timedOut ? AiErrorText.TimedOut : toolFailed ? ToolFailed : AiErrorText.Describe(failure));
                     }
                 }
                 else if (timedOut)
@@ -229,6 +286,13 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
                     DiagnosticsLog.Log("pad", "AI request failed: the provider stopped the reply (content filter)");
                     yield return new PadAiUpdate(PadAiUpdateKind.Error, StoppedByFilter);
                 }
+                else if (usingTools && calls.Count > 0 && !ct.IsCancellationRequested)
+                {
+                    // TerminateOnUnknownCalls deliberately returns the unhandled call to us. Treat the whole
+                    // run as failed so a valid proposal from an earlier round cannot become applicable beside it.
+                    DiagnosticsLog.Log("pad", "AI request failed: the model requested an unavailable tool");
+                    yield return new PadAiUpdate(PadAiUpdateKind.Error, ToolFailed);
+                }
                 else if ((cutShort || capped) && !ct.IsCancellationRequested)
                 {
                     yield return new PadAiUpdate(PadAiUpdateKind.CutShort);
@@ -237,23 +301,29 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             }
             finally
             {
-                try { client.Dispose(); } catch (Exception) { }
+                try { ownedClient.Dispose(); } catch (Exception) { }
             }
         }
 
         private static (IAsyncEnumerator<ChatResponseUpdate>? Stream, Exception? Error) Open(
-            IChatClient client, bool isClaude, string? userMessage, int maxOutputTokens, CancellationToken token)
+            IChatClient client, bool isClaude, string? userMessage, int maxOutputTokens, CancellationToken token,
+            IReadOnlyList<AITool>? tools, string? additionalSystemPrompt)
         {
             try
             {
+                string systemPrompt = PadAiPrompts.System;
+                if (!string.IsNullOrWhiteSpace(additionalSystemPrompt))
+                    systemPrompt += "\n\n" + additionalSystemPrompt.Trim();
                 var messages = new List<ChatMessage>
                 {
                     isClaude
-                        ? ClaudeCache.SystemMessage(PadAiPrompts.System)
-                        : new ChatMessage(ChatRole.System, PadAiPrompts.System),
+                        ? ClaudeCache.SystemMessage(systemPrompt)
+                        : new ChatMessage(ChatRole.System, systemPrompt),
                     new ChatMessage(ChatRole.User, userMessage ?? ""),
                 };
-                return (client.GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = maxOutputTokens }, token)
+                var options = new ChatOptions { MaxOutputTokens = maxOutputTokens };
+                if (tools is { Count: > 0 }) options.Tools = new List<AITool>(tools);
+                return (client.GetStreamingResponseAsync(messages, options, token)
                               .GetAsyncEnumerator(token), null);
             }
             catch (Exception ex)

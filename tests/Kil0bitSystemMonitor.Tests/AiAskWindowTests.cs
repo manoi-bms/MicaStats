@@ -1580,5 +1580,33 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.Same(shown, turn.Answer.Document);
             });
         }
+
+        [Fact]
+        public void Copy_button_temporarily_shows_copied_feedback_and_ctrl_n_starts_new_conversation() => WithWindow((window, h) =>
+        {
+            h.Setups.Enqueue(h.Answer(
+                new AssistantUpdate(AssistantUpdateKind.Text, "All good."),
+                new AssistantUpdate(AssistantUpdateKind.Done)));
+            Send(window, "Status?");
+            var turn = Assert.Single(window.Turns);
+            turn.CopyFeedbackDuration = TimeSpan.FromMilliseconds(20);
+
+            var previous = AskTurnView.SetClipboard;
+            AskTurnView.SetClipboard = _ => { };
+            try
+            {
+                Assert.Equal(Kil0bitSystemMonitor.Services.Localization.UiText.Tr("Copy"), turn.CopyLabel.Text);
+                Click(turn.CopyButton);
+                Assert.Equal(Kil0bitSystemMonitor.Services.Localization.UiText.Tr("Copied"), turn.CopyLabel.Text);
+            }
+            finally
+            {
+                AskTurnView.SetClipboard = previous;
+            }
+
+            Assert.True(window.HandleShortcutKey(System.Windows.Input.Key.N, System.Windows.Input.ModifierKeys.Control));
+            Assert.Empty(window.Turns);
+            Assert.Equal(Visibility.Visible, window.EmptyState.Visibility);
+        });
     }
 }

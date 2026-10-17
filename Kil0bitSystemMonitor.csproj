@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFramework>net8.0-windows</TargetFramework>
+        <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
         <OutputType>WinExe</OutputType>
         <ApplicationIcon>icon.ico</ApplicationIcon>
         <Win32Icon>icon.ico</Win32Icon>
@@ -38,6 +38,21 @@
         <None Include="icon.ico">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <None Update="firmware\uiflow2\micastats_companion.py;firmware\uiflow2\README.md">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </None>
+        <!-- StackChan presence: YuNet face locator (MIT) run on the host GPU (Services/StackChan/Presence). -->
+        <None Update="Assets\Models\yunet-2023mar.onnx;Assets\Models\THIRD-PARTY.txt">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </None>
+        <!-- Microsoft.AI.DirectML copies its DLL only for an x64 PlatformTarget; this AnyCPU app runs as x64. -->
+        <None Include="$(Microsoft_AI_DirectML_Bin_Dir_Windows_x64)\DirectML.dll" Condition="'$(Microsoft_AI_DirectML_Bin_Dir_Windows_x64)' != '' AND '$(PlatformTarget)' != 'x64'"
+              Link="DirectML.dll" Visible="false">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </None>
     </ItemGroup>
 
     <ItemGroup>
@@ -46,6 +61,11 @@
             <Link>micapad.ico</Link>
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- Offline About illustration, packaged into the application assembly. -->
+        <Resource Include="Assets\about-banner.png" />
     </ItemGroup>
 
     <ItemGroup>
@@ -65,6 +85,10 @@
         <EmbeddedResource Include="Pad\Highlighting\*.xshd" LogicalName="MicaPad.Highlighting.%(Filename)%(Extension)" />
         <!-- Emoji names (gemoji 4.1.0, MIT), loaded by Services/Pad/Emoji.cs. -->
         <EmbeddedResource Include="Services\Pad\Emoji.tsv" LogicalName="MicaPad.Emoji.tsv" />
+        <!-- Thai UI catalogs. English source phrases remain the built-in fallback. -->
+        <EmbeddedResource Include="Services\Localization\Catalogs\*.json" LogicalName="MicaStats.Localization.Catalogs.%(Filename)%(Extension)" />
+        <!-- Cyberpunk Neon HUD splash artwork and 3D RGBA hardware icons for Turzx 3.5" display. -->
+        <EmbeddedResource Include="Assets\Turzx\*.png" LogicalName="MicaStats.Turzx.%(Filename)%(Extension)" />
     </ItemGroup>
 
     <!--
@@ -72,10 +96,10 @@
       the test project's sources into the application assembly. Exclude them explicitly.
     -->
     <ItemGroup>
-        <Compile Remove="tests/**" />
-        <None Remove="tests/**" />
-        <Page Remove="tests/**" />
-        <ApplicationDefinition Remove="tests/**" />
+        <Compile Remove="tests/**;artifacts/**" />
+        <None Remove="tests/**;artifacts/**" />
+        <Page Remove="tests/**;artifacts/**" />
+        <ApplicationDefinition Remove="tests/**;artifacts/**" />
     </ItemGroup>
 
     <ItemGroup>
@@ -87,6 +111,7 @@
         <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.0" />
         <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
         <PackageReference Include="System.Management" Version="8.0.0" />
+        <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
     </ItemGroup>
 
     <!--

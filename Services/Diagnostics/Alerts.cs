@@ -61,6 +61,31 @@ namespace Kil0bitSystemMonitor.Services.Diagnostics
         public string ThresholdText =>
             Threshold.ToString("0.#", CultureInfo.InvariantCulture) + Unit;
 
+        public string ThresholdInputText =>
+            Threshold.ToString("0.#", CultureInfo.InvariantCulture);
+
+        public string SustainInputText =>
+            SustainSeconds.ToString(CultureInfo.InvariantCulture);
+
+        public AlertRule WithEditedValues(string? thresholdText, string? sustainText)
+        {
+            double threshold = Threshold;
+            if (!string.IsNullOrWhiteSpace(thresholdText) &&
+                double.TryParse(thresholdText.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedThreshold))
+            {
+                threshold = Math.Clamp(Math.Round(parsedThreshold, 1), 0.1d, 10000d);
+            }
+
+            int sustain = SustainSeconds;
+            if (!string.IsNullOrWhiteSpace(sustainText) &&
+                int.TryParse(sustainText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedSustain))
+            {
+                sustain = Math.Clamp(parsedSustain, 0, 3600);
+            }
+
+            return this with { Threshold = threshold, SustainSeconds = sustain };
+        }
+
         /// <summary>A sentence the user can check at a glance.</summary>
         public string Describe() =>
             Label + " " + (Above ? "above " : "below ") + ThresholdText +

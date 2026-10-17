@@ -10,6 +10,7 @@ using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services.Conference;
 using Kil0bitSystemMonitor.Services.Ai;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor.Conference;
 
@@ -55,9 +56,9 @@ public partial class MeetingWindow : Window
         _references.Changed += SessionChanged;
         _references.ContextInvalidated += ReferenceContextInvalidated;
         _speech.Changed += SessionChanged;
-        VoiceChoice.ItemsSource = new[] { new MeetingVoice("default", "Default") };
+        VoiceChoice.ItemsSource = new[] { new MeetingVoice("default", UiText.Tr("Default")) };
         VoiceChoice.SelectedIndex = config.MeetingVoice == "default" ? 0 : -1;
-        if (VoiceChoice.SelectedIndex < 0) SpeechStatus.Text = "Refresh voices to validate your saved voice.";
+        if (VoiceChoice.SelectedIndex < 0) SpeechStatus.Text = UiText.Tr("Refresh voices to validate your saved voice.");
         Loaded += (_, _) => { RefreshDevices(); RefreshState(); };
         Closing += OnClosing;
     }
@@ -109,10 +110,10 @@ public partial class MeetingWindow : Window
         string service = ServiceChoice.SelectedIndex switch
         {
             1 => "ASR1 · typhoon-asr-realtime · Thai",
-            2 => "ASR2 + ASR1 · compare both readings",
-            _ => "ASR2 · Qwen3-ASR · automatic language",
+            2 => UiText.Tr("ASR2 + ASR1 · compare both readings"),
+            _ => UiText.Tr("ASR2 · Qwen3-ASR · automatic language"),
         };
-        ServiceText.Text = $"{service} · {(asrReady ? "configured" : "setup required")}";
+        ServiceText.Text = UiText.Format("{0} · {1}", service, UiText.Tr(asrReady ? "configured" : "setup required"));
         DualAsrNotice.Visibility = ServiceChoice.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
         if (asrReady && ttsReady)
         {
@@ -120,11 +121,11 @@ public partial class MeetingWindow : Window
             return;
         }
         ReadinessText.Text = !asrReady && ServiceChoice.SelectedIndex == 2
-            ? "ASR2 + ASR1 requires both transcription endpoints. Configure both services or select a single service."
+            ? UiText.Tr("ASR2 + ASR1 requires both transcription endpoints. Configure both services or select a single service.")
             : !asrReady && !ttsReady
-            ? "Meeting services are not configured. Add a transcription endpoint to listen and a speech endpoint to speak."
-            : !asrReady ? "The selected transcription service needs an endpoint before listening can start."
-            : "Speech output needs an endpoint before voices can be loaded or text can be spoken.";
+            ? UiText.Tr("Meeting services are not configured. Add a transcription endpoint to listen and a speech endpoint to speak.")
+            : !asrReady ? UiText.Tr("The selected transcription service needs an endpoint before listening can start.")
+            : UiText.Tr("Speech output needs an endpoint before voices can be loaded or text can be spoken.");
         ReadinessBanner.Visibility = Visibility.Visible;
     }
 
@@ -169,7 +170,7 @@ public partial class MeetingWindow : Window
             OutputChoice.SelectedItem = outputs.FirstOrDefault(x => x.Id == _config.MeetingOutputId)
                 ?? (string.IsNullOrEmpty(_config.MeetingOutputId) ? outputs.FirstOrDefault(x => x.IsDefault) : null);
         }
-        catch { StatusText.Text = "Could not list audio devices. Connect your devices and refresh."; }
+        catch { StatusText.Text = UiText.Tr("Could not list audio devices. Connect your devices and refresh."); }
     }
 
     private void Service_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -184,15 +185,15 @@ public partial class MeetingWindow : Window
         if (_busy || _speech.IsBusy) return;
         if (!IsSelectedAsrConfigured())
         {
-            StatusText.Text = "Configure the selected transcription service before listening.";
+            StatusText.Text = UiText.Tr("Configure the selected transcription service before listening.");
             RefreshServiceReadiness();
             return;
         }
         if (MicrophoneChoice.SelectedItem is not MeetingDevice microphone || OutputChoice.SelectedItem is not MeetingDevice output)
-        { StatusText.Text = "Choose an available microphone and output device."; return; }
+        { StatusText.Text = UiText.Tr("Choose an available microphone and output device."); return; }
         if (_session.Segments.Count > 0 && System.Windows.MessageBox.Show(this,
-            "Start a new meeting? The current transcript stays in Saved transcripts. Use Save Markdown first if you also want to keep the current AI summary and answers.",
-            "New meeting", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                UiText.Tr("Start a new meeting? The current transcript stays in Saved transcripts. Use Save Markdown first if you also want to keep the current AI summary and answers."),
+                UiText.Tr("New meeting"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         _config.MeetingMicrophoneId = microphone.Id;
         _config.MeetingOutputId = output.Id;
         _config.MeetingAsrService = ServiceChoice.SelectedIndex switch { 1 => "ASR1", 2 => "Both", _ => "ASR2" };
@@ -206,7 +207,7 @@ public partial class MeetingWindow : Window
                 CompareBothServices: ServiceChoice.SelectedIndex == 2));
             AudioSetup.IsExpanded = false;
         }
-        catch { StatusText.Text = "Could not start listening. Check the selected devices."; }
+        catch { StatusText.Text = UiText.Tr("Could not start listening. Check the selected devices."); }
         finally { _busy = false; RefreshState(); }
     }
 
@@ -243,10 +244,10 @@ public partial class MeetingWindow : Window
         TranscriptEmpty.Visibility = segments.Count == 0 && gaps.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         TranscriptEmptyHint.Text = _session.State switch
         {
-            MeetingState.Listening => "Listening now. Text appears after each audio chunk is transcribed.",
-            MeetingState.Paused => "Listening is paused during speech playback.",
-            MeetingState.Faulted => "Check the session status, then start again when ready.",
-            _ => "Choose your devices and start listening.",
+            MeetingState.Listening => UiText.Tr("Listening now. Text appears after each audio chunk is transcribed."),
+            MeetingState.Paused => UiText.Tr("Listening is paused during speech playback."),
+            MeetingState.Faulted => UiText.Tr("Check the session status, then start again when ready."),
+            _ => UiText.Tr("Choose your devices and start listening."),
         };
         RefreshAudioMonitor();
         RefreshAnalysis();
@@ -260,8 +261,8 @@ public partial class MeetingWindow : Window
     {
         var picker = new Microsoft.Win32.SaveFileDialog { Filter = "Markdown (*.md)|*.md", FileName = $"meeting-{DateTime.Now:yyyyMMdd-HHmm}.md", AddExtension = true, DefaultExt = ".md" };
         if (picker.ShowDialog(this) != true) return;
-        try { await File.WriteAllTextAsync(picker.FileName, _intelligence.ExportMarkdown(), new UTF8Encoding(false)); StatusText.Text = "Markdown saved."; }
-        catch { StatusText.Text = "Could not save the report. Choose a writable location."; }
+        try { await File.WriteAllTextAsync(picker.FileName, _intelligence.ExportMarkdown(), new UTF8Encoding(false)); StatusText.Text = UiText.Tr("Markdown saved."); }
+        catch { StatusText.Text = UiText.Tr("Could not save the report. Choose a writable location."); }
     }
 
     public Task StopForExitAsync() => Task.WhenAll(_session.StopAsync(), _speech.StopAsync());
@@ -274,7 +275,7 @@ public partial class MeetingWindow : Window
             Directory.CreateDirectory(folder);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
         }
-        catch { StatusText.Text = "Could not open Saved transcripts. Check folder access."; }
+        catch { StatusText.Text = UiText.Tr("Could not open Saved transcripts. Check folder access."); }
     }
 
     internal async Task<bool> SaveBeforeExitAsync()
@@ -283,11 +284,11 @@ public partial class MeetingWindow : Window
         catch { /* Keep received text even if an audio driver cannot finish stopping. */ }
         if (await _session.FlushTranscriptAsync()) return true;
         RefreshState();
-        StatusText.Text = "Transcript save did not finish. Keep this window open to retry, or use Save Markdown.";
+            StatusText.Text = UiText.Tr("Transcript save did not finish. Keep this window open to retry, or use Save Markdown.");
         Activate();
         System.Windows.MessageBox.Show(this,
-            "Your latest transcript could not be saved. The meeting is kept open so you can retry or use Save Markdown to choose another location.",
-            "Transcript not saved", MessageBoxButton.OK, MessageBoxImage.Warning);
+                UiText.Tr("Your latest transcript could not be saved. The meeting is kept open so you can retry or use Save Markdown to choose another location."),
+                UiText.Tr("Transcript not saved"), MessageBoxButton.OK, MessageBoxImage.Warning);
         return false;
     }
 

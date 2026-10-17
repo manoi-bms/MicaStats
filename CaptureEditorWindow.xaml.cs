@@ -12,6 +12,7 @@ using Kil0bitSystemMonitor.Controls;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Capture;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using BitmapScalingMode = System.Windows.Media.BitmapScalingMode;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
@@ -71,7 +72,7 @@ namespace Kil0bitSystemMonitor
             ShowZoom(DpiScale);
 
             PreviewKeyDown += OnWindowKey;
-            if (!string.IsNullOrEmpty(sourceNote)) Title = "MicaStats Capture — " + sourceNote;
+        if (!string.IsNullOrEmpty(sourceNote)) Title = UiText.Format("MicaStats Capture — {0}", sourceNote);
         }
 
         /// <summary>The finished image, as it would be saved.</summary>
@@ -87,16 +88,16 @@ namespace Kil0bitSystemMonitor
             ApplyCropButton.IsEnabled = !Canvas.PendingCrop.IsEmpty;
 
             string size = $"{doc.Crop.Width} x {doc.Crop.Height}";
-            string marks = doc.Items.Count == 1 ? "1 mark" : $"{doc.Items.Count} marks";
+        string marks = UiText.Format(doc.Items.Count == 1 ? "{0} mark" : "{0} marks", doc.Items.Count);
 
             string hint = Canvas.Selected != null
-                ? "  ·  drag to move, handles to resize, Del to remove"
+            ? UiText.Tr("  ·  drag to move, handles to resize, Del to remove")
                 : doc.Items.Count > 0 && Canvas.Tool == CaptureTool.Select
-                    ? "  ·  click a mark to select it"
+                ? UiText.Tr("  ·  click a mark to select it")
                     : "";
 
             StatusText.Text = _lastSavedPath != null
-                ? $"{size}  ·  {marks}  ·  saved to {_lastSavedPath}"
+                ? $"{size}  ·  {marks}  ·  {UiText.Format("saved to {0}", _lastSavedPath)}"
                 : $"{size}  ·  {marks}{hint}";
         }
 
@@ -121,12 +122,20 @@ namespace Kil0bitSystemMonitor
 
         private void OnColourChecked(object sender, RoutedEventArgs e)
         {
-            if (Canvas != null && (sender as FrameworkElement)?.Tag is string hex) Canvas.ColorHex = hex;
+            if (Canvas != null && (sender as FrameworkElement)?.Tag is string hex)
+            {
+                Canvas.ColorHex = hex;
+                Canvas.ApplyStyleToSelected(colorHex: hex);
+            }
         }
 
         private void OnThicknessChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (Canvas != null) Canvas.Thickness = e.NewValue;
+            if (Canvas != null)
+            {
+                Canvas.Thickness = e.NewValue;
+                Canvas.ApplyStyleToSelected(thickness: e.NewValue);
+            }
         }
 
         private void OnRedactStyleChanged(object sender, SelectionChangedEventArgs e)
@@ -138,6 +147,7 @@ namespace Kil0bitSystemMonitor
                 2 => RedactStyle.Solid,
                 _ => RedactStyle.Pixelate,
             };
+            Canvas.ApplyStyleToSelected(redactStyle: Canvas.RedactStyle);
         }
 
         // ----- Text entry --------------------------------------------------------------------
@@ -189,8 +199,8 @@ namespace Kil0bitSystemMonitor
             var img = Canvas.Export();
             if (img == null) return;
             StatusText.Text = ScreenCaptureEngine.CopyToClipboard(img)
-                ? "Copied to clipboard"
-                : "Clipboard is busy — try again";
+            ? UiText.Tr("Copied to clipboard")
+            : UiText.Tr("Clipboard is busy — try again");
         }
 
         private void OnSave(object sender, RoutedEventArgs e)
@@ -213,7 +223,7 @@ namespace Kil0bitSystemMonitor
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("capture", "Save failed", ex);
-                StatusText.Text = "Could not save — see the diagnostics log";
+            StatusText.Text = UiText.Tr("Could not save — see the diagnostics log");
             }
         }
 
@@ -242,7 +252,7 @@ namespace Kil0bitSystemMonitor
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("capture", "Save-as failed", ex);
-                StatusText.Text = "Could not save — see the diagnostics log";
+            StatusText.Text = UiText.Tr("Could not save — see the diagnostics log");
             }
         }
 

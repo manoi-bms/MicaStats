@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using UserControl = System.Windows.Controls.UserControl;
 
@@ -38,9 +39,9 @@ namespace Kil0bitSystemMonitor.Pad
             Versions.ItemsSource = view;
 
             EmptyText.Text = tooLarge
-                ? "This note is over 10 MB, so new versions are no longer kept. It is still saved."
+                ? UiText.Tr("This note is over 10 MB, so new versions are no longer kept. It is still saved.")
                 : Rows.Count == 0
-                    ? "No versions yet. One is kept each time you pause after a minute of changes."
+                    ? UiText.Tr("No versions yet. One is kept each time you pause after a minute of changes.")
                     : "";
             EmptyText.Visibility = EmptyText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
             Visibility = Visibility.Visible;

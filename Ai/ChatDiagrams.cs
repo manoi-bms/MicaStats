@@ -516,29 +516,13 @@ namespace Kil0bitSystemMonitor.Ai
             return double.IsFinite(scale) && scale >= 1 ? Math.Min(scale, MaxScale) : 1;
         }
 
-        /// <summary>A PNG's size in pixels from its header (bytes 16 to 23, big-endian), as <c>DiagramPicture.PngWidth</c> reads the width.</summary>
-        private static bool TryPngSize(byte[] png, out int width, out int height)
-        {
-            width = height = 0;
-            if (png.Length < 24 || png[0] != 0x89 || png[1] != (byte)'P' || png[2] != (byte)'N' || png[3] != (byte)'G') return false;
-            width = png[16] << 24 | png[17] << 16 | png[18] << 8 | png[19];
-            height = png[20] << 24 | png[21] << 16 | png[22] << 8 | png[23];
-            return width > 0 && height > 0;
-        }
+        /// <summary>A PNG's size in pixels from its header (bytes 16 to 23, big-endian), shared via <see cref="PngBitmap.TryReadSize"/>.</summary>
+        private static bool TryPngSize(byte[] png, out int width, out int height) =>
+            PngBitmap.TryReadSize(png, out width, out height);
 
         /// <summary>Decodes as <c>DiagramPicture.BitmapOf</c> does: loaded at once, at the size asked for, and frozen.</summary>
-        private static BitmapSource DecodePng(byte[] png, int decodeWidth, int decodeHeight)
-        {
-            var decoded = new BitmapImage();
-            decoded.BeginInit();
-            decoded.CacheOption = BitmapCacheOption.OnLoad;
-            if (decodeWidth > 0) decoded.DecodePixelWidth = decodeWidth;
-            else if (decodeHeight > 0) decoded.DecodePixelHeight = decodeHeight;
-            decoded.StreamSource = new MemoryStream(png);
-            decoded.EndInit();
-            decoded.Freeze();
-            return decoded;
-        }
+        private static BitmapSource DecodePng(byte[] png, int decodeWidth, int decodeHeight) =>
+            PngBitmap.DecodeFrozen(png, decodeWidth, decodeHeight);
 
         private static ChatDiagramState Failed(string error, bool canRetry = false) => new(ChatDiagramStatus.Failed, Error: error, CanRetry: canRetry);
 

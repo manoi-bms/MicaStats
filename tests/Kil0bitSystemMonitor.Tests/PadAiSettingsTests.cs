@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Xml.Linq;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
@@ -36,21 +37,23 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void The_card_the_privacy_line_and_the_button_are_in_the_pad_section()
         {
-            string xaml = Read("SettingsWindow.xaml");
-            int pad = xaml.IndexOf("x:Name=\"PadSection\"", StringComparison.Ordinal);
-            int ai = xaml.IndexOf("x:Name=\"AiSection\"", StringComparison.Ordinal);
-            int search = xaml.IndexOf("x:Name=\"PadSearchPanel\"", StringComparison.Ordinal);
-            Assert.True(pad >= 0 && search > pad && ai > search);
-            string section = xaml.Substring(search, ai - search);
+            XDocument markup = UiMarkup.Load("SettingsWindow.xaml");
+            XElement pad = UiMarkup.Named(markup, "PadSection");
+            XElement ai = UiMarkup.Named(markup, "AiSection");
+            XElement search = UiMarkup.Named(markup, "PadSearchPanel");
+            XElement[] all = markup.Descendants().ToArray();
+            Assert.True(Array.IndexOf(all, pad) < Array.IndexOf(all, search) && Array.IndexOf(all, search) < Array.IndexOf(all, ai));
 
-            Assert.Contains("Text=\"AI\" FontSize=\"18\" FontWeight=\"SemiBold\"", section);
-            Assert.Contains("Text=\"Use AI in MicaPad\"", section);
-            Assert.Contains("Text=\"Improve, translate, summarize or explain selected text, and get answers from your notes in Search notes. Nothing is sent until you run an action.\"", section);
-            Assert.Contains("x:Name=\"PadAiToggle\" Toggled=\"OnPadToggled\"", section);
-            Assert.Contains("x:Name=\"PadAiPrivacyText\"", section);
-            Assert.Contains("x:Name=\"PadAiProviderButton\"", section);
-            Assert.Contains("Content=\"AI provider settings…\"", section);
-            Assert.Contains("Click=\"OnPadAiProviderSettings\"", section);
+            XElement heading = UiMarkup.Localized(pad, "Text", "AI");
+            Assert.Equal("18", heading.Attribute("FontSize")?.Value);
+            Assert.Equal("SemiBold", heading.Attribute("FontWeight")?.Value);
+            UiMarkup.Localized(pad, "Text", "Use AI in MicaPad");
+            UiMarkup.Localized(pad, "Text", "Improve, translate, summarize or explain selected text, and get answers from your notes in Search notes. Nothing is sent until you run an action.");
+            Assert.Equal("OnPadToggled", UiMarkup.Named(markup, "PadAiToggle").Attribute("Toggled")?.Value);
+            UiMarkup.Named(markup, "PadAiPrivacyText");
+            XElement provider = UiMarkup.Named(markup, "PadAiProviderButton");
+            Assert.Equal("AI provider settings…", UiMarkup.EnglishKey(provider.Attribute("Content")));
+            Assert.Equal("OnPadAiProviderSettings", provider.Attribute("Click")?.Value);
         }
 
         [Fact]
@@ -69,24 +72,28 @@ namespace Kil0bitSystemMonitor.Tests
         [Fact]
         public void The_two_note_switches_are_cards_after_the_ai_toggle_in_order()
         {
-            string xaml = Read("SettingsWindow.xaml");
-            int toggle = xaml.IndexOf("x:Name=\"PadAiToggle\"", StringComparison.Ordinal);
-            int ai = xaml.IndexOf("x:Name=\"AiSection\"", StringComparison.Ordinal);
-            string after = xaml.Substring(toggle, ai - toggle);
+            XDocument markup = UiMarkup.Load("SettingsWindow.xaml");
+            XElement pad = UiMarkup.Named(markup, "PadSection");
+            XElement[] elements = pad.Descendants().ToArray();
+            int At(XElement element) => Array.IndexOf(elements, element);
 
-            int provider = after.IndexOf("x:Name=\"PadAiProviderButton\"", StringComparison.Ordinal);
-            int askTitle = after.IndexOf("Text=\"Let Ask MicaStats search your notes\"", StringComparison.Ordinal);
-            int askHint = after.IndexOf("Text=\"Ask MicaStats can look up passages and read notes to answer a question.\"", StringComparison.Ordinal);
-            int askToggle = after.IndexOf("x:Name=\"AiNotesInAskToggle\" Toggled=\"OnPadToggled\"", StringComparison.Ordinal);
-            int askText = after.IndexOf("x:Name=\"AiNotesInAskText\"", StringComparison.Ordinal);
-            int mcpTitle = after.IndexOf("Text=\"Let MCP clients search your notes\"", StringComparison.Ordinal);
-            int mcpHint = after.IndexOf("Text=\"Programs such as Claude Code, connected through MCP, get two read-only tools: search_notes and get_note.\"", StringComparison.Ordinal);
-            int mcpToggle = after.IndexOf("x:Name=\"AiNotesInMcpToggle\" Toggled=\"OnPadToggled\"", StringComparison.Ordinal);
-            int mcpText = after.IndexOf("x:Name=\"AiNotesInMcpText\"", StringComparison.Ordinal);
+            XElement provider = UiMarkup.Named(markup, "PadAiProviderButton");
+            XElement askTitle = UiMarkup.Localized(pad, "Text", "Let Ask MicaStats search your notes");
+            XElement askHint = UiMarkup.Localized(pad, "Text", "Ask MicaStats can look up passages and read notes to answer a question.");
+            XElement askToggle = UiMarkup.Named(markup, "AiNotesInAskToggle");
+            XElement askText = UiMarkup.Named(markup, "AiNotesInAskText");
+            XElement mcpTitle = UiMarkup.Localized(pad, "Text", "Let MCP clients search your notes");
+            XElement mcpHint = UiMarkup.Localized(pad, "Text", "Programs such as Claude Code, connected through MCP, get two read-only tools: search_notes and get_note.");
+            XElement mcpToggle = UiMarkup.Named(markup, "AiNotesInMcpToggle");
+            XElement mcpText = UiMarkup.Named(markup, "AiNotesInMcpText");
 
-            Assert.True(0 < askTitle && askTitle < askHint && askHint < askToggle && askToggle < askText, "ask card");
-            Assert.True(askText < mcpTitle && mcpTitle < mcpHint && mcpHint < mcpToggle && mcpToggle < mcpText, "mcp card, after the ask card");
-            Assert.True(provider > 0, "the provider button is still there");
+            Assert.Equal("OnPadToggled", askToggle.Attribute("Toggled")?.Value);
+            Assert.Equal("OnPadToggled", mcpToggle.Attribute("Toggled")?.Value);
+            int toggle = At(UiMarkup.Named(markup, "PadAiToggle"));
+            Assert.True(toggle < At(askTitle), "note cards follow the AI toggle");
+            Assert.True(toggle < At(provider), "the provider button is still present after the AI toggle");
+            Assert.True(At(askTitle) < At(askHint) && At(askHint) < At(askToggle) && At(askToggle) < At(askText), "ask card");
+            Assert.True(At(askText) < At(mcpTitle) && At(mcpTitle) < At(mcpHint) && At(mcpHint) < At(mcpToggle) && At(mcpToggle) < At(mcpText), "mcp card, after the ask card");
         }
 
         [Fact]

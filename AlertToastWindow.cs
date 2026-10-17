@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Diagnostics;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
@@ -52,7 +53,7 @@ namespace Kil0bitSystemMonitor
             Background = Brushes.Transparent;
             SizeToContent = SizeToContent.WidthAndHeight;
             ShowActivated = false;           // must never steal focus from what the user is doing
-            Title = "MicaStats Alert";
+            Title = UiText.Tr("MicaStats Alert");
 
             Content = BuildCard(alert, onExplain);
 
@@ -112,7 +113,7 @@ namespace Kil0bitSystemMonitor
             });
             heading.Children.Add(new TextBlock
             {
-                Text = "MicaStats alert",
+                Text = UiText.Tr("MicaStats alert"),
                 FontSize = 10.5,
                 FontWeight = FontWeights.SemiBold,
                 FontFamily = new FontFamily("Segoe UI Variable Small, Segoe UI"),
@@ -141,20 +142,20 @@ namespace Kil0bitSystemMonitor
             });
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            buttons.Children.Add(ToastButton.Create("Show me", Amber, primary: true, Color.FromRgb(0x2A, 0x18, 0x06), () =>
+            buttons.Children.Add(ToastButton.Create(UiText.Tr("Show me"), Amber, primary: true, Color.FromRgb(0x2A, 0x18, 0x06), () =>
             {
                 OpenRequested?.Invoke();
                 Close();
             }));
             if (onExplain != null)
             {
-                buttons.Children.Add(ToastButton.Create("Explain", Amber, primary: false, Color.FromRgb(0x2A, 0x18, 0x06), () =>
+            buttons.Children.Add(ToastButton.Create(UiText.Tr("Explain"), Amber, primary: false, Color.FromRgb(0x2A, 0x18, 0x06), () =>
                 {
                     onExplain();
                     Close();
                 }));
             }
-            buttons.Children.Add(ToastButton.Create("Dismiss", Amber, primary: false, Color.FromRgb(0x2A, 0x18, 0x06), Close));
+            buttons.Children.Add(ToastButton.Create(UiText.Tr("Dismiss"), Amber, primary: false, Color.FromRgb(0x2A, 0x18, 0x06), Close));
             stack.Children.Add(buttons);
 
             return new Border

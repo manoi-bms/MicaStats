@@ -72,6 +72,7 @@ namespace Kil0bitSystemMonitor.Controls
                 if (_tool == value) return;
                 _tool = value;
                 if (_tool != CaptureTool.Select) ClearSelection();
+                if (_tool != CaptureTool.Crop) _cropPreview = default;
                 Cursor = _tool == CaptureTool.Select ? Cursors.Arrow : Cursors.Cross;
                 InvalidateVisual();
             }
@@ -308,6 +309,44 @@ namespace Kil0bitSystemMonitor.Controls
             var moved = AnnotationGeometry.Translate(_selected, dx, dy);
             if (!Document.Replace(_selected, moved)) return false;
             SetSelection(moved);
+            Changed();
+            return true;
+        }
+
+        internal void SelectAnnotation(Annotation? annotation) => SetSelection(annotation);
+
+        internal void SetCropPreviewForTest(PixelRect crop) => _cropPreview = crop;
+
+        /// <summary>Applies a colour, thickness, or redaction style change to the currently selected mark.</summary>
+        public bool ApplyStyleToSelected(string? colorHex = null, double? thickness = null, RedactStyle? redactStyle = null)
+        {
+            if (Document == null || _selected == null) return false;
+            string nextColor = colorHex ?? _selected.ColorHex;
+            double nextThickness = thickness ?? _selected.Thickness;
+            Annotation updated = _selected switch
+            {
+                RedactAnnotation r => r with
+                {
+                    ColorHex = nextColor,
+                    Thickness = nextThickness,
+                    Style = redactStyle ?? r.Style,
+                    Strength = Math.Max(6, (int)Math.Round(nextThickness * 4)),
+                },
+                StepAnnotation s => s with
+                {
+                    ColorHex = nextColor,
+                    Thickness = nextThickness,
+                    Radius = Math.Max(11, nextThickness * 4.5),
+                },
+                _ => _selected with
+                {
+                    ColorHex = nextColor,
+                    Thickness = nextThickness,
+                },
+            };
+            if (updated.Equals(_selected)) return false;
+            if (!Document.Replace(_selected, updated)) return false;
+            SetSelection(updated);
             Changed();
             return true;
         }

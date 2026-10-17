@@ -42,6 +42,40 @@ namespace Kil0bitSystemMonitor.Services.Pad
     /// </summary>
     public sealed record PinState(int TriesBeforeWait, DateTime? WaitUntilUtc);
 
+    /// <summary>
+    /// The host could not restore its previous content after an apply failure, so newly stored
+    /// credential references must remain valid.
+    /// </summary>
+    internal sealed class CredentialBatchKeepException : Exception
+    {
+        internal CredentialBatchKeepException()
+            : base("The host could not restore its previous content; stored credential references must remain valid.")
+        {
+        }
+    }
+
+    /// <summary>
+    /// A host action could not complete safely after a credential batch was stored.
+    /// <see cref="StoredIds"/> identifies the recoverable entries without exposing values.
+    /// </summary>
+    internal sealed class CredentialBatchApplyException : Exception
+    {
+        internal CredentialBatchApplyException(
+            IReadOnlyList<string> storedIds, Exception applyException, Exception? rollbackException = null)
+            : base("The credential batch remains stored because its host action could not be completed safely.")
+        {
+            StoredIds = Array.AsReadOnly(storedIds.ToArray());
+            ApplyException = applyException;
+            RollbackException = rollbackException;
+        }
+
+        public IReadOnlyList<string> StoredIds { get; }
+
+        internal Exception ApplyException { get; }
+
+        internal Exception? RollbackException { get; }
+    }
+
     /// <summary>What <see cref="CredentialVault.Load"/> found.</summary>
     public enum VaultLoadStatus
     {
@@ -114,6 +148,7 @@ namespace Kil0bitSystemMonitor.Services.Pad
         private const int AesKeyLength = 32;
         private const int NonceLength = 12;
         private const int TagLength = 16;
+        private const int MaxBatchEntries = 32;
         private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("MicaStats.MicaPad.Vault.v1");
         private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -358,6 +393,117 @@ namespace Kil0bitSystemMonitor.Services.Pad
             }
             OnChanged();
             return id;
+        }
+
+        /// <summary>
+        /// Stores up to 32 values without the PIN and returns their new ids in input order.
+        /// The complete batch is validated and saved as one change; a failure stores none of it.
+        /// </summary>
+        public IReadOnlyList<string> AddMany(IReadOnlyList<(string Secret, string? Label, string? NoteId)> values)
+            => AddManyCore(values, apply: null);
+
+        /// <summary>
+        /// Stores a batch, then synchronously applies its ids to host state. When applying fails,
+        /// the previous vault is restored before the original exception is rethrown.
+        /// </summary>
+        internal IReadOnlyList<string> AddManyAndApply(
+            IReadOnlyList<(string Secret, string? Label, string? NoteId)> values,
+            Action<IReadOnlyList<string>> apply)
+        {
+            if (apply == null) throw new ArgumentNullException(nameof(apply));
+            return AddManyCore(values, apply);
+        }
+
+        private IReadOnlyList<string> AddManyCore(
+            IReadOnlyList<(string Secret, string? Label, string? NoteId)> values,
+            Action<IReadOnlyList<string>>? apply)
+        {
+            if (values == null) throw new ArgumentNullException(nameof(values));
+            int count = values.Count;
+            if (count == 0) return Array.Empty<string>();
+            if (count > MaxBatchEntries)
+                throw new ArgumentException("A batch may contain at most " + MaxBatchEntries + " values.", nameof(values));
+
+            var batch = new (string Secret, string? Label, string? NoteId)[count];
+            for (int i = 0; i < count; i++)
+            {
+                var value = values[i];
+                string? secret = value.Secret;
+                if (string.IsNullOrEmpty(secret) || secret.Length > MaxSecretLength)
+                    throw new ArgumentException(
+                        "Every value must be 1 to " + MaxSecretLength + " characters.", nameof(values));
+                batch[i] = value;
+            }
+
+            var ids = new List<string>(count);
+            CredentialBatchApplyException? applyFailure = null;
+            lock (_gate)
+            {
+                var previous = Require();
+                var next = previous.Clone();
+                foreach (var value in batch)
+                {
+                    string id = SecretTokens.NewId(candidate => next.Credentials.Any(c => c.Id == candidate));
+                    byte[] key = RandomNumberGenerator.GetBytes(AesKeyLength);
+                    byte[] plain = Encoding.UTF8.GetBytes(value.Secret);
+                    try
+                    {
+                        var entry = new VaultEntry
+                        {
+                            Id = id,
+                            Label = CleanLabel(value.Label),
+                            CreatedUtc = _utcNow(),
+                            NoteId = value.NoteId,
+                            Nonce = RandomNumberGenerator.GetBytes(NonceLength),
+                            Cipher = new byte[plain.Length],
+                            Tag = new byte[TagLength],
+                        };
+                        using (var aes = new AesGcm(key, TagLength))
+                            aes.Encrypt(entry.Nonce, plain, entry.Cipher, entry.Tag, Encoding.UTF8.GetBytes(id));
+                        using (var rsa = RSA.Create())
+                        {
+                            rsa.ImportSubjectPublicKeyInfo(next.PublicKey, out _);
+                            entry.WrappedKey = rsa.Encrypt(key, RSAEncryptionPadding.OaepSHA256);
+                        }
+
+                        next.Credentials.Add(entry);
+                        ids.Add(id);
+                    }
+                    finally
+                    {
+                        CryptographicOperations.ZeroMemory(key);
+                        CryptographicOperations.ZeroMemory(plain);
+                    }
+                }
+                Save(next);
+                if (apply != null)
+                {
+                    try
+                    {
+                        apply(ids.AsReadOnly());
+                    }
+                    catch (CredentialBatchKeepException keepException)
+                    {
+                        applyFailure = new CredentialBatchApplyException(ids, keepException);
+                    }
+                    catch (Exception applyException)
+                    {
+                        try
+                        {
+                            Save(previous);
+                        }
+                        catch (Exception rollbackException)
+                        {
+                            applyFailure = new CredentialBatchApplyException(ids, applyException, rollbackException);
+                        }
+
+                        if (applyFailure == null) throw;
+                    }
+                }
+            }
+            NotifyBatchChanged();
+            if (applyFailure != null) throw applyFailure;
+            return ids;
         }
 
         /// <summary>Changes a label; no PIN needed, labels are not secret.</summary>
@@ -615,6 +761,23 @@ namespace Kil0bitSystemMonitor.Services.Pad
         }
 
         private static CredentialInfo Info(VaultEntry entry) => new(entry.Id, entry.Label, entry.CreatedUtc, entry.NoteId);
+
+        private void NotifyBatchChanged()
+        {
+            Delegate[] handlers = Changed?.GetInvocationList() ?? Array.Empty<Delegate>();
+            foreach (EventHandler handler in handlers.Cast<EventHandler>())
+            {
+                try
+                {
+                    handler(this, EventArgs.Empty);
+                }
+                catch (Exception ex)
+                {
+                    try { _warn("A credential vault change listener failed (" + ex.GetType().Name + ")."); }
+                    catch { }
+                }
+            }
+        }
 
         private void OnChanged() => Changed?.Invoke(this, EventArgs.Empty);
     }

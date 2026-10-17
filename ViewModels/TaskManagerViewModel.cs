@@ -125,8 +125,17 @@ namespace Kil0bitSystemMonitor.ViewModels
             if (int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out int pid))
                 return all.Where(p => p.Pid == pid).ToList();
 
-            return all.Where(p => p.Name.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
-                .ToList();
+            if (t.StartsWith("parent:", StringComparison.OrdinalIgnoreCase))
+            {
+                string parentTerm = t.Substring("parent:".Length).Trim();
+                if (parentTerm.Length == 0) return all;
+                return all.Where(p =>
+                        !string.IsNullOrEmpty(p.ParentName) &&
+                        p.ParentName.IndexOf(parentTerm, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .ToList();
+            }
+
+            return all.Where(p => p.Name.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
         }
 
         /// <summary>

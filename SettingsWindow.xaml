@@ -2,15 +2,17 @@
     x:Class="Kil0bitSystemMonitor.SettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:local="clr-namespace:Kil0bitSystemMonitor"
     xmlns:ai="clr-namespace:Kil0bitSystemMonitor.Ai"
     xmlns:pad="clr-namespace:Kil0bitSystemMonitor.Pad"
+    xmlns:companion="clr-namespace:Kil0bitSystemMonitor.Companion"
     xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers"
     mc:Ignorable="d"
-    Title="MicaStats Settings"
+    Title="{loc:Text 'MicaStats Settings'}"
     Height="720" Width="1000"
     WindowStartupLocation="CenterScreen"
     Background="{DynamicResource SystemControlPageBackgroundAltHighBrush}"
@@ -37,27 +39,27 @@
                         Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                         SelectionChanged="SettingsNav_SelectionChanged">
             <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem Content="Home" Tag="Home" IsSelected="True">
+                <ui:NavigationViewItem Content="{loc:Text 'Home'}" Tag="Home" IsSelected="True">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Home" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="General" Tag="General">
+                <ui:NavigationViewItem Content="{loc:Text 'General'}" Tag="General">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Setting" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Monitoring" Tag="Monitoring">
+                <ui:NavigationViewItem Content="{loc:Text 'Monitoring'}" Tag="Monitoring">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="FourBars" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Appearance" Tag="Appearance">
+                <ui:NavigationViewItem Content="{loc:Text 'Appearance'}" Tag="Appearance">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Edit" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Capture" Tag="Capture">
+                <ui:NavigationViewItem Content="{loc:Text 'Capture'}" Tag="Capture">
                     <ui:NavigationViewItem.Icon>
                         <ui:FontIcon Glyph="&#xE722;" />
                     </ui:NavigationViewItem.Icon>
@@ -67,27 +69,37 @@
                         <ui:FontIcon Glyph="&#xE70B;" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Meeting" Tag="Meeting">
+                <ui:NavigationViewItem Content="{loc:Text 'Meeting'}" Tag="Meeting">
                     <ui:NavigationViewItem.Icon>
                         <ui:FontIcon Glyph="&#xE720;" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="AI" Tag="AI">
+                <ui:NavigationViewItem Content="StackChan" Tag="StackChan">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:FontIcon Glyph="&#xE7F8;" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="{loc:Text 'Turzx Display'}" Tag="Turzx">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:FontIcon Glyph="&#xE7F4;" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="{loc:Text 'AI'}" Tag="AI">
                     <ui:NavigationViewItem.Icon>
                         <ui:FontIcon Glyph="&#xE8BD;" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Diagnostics" Tag="Diagnostics">
+                <ui:NavigationViewItem Content="{loc:Text 'Diagnostics'}" Tag="Diagnostics">
                     <ui:NavigationViewItem.Icon>
                         <ui:FontIcon Glyph="&#xE916;" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Updates" Tag="Updates">
+                <ui:NavigationViewItem Content="{loc:Text 'Updates'}" Tag="Updates">
                     <ui:NavigationViewItem.Icon>
                         <ui:FontIcon Glyph="&#xE895;" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="About" Tag="About">
+                <ui:NavigationViewItem Content="{loc:Text 'About'}" Tag="About">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Help" />
                     </ui:NavigationViewItem.Icon>
@@ -99,12 +111,12 @@
                     <!-- Home Section -->
                     <StackPanel x:Name="HomeSection" Visibility="Visible">
                         <StackPanel Margin="0,0,0,32">
-                            <TextBlock Text="Welcome" FontSize="42" FontWeight="Bold" Foreground="White" Margin="0,0,0,4">
+                            <TextBlock Text="{loc:Text 'Welcome'}" FontSize="42" FontWeight="Bold" Foreground="White" Margin="0,0,0,4">
                                 <TextBlock.Effect>
                                     <DropShadowEffect BlurRadius="8" Color="Black" Opacity="0.3" ShadowDepth="2"/>
                                 </TextBlock.Effect>
                             </TextBlock>
-                            <TextBlock Text="MicaStats is active and tracking your hardware performance with near-zero overhead."
+                            <TextBlock Text="{loc:Text 'MicaStats is active and tracking your hardware performance with near-zero overhead.'}"
                                        FontSize="17" Opacity="0.7" TextWrapping="Wrap" MaxWidth="640" />
                         </StackPanel>
 
@@ -122,8 +134,8 @@
                                         </Grid.ColumnDefinitions>
                                         <ui:SymbolIcon Symbol="Setting" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,16,0" VerticalAlignment="Top"/>
                                         <StackPanel Grid.Column="1">
-                                            <TextBlock Text="General" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,4"/>
-                                            <TextBlock Text="Startup behavior, updates, and core system settings." Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+                                            <TextBlock Text="{loc:Text 'General'}" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,4"/>
+                                            <TextBlock Text="{loc:Text 'Startup behavior, updates, and core system settings.'}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -142,8 +154,8 @@
                                         </Grid.ColumnDefinitions>
                                         <ui:SymbolIcon Symbol="FourBars" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,16,0" VerticalAlignment="Top"/>
                                         <StackPanel Grid.Column="1">
-                                            <TextBlock Text="Monitoring" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,4"/>
-                                            <TextBlock Text="Select CPU, GPU, and Network hardware sensors." Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+                                            <TextBlock Text="{loc:Text 'Monitoring'}" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,4"/>
+                                            <TextBlock Text="{loc:Text 'Select CPU, GPU, and Network hardware sensors.'}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -162,8 +174,8 @@
                                         </Grid.ColumnDefinitions>
                                         <ui:SymbolIcon Symbol="Edit" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,16,0" VerticalAlignment="Top"/>
                                         <StackPanel Grid.Column="1">
-                                            <TextBlock Text="Appearance" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,4"/>
-                                            <TextBlock Text="Customize themes, colors, and font styles." Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+                                            <TextBlock Text="{loc:Text 'Appearance'}" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,4"/>
+                                            <TextBlock Text="{loc:Text 'Customize themes, colors, and font styles.'}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -182,8 +194,8 @@
                                         </Grid.ColumnDefinitions>
                                         <ui:SymbolIcon Symbol="Help" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,16,0" VerticalAlignment="Top"/>
                                         <StackPanel Grid.Column="1">
-                                            <TextBlock Text="About" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,4"/>
-                                            <TextBlock Text="Version info, documentation, and support links." Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+                                            <TextBlock Text="{loc:Text 'About'}" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,4"/>
+                                            <TextBlock Text="{loc:Text 'Version info, documentation, and support links.'}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -195,8 +207,8 @@
                             <StackPanel Orientation="Horizontal">
                                 <ui:SymbolIcon Symbol="Accept" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,16,0" VerticalAlignment="Center"/>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Performance Note" FontWeight="Bold" FontSize="14"/>
-                                    <TextBlock Text="Your system is being monitored using low-level Win32 APIs for maximum precision." Opacity="0.8" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Performance Note'}" FontWeight="Bold" FontSize="14"/>
+                                    <TextBlock Text="{loc:Text 'Your system is being monitored using low-level Win32 APIs for maximum precision.'}" Opacity="0.8" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -204,7 +216,33 @@
 
                     <!-- General Section -->
                     <StackPanel x:Name="GeneralSection" Visibility="Collapsed">
-                        <TextBlock Text="General" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,24"/>
+                        <TextBlock Text="{loc:Text 'General'}" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,24"/>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1"
+                                CornerRadius="8" Padding="20,16" Margin="0,0,0,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE774;" FontSize="22" Foreground="{DynamicResource SystemControlHighlightAccentBrush}"
+                                             Margin="0,0,16,0" VerticalAlignment="Top"/>
+                                <StackPanel Grid.Column="1" Margin="0,0,20,0">
+                                    <TextBlock Text="{loc:Text 'App language'}" FontWeight="SemiBold" FontSize="16"/>
+                                    <TextBlock Text="{loc:Text 'Choose the language for menus, settings, and dialogs.'}"
+                                               TextWrapping="Wrap" Opacity="0.7" FontSize="12" Margin="0,4,0,0"/>
+                                    <TextBlock Text="{loc:Text 'Applies immediately. Notes and AI response language stay unchanged.'}"
+                                               TextWrapping="Wrap" Opacity="0.6" FontSize="12" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <ComboBox x:Name="AppLanguageCombo" Grid.Column="2" MinWidth="138" VerticalAlignment="Center"
+                                          SelectionChanged="AppLanguage_SelectionChanged" AutomationProperties.Name="{loc:Text 'App language'}">
+                                    <ComboBoxItem Content="ไทย" Tag="th"/>
+                                    <ComboBoxItem Content="English" Tag="en"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
                         
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -229,8 +267,8 @@
                                     </Grid.ColumnDefinitions>
                                     <ui:FontIcon Glyph="&#xE7B3;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Show Overlay" FontWeight="SemiBold" FontSize="15"/>
-                                        <TextBlock Text="Enable or disable the monitor." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{loc:Text 'Show Overlay'}" FontWeight="SemiBold" FontSize="15"/>
+                                        <TextBlock Text="{loc:Text 'Enable or disable the monitor.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <ui:ToggleSwitch Grid.Column="2" HorizontalAlignment="Right" IsOn="{Binding Config.ShowOverlay, Mode=TwoWay}" VerticalAlignment="Center"/>
                                 </Grid>
@@ -245,8 +283,8 @@
                                     </Grid.ColumnDefinitions>
                                     <ui:FontIcon Glyph="&#xE718;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Lock Position" FontWeight="SemiBold" FontSize="15"/>
-                                        <TextBlock Text="Prevent accidental dragging." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{loc:Text 'Lock Position'}" FontWeight="SemiBold" FontSize="15"/>
+                                        <TextBlock Text="{loc:Text 'Prevent accidental dragging.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <ui:ToggleSwitch Grid.Column="2" HorizontalAlignment="Right" IsOn="{Binding Config.LockPosition, Mode=TwoWay}" VerticalAlignment="Center"/>
                                 </Grid>
@@ -261,8 +299,8 @@
                                     </Grid.ColumnDefinitions>
                                     <ui:FontIcon Glyph="&#xE72A;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Run at Startup" FontWeight="SemiBold" FontSize="15"/>
-                                        <TextBlock Text="Launch with Windows." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{loc:Text 'Run at Startup'}" FontWeight="SemiBold" FontSize="15"/>
+                                        <TextBlock Text="{loc:Text 'Launch with Windows.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <ui:ToggleSwitch Grid.Column="2" HorizontalAlignment="Right" IsOn="{Binding Config.LaunchOnStartup, Mode=TwoWay}" VerticalAlignment="Center"/>
                                 </Grid>
@@ -278,8 +316,8 @@
                                     </Grid.ColumnDefinitions>
                                     <ui:FontIcon Glyph="&#xE740;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Hide in Fullscreen" FontWeight="SemiBold" FontSize="15"/>
-                                        <TextBlock Text="Hide during games/movies." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{loc:Text 'Hide in Fullscreen'}" FontWeight="SemiBold" FontSize="15"/>
+                                        <TextBlock Text="{loc:Text 'Hide during games/movies.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <ui:ToggleSwitch Grid.Column="2" HorizontalAlignment="Right" IsOn="{Binding Config.HideOnFullscreen, Mode=TwoWay}" VerticalAlignment="Center"/>
                                 </Grid>
@@ -294,8 +332,8 @@
                                     </Grid.ColumnDefinitions>
                                     <ui:FontIcon Glyph="&#xE90E;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Snap to Taskbar" FontWeight="SemiBold" FontSize="15"/>
-                                        <TextBlock Text="Dock to the taskbar area." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{loc:Text 'Snap to Taskbar'}" FontWeight="SemiBold" FontSize="15"/>
+                                        <TextBlock Text="{loc:Text 'Dock to the taskbar area.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <ui:ToggleSwitch Grid.Column="2" HorizontalAlignment="Right" IsOn="{Binding Config.StickToTaskbar, Mode=TwoWay}" VerticalAlignment="Center"/>
                                 </Grid>
@@ -310,8 +348,8 @@
                                     </Grid.ColumnDefinitions>
                                     <ui:FontIcon Glyph="&#xE819;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Keep on Top" FontWeight="SemiBold" FontSize="15"/>
-                                        <TextBlock Text="Stay above other windows." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{loc:Text 'Keep on Top'}" FontWeight="SemiBold" FontSize="15"/>
+                                        <TextBlock Text="{loc:Text 'Stay above other windows.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <ui:ToggleSwitch Grid.Column="2" HorizontalAlignment="Right" IsOn="{Binding Config.AlwaysOnTop, Mode=TwoWay}" VerticalAlignment="Center"/>
                                 </Grid>
@@ -327,27 +365,27 @@
                                     </Grid.ColumnDefinitions>
                                     <ui:FontIcon Glyph="&#xE916;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Refresh Rate" FontWeight="SemiBold" FontSize="15"/>
-                                        <TextBlock Text="Set how often the monitor updates its metrics." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{loc:Text 'Refresh Rate'}" FontWeight="SemiBold" FontSize="15"/>
+                                        <TextBlock Text="{loc:Text 'Set how often the monitor updates its metrics.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     
                                     <ComboBox Grid.Column="2" SelectedValue="{Binding Config.UpdateInterval, Mode=TwoWay}" SelectedValuePath="Tag" HorizontalAlignment="Stretch" VerticalAlignment="Center">
-                                        <ComboBoxItem Content="500ms (High Performance)">
+                                        <ComboBoxItem Content="{loc:Text '500ms (High Performance)'}">
                                             <ComboBoxItem.Tag>
                                                 <sys:Int32>500</sys:Int32>
                                             </ComboBoxItem.Tag>
                                         </ComboBoxItem>
-                                        <ComboBoxItem Content="1000ms (Default)">
+                                        <ComboBoxItem Content="{loc:Text '1000ms (Default)'}">
                                             <ComboBoxItem.Tag>
                                                 <sys:Int32>1000</sys:Int32>
                                             </ComboBoxItem.Tag>
                                         </ComboBoxItem>
-                                        <ComboBoxItem Content="2000ms (Relaxed)">
+                                        <ComboBoxItem Content="{loc:Text '2000ms (Relaxed)'}">
                                             <ComboBoxItem.Tag>
                                                 <sys:Int32>2000</sys:Int32>
                                             </ComboBoxItem.Tag>
                                         </ComboBoxItem>
-                                        <ComboBoxItem Content="5000ms (Power Saver)">
+                                        <ComboBoxItem Content="{loc:Text '5000ms (Power Saver)'}">
                                             <ComboBoxItem.Tag>
                                                 <sys:Int32>5000</sys:Int32>
                                             </ComboBoxItem.Tag>
@@ -360,7 +398,7 @@
 
                     <!-- Monitoring Section -->
                     <StackPanel x:Name="MonitoringSection" Visibility="Collapsed">
-                        <TextBlock Text="Monitoring" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,24"/>
+                        <TextBlock Text="{loc:Text 'Monitoring'}" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,24"/>
                         
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -373,7 +411,7 @@
                             <StackPanel Grid.Column="0">
                                 <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8,8,0,0" Margin="0,0,0,1" Padding="16,12">
                                     <Grid>
-                                        <TextBlock Text="Hardware Telemetry" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{loc:Text 'Hardware Telemetry'}" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
                                     </Grid>
                                 </Border>
                                 
@@ -390,14 +428,14 @@
                                             <StackPanel Grid.Column="0">
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                                     <ui:FontIcon Glyph="&#xE734;" FontSize="16" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Processor &amp; Memory" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{loc:Text 'Processor &amp; Memory'}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                                 </StackPanel>
                                                 <Grid Margin="0,0,0,12">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="130" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="CPU Usage" VerticalAlignment="Center" Opacity="0.8"/>
+                                                    <TextBlock Text="{loc:Text 'CPU Usage'}" VerticalAlignment="Center" Opacity="0.8"/>
                                                     <ui:ToggleSwitch Grid.Column="1" IsOn="{Binding Config.ShowCpu, Mode=TwoWay}" OnContent="" OffContent="" Margin="10,0,0,0" />
                                                 </Grid>
                                                 <Grid>
@@ -405,7 +443,7 @@
                                                         <ColumnDefinition Width="130" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="RAM Usage" VerticalAlignment="Center" Opacity="0.8"/>
+                                                    <TextBlock Text="{loc:Text 'RAM Usage'}" VerticalAlignment="Center" Opacity="0.8"/>
                                                     <ui:ToggleSwitch Grid.Column="1" IsOn="{Binding Config.ShowRam, Mode=TwoWay}" OnContent="" OffContent="" Margin="10,0,0,0" />
                                                 </Grid>
                                             </StackPanel>
@@ -413,14 +451,14 @@
                                             <StackPanel Grid.Column="2">
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                                                     <ui:FontIcon Glyph="&#xE7AD;" FontSize="16" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Graphics &amp; Thermals" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{loc:Text 'Graphics &amp; Thermals'}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                                 </StackPanel>
                                                 <Grid Margin="0,0,0,12">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="130" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="GPU Usage" VerticalAlignment="Center" Opacity="0.8"/>
+                                                    <TextBlock Text="{loc:Text 'GPU Usage'}" VerticalAlignment="Center" Opacity="0.8"/>
                                                     <ui:ToggleSwitch Grid.Column="1" IsOn="{Binding Config.ShowGpu, Mode=TwoWay}" OnContent="" OffContent="" Margin="10,0,0,0" />
                                                 </Grid>
                                                 <Grid>
@@ -428,7 +466,7 @@
                                                         <ColumnDefinition Width="130" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="GPU Temperature" VerticalAlignment="Center" Opacity="0.8"/>
+                                                    <TextBlock Text="{loc:Text 'GPU Temperature'}" VerticalAlignment="Center" Opacity="0.8"/>
                                                     <ui:ToggleSwitch Grid.Column="1" IsOn="{Binding Config.ShowTemp, Mode=TwoWay}" OnContent="" OffContent="" Margin="10,0,0,0" />
                                                 </Grid>
                                             </StackPanel>
@@ -447,14 +485,14 @@
                                             <StackPanel Grid.Column="0">
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                                     <ui:FontIcon Glyph="&#xE774;" FontSize="16" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Data &amp; Connectivity" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{loc:Text 'Data &amp; Connectivity'}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                                 </StackPanel>
                                                 <Grid Margin="0,0,0,12">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="130" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="Upload Speed" VerticalAlignment="Center" Opacity="0.8"/>
+                                                    <TextBlock Text="{loc:Text 'Upload Speed'}" VerticalAlignment="Center" Opacity="0.8"/>
                                                     <ui:ToggleSwitch Grid.Column="1" IsOn="{Binding Config.ShowNetUp, Mode=TwoWay}" OnContent="" OffContent="" Margin="10,0,0,0" />
                                                 </Grid>
                                                 <Grid>
@@ -462,7 +500,7 @@
                                                         <ColumnDefinition Width="130" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="Download Speed" VerticalAlignment="Center" Opacity="0.8"/>
+                                                    <TextBlock Text="{loc:Text 'Download Speed'}" VerticalAlignment="Center" Opacity="0.8"/>
                                                     <ui:ToggleSwitch Grid.Column="1" IsOn="{Binding Config.ShowNetDown, Mode=TwoWay}" OnContent="" OffContent="" Margin="10,0,0,0" />
                                                 </Grid>
                                             </StackPanel>
@@ -470,7 +508,7 @@
                                             <StackPanel Grid.Column="2">
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                                                     <ui:FontIcon Glyph="&#xE7C1;" FontSize="16" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Storage Activity" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{loc:Text 'Storage Activity'}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                                 </StackPanel>
                                                 
                                                 <Grid Margin="0,0,0,12">
@@ -478,7 +516,7 @@
                                                         <ColumnDefinition Width="130" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="Used Space %" VerticalAlignment="Center" Opacity="0.8"/>
+                                                    <TextBlock Text="{loc:Text 'Used Space %'}" VerticalAlignment="Center" Opacity="0.8"/>
                                                     <ui:ToggleSwitch Grid.Column="1" IsOn="{Binding Config.ShowDisk, Mode=TwoWay}" OnContent="" OffContent="" Margin="10,0,0,0" />
                                                 </Grid>
                                                 <Grid>
@@ -486,7 +524,7 @@
                                                         <ColumnDefinition Width="130" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="Real-time Activity" VerticalAlignment="Center" Opacity="0.8"/>
+                                                    <TextBlock Text="{loc:Text 'Real-time Activity'}" VerticalAlignment="Center" Opacity="0.8"/>
                                                     <ui:ToggleSwitch Grid.Column="1" IsOn="{Binding Config.ShowDiskSpeed, Mode=TwoWay}" OnContent="" OffContent="" Margin="10,0,0,0" />
                                                 </Grid>
                                             </StackPanel>
@@ -499,19 +537,19 @@
                             <StackPanel Grid.Column="2">
                                 <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,16">
                                     <StackPanel>
-                                        <TextBlock Text="Hardware Selection" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,16"/>
+                                        <TextBlock Text="{loc:Text 'Hardware Selection'}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,16"/>
                                         
-                                        <TextBlock Text="Network Adapter" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,8"/>
-                                        <ComboBox x:Name="NetAdapterCombo" SelectedValue="{Binding Config.NetworkAdapter, Mode=TwoWay}" SelectedValuePath="Content" HorizontalAlignment="Stretch" Margin="0,0,0,16">
-                                            <ComboBoxItem Content="Default" />
+                                        <TextBlock Text="{loc:Text 'Network Adapter'}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,8"/>
+                                        <ComboBox x:Name="NetAdapterCombo" SelectedValue="{Binding Config.NetworkAdapter, Mode=TwoWay}" SelectedValuePath="Tag" HorizontalAlignment="Stretch" Margin="0,0,0,16">
+                                            <ComboBoxItem Tag="Default" Content="{loc:Text 'Default'}" />
                                         </ComboBox>
 
-                                        <TextBlock Text="Graphics Card" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,8"/>
-                                        <ComboBox x:Name="GpuAdapterCombo" SelectedValue="{Binding Config.GpuAdapter, Mode=TwoWay}" SelectedValuePath="Content" HorizontalAlignment="Stretch" Margin="0,0,0,16">
-                                            <ComboBoxItem Content="Default" />
+                                        <TextBlock Text="{loc:Text 'Graphics Card'}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,8"/>
+                                        <ComboBox x:Name="GpuAdapterCombo" SelectedValue="{Binding Config.GpuAdapter, Mode=TwoWay}" SelectedValuePath="Tag" HorizontalAlignment="Stretch" Margin="0,0,0,16">
+                                            <ComboBoxItem Tag="Default" Content="{loc:Text 'Default'}" />
                                         </ComboBox>
 
-                                        <TextBlock Text="Storage Drives" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,8"/>
+                                        <TextBlock Text="{loc:Text 'Storage Drives'}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,8"/>
                                         <ScrollViewer MaxHeight="140" VerticalScrollBarVisibility="Auto">
                                             <ItemsControl ItemsSource="{Binding DiskItems, RelativeSource={RelativeSource AncestorType=Window}}">
                                                 <ItemsControl.ItemsPanel>
@@ -542,18 +580,18 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE793;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Taskbar colours" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Taskbar colours'}" FontWeight="SemiBold" FontSize="15"/>
                                     <TextBlock x:Name="OverlayThemeHint" Text="" Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <ComboBox x:Name="OverlayThemeCombo" Grid.Column="2" Width="150" VerticalAlignment="Center" SelectionChanged="OnOverlayThemeChanged">
-                                    <ComboBoxItem Content="Match Windows" Tag="Auto"/>
-                                    <ComboBoxItem Content="Always light" Tag="Light"/>
-                                    <ComboBoxItem Content="Always dark" Tag="Dark"/>
+                                    <ComboBoxItem Content="{loc:Text 'Match Windows'}" Tag="Auto"/>
+                                    <ComboBoxItem Content="{loc:Text 'Always light'}" Tag="Light"/>
+                                    <ComboBoxItem Content="{loc:Text 'Always dark'}" Tag="Dark"/>
                                 </ComboBox>
                             </Grid>
                         </Border>
 
-                        <TextBlock Text="Appearance" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,24"/>
+                        <TextBlock Text="{loc:Text 'Appearance'}" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,24"/>
                         
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -568,24 +606,24 @@
                             <StackPanel Grid.Column="0">
                                 <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,16">
                                     <StackPanel>
-                                        <TextBlock Text="Typography" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
+                                        <TextBlock Text="{loc:Text 'Typography'}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
                                         
-                                        <TextBlock Text="Font Family" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
-                                        <ComboBox SelectedValue="{Binding Config.FontFamily, Mode=TwoWay}" SelectedValuePath="Content" HorizontalAlignment="Stretch" Margin="0,0,0,16">
-                                            <ComboBoxItem Content="Segoe UI" />
-                                            <ComboBoxItem Content="Segoe UI Variable Display" />
-                                            <ComboBoxItem Content="Inter" />
-                                            <ComboBoxItem Content="Roboto" />
-                                            <ComboBoxItem Content="Consolas" />
+                                        <TextBlock Text="{loc:Text 'Font Family'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
+                                        <ComboBox SelectedValue="{Binding Config.FontFamily, Mode=TwoWay}" SelectedValuePath="Tag" HorizontalAlignment="Stretch" Margin="0,0,0,16">
+                                            <ComboBoxItem Tag="Segoe UI" Content="{loc:Text 'Segoe UI'}" />
+                                            <ComboBoxItem Tag="Segoe UI Variable Display" Content="{loc:Text 'Segoe UI Variable Display'}" />
+                                            <ComboBoxItem Tag="Inter" Content="{loc:Text 'Inter'}" />
+                                            <ComboBoxItem Tag="Roboto" Content="{loc:Text 'Roboto'}" />
+                                            <ComboBoxItem Tag="Consolas" Content="{loc:Text 'Consolas'}" />
                                         </ComboBox>
 
-                                        <TextBlock Text="Display Mode" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
-                                        <ComboBox SelectedValue="{Binding Config.DisplayStyle, Mode=TwoWay}" SelectedValuePath="Content" HorizontalAlignment="Stretch" Margin="0,0,0,16">
-                                            <ComboBoxItem Content="Text" />
-                                            <ComboBoxItem Content="Compact" />
+                                        <TextBlock Text="{loc:Text 'Display Mode'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
+                                        <ComboBox SelectedValue="{Binding Config.DisplayStyle, Mode=TwoWay}" SelectedValuePath="Tag" HorizontalAlignment="Stretch" Margin="0,0,0,16">
+                                            <ComboBoxItem Tag="Text" Content="{loc:Text 'Text'}" />
+                                            <ComboBoxItem Tag="Compact" Content="{loc:Text 'Compact'}" />
                                         </ComboBox>
 
-                                        <ui:ToggleSwitch Header="Bold Text" IsOn="{Binding Config.IsTextBold, Mode=TwoWay}" />
+                                        <ui:ToggleSwitch Header="{loc:Text 'Bold Text'}" IsOn="{Binding Config.IsTextBold, Mode=TwoWay}" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -594,9 +632,9 @@
                             <StackPanel Grid.Column="2">
                                 <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
                                     <StackPanel>
-                                        <TextBlock Text="Color Palette" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
+                                        <TextBlock Text="{loc:Text 'Color Palette'}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
                                         
-                                        <TextBlock Text="Metric Accent" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
+                                        <TextBlock Text="{loc:Text 'Metric Accent'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
                                         <Button HorizontalAlignment="Stretch" Height="36" Margin="0,0,0,12" Click="ColorButton_Click" Tag="Accent">
                                             <Grid HorizontalAlignment="Stretch">
                                                 <Grid.ColumnDefinitions>
@@ -604,11 +642,11 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <Border Width="18" Height="18" CornerRadius="3" Background="{Binding Config.AccentColorHex}" BorderBrush="White" BorderThickness="1"/>
-                                                <TextBlock Grid.Column="1" Text="Select Accent" Margin="8,0" VerticalAlignment="Center" FontSize="12"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'Select Accent'}" Margin="8,0" VerticalAlignment="Center" FontSize="12"/>
                                             </Grid>
                                         </Button>
 
-                                        <TextBlock Text="Label Tone" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
+                                        <TextBlock Text="{loc:Text 'Label Tone'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
                                         <Button HorizontalAlignment="Stretch" Height="36" Margin="0,0,0,12" Click="ColorButton_Click" Tag="Label">
                                             <Grid HorizontalAlignment="Stretch">
                                                 <Grid.ColumnDefinitions>
@@ -616,11 +654,11 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <Border Width="18" Height="18" CornerRadius="3" Background="{Binding Config.LabelColorHex}" BorderBrush="White" BorderThickness="1"/>
-                                                <TextBlock Grid.Column="1" Text="Select Label" Margin="8,0" VerticalAlignment="Center" FontSize="12"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'Select Label'}" Margin="8,0" VerticalAlignment="Center" FontSize="12"/>
                                             </Grid>
                                         </Button>
 
-                                        <TextBlock Text="Capsule Color" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
+                                        <TextBlock Text="{loc:Text 'Capsule Color'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,8"/>
                                         <Button HorizontalAlignment="Stretch" Height="36" Click="ColorButton_Click" Tag="Pod">
                                             <Grid HorizontalAlignment="Stretch">
                                                 <Grid.ColumnDefinitions>
@@ -628,7 +666,7 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <Border Width="18" Height="18" CornerRadius="3" Background="{Binding Config.PodColorHex}" BorderBrush="White" BorderThickness="1"/>
-                                                <TextBlock Grid.Column="1" Text="Select Capsule" Margin="8,0" VerticalAlignment="Center" FontSize="12"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'Select Capsule'}" Margin="8,0" VerticalAlignment="Center" FontSize="12"/>
                                             </Grid>
                                         </Button>
                                     </StackPanel>
@@ -639,27 +677,27 @@
                             <StackPanel Grid.Column="4">
                                 <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
                                     <StackPanel>
-                                        <TextBlock Text="Dashboard" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
+                                        <TextBlock Text="{loc:Text 'Dashboard'}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
 
-                                        <TextBlock Text="Scaling (Size)" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{loc:Text 'Scaling (Size)'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,4"/>
                                         <Slider Minimum="0.5" Maximum="2.0" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding Config.ScaleFactor, Mode=TwoWay}" Margin="0,0,0,12"/>
 
-                                         <TextBlock Text="Column Spacing" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,4"/>
+                                         <TextBlock Text="{loc:Text 'Column Spacing'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,4"/>
                                         <Slider x:Name="ColumnSpacingSlider" Minimum="0" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding Config.ColumnSpacing, Mode=TwoWay}" Margin="0,0,0,12"/>
 
-                                        <ui:ToggleSwitch Header="iStat Taskbar (stacked)" IsOn="{Binding Config.StackedTaskbar, Mode=TwoWay}" Margin="0,0,0,8" />
+                                        <ui:ToggleSwitch Header="{loc:Text 'iStat Taskbar (stacked)'}" IsOn="{Binding Config.StackedTaskbar, Mode=TwoWay}" Margin="0,0,0,8" />
 
-                                        <ui:ToggleSwitch Header="Live Graphs" IsOn="{Binding Config.ShowGraphs, Mode=TwoWay}" Margin="0,0,0,8" />
+                                        <ui:ToggleSwitch Header="{loc:Text 'Live Graphs'}" IsOn="{Binding Config.ShowGraphs, Mode=TwoWay}" Margin="0,0,0,8" />
 
-                                        <ui:ToggleSwitch Header="Panel on Click" IsOn="{Binding Config.ShowPanelOnClick, Mode=TwoWay}" Margin="0,0,0,8" />
+                                        <ui:ToggleSwitch Header="{loc:Text 'Panel on Click'}" IsOn="{Binding Config.ShowPanelOnClick, Mode=TwoWay}" Margin="0,0,0,8" />
 
-                                        <ui:ToggleSwitch Header="Hover Panels" IsOn="{Binding Config.HoverPanels, Mode=TwoWay}" Margin="0,0,0,8" />
+                                        <ui:ToggleSwitch Header="{loc:Text 'Hover Panels'}" IsOn="{Binding Config.HoverPanels, Mode=TwoWay}" Margin="0,0,0,8" />
 
-                                        <ui:ToggleSwitch Header="Avoid Start Menu" IsOn="{Binding Config.AvoidStartMenu, Mode=TwoWay}" Margin="0,0,0,8" />
+                                        <ui:ToggleSwitch Header="{loc:Text 'Avoid Start Menu'}" IsOn="{Binding Config.AvoidStartMenu, Mode=TwoWay}" Margin="0,0,0,8" />
 
-                                        <ui:ToggleSwitch Header="Enable Capsules" IsOn="{Binding Config.ShowPods, Mode=TwoWay}" Margin="0,0,0,8" />
+                                        <ui:ToggleSwitch Header="{loc:Text 'Enable Capsules'}" IsOn="{Binding Config.ShowPods, Mode=TwoWay}" Margin="0,0,0,8" />
                                         
-                                        <ui:ToggleSwitch Header="Background Plate" IsOn="{Binding Config.ShowBackground, Mode=TwoWay}" Margin="0,0,0,8" />
+                                        <ui:ToggleSwitch Header="{loc:Text 'Background Plate'}" IsOn="{Binding Config.ShowBackground, Mode=TwoWay}" Margin="0,0,0,8" />
                                         
                                         <Button HorizontalAlignment="Stretch" Height="32" Click="ColorButton_Click" Tag="Background" 
                                                 Visibility="{Binding Config.ShowBackground, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -669,7 +707,7 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <Border Width="18" Height="18" CornerRadius="3" Background="{Binding Config.BackgroundColorHex}" BorderBrush="White" BorderThickness="1"/>
-                                                <TextBlock Grid.Column="1" Text="Select Plate Color" Margin="8,0" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'Select Plate Color'}" Margin="8,0" VerticalAlignment="Center" FontSize="11"/>
                                             </Grid>
                                         </Button>
                                     </StackPanel>
@@ -680,14 +718,14 @@
                         <!-- Section Colors -->
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16,0,0">
                             <StackPanel>
-                                <TextBlock Text="Section Colors" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4"/>
-                                <TextBlock Text="Override label and metric colors per section. Leave unset to inherit global colors." Opacity="0.6" FontSize="12" Margin="0,0,0,16" TextWrapping="Wrap"/>
+                                <TextBlock Text="{loc:Text 'Section Colors'}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4"/>
+                                <TextBlock Text="{loc:Text 'Override label and metric colors per section. Leave unset to inherit global colors.'}" Opacity="0.6" FontSize="12" Margin="0,0,0,16" TextWrapping="Wrap"/>
                                 <UniformGrid Columns="4">
 
                                     <!-- Network -->
                                     <StackPanel Margin="0,0,12,0">
-                                        <TextBlock Text="Network" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,6"/>
-                                        <TextBlock Text="Label" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{loc:Text 'Network'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,6"/>
+                                        <TextBlock Text="{loc:Text 'Label'}" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                                         <Button HorizontalAlignment="Stretch" Height="32" Margin="0,0,0,4" Click="ColorButton_Click" Tag="NetLabel">
                                             <Grid HorizontalAlignment="Stretch"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Width="16" Height="16" CornerRadius="3" BorderBrush="White" BorderThickness="1">
@@ -696,11 +734,11 @@
                                                         <DataTrigger Binding="{Binding Config.NetLabelColorHex}" Value="{x:Null}"><Setter Property="Background" Value="#333333"/></DataTrigger>
                                                     </Style.Triggers><Setter Property="Background" Value="{Binding Config.NetLabelColorHex}"/></Style></Border.Style>
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text="UP / DN" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'UP / DN'}" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
                                             </Grid>
                                         </Button>
-                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="NetLabel" Opacity="0.6" Margin="0,0,0,8">Clear</Button>
-                                        <TextBlock Text="Metric" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="NetLabel" Opacity="0.6" Margin="0,0,0,8" helpers:ButtonIcon.Glyph="&#xE72C;" Content="{loc:Text 'Clear'}"/>
+                                        <TextBlock Text="{loc:Text 'Metric'}" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                                         <Button HorizontalAlignment="Stretch" Height="32" Margin="0,0,0,4" Click="ColorButton_Click" Tag="NetAccent">
                                             <Grid HorizontalAlignment="Stretch"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Width="16" Height="16" CornerRadius="3" BorderBrush="White" BorderThickness="1">
@@ -709,16 +747,16 @@
                                                         <DataTrigger Binding="{Binding Config.NetAccentColorHex}" Value="{x:Null}"><Setter Property="Background" Value="#333333"/></DataTrigger>
                                                     </Style.Triggers><Setter Property="Background" Value="{Binding Config.NetAccentColorHex}"/></Style></Border.Style>
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text="UP / DN" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'UP / DN'}" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
                                             </Grid>
                                         </Button>
-                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="NetAccent" Opacity="0.6">Clear</Button>
+                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="NetAccent" Opacity="0.6" helpers:ButtonIcon.Glyph="&#xE72C;" Content="{loc:Text 'Clear'}"/>
                                     </StackPanel>
 
                                     <!-- CPU / RAM -->
                                     <StackPanel Margin="0,0,12,0">
-                                        <TextBlock Text="CPU / RAM" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,6"/>
-                                        <TextBlock Text="Label" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{loc:Text 'CPU / RAM'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,6"/>
+                                        <TextBlock Text="{loc:Text 'Label'}" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                                         <Button HorizontalAlignment="Stretch" Height="32" Margin="0,0,0,4" Click="ColorButton_Click" Tag="CpuRamLabel">
                                             <Grid HorizontalAlignment="Stretch"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Width="16" Height="16" CornerRadius="3" BorderBrush="White" BorderThickness="1">
@@ -727,11 +765,11 @@
                                                         <DataTrigger Binding="{Binding Config.CpuRamLabelColorHex}" Value="{x:Null}"><Setter Property="Background" Value="#333333"/></DataTrigger>
                                                     </Style.Triggers><Setter Property="Background" Value="{Binding Config.CpuRamLabelColorHex}"/></Style></Border.Style>
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text="CPU / RAM" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'CPU / RAM'}" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
                                             </Grid>
                                         </Button>
-                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="CpuRamLabel" Opacity="0.6" Margin="0,0,0,8">Clear</Button>
-                                        <TextBlock Text="Metric" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="CpuRamLabel" Opacity="0.6" Margin="0,0,0,8" helpers:ButtonIcon.Glyph="&#xE72C;" Content="{loc:Text 'Clear'}"/>
+                                        <TextBlock Text="{loc:Text 'Metric'}" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                                         <Button HorizontalAlignment="Stretch" Height="32" Margin="0,0,0,4" Click="ColorButton_Click" Tag="CpuRamAccent">
                                             <Grid HorizontalAlignment="Stretch"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Width="16" Height="16" CornerRadius="3" BorderBrush="White" BorderThickness="1">
@@ -740,16 +778,16 @@
                                                         <DataTrigger Binding="{Binding Config.CpuRamAccentColorHex}" Value="{x:Null}"><Setter Property="Background" Value="#333333"/></DataTrigger>
                                                     </Style.Triggers><Setter Property="Background" Value="{Binding Config.CpuRamAccentColorHex}"/></Style></Border.Style>
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text="CPU / RAM" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'CPU / RAM'}" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
                                             </Grid>
                                         </Button>
-                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="CpuRamAccent" Opacity="0.6">Clear</Button>
+                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="CpuRamAccent" Opacity="0.6" helpers:ButtonIcon.Glyph="&#xE72C;" Content="{loc:Text 'Clear'}"/>
                                     </StackPanel>
 
                                     <!-- GPU / Temp -->
                                     <StackPanel Margin="0,0,12,0">
-                                        <TextBlock Text="GPU / Temp" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,6"/>
-                                        <TextBlock Text="Label" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{loc:Text 'GPU / Temp'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,6"/>
+                                        <TextBlock Text="{loc:Text 'Label'}" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                                         <Button HorizontalAlignment="Stretch" Height="32" Margin="0,0,0,4" Click="ColorButton_Click" Tag="GpuLabel">
                                             <Grid HorizontalAlignment="Stretch"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Width="16" Height="16" CornerRadius="3" BorderBrush="White" BorderThickness="1">
@@ -758,11 +796,11 @@
                                                         <DataTrigger Binding="{Binding Config.GpuLabelColorHex}" Value="{x:Null}"><Setter Property="Background" Value="#333333"/></DataTrigger>
                                                     </Style.Triggers><Setter Property="Background" Value="{Binding Config.GpuLabelColorHex}"/></Style></Border.Style>
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text="GPU / TMP" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'GPU / TMP'}" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
                                             </Grid>
                                         </Button>
-                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="GpuLabel" Opacity="0.6" Margin="0,0,0,8">Clear</Button>
-                                        <TextBlock Text="Metric" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="GpuLabel" Opacity="0.6" Margin="0,0,0,8" helpers:ButtonIcon.Glyph="&#xE72C;" Content="{loc:Text 'Clear'}"/>
+                                        <TextBlock Text="{loc:Text 'Metric'}" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                                         <Button HorizontalAlignment="Stretch" Height="32" Margin="0,0,0,4" Click="ColorButton_Click" Tag="GpuAccent">
                                             <Grid HorizontalAlignment="Stretch"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Width="16" Height="16" CornerRadius="3" BorderBrush="White" BorderThickness="1">
@@ -771,16 +809,16 @@
                                                         <DataTrigger Binding="{Binding Config.GpuAccentColorHex}" Value="{x:Null}"><Setter Property="Background" Value="#333333"/></DataTrigger>
                                                     </Style.Triggers><Setter Property="Background" Value="{Binding Config.GpuAccentColorHex}"/></Style></Border.Style>
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text="GPU / TMP" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'GPU / TMP'}" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
                                             </Grid>
                                         </Button>
-                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="GpuAccent" Opacity="0.6">Clear</Button>
+                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="GpuAccent" Opacity="0.6" helpers:ButtonIcon.Glyph="&#xE72C;" Content="{loc:Text 'Clear'}"/>
                                     </StackPanel>
 
                                     <!-- Disk -->
                                     <StackPanel>
-                                        <TextBlock Text="Disk" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,6"/>
-                                        <TextBlock Text="Label" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{loc:Text 'Disk'}" FontWeight="SemiBold" FontSize="12" Opacity="0.7" Margin="0,0,0,6"/>
+                                        <TextBlock Text="{loc:Text 'Label'}" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                                         <Button HorizontalAlignment="Stretch" Height="32" Margin="0,0,0,4" Click="ColorButton_Click" Tag="DiskLabel">
                                             <Grid HorizontalAlignment="Stretch"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Width="16" Height="16" CornerRadius="3" BorderBrush="White" BorderThickness="1">
@@ -789,11 +827,11 @@
                                                         <DataTrigger Binding="{Binding Config.DiskLabelColorHex}" Value="{x:Null}"><Setter Property="Background" Value="#333333"/></DataTrigger>
                                                     </Style.Triggers><Setter Property="Background" Value="{Binding Config.DiskLabelColorHex}"/></Style></Border.Style>
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text="Disk" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'Disk'}" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
                                             </Grid>
                                         </Button>
-                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="DiskLabel" Opacity="0.6" Margin="0,0,0,8">Clear</Button>
-                                        <TextBlock Text="Metric" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="DiskLabel" Opacity="0.6" Margin="0,0,0,8" helpers:ButtonIcon.Glyph="&#xE72C;" Content="{loc:Text 'Clear'}"/>
+                                        <TextBlock Text="{loc:Text 'Metric'}" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                                         <Button HorizontalAlignment="Stretch" Height="32" Margin="0,0,0,4" Click="ColorButton_Click" Tag="DiskAccent">
                                             <Grid HorizontalAlignment="Stretch"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Width="16" Height="16" CornerRadius="3" BorderBrush="White" BorderThickness="1">
@@ -802,10 +840,10 @@
                                                         <DataTrigger Binding="{Binding Config.DiskAccentColorHex}" Value="{x:Null}"><Setter Property="Background" Value="#333333"/></DataTrigger>
                                                     </Style.Triggers><Setter Property="Background" Value="{Binding Config.DiskAccentColorHex}"/></Style></Border.Style>
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text="Disk" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{loc:Text 'Disk'}" Margin="6,0" VerticalAlignment="Center" FontSize="11"/>
                                             </Grid>
                                         </Button>
-                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="DiskAccent" Opacity="0.6">Clear</Button>
+                                        <Button HorizontalAlignment="Stretch" Height="24" FontSize="10" Click="ClearSectionColor_Click" Tag="DiskAccent" Opacity="0.6" helpers:ButtonIcon.Glyph="&#xE72C;" Content="{loc:Text 'Clear'}"/>
                                     </StackPanel>
 
                                 </UniformGrid>
@@ -818,7 +856,7 @@
                                 <Button x:Name="ResetDefaultsBtn" Click="ResetToDefaults_Click" Padding="16,8" ui:ControlHelper.CornerRadius="4">
                                     <StackPanel Orientation="Horizontal">
                                         <ui:SymbolIcon Symbol="Refresh" Margin="0,0,8,0" />
-                                        <TextBlock Text="Reset Appearance" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{loc:Text 'Reset Appearance'}" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>
@@ -828,14 +866,14 @@
                     <!-- About Section -->
                     <!-- Screen capture -->
                     <StackPanel x:Name="CaptureSection" Visibility="Collapsed">
-                        <TextBlock Text="Capture" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="Region, window, screen and scrolling capture with an annotation editor. Shortcuts work anywhere in Windows." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <TextBlock Text="{loc:Text 'Capture'}" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Text 'Region, window, screen and scrolling capture with an annotation editor. Shortcuts work anywhere in Windows.'}" Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
                         <WrapPanel Margin="0,0,0,16">
-                            <Button Content="Capture region now" helpers:ButtonIcon.Glyph="&#xE722;" Click="OnCaptureRegion" Margin="0,0,8,0" Padding="14,7"/>
-                            <Button Content="Capture window" helpers:ButtonIcon.Glyph="&#xE7C4;" Click="OnCaptureWindow" Margin="0,0,8,0" Padding="14,7"/>
-                            <Button Content="Capture scrolling" helpers:ButtonIcon.Glyph="&#xECE7;" Click="OnCaptureScrolling" Margin="0,0,8,0" Padding="14,7"/>
-                            <Button Content="Open folder" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnOpenCaptureFolder" Padding="14,7"/>
+                            <Button Content="{loc:Text 'Capture region now'}" helpers:ButtonIcon.Glyph="&#xE722;" Click="OnCaptureRegion" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="{loc:Text 'Capture window'}" helpers:ButtonIcon.Glyph="&#xE7C4;" Click="OnCaptureWindow" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="{loc:Text 'Capture scrolling'}" helpers:ButtonIcon.Glyph="&#xECE7;" Click="OnCaptureScrolling" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="{loc:Text 'Open folder'}" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnOpenCaptureFolder" Padding="14,7"/>
                         </WrapPanel>
 
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
@@ -847,8 +885,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE7A8;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Open the editor after capturing" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Mark up, redact and crop before saving. Turn off to copy or save straight away." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Open the editor after capturing'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Mark up, redact and crop before saving. Turn off to copy or save straight away.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureOpenEditorToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -863,8 +901,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE8C8;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Copy to clipboard" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Every capture is placed on the clipboard as PNG and DIB, so it pastes anywhere." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Copy to clipboard'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Every capture is placed on the clipboard as PNG and DIB, so it pastes anywhere.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureClipboardToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -879,8 +917,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE74E;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Save automatically" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Write each capture into the captures folder without asking." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Save automatically'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Write each capture into the captures folder without asking.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureAutoSaveToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -895,8 +933,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE962;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Include the mouse pointer" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Composite the cursor into the image, positioned by its true hotspot." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Include the mouse pointer'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Composite the cursor into the image, positioned by its true hotspot.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureCursorToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -911,14 +949,14 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE916;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Delay before capturing" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Seconds to wait, for catching menus and hover states that close when clicked." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Delay before capturing'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Seconds to wait, for catching menus and hover states that close when clicked.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ComboBox Grid.Column="2" x:Name="CaptureDelayBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnCaptureDelayChanged">
-                                    <ComboBoxItem Content="None"/>
-                                    <ComboBoxItem Content="3 seconds"/>
-                                    <ComboBoxItem Content="5 seconds"/>
-                                    <ComboBoxItem Content="10 seconds"/>
+                                    <ComboBoxItem Tag="None" Content="{loc:Text 'None'}"/>
+                                    <ComboBoxItem Tag="3 seconds" Content="{loc:Text '3 seconds'}"/>
+                                    <ComboBoxItem Tag="5 seconds" Content="{loc:Text '5 seconds'}"/>
+                                    <ComboBoxItem Tag="10 seconds" Content="{loc:Text '10 seconds'}"/>
                                 </ComboBox>
                             </Grid>
                         </Border>
@@ -932,12 +970,12 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xEB9F;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Image format" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="PNG keeps every pixel exact; JPEG makes smaller files." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Image format'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'PNG keeps every pixel exact; JPEG makes smaller files.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ComboBox Grid.Column="2" x:Name="CaptureFormatBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnCaptureFormatChanged">
-                                    <ComboBoxItem Content="PNG"/>
-                                    <ComboBoxItem Content="JPEG"/>
+                                    <ComboBoxItem Tag="PNG" Content="{loc:Text 'PNG'}"/>
+                                    <ComboBoxItem Tag="JPEG" Content="{loc:Text 'JPEG'}"/>
                                 </ComboBox>
                             </Grid>
                         </Border>
@@ -951,13 +989,13 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xED1A;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Redaction style" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="How the redact tool hides sensitive content by default." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Redaction style'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'How the redact tool hides sensitive content by default.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ComboBox Grid.Column="2" x:Name="CaptureRedactBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnCaptureRedactChanged">
-                                    <ComboBoxItem Content="Pixelate"/>
-                                    <ComboBoxItem Content="Blur"/>
-                                    <ComboBoxItem Content="Solid"/>
+                                    <ComboBoxItem Tag="Pixelate" Content="{loc:Text 'Pixelate'}"/>
+                                    <ComboBoxItem Tag="Blur" Content="{loc:Text 'Blur'}"/>
+                                    <ComboBoxItem Tag="Solid" Content="{loc:Text 'Solid'}"/>
                                 </ComboBox>
                             </Grid>
                         </Border>
@@ -971,8 +1009,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE765;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Keyboard shortcuts" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Ctrl+Shift+1 region, Ctrl+Shift+2 window, Ctrl+Shift+3 screen, Ctrl+Shift+4 scrolling. A shortcut another application already owns is reported in the diagnostics log." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Keyboard shortcuts'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Ctrl+Shift+1 region, Ctrl+Shift+2 window, Ctrl+Shift+3 screen, Ctrl+Shift+4 scrolling. A shortcut another application already owns is reported in the diagnostics log.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="CaptureHotkeysToggle" Toggled="OnCaptureSettingToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -987,12 +1025,12 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xED25;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Captures folder" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Where saved captures are written." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Captures folder'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Where saved captures are written.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <WrapPanel Grid.Column="2" MaxWidth="380" VerticalAlignment="Center">
                                     <TextBox x:Name="CaptureFolderBox" Width="250" VerticalAlignment="Center" Margin="0,0,8,0" LostFocus="OnCaptureFolderChanged"/>
-                                    <Button Content="Browse" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnBrowseCaptureFolder" Padding="12,6"/>
+                                    <Button Content="{loc:Text 'Browse'}" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnBrowseCaptureFolder" Padding="12,6"/>
                                 </WrapPanel>
                             </Grid>
                         </Border>
@@ -1002,11 +1040,11 @@
                     <!-- MicaPad -->
                     <StackPanel x:Name="PadSection" Visibility="Collapsed">
                         <TextBlock Text="MicaPad" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="A notepad that saves every note by itself and keeps its history. Nothing to name, and nothing to confirm when Windows restarts." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <TextBlock Text="{loc:Text 'A notepad that saves every note by itself and keeps its history. Nothing to name, and nothing to confirm when Windows restarts.'}" Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
                         <WrapPanel Margin="0,0,0,16">
-                            <Button Content="Open MicaPad" helpers:ButtonIcon.Glyph="&#xE8A7;" Click="OnOpenPad" Margin="0,0,8,0" Padding="14,7"/>
-                            <Button Content="Open notes folder" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnOpenPadFolder" Padding="14,7"/>
+                            <Button Content="{loc:Text 'Open MicaPad'}" helpers:ButtonIcon.Glyph="&#xE8A7;" Click="OnOpenPad" Margin="0,0,8,0" Padding="14,7"/>
+                            <Button Content="{loc:Text 'Open notes folder'}" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnOpenPadFolder" Padding="14,7"/>
                         </WrapPanel>
 
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,16">
@@ -1018,7 +1056,7 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE765;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Shortcut" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Shortcut'}" FontWeight="SemiBold" FontSize="15"/>
                                     <TextBlock x:Name="PadHotkeyHint" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <TextBox Grid.Column="2" x:Name="PadHotkeyBox" Width="160" VerticalAlignment="Center" LostFocus="OnPadHotkeyChanged"/>
@@ -1034,8 +1072,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE72C;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Reopen after restart" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="If MicaPad was open when Windows shut down, it comes back after you sign in, with every tab." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Reopen after restart'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'If MicaPad was open when Windows shut down, it comes back after you sign in, with every tab.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadReopenToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1050,12 +1088,12 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE706;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Theme" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Dark or light, for MicaPad only. The sun and moon button in MicaPad switches it too." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Theme'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Dark or light, for MicaPad only. The sun and moon button in MicaPad switches it too.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ComboBox Grid.Column="2" x:Name="PadThemeBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnPadThemeChanged">
-                                    <ComboBoxItem Content="Dark"/>
-                                    <ComboBoxItem Content="Light"/>
+                                    <ComboBoxItem Tag="Dark" Content="{loc:Text 'Dark'}"/>
+                                    <ComboBoxItem Tag="Light" Content="{loc:Text 'Light'}"/>
                                 </ComboBox>
                             </Grid>
                         </Border>
@@ -1068,13 +1106,13 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE72E;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Credentials" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Credentials'}" FontWeight="SemiBold" FontSize="15"/>
                                     <TextBlock x:Name="PadVaultStatus" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <WrapPanel Grid.Column="2" MaxWidth="380" VerticalAlignment="Center">
-                                    <Button x:Name="PadVaultChangePin" Content="Change PIN&#x2026;" helpers:ButtonIcon.Glyph="&#xE8D7;" Click="OnPadVaultChangePin" Padding="12,6" Margin="0,0,8,0"/>
-                                    <Button x:Name="PadVaultLock" Content="Lock now" helpers:ButtonIcon.Glyph="&#xE72E;" Click="OnPadVaultLock" Padding="12,6" Margin="0,0,8,0"/>
-                                    <Button x:Name="PadVaultReset" Content="Reset vault&#x2026;" helpers:ButtonIcon.Glyph="&#xE74D;" Click="OnPadVaultReset" Padding="12,6"/>
+                                    <Button x:Name="PadVaultChangePin" Content="{loc:Text 'Change PIN…'}" helpers:ButtonIcon.Glyph="&#xE8D7;" Click="OnPadVaultChangePin" Padding="12,6" Margin="0,0,8,0"/>
+                                    <Button x:Name="PadVaultLock" Content="{loc:Text 'Lock now'}" helpers:ButtonIcon.Glyph="&#xE72E;" Click="OnPadVaultLock" Padding="12,6" Margin="0,0,8,0"/>
+                                    <Button x:Name="PadVaultReset" Content="{loc:Text 'Reset vault…'}" helpers:ButtonIcon.Glyph="&#xE74D;" Click="OnPadVaultReset" Padding="12,6"/>
                                 </WrapPanel>
                             </Grid>
                         </Border>
@@ -1087,8 +1125,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE8D2;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Markdown formatting" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Headings, bold, lists and code in notes and .md and .txt files are shown formatted as you type. The file itself never changes." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Markdown formatting'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Headings, bold, lists and code in notes and .md and .txt files are shown formatted as you type. The file itself never changes.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadMarkdownToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1102,8 +1140,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE736;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Reading font" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Prose in Markdown notes uses Segoe UI; code and tables stay in the editor font." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Reading font'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Prose in Markdown notes uses Segoe UI; code and tables stay in the editor font.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadReadingFontToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1117,8 +1155,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE8B9;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Draw diagrams" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="A picture under each mermaid, dot (Graphviz), markmap and math block in Markdown notes, drawn on this PC, and a preview under each image. Right-click a picture to copy or save it." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Draw diagrams'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'A picture under each mermaid, dot (Graphviz), markmap and math block in Markdown notes, drawn on this PC, and a preview under each image. Right-click a picture to copy or save it.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadDiagramsToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1132,8 +1170,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE774;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Top"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Draw other types with Kroki" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="PlantUML, D2, BPMN and more. Sends the diagram's text (only that block) to this server. Use your own Kroki server for private notes." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Draw other types with Kroki'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'PlantUML, D2, BPMN and more. Sends the diagram\&#x27;s text (only that block) to this server. Use your own Kroki server for private notes.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                     <TextBox x:Name="PadKrokiServerBox" Width="260" HorizontalAlignment="Left" Margin="0,8,0,0" LostFocus="OnPadKrokiServerChanged"/>
                                     <TextBlock x:Name="PadKrokiHint" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                 </StackPanel>
@@ -1149,8 +1187,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE91B;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Load images from the web" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Images with an http or https address are downloaded when the note is shown. Off: only images on this PC are shown." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Load images from the web'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Images with an http or https address are downloaded when the note is shown. Off: only images on this PC are shown.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadWebImagesToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1164,8 +1202,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE943;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Auto-close brackets and quotes" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Typing ( [ { or a quote adds the closing one; typing it again steps over it. Never in the middle of a word." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Auto-close brackets and quotes'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Typing an opening bracket or quote adds its closing match. Type the closing character to step over it. Skips the middle of a word.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadAutoCloseToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1179,8 +1217,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE751;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Word wrap" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Wrap long lines to the window. Alt+Z switches it in MicaPad." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Word wrap'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Wrap long lines to the window. Alt+Z switches it in MicaPad.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadWrapToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1195,8 +1233,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE8FD;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Line numbers" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Show line numbers beside the text." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Line numbers'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Show line numbers beside the text.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadLineNumbersToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1211,8 +1249,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE8D2;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Font" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Font and size of the text. Ctrl+wheel zooms in MicaPad." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Font'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Font and size of the text. Ctrl+wheel zooms in MicaPad.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBox x:Name="PadFontBox" Width="160" Margin="0,0,8,0" LostFocus="OnPadFontChanged"/>
@@ -1230,22 +1268,22 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE81C;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Keep history for" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Older versions are thinned out over time; closed notes go to the Recycle Bin after this long." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Keep history for'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Older versions are thinned out over time; closed notes go to the Recycle Bin after this long.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ComboBox Grid.Column="2" x:Name="PadHistoryBox" Width="120" VerticalAlignment="Center" SelectionChanged="OnPadHistoryChanged">
-                                    <ComboBoxItem Content="30 days"/>
-                                    <ComboBoxItem Content="90 days"/>
-                                    <ComboBoxItem Content="180 days"/>
-                                    <ComboBoxItem Content="1 year"/>
+                                    <ComboBoxItem Tag="30 days" Content="{loc:Text '30 days'}"/>
+                                    <ComboBoxItem Tag="90 days" Content="{loc:Text '90 days'}"/>
+                                    <ComboBoxItem Tag="180 days" Content="{loc:Text '180 days'}"/>
+                                    <ComboBoxItem Tag="1 year" Content="{loc:Text '1 year'}"/>
                                 </ComboBox>
                             </Grid>
                         </Border>
 
-                        <TextBlock Text="Search" FontSize="18" FontWeight="SemiBold" Margin="0,24,0,4"/>
+                        <TextBlock Text="{loc:Text 'Search'}" FontSize="18" FontWeight="SemiBold" Margin="0,24,0,4"/>
                         <pad:SearchSettingsPanel x:Name="PadSearchPanel"/>
 
-                        <TextBlock Text="AI" FontSize="18" FontWeight="SemiBold" Margin="0,24,0,4"/>
+                        <TextBlock Text="{loc:Text 'AI'}" FontSize="18" FontWeight="SemiBold" Margin="0,24,0,4"/>
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="20,16">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -1255,8 +1293,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE99A;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Use AI in MicaPad" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Improve, translate, summarize or explain selected text, and get answers from your notes in Search notes. Nothing is sent until you run an action." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Use AI in MicaPad'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Improve, translate, summarize or explain selected text, and get answers from your notes in Search notes. Nothing is sent until you run an action.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="PadAiToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1271,8 +1309,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE721;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Let Ask MicaStats search your notes" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Ask MicaStats can look up passages and read notes to answer a question." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Let Ask MicaStats search your notes'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Ask MicaStats can look up passages and read notes to answer a question.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="AiNotesInAskToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1287,22 +1325,22 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE721;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Let MCP clients search your notes" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Programs such as Claude Code, connected through MCP, get two read-only tools: search_notes and get_note." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Let MCP clients search your notes'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Programs such as Claude Code, connected through MCP, get two read-only tools: search_notes and get_note.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="AiNotesInMcpToggle" Toggled="OnPadToggled" VerticalAlignment="Center"/>
                             </Grid>
                         </Border>
                         <TextBlock x:Name="AiNotesInMcpText" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap" Margin="4,0,0,8"/>
-                        <Button x:Name="PadAiProviderButton" Content="AI provider settings…" helpers:ButtonIcon.Glyph="&#xE713;" Click="OnPadAiProviderSettings" Margin="0,0,0,12"/>
+                        <Button x:Name="PadAiProviderButton" Content="{loc:Text 'AI provider settings…'}" helpers:ButtonIcon.Glyph="&#xE713;" Click="OnPadAiProviderSettings" Margin="0,0,0,12"/>
                     </StackPanel>
 
                     <!-- Meeting services -->
                     <StackPanel x:Name="MeetingSection" Visibility="Collapsed">
-                        <TextBlock Text="Meeting services" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="Configure one ASR service for single-service transcription, or both for ASR2 + ASR1 comparison. Comparison sends the same audio to both services concurrently. Choose the mode in Meeting Assistant. Add TTS only for speech output."
+                        <TextBlock Text="{loc:Text 'Meeting services'}" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Text 'Configure one ASR service for single-service transcription, or both for ASR2 + ASR1 comparison. Comparison sends the same audio to both services concurrently. Choose the mode in Meeting Assistant. Add TTS only for speech output.'}"
                                    Opacity="0.68" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
-                        <TextBlock Text="Test connection checks the address currently entered without saving it. ASR sends one second of generated silence; TTS sends a fixed test phrase and checks the audio without playing it. Tests run only when clicked and stop after 20 seconds."
+                        <TextBlock Text="{loc:Text 'Test connection checks the address currently entered without saving it. ASR sends one second of generated silence; TTS sends a fixed test phrase and checks the audio without playing it. Tests run only when clicked and stop after 20 seconds.'}"
                                    Opacity="0.68" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
@@ -1317,15 +1355,15 @@
                                     <ui:FontIcon Glyph="&#xE8D4;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="ASR2 · Qwen speech recognition" FontWeight="SemiBold" FontSize="16"/>
-                                    <TextBlock Text="Qwen profile · Single service or dual comparison · model Qwen/Qwen3-ASR-1.7B" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
-                                    <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
-                                    <TextBox x:Name="MeetingAsr2BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://asr.example/v1"/>
-                                    <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
+                                    <TextBlock Text="{loc:Text 'ASR2 · Qwen speech recognition'}" FontWeight="SemiBold" FontSize="16"/>
+                                    <TextBlock Text="{loc:Text 'Qwen profile · Single service or dual comparison · model Qwen/Qwen3-ASR-1.7B'}" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="{loc:Text 'Base URL (includes /v1)'}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
+                                    <TextBox x:Name="MeetingAsr2BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="{loc:Text 'Example: https://asr.example/v1'}"/>
+                                    <TextBlock Text="{loc:Text 'Example: https://asr.example/v1'}" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
                                     <Grid Margin="0,12,0,0">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <Button x:Name="TestMeetingAsr2Button" Content="Test connection" helpers:ButtonIcon.Glyph="&#xE703;" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test ASR2 connection"/>
-                                        <TextBlock x:Name="MeetingAsr2TestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="ASR2 connection test result"/>
+                                        <Button x:Name="TestMeetingAsr2Button" Content="{loc:Text 'Test connection'}" helpers:ButtonIcon.Glyph="&#xE703;" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="{loc:Text 'Test ASR2 connection'}"/>
+                                        <TextBlock x:Name="MeetingAsr2TestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="{loc:Text 'ASR2 connection test result'}"/>
                                     </Grid>
                                 </StackPanel>
                             </Grid>
@@ -1343,15 +1381,15 @@
                                     <ui:FontIcon Glyph="&#xE8D4;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="ASR1 · Typhoon speech recognition" FontWeight="SemiBold" FontSize="16"/>
-                                    <TextBlock Text="Typhoon profile · Alternative or comparison partner to ASR2 · model typhoon-asr-realtime" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
-                                    <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
-                                    <TextBox x:Name="MeetingAsr1BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://asr.example/v1"/>
-                                    <TextBlock Text="Example: https://asr.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
+                                    <TextBlock Text="{loc:Text 'ASR1 · Typhoon speech recognition'}" FontWeight="SemiBold" FontSize="16"/>
+                                    <TextBlock Text="{loc:Text 'Typhoon profile · Alternative or comparison partner to ASR2 · model typhoon-asr-realtime'}" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="{loc:Text 'Base URL (includes /v1)'}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
+                                    <TextBox x:Name="MeetingAsr1BaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="{loc:Text 'Example: https://asr.example/v1'}"/>
+                                    <TextBlock Text="{loc:Text 'Example: https://asr.example/v1'}" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
                                     <Grid Margin="0,12,0,0">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <Button x:Name="TestMeetingAsr1Button" Content="Test connection" helpers:ButtonIcon.Glyph="&#xE703;" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test ASR1 connection"/>
-                                        <TextBlock x:Name="MeetingAsr1TestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="ASR1 connection test result"/>
+                                        <Button x:Name="TestMeetingAsr1Button" Content="{loc:Text 'Test connection'}" helpers:ButtonIcon.Glyph="&#xE703;" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="{loc:Text 'Test ASR1 connection'}"/>
+                                        <TextBlock x:Name="MeetingAsr1TestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="{loc:Text 'ASR1 connection test result'}"/>
                                     </Grid>
                                 </StackPanel>
                             </Grid>
@@ -1369,15 +1407,15 @@
                                     <ui:FontIcon Glyph="&#xE767;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="VoxCPM speech output" FontWeight="SemiBold" FontSize="16"/>
-                                    <TextBlock Text="Optional · Enable Speak with model voxcpm-thai" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
-                                    <TextBlock Text="Base URL (includes /v1)" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
-                                    <TextBox x:Name="MeetingTtsBaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="Example: https://tts.example/v1"/>
-                                    <TextBlock Text="Example: https://tts.example/v1" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
+                                    <TextBlock Text="{loc:Text 'VoxCPM speech output'}" FontWeight="SemiBold" FontSize="16"/>
+                                    <TextBlock Text="{loc:Text 'Optional · Enable Speak with model voxcpm-thai'}" Opacity="0.62" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                    <TextBlock Text="{loc:Text 'Base URL (includes /v1)'}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
+                                    <TextBox x:Name="MeetingTtsBaseUrlBox" MinWidth="460" Padding="10,7" ToolTip="{loc:Text 'Example: https://tts.example/v1'}"/>
+                                    <TextBlock Text="{loc:Text 'Example: https://tts.example/v1'}" Opacity="0.48" FontSize="11.5" Margin="2,5,0,0"/>
                                     <Grid Margin="0,12,0,0">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <Button x:Name="TestMeetingTtsButton" Content="Test connection" helpers:ButtonIcon.Glyph="&#xE703;" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Test TTS connection"/>
-                                        <TextBlock x:Name="MeetingTtsTestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="TTS connection test result"/>
+                                        <Button x:Name="TestMeetingTtsButton" Content="{loc:Text 'Test connection'}" helpers:ButtonIcon.Glyph="&#xE703;" Padding="14,7" Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="{loc:Text 'Test TTS connection'}"/>
+                                        <TextBlock x:Name="MeetingTtsTestStatus" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.Name="{loc:Text 'TTS connection test result'}"/>
                                     </Grid>
                                 </StackPanel>
                             </Grid>
@@ -1392,29 +1430,39 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE946;" FontSize="16" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,1,10,0" VerticalAlignment="Top"/>
-                                <TextBlock Grid.Column="1" Text="Addresses are stored locally in config.json. Leave a service blank to keep it unavailable; the Meeting Assistant will show what still needs configuration before it starts or speaks."
+                                <TextBlock Grid.Column="1" Text="{loc:Text 'Addresses are stored locally in config.json. Leave a service blank to keep it unavailable; the Meeting Assistant will show what still needs configuration before it starts or speaks.'}"
                                            Opacity="0.66" FontSize="12" TextWrapping="Wrap"/>
                             </Grid>
                         </Border>
 
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <Button x:Name="SaveMeetingServicesButton" Content="Save service settings" helpers:ButtonIcon.Glyph="&#xE74E;" Click="OnSaveMeetingServices" Style="{StaticResource AccentButtonStyle}" Padding="18,8" Margin="0,0,12,0"/>
-                            <TextBlock x:Name="MeetingServicesStatus" Grid.Column="1" Text="Not configured" VerticalAlignment="Center" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"/>
+                            <Button x:Name="SaveMeetingServicesButton" Content="{loc:Text 'Save service settings'}" helpers:ButtonIcon.Glyph="&#xE74E;" Click="OnSaveMeetingServices" Style="{StaticResource AccentButtonStyle}" Padding="18,8" Margin="0,0,12,0"/>
+                            <TextBlock x:Name="MeetingServicesStatus" Grid.Column="1" Text="{loc:Text 'Not configured'}" VerticalAlignment="Center" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"/>
                         </Grid>
+                    </StackPanel>
+
+                    <!-- StackChan companion -->
+                    <StackPanel x:Name="StackChanSection" Visibility="Collapsed">
+                        <companion:StackChanPanel x:Name="StackChanPanel"/>
+                    </StackPanel>
+
+                    <!-- Turzx USB Display -->
+                    <StackPanel x:Name="TurzxSection" Visibility="Collapsed">
+                        <companion:TurzxPanel x:Name="TurzxPanel"/>
                     </StackPanel>
 
                     <!-- AI -->
                     <StackPanel x:Name="AiSection" Visibility="Collapsed">
-                        <TextBlock Text="AI" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="Ask MicaStats about this PC, and let Claude Desktop or Claude Code read its data. Everything here is off until you turn it on, and nothing is sent anywhere until you press Send, Explain or Test connection." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <TextBlock Text="{loc:Text 'AI'}" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Text 'Ask MicaStats about this PC, and let Claude Desktop or Claude Code read its data. Everything here is off until you turn it on, and nothing is sent anywhere until you press Send, Explain or Test connection.'}" Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
                         <ai:AiSettingsPanel x:Name="AiPanel"/>
                     </StackPanel>
 
                     <!-- Diagnostics -->
                     <StackPanel x:Name="DiagnosticsSection" Visibility="Collapsed">
-                        <TextBlock Text="Diagnostics" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="Windows measures how long your boot took, which app delayed it, and how worn your battery is - and shows you almost none of it. These settings control what MicaStats records and when it speaks up." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <TextBlock Text="{loc:Text 'Diagnostics'}" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Text 'Windows measures how long your boot took, which app delayed it, and how worn your battery is - and shows you almost none of it. These settings control what MicaStats records and when it speaks up.'}" Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,18">
                             <StackPanel>
@@ -1426,8 +1474,8 @@
                                     </Grid.ColumnDefinitions>
                                     <ui:FontIcon Glyph="&#xE916;" FontSize="22" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Record slowdowns" FontWeight="SemiBold" FontSize="16"/>
-                                        <TextBlock Text="Keeps the last few minutes of per-process activity, so a stall can still be explained once it has passed. Task Manager only shows the present instant." Opacity="0.7" FontSize="12.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{loc:Text 'Record slowdowns'}" FontWeight="SemiBold" FontSize="16"/>
+                                        <TextBlock Text="{loc:Text 'Keeps the last few minutes of per-process activity, so a stall can still be explained once it has passed. Task Manager only shows the present instant.'}" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <ui:ToggleSwitch x:Name="SlowdownRecordingToggle" Grid.Column="2" Toggled="OnDiagnosticsToggle" VerticalAlignment="Center"/>
                                 </Grid>
@@ -1438,8 +1486,8 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Save a report automatically" FontWeight="SemiBold" FontSize="14"/>
-                                        <TextBlock Text="Writes a timeline naming the process when a threshold is held long enough." Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{loc:Text 'Save a report automatically'}" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock Text="{loc:Text 'Writes a timeline naming the process when a threshold is held long enough.'}" Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <ui:ToggleSwitch x:Name="SlowdownAutoCaptureToggle" Grid.Column="1" Toggled="OnDiagnosticsToggle" VerticalAlignment="Center"/>
                                 </Grid>
@@ -1450,13 +1498,13 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="History kept" FontWeight="SemiBold" FontSize="14"/>
-                                        <TextBlock x:Name="SlowdownWindowText" Text="5 minutes" Opacity="0.65" FontSize="12" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{loc:Text 'History kept'}" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock x:Name="SlowdownWindowText" Text="{loc:Text '5 minutes'}" Opacity="0.65" FontSize="12" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <Slider x:Name="SlowdownWindowSlider" Grid.Column="1" Width="200" Minimum="60" Maximum="900" TickFrequency="60" IsSnapToTickEnabled="True" ValueChanged="OnSlowdownWindowChanged" VerticalAlignment="Center"/>
                                 </Grid>
 
-                                <TextBlock Text="Per-process CPU, memory and disk activity come from one kernel snapshot per sample, so recording costs a single system call. Per-process network traffic is deliberately absent: Windows only exposes it to an administrator." Opacity="0.55" FontSize="11.5" TextWrapping="Wrap" Margin="0,16,0,0"/>
+                                <TextBlock Text="{loc:Text 'Per-process CPU, memory and disk activity come from one kernel snapshot per sample, so recording costs a single system call. Per-process network traffic is deliberately absent: Windows only exposes it to an administrator.'}" Opacity="0.55" FontSize="11.5" TextWrapping="Wrap" Margin="0,16,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -1470,8 +1518,8 @@
                                     </Grid.ColumnDefinitions>
                                     <ui:FontIcon Glyph="&#xEA8F;" FontSize="22" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="Tell me when something is wrong" FontWeight="SemiBold" FontSize="16"/>
-                                        <TextBlock Text="A quiet notice in the corner when the processor runs hot, a drive fills up, or the battery wears out. Monitoring you have to watch is monitoring you miss." Opacity="0.7" FontSize="12.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{loc:Text 'Tell me when something is wrong'}" FontWeight="SemiBold" FontSize="16"/>
+                                        <TextBlock Text="{loc:Text 'A quiet notice in the corner when the processor runs hot, a drive fills up, or the battery wears out. Monitoring you have to watch is monitoring you miss.'}" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <ui:ToggleSwitch x:Name="AlertsToggle" Grid.Column="2" Toggled="OnDiagnosticsToggle" VerticalAlignment="Center"/>
                                 </Grid>
@@ -1488,8 +1536,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE71C;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Watch for runaway searches" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="A coding tool that exits without cleaning up can leave a whole-drive file search running at full speed with nothing reading its output. MicaStats notices, and offers to end it. It never ends anything on its own." Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{loc:Text 'Watch for runaway searches'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'A coding tool that exits without cleaning up can leave a whole-drive file search running at full speed with nothing reading its output. MicaStats notices, and offers to end it. It never ends anything on its own.'}" Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch x:Name="WatchOrphansToggle" Grid.Column="2" Toggled="OnDiagnosticsToggle" VerticalAlignment="Center"/>
                             </Grid>
@@ -1504,23 +1552,23 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE83F;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Battery in the taskbar" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock x:Name="BatteryModuleText" Text="Shows charge beside the other modules. Portables only." Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{loc:Text 'Battery in the taskbar'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock x:Name="BatteryModuleText" Text="{loc:Text 'Shows charge beside the other modules. Portables only.'}" Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch x:Name="ShowBatteryToggle" Grid.Column="2" Toggled="OnDiagnosticsToggle" VerticalAlignment="Center"/>
                             </Grid>
                         </Border>
 
                         <WrapPanel Margin="0,4,0,0">
-                            <Button Content="Open Diagnostics" helpers:ButtonIcon.Glyph="&#xE9D9;" Click="OnOpenDiagnosticsWindow" Padding="16,7" Margin="0,0,8,0"/>
-                            <Button Content="Open data folder" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnOpenDiagnosticsFolder" Padding="16,7"/>
+                            <Button Content="{loc:Text 'Open Diagnostics'}" helpers:ButtonIcon.Glyph="&#xE9D9;" Click="OnOpenDiagnosticsWindow" Padding="16,7" Margin="0,0,8,0"/>
+                            <Button Content="{loc:Text 'Open data folder'}" helpers:ButtonIcon.Glyph="&#xE838;" Click="OnOpenDiagnosticsFolder" Padding="16,7"/>
                         </WrapPanel>
                     </StackPanel>
 
                     <!-- Updates -->
                     <StackPanel x:Name="UpdatesSection" Visibility="Collapsed">
-                        <TextBlock Text="Updates" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="MicaStats can check GitHub for new releases. Downloads are verified against the checksum published with each release before anything is installed." Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <TextBlock Text="{loc:Text 'Updates'}" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Text 'MicaStats can check GitHub for new releases. Downloads are verified against the checksum published with each release before anything is installed.'}" Opacity="0.6" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12" Padding="20,18">
                             <StackPanel>
@@ -1535,18 +1583,18 @@
                                         <TextBlock x:Name="UpdateHeadline" Text="MicaStats" FontWeight="SemiBold" FontSize="16"/>
                                         <TextBlock x:Name="UpdateStatusText" Text="" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <Button x:Name="CheckUpdatesButton" Grid.Column="2" Content="Check now" helpers:ButtonIcon.Glyph="&#xE895;" Click="OnCheckUpdates" Padding="16,7" VerticalAlignment="Center"/>
+                                    <Button x:Name="CheckUpdatesButton" Grid.Column="2" Content="{loc:Text 'Check now'}" helpers:ButtonIcon.Glyph="&#xE895;" Click="OnCheckUpdates" Padding="16,7" VerticalAlignment="Center"/>
                                 </Grid>
 
                                 <ProgressBar x:Name="UpdateProgress" Height="4" Margin="0,16,0,0" Minimum="0" Maximum="100" Visibility="Collapsed"/>
 
                                 <WrapPanel x:Name="UpdateActionPanel" Margin="0,16,0,0" Visibility="Collapsed">
-                                    <Button x:Name="InstallUpdateButton" Content="Download and install" helpers:ButtonIcon.Glyph="&#xE896;" Click="OnInstallUpdate" Padding="16,7" Margin="0,0,8,0"/>
-                                    <Button Content="Release notes" helpers:ButtonIcon.Glyph="&#xE8A5;" Click="OnOpenReleases" Padding="16,7" Margin="0,0,8,0"/>
-                                    <Button x:Name="SkipUpdateButton" Content="Skip this version" helpers:ButtonIcon.Glyph="&#xE71A;" Click="OnSkipUpdate" Padding="16,7"/>
+                                    <Button x:Name="InstallUpdateButton" Content="{loc:Text 'Download and install'}" helpers:ButtonIcon.Glyph="&#xE896;" Click="OnInstallUpdate" Padding="16,7" Margin="0,0,8,0"/>
+                                    <Button Content="{loc:Text 'Release notes'}" helpers:ButtonIcon.Glyph="&#xE8A5;" Click="OnOpenReleases" Padding="16,7" Margin="0,0,8,0"/>
+                                    <Button x:Name="SkipUpdateButton" Content="{loc:Text 'Skip this version'}" helpers:ButtonIcon.Glyph="&#xE71A;" Click="OnSkipUpdate" Padding="16,7"/>
                                 </WrapPanel>
 
-                                <TextBlock Text="Installing requires administrator rights, so Windows will ask for permission. MicaStats closes and reopens itself as part of the upgrade." Opacity="0.55" FontSize="11.5" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                                <TextBlock Text="{loc:Text 'Installing requires administrator rights, so Windows will ask for permission. MicaStats closes and reopens itself as part of the upgrade.'}" Opacity="0.55" FontSize="11.5" TextWrapping="Wrap" Margin="0,14,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -1559,8 +1607,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:FontIcon Glyph="&#xE823;" FontSize="20" Foreground="{DynamicResource SystemAccentColorBrush}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Check automatically" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="Looks for a new release once a day, shortly after startup. Nothing is downloaded or installed without your say-so." Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{loc:Text 'Check automatically'}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{loc:Text 'Looks for a new release once a day, shortly after startup. Nothing is downloaded or installed without your say-so.'}" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="2" x:Name="AutoUpdateToggle" Toggled="OnAutoUpdateToggled" VerticalAlignment="Center"/>
                             </Grid>
@@ -1568,31 +1616,157 @@
                     </StackPanel>
 
                     <StackPanel x:Name="AboutSection" Visibility="Collapsed">
-                        <TextBlock Text="About" Foreground="#00CCFF" FontSize="20" Margin="0,0,0,16"/>
-                        
-                        <StackPanel Margin="0,0,0,12">
-                            <TextBlock Text="MicaStats" FontWeight="Bold" FontSize="18"/>
-                            <TextBlock Text="{Binding AppVersion}" Opacity="0.7" FontSize="13"/>
-                            <TextBlock Text="The iStat Menus experience, rebuilt natively for the Windows 11 taskbar. Built with WPF and GDI+ rendering."
-                                       TextWrapping="Wrap" MaxWidth="600" FontSize="14" Margin="0,4,0,0"/>
+                        <TextBlock Text="{loc:Text 'About'}" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,18"/>
+
+                        <!-- The illustration is an offline application resource. Its quiet left side keeps
+                             real product text readable while the glass layers remain visible on the right. -->
+                        <Border x:Name="AboutHero"
+                                MinHeight="230"
+                                CornerRadius="14"
+                                BorderBrush="{DynamicResource SystemControlElevationBorderBrush}"
+                                BorderThickness="1"
+                                Margin="0,0,0,24">
+                            <Border.Background>
+                                <ImageBrush ImageSource="pack://application:,,,/MicaStats;component/Assets/about-banner.png" Stretch="UniformToFill" AlignmentX="Center" AlignmentY="Center"/>
+                            </Border.Background>
+                            <Grid>
+                                <Border CornerRadius="13">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                                            <GradientStop Color="#F20B1118" Offset="0"/>
+                                            <GradientStop Color="#D90B1118" Offset="0.42"/>
+                                            <GradientStop Color="#3D0B1118" Offset="0.78"/>
+                                            <GradientStop Color="#140B1118" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+                                <StackPanel Margin="28,26" VerticalAlignment="Center" MaxWidth="520" HorizontalAlignment="Left">
+                                    <Border Background="#2BFFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1"
+                                            CornerRadius="10" Padding="10,4" HorizontalAlignment="Left" Margin="0,0,0,14">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:FontIcon Glyph="&#xE946;" FontSize="12" Foreground="White" Margin="0,0,7,0"/>
+                                            <TextBlock Text="{Binding AppVersion}" Foreground="White" FontSize="12" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="MicaStats" Foreground="White" FontSize="34" FontWeight="Bold"/>
+                                    <TextBlock Text="{loc:Text 'Your calm command center for system monitoring, focused notes, and private assistant tools.'}"
+                                               Foreground="#E8F7FB" FontSize="15" LineHeight="22" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <ui:FontIcon Glyph="&#xE9D2;" FontSize="18" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" Margin="0,0,10,0"/>
+                            <TextBlock Text="{loc:Text 'Made for your daily flow'}" FontWeight="SemiBold" FontSize="18" VerticalAlignment="Center"/>
                         </StackPanel>
 
-                        <Separator Background="#1AFFFFFF" Margin="0,10"/>
-
-                        <TextBlock Text="Project Links" FontWeight="SemiBold" FontSize="16" Margin="0,20,0,12"/>
-
-                        <UniformGrid Columns="2" HorizontalAlignment="Left">
-                            <ui:HyperlinkButton Content="GitHub (manoi-bms/MicaStats)" NavigateUri="https://github.com/manoi-bms/MicaStats" FontSize="14" Margin="0,0,16,10"/>
-                            <ui:HyperlinkButton Content="Releases" NavigateUri="https://github.com/manoi-bms/MicaStats/releases" FontSize="14" Margin="0,0,0,10"/>
-                            <ui:HyperlinkButton Content="Report an Issue" NavigateUri="https://github.com/manoi-bms/MicaStats/issues" FontSize="14" Margin="0,0,16,10"/>
-                            <ui:HyperlinkButton Content="Fork of kil0bit System Monitor" NavigateUri="https://github.com/kil0bit-kb/kil0bit-system-monitor" FontSize="14" Margin="0,0,0,10"/>
-                        </UniformGrid>
-
-                        <StackPanel Margin="0,30,0,0" Opacity="0.6">
-                            <TextBlock Text="Built with ❤️ by Chaiyaporn Suratemeekul (manoi-bms), with Claude Code" HorizontalAlignment="Center" FontSize="12"/>
-                            <TextBlock Text="UX/UI modeled on iStat Menus for macOS. Fork of kil0bit System Monitor (MIT) by KB - kil0bit." HorizontalAlignment="Center" FontSize="11" Margin="0,2,0,0"/>
-                            <TextBlock Text="© 2026 MicaStats · MIT License" HorizontalAlignment="Center" FontSize="11" Margin="0,2,0,0"/>
+                        <StackPanel x:Name="AboutFeatureCards" Margin="0,0,0,24">
+                            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                    BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1"
+                                    CornerRadius="10" Padding="18,15" Margin="0,0,0,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="38" Height="38" CornerRadius="10" Background="#1F00B7C3" Margin="0,0,14,0">
+                                        <ui:FontIcon Glyph="&#xE9D9;" FontSize="19" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{loc:Text 'See system health at a glance'}" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock Text="{loc:Text 'Track the hardware signals that matter without turning your desktop into a dashboard.'}"
+                                                   FontSize="12.5" Opacity="0.7" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                    BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1"
+                                    CornerRadius="10" Padding="18,15" Margin="0,0,0,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="38" Height="38" CornerRadius="10" Background="#1F00B7C3" Margin="0,0,14,0">
+                                        <ui:FontIcon Glyph="&#xE70B;" FontSize="19" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{loc:Text 'Turn notes into action'}" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock Text="{loc:Text 'Use MicaPad for Markdown, tracked tasks, searchable notes, and a synchronized live preview.'}"
+                                                   FontSize="12.5" Opacity="0.7" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                    BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1"
+                                    CornerRadius="10" Padding="18,15">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="38" Height="38" CornerRadius="10" Background="#1F00B7C3" Margin="0,0,14,0">
+                                        <ui:FontIcon Glyph="&#xE8BD;" FontSize="19" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{loc:Text 'Keep assistance within reach'}" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock Text="{loc:Text 'Bring private assistant and meeting tools into the same focused Windows workspace.'}"
+                                                   FontSize="12.5" Opacity="0.7" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
                         </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <ui:FontIcon Glyph="&#xE71B;" FontSize="18" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" Margin="0,0,10,0"/>
+                            <TextBlock Text="{loc:Text 'Project and support'}" FontWeight="SemiBold" FontSize="18" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Text="{loc:Text 'Explore the source, review releases, or tell us what would make MicaStats better.'}"
+                                   FontSize="12.5" Opacity="0.7" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <WrapPanel x:Name="AboutProjectLinks" Margin="-4,0,0,18">
+                            <ui:HyperlinkButton NavigateUri="https://github.com/manoi-bms/MicaStats" Margin="0,0,8,8" Padding="10,6" HorizontalContentAlignment="Left">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE943;" FontSize="14" Margin="0,0,8,0"/>
+                                    <TextBlock Text="{loc:Text 'GitHub repository'}"/>
+                                </StackPanel>
+                            </ui:HyperlinkButton>
+                            <ui:HyperlinkButton NavigateUri="https://github.com/manoi-bms/MicaStats/releases" Margin="0,0,8,8" Padding="10,6" HorizontalContentAlignment="Left">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE896;" FontSize="14" Margin="0,0,8,0"/>
+                                    <TextBlock Text="{loc:Text 'Releases'}"/>
+                                </StackPanel>
+                            </ui:HyperlinkButton>
+                            <ui:HyperlinkButton NavigateUri="https://github.com/manoi-bms/MicaStats/issues" Margin="0,0,8,8" Padding="10,6" HorizontalContentAlignment="Left">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE90F;" FontSize="14" Margin="0,0,8,0"/>
+                                    <TextBlock Text="{loc:Text 'Report an issue'}"/>
+                                </StackPanel>
+                            </ui:HyperlinkButton>
+                            <ui:HyperlinkButton NavigateUri="https://github.com/kil0bit-kb/kil0bit-system-monitor" Margin="0,0,8,8" Padding="10,6" HorizontalContentAlignment="Left">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE8A7;" FontSize="14" Margin="0,0,8,0"/>
+                                    <TextBlock Text="{loc:Text 'Original kil0bit project'}"/>
+                                </StackPanel>
+                            </ui:HyperlinkButton>
+                        </WrapPanel>
+
+                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlElevationBorderBrush}" BorderThickness="1"
+                                CornerRadius="10" Padding="18" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <ui:FontIcon Glyph="&#xE735;" FontSize="20" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" Margin="0,1,14,0"/>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{loc:Text 'Open source, shaped with care'}" FontWeight="SemiBold" FontSize="14"/>
+                                    <TextBlock Text="{loc:Text 'Built by Chaiyaporn Suratemeekul (manoi-bms), with Claude Code. UX/UI inspired by iStat Menus for macOS. Based on kil0bit System Monitor by KB — kil0bit.'}"
+                                               FontSize="12" Opacity="0.7" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    <TextBlock Text="{loc:Text '© 2026 MicaStats · MIT License'}" FontSize="11.5" Opacity="0.6" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>
@@ -1607,7 +1781,7 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Button x:Name="QuitBtn" Grid.Column="0" Content="Quit Application" helpers:ButtonIcon.Glyph="&#xE7E8;" Click="QuitButton_Click"
+                <Button x:Name="QuitBtn" Grid.Column="0" Content="{loc:Text 'Quit Application'}" helpers:ButtonIcon.Glyph="&#xE7E8;" Click="QuitButton_Click"
                         Style="{StaticResource AccentButtonStyle}"
                         Background="#D32F2F" Foreground="White" 
                         HorizontalAlignment="Left" Padding="16,8" ui:ControlHelper.CornerRadius="4"/>
@@ -1617,11 +1791,11 @@
                         HorizontalAlignment="Center" Padding="16,8" ui:ControlHelper.CornerRadius="4">
                     <StackPanel Orientation="Horizontal">
                         <ui:SymbolIcon Symbol="Refresh" Margin="0,0,8,0" />
-                        <TextBlock Text="Reset All Settings" VerticalAlignment="Center"/>
+                        <TextBlock Text="{loc:Text 'Reset All Settings'}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
 
-                <Button x:Name="SaveCloseBtn" Grid.Column="2" Content="Save &amp; Close" helpers:ButtonIcon.Glyph="&#xE74E;" Click="SaveButton_Click"
+                <Button x:Name="SaveCloseBtn" Grid.Column="2" Content="{loc:Text 'Save &amp; Close'}" helpers:ButtonIcon.Glyph="&#xE74E;" Click="SaveButton_Click"
                         Style="{StaticResource AccentButtonStyle}"
                         HorizontalAlignment="Right" Padding="24,8" ui:ControlHelper.CornerRadius="4"/>
             </Grid>

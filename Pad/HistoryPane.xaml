@@ -2,21 +2,50 @@
     x:Class="Kil0bitSystemMonitor.Pad.HistoryPane"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
     xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers"
     Width="280" Background="{DynamicResource Pad.Chrome}">
 
     <!-- A note's versions, newest first, grouped by day. Selecting one previews it in the window.
          Colors are the MicaPad window's Pad.* brushes, so the pane follows its theme. -->
 
+    <UserControl.Resources>
+        <Style x:Key="PaneFlatButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource Pad.TextSoft}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="Transparent" BorderBrush="Transparent" BorderThickness="1"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Pad.Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource Pad.Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <Border BorderBrush="{DynamicResource Pad.Border}" BorderThickness="1,0,0,0">
         <DockPanel>
             <DockPanel DockPanel.Dock="Top" Margin="12,8,6,8">
-                <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                        FontSize="10" Padding="8,6" ToolTip="Close (Ctrl+Shift+H)" Click="OnCloseClick" />
+                <Button x:Name="CloseButton" x:FieldModifier="internal" Style="{StaticResource PaneFlatButton}"
+                        DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                        FontSize="10" Padding="8,6" ToolTip="{loc:Text 'Close (Ctrl+Shift+H)'}" Click="OnCloseClick" />
                 <helpers:DecorativeIcon x:Name="HeadingGlyph" DockPanel.Dock="Left" Text="&#xE81C;" Margin="0,0,7,0"
                                         FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
                                         Foreground="{DynamicResource Pad.Accent}" VerticalAlignment="Center" />
-                <TextBlock Text="History" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Text="{loc:Text 'History'}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
             </DockPanel>
             <TextBlock x:Name="EmptyText" DockPanel.Dock="Top" Margin="12,0,12,8" TextWrapping="Wrap"
                        Foreground="{DynamicResource Pad.Muted}" FontSize="12" Visibility="Collapsed" />

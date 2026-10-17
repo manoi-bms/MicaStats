@@ -36,6 +36,7 @@ namespace Kil0bitSystemMonitor.Services
         private DateTime _lastNetTime;
         private System.Collections.Generic.List<System.IO.DriveInfo> _cachedDrives = new();
         private DateTime _lastDriveRefresh = DateTime.MinValue;
+        private readonly System.Collections.Generic.Dictionary<string, (ulong FreeBytes, ulong TotalBytes, float SpacePercent, DateTime ReadAt)> _driveSpaceCache = new(StringComparer.OrdinalIgnoreCase);
         private System.Net.NetworkInformation.NetworkInterface[]? _cachedNetworkInterfaces;
         private DateTime _lastNetworkRefresh = DateTime.MinValue;
         private string _netAdapterName = "";
@@ -590,13 +591,32 @@ namespace Kil0bitSystemMonitor.Services
                         if (colonIdx > 0)
                         {
                             string driveLetter = instanceName.Substring(colonIdx - 1, 1);
-                            var drive = new System.IO.DriveInfo(driveLetter);
-                            if (drive.IsReady) {
-                                spacePct = (1.0f - (float)drive.TotalFreeSpace / drive.TotalSize) * 100f;
-                                totalSpaceSize += drive.TotalSize;
-                                totalFreeSpace += drive.TotalFreeSpace;
-                                freeBytes = (ulong)drive.TotalFreeSpace;
-                                totalBytes = (ulong)drive.TotalSize;
+                            if (!_driveSpaceCache.TryGetValue(driveLetter, out var cachedDrive) ||
+                                (now - cachedDrive.ReadAt).TotalSeconds >= 30.0)
+                            {
+                                var drive = new System.IO.DriveInfo(driveLetter);
+                                if (drive.IsReady)
+                                {
+                                    ulong free = (ulong)drive.TotalFreeSpace;
+                                    ulong total = (ulong)drive.TotalSize;
+                                    float pct = total > 0 ? (1.0f - (float)free / total) * 100f : 0f;
+                                    cachedDrive = (free, total, pct, now);
+                                    _driveSpaceCache[driveLetter] = cachedDrive;
+                                }
+                                else
+                                {
+                                    cachedDrive = (0UL, 0UL, 0f, now);
+                                    _driveSpaceCache[driveLetter] = cachedDrive;
+                                }
+                            }
+
+                            if (cachedDrive.TotalBytes > 0)
+                            {
+                                spacePct = cachedDrive.SpacePercent;
+                                freeBytes = cachedDrive.FreeBytes;
+                                totalBytes = cachedDrive.TotalBytes;
+                                totalSpaceSize += (long)totalBytes;
+                                totalFreeSpace += (long)freeBytes;
                             }
                         }
                     } catch { }
@@ -1001,8 +1021,9 @@ namespace Kil0bitSystemMonitor.Services
         {
             try
             {
-                // Cache the result for 2 seconds
-                if ((DateTime.Now - _lastGpuTempTime).TotalSeconds < 2) return _lastGpuTemp;
+                // Cache positive readings for 2s and negative (all fallbacks failed) for 30s
+                double ttlSeconds = _lastGpuTemp > 0 ? 2.0 : 30.0;
+                if ((DateTime.Now - _lastGpuTempTime).TotalSeconds < ttlSeconds) return _lastGpuTemp;
 
                 // Method 0: Cached SMI (Ultra-fast, uses already running process)
                 if (_isNvidiaSelected && _nvidiaTempValue > 0)

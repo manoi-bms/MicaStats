@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows;
@@ -7,6 +8,7 @@ using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using UserControl = System.Windows.Controls.UserControl;
@@ -45,6 +47,8 @@ namespace Kil0bitSystemMonitor.Pad
         private bool _sourceFirstDone;
         private string? _comparedOriginal;
         private string? _comparedResult;
+        private IReadOnlyList<AiToolReviewRow> _toolRows = Array.Empty<AiToolReviewRow>();
+        private bool _canApplyTools;
 
         /// <summary>Builds the pane hidden, empty and dark.</summary>
         public AiPane()
@@ -78,6 +82,43 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>Enter in the instruction box: the instruction, trimmed and never empty.</summary>
         public event Action<string>? InstructionEntered;
+        public event Action<IReadOnlyList<string>>? ToolChangesRequested;
+
+        public void ShowToolReview(IReadOnlyList<AiToolReviewRow> rows, bool canApply, string status, bool credentialsStored = false)
+        {
+            _canApplyTools = canApply;
+            if (!ReferenceEquals(_toolRows, rows))
+            {
+                _toolRows = rows;
+                ToolReviewList.ItemsSource = rows;
+            }
+            ToolReviewPanel.Visibility = When(rows.Count > 0);
+            ToolReviewStatus.Text = UiText.Tr(status);
+            ToolReviewStatus.Visibility = When(status.Length > 0);
+            ToolReviewHelp.Text = UiText.Tr(status == "These changes have already been applied."
+                ? "The reviewed changes have been applied."
+                : credentialsStored ? "Credentials are saved securely. The note still needs its reviewed edit."
+                : "Nothing has changed yet. Choose the items to apply.");
+            ToolApplyButton.IsEnabled = canApply && rows.Any(row => row.Selected);
+        }
+
+        private void OnToolSelectionChanged(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.CheckBox { DataContext: AiToolReviewRow row } box)
+                row.Selected = box.IsChecked == true;
+            ToolApplyButton.IsEnabled = _canApplyTools && _toolRows.Any(row => row.Selected);
+        }
+
+        private void OnReviewTasksClick(object sender, RoutedEventArgs e) =>
+            InstructionEntered?.Invoke(UiText.Tr("Show my pending tasks with their start and finish dates."));
+
+        private void OnProtectPasswordsClick(object sender, RoutedEventArgs e) =>
+            InstructionEntered?.Invoke(UiText.Tr("Find labelled passwords and prepare credential storage for review."));
+
+        private void OnToolApplyClick(object sender, RoutedEventArgs e)
+        {
+            if (_canApplyTools) ToolChangesRequested?.Invoke(_toolRows.Where(row => row.Selected).Select(row => row.Id).ToArray());
+        }
 
         /// <summary>
         /// The shortest time between two redraws of a result that is streaming in. A redraw that
@@ -151,14 +192,15 @@ namespace Kil0bitSystemMonitor.Pad
             bool streaming = sameRequest && Continues(view);   // asked once the toggle is settled: the form the text is drawn in counts
             _view = view;
 
-            TitleText.Text = view.Title;
-            SourceText.Text = view.SourceLine;
-            ActivityText.Text = view.Activity;
+            TitleText.Text = UiText.Tr(view.Title);
+            SourceText.Text = UiText.Tr(view.SourceLine);
+            ActivityText.Text = UiText.Tr(view.Activity);
             ActivityRow.Visibility = When(view.Activity.Length > 0);   // the dots in it move only while it is shown
 
             // The next question starts with an empty box.
             if (!view.AskForInstruction && InstructionBox.Visibility == Visibility.Visible) InstructionBox.Clear();
             InstructionBox.Visibility = When(view.AskForInstruction);
+            ToolIdeas.Visibility = When(view.AskForInstruction);
 
             // The four actions need a result: none is offered while one streams in, or while the
             // pane still waits for the instruction that asks for it.
@@ -173,9 +215,9 @@ namespace Kil0bitSystemMonitor.Pad
             CopyButton.IsEnabled = view.CanCopy;
             RetryButton.IsEnabled = view.CanRetry;
 
-            InfoText.Text = view.Info;
+            InfoText.Text = UiText.Tr(view.Info);
             InfoText.Visibility = When(view.Info.Length > 0);
-            StatusText.Text = view.Status;
+            StatusText.Text = UiText.Tr(view.Status);
             StatusText.Visibility = When(view.Status.Length > 0);
 
             ChangesToggle.Visibility = When(view.CanShowChanges);
@@ -197,6 +239,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         public void Clear()
         {
+            ShowToolReview(Array.Empty<AiToolReviewRow>(), false, "");
             _redraw.Forget();
             _view = null;
             _drawn = false;
@@ -210,6 +253,7 @@ namespace Kil0bitSystemMonitor.Pad
             ChangesList.ItemsSource = null;
             ChangesSummary.Text = "";
             InstructionBox.Clear();
+            ToolIdeas.Visibility = Visibility.Collapsed;
             TitleText.Text = "";
             SourceText.Text = "";
             ActivityText.Text = "";
@@ -383,7 +427,7 @@ namespace Kil0bitSystemMonitor.Pad
             _comparedResult = view.Result;
 
             DiffOutcome outcome = HistoryDiff.Compare(view.Original, view.Result);
-            ChangesSummary.Text = outcome.Summary;   // the counts, "No changes" or "Too large to compare"
+            ChangesSummary.Text = UiText.Tr(outcome.Summary);   // the counts, "No changes" or "Too large to compare"
             ChangesList.ItemsSource = outcome.Rows.Select(row => new AiChangeRow(row.Kind, DiffPreview.GlyphOf(row.Kind), row.Text)).ToList();
         }
 

@@ -2,6 +2,7 @@
     x:Class="Kil0bitSystemMonitor.Pad.MicaPadWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
     xmlns:pad="clr-namespace:Kil0bitSystemMonitor.Services.Pad"
@@ -103,15 +104,15 @@
                     <StackPanel MaxWidth="420">
                         <TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding Meta.SourcePath}" TextWrapping="Wrap" Margin="0,3,0,0" />
-                        <TextBlock Text="Right-click to change tab color" Margin="0,5,0,0" FontSize="11" />
+                        <TextBlock Text="{loc:Text 'Right-click to change tab color'}" Margin="0,5,0,0" FontSize="11" />
                     </StackPanel>
                 </Border.ToolTip>
                 <DockPanel LastChildFill="True">
                     <Button x:Name="TabClose" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}" Padding="5,3" FontSize="9"
-                            Content="&#xE711;" Tag="{Binding}" Click="OnTabCloseClick" ToolTip="Close (Ctrl+W)"
+                            Content="&#xE711;" Tag="{Binding}" Click="OnTabCloseClick" ToolTip="{loc:Text 'Close (Ctrl+W)'}"
                             Visibility="Hidden" Focusable="False" AutomationProperties.Name="{Binding Title, StringFormat='Close {0}'}" />
                     <TextBlock DockPanel.Dock="Right" Text="•" Foreground="{DynamicResource Pad.Accent}" Margin="4,0,2,0"
-                               VerticalAlignment="Center" ToolTip="Edited since the file was last saved"
+                               VerticalAlignment="Center" ToolTip="{loc:Text 'Edited since the file was last saved'}"
                                Visibility="{Binding HasUnsavedEdits, Converter={StaticResource BoolToVisibility}}" />
                     <Ellipse x:Name="TabColorMarker" DockPanel.Dock="Left" Width="7" Height="7"
                              Margin="0,0,8,0" VerticalAlignment="Center" IsHitTestVisible="False">
@@ -164,29 +165,29 @@
         <!-- Row 0: tabs. Row 1: info bar. Row 2: find bar. Row 3: editor, and history, search or AI. Row 4: status. -->
         <DockPanel Grid.Row="0" Background="{DynamicResource Pad.Chrome}" LastChildFill="True">
             <Button x:Name="MenuButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
-                    Content="&#xE700;" ToolTip="Menu" Click="OnMenuButtonClick" Margin="0,4,6,0" />
+                    Content="&#xE700;" ToolTip="{loc:Text 'Menu'}" Click="OnMenuButtonClick" Margin="0,4,6,0" />
             <Button x:Name="SearchButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
-                    Content="&#xE721;" ToolTip="Search notes (Ctrl+Shift+F)" Click="OnSearchButtonClick" Margin="0,4,0,0" />
+                    Content="&#xE721;" ToolTip="{loc:Text 'Search notes (Ctrl+Shift+F)'}" Click="OnSearchButtonClick" Margin="0,4,0,0" />
             <Button x:Name="ClosedNotesButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
-                    Content="&#xE70D;" ToolTip="Closed notes" Click="OnClosedNotesClick" Margin="0,4,0,0" />
+                    Content="&#xE70D;" ToolTip="{loc:Text 'Closed notes'}" Click="OnClosedNotesClick" Margin="0,4,0,0" />
             <Button x:Name="ThemeButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}"
                     Click="OnThemeButtonClick" Margin="0,4,0,0" />
             <Button x:Name="OpenNotesButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Padding="8,6"
-                    ToolTip="Find an open note (Ctrl+P)" Click="OnOpenNotesClick" Margin="2,4,0,0"
-                    AutomationProperties.Name="Open notes">
+                    ToolTip="{loc:Text 'Find an open note (Ctrl+P)'}" Click="OnOpenNotesClick" Margin="2,4,0,0"
+                    AutomationProperties.Name="{loc:Text 'Open notes'}">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Notes" />
+                    <TextBlock Text="{loc:Text 'Notes'}" />
                     <TextBlock x:Name="OpenNotesCount" Margin="5,0,0,0" Foreground="{DynamicResource Pad.Muted}" />
                     <TextBlock Text="&#xE70D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="9" Margin="6,3,0,0" />
                 </StackPanel>
             </Button>
             <Button x:Name="NewNoteButton" DockPanel.Dock="Right" Style="{StaticResource GlyphButton}" Content="&#xE710;"
-                    ToolTip="New note (Ctrl+N)" AutomationProperties.Name="New note" Click="OnNewTabClick"
+                    ToolTip="{loc:Text 'New note (Ctrl+N)'}" AutomationProperties.Name="{loc:Text 'New note'}" Click="OnNewTabClick"
                     VerticalAlignment="Center" Margin="2,4,0,0" />
             <RepeatButton x:Name="ScrollRightButton" DockPanel.Dock="Right" Style="{StaticResource ScrollButton}"
-                          Content="&#xE76C;" Click="OnScrollTabsRight" ToolTip="Next tabs" AutomationProperties.Name="Next tabs" Visibility="Collapsed" />
+                          Content="&#xE76C;" Click="OnScrollTabsRight" ToolTip="{loc:Text 'Next tabs'}" AutomationProperties.Name="{loc:Text 'Next tabs'}" Visibility="Collapsed" />
             <RepeatButton x:Name="ScrollLeftButton" DockPanel.Dock="Left" Style="{StaticResource ScrollButton}"
-                          Content="&#xE76B;" Click="OnScrollTabsLeft" ToolTip="Previous tabs" AutomationProperties.Name="Previous tabs" Visibility="Collapsed" />
+                          Content="&#xE76B;" Click="OnScrollTabsLeft" ToolTip="{loc:Text 'Previous tabs'}" AutomationProperties.Name="{loc:Text 'Previous tabs'}" Visibility="Collapsed" />
             <ScrollViewer x:Name="TabScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
                           ScrollChanged="OnTabScrollChanged" PreviewMouseWheel="OnTabStripMouseWheel" Margin="6,6,0,0">
                 <ItemsControl x:Name="TabStrip" ItemTemplate="{StaticResource TabTemplate}">
@@ -203,7 +204,7 @@
                 BorderThickness="0,0,0,1" Padding="12,6" Visibility="Collapsed">
             <DockPanel LastChildFill="True">
                 <Button DockPanel.Dock="Right" Style="{StaticResource GlyphButton}" Content="&#xE711;" FontSize="9"
-                        ToolTip="Dismiss" Click="OnInfoCloseClick" />
+                        ToolTip="{loc:Text 'Dismiss'}" Click="OnInfoCloseClick" />
                 <Button x:Name="InfoSecondary" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
                         Margin="4,0,0,0" Click="OnInfoSecondaryClick" />
                 <Button x:Name="InfoPrimary" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
@@ -214,19 +215,35 @@
 
         <local:FindReplaceBar x:Name="FindBar" Grid.Row="2" />
 
-        <Grid x:Name="EditorArea" Grid.Row="3">
+        <!-- Fractional split widths must survive measure and arrange. Rounding the columns
+             gives the wrapped editor different widths and can keep rebuilding its lines. -->
+        <Grid x:Name="EditorArea" Grid.Row="3" Background="{DynamicResource Pad.Background}" UseLayoutRounding="False">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="EditorColumn" Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition x:Name="PaneColumn" Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <avalon:TextEditor x:Name="Editor" Grid.Column="0"
+            <DockPanel Grid.Column="0" Background="{DynamicResource Pad.Background}">
+                <Border x:Name="MarkdownSourceHeader" DockPanel.Dock="Top" Visibility="Collapsed"
+                        Padding="10,8" Background="{DynamicResource Pad.Popup}"
+                        BorderBrush="{DynamicResource Pad.Border}" BorderThickness="0,0,0,1">
+                    <WrapPanel>
+                        <helpers:DecorativeIcon Text="&#xE943;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                                Foreground="{DynamicResource Pad.Accent}" Margin="0,0,7,0" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Text 'Source'}" Foreground="{DynamicResource Pad.Text}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Text 'Original Markdown · Editable'}" Foreground="{DynamicResource Pad.Muted}" FontSize="11.5"
+                                   Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </WrapPanel>
+                </Border>
+            <avalon:TextEditor x:Name="Editor"
+                               AutomationProperties.Name="{loc:Text 'Note source editor'}"
                                Background="{DynamicResource Pad.Background}" Foreground="{DynamicResource Pad.Text}"
                                FontFamily="Cascadia Mono, Consolas" FontSize="14"
                                ShowLineNumbers="True" WordWrap="True"
                                HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                Padding="6,4,0,0" />
+            </DockPanel>
 
             <DockPanel x:Name="PreviewPanel" Grid.Column="0" Background="{DynamicResource Pad.Background}" Visibility="Collapsed">
                 <Border DockPanel.Dock="Top" Background="{DynamicResource Pad.Banner}" BorderBrush="{DynamicResource Pad.BannerBorder}"
@@ -235,12 +252,12 @@
                         <TextBlock x:Name="PreviewText" FontSize="12" TextWrapping="Wrap" />
                         <TextBlock x:Name="DiffSummary" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
                         <WrapPanel HorizontalAlignment="Right" Margin="0,4,0,0">
-                            <Button x:Name="CompareButton" Style="{StaticResource FlatButton}" Content="Compare with current"
-                                    helpers:ButtonIcon.Glyph="&#xE89A;" ToolTip="Show what changed between this version and the note as it is now" Click="OnCompareClick" />
-                            <Button x:Name="RestoreButton" Style="{StaticResource FlatButton}" Content="Restore"
+                            <Button x:Name="CompareButton" Style="{StaticResource FlatButton}" Content="{loc:Text 'Compare with current'}"
+                                    helpers:ButtonIcon.Glyph="&#xE89A;" ToolTip="{loc:Text 'Show what changed between this version and the note as it is now'}" Click="OnCompareClick" />
+                            <Button x:Name="RestoreButton" Style="{StaticResource FlatButton}" Content="{loc:Text 'Restore'}"
                                     helpers:ButtonIcon.Glyph="&#xE777;" Foreground="{DynamicResource Pad.Accent}" Click="OnPreviewRestoreClick" />
-                            <Button Style="{StaticResource FlatButton}" Content="Copy all" helpers:ButtonIcon.Glyph="&#xE8C8;" Click="OnPreviewCopyClick" />
-                            <Button Style="{StaticResource FlatButton}" Content="Back" helpers:ButtonIcon.Glyph="&#xE72B;" Click="OnPreviewBackClick" />
+                            <Button Style="{StaticResource FlatButton}" Content="{loc:Text 'Copy all'}" helpers:ButtonIcon.Glyph="&#xE8C8;" Click="OnPreviewCopyClick" />
+                            <Button Style="{StaticResource FlatButton}" Content="{loc:Text 'Back'}" helpers:ButtonIcon.Glyph="&#xE72B;" Click="OnPreviewBackClick" />
                         </WrapPanel>
                     </StackPanel>
                 </Border>
@@ -250,18 +267,40 @@
                                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
             </DockPanel>
 
-            <!-- One of the three at a time: they share the column. The splitter is for the AI pane and Search notes;
-                 History keeps its own width. -->
+            <!-- Markdown preview, Search, AI and History share the right column.
+                 Markdown keeps its own divider ratio; utility panes retain their width preference. -->
             <GridSplitter x:Name="PaneSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                           ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" Focusable="True" Visibility="Collapsed"
-                          Background="{DynamicResource Pad.Border}" Cursor="SizeWE"
-                          ToolTip="Drag to resize; double-click to reset"
+                          Cursor="SizeWE" AutomationProperties.Name="{loc:Text 'Resize source and preview or utility pane'}"
+                          ToolTip="{loc:Text 'Drag to resize; double-click to reset'}"
                           DragStarted="OnPaneSplitterDragStarted" DragCompleted="OnPaneSplitterDragCompleted" MouseDoubleClick="OnPaneSplitterDoubleClick"
                           PreviewKeyDown="OnPaneSplitterPreviewKeyDown" KeyUp="OnPaneSplitterKeyUp"
-                          LostKeyboardFocus="OnPaneSplitterLostKeyboardFocus" />
+                          LostKeyboardFocus="OnPaneSplitterLostKeyboardFocus">
+                <GridSplitter.Style>
+                    <Style TargetType="GridSplitter">
+                        <Setter Property="Background" Value="{DynamicResource Pad.Border}" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="GridSplitter">
+                                    <Border Background="{TemplateBinding Background}" />
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource Pad.Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource Pad.Accent}" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </GridSplitter.Style>
+            </GridSplitter>
             <local:HistoryPane x:Name="HistoryPanel" Grid.Column="2" />
             <local:SearchPane x:Name="SearchPanel" Grid.Column="2" />
             <local:AiPane x:Name="AiPanel" Grid.Column="2" Visibility="Collapsed" />
+            <local:MarkdownPreviewPane x:Name="MarkdownPreviewPanel" Grid.Column="2" Visibility="Collapsed" />
 
             <Border x:Name="GoToLineBox" Grid.Column="0" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Margin="0,8,24,0" Padding="10,6" Background="{DynamicResource Pad.Popup}" BorderBrush="{DynamicResource Pad.PopupBorder}"
@@ -269,7 +308,7 @@
                 <StackPanel Orientation="Horizontal">
                     <helpers:DecorativeIcon Text="&#xE8AD;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Margin="0,0,8,0"
                                            Foreground="{DynamicResource Pad.Accent}" VerticalAlignment="Center" />
-                    <TextBlock Text="Go to line" VerticalAlignment="Center" Foreground="{DynamicResource Pad.Muted}" FontSize="12" Margin="0,0,8,0" />
+                    <TextBlock Text="{loc:Text 'Go to line'}" VerticalAlignment="Center" Foreground="{DynamicResource Pad.Muted}" FontSize="12" Margin="0,0,8,0" />
                     <TextBox x:Name="GoToLineInput" Width="90" KeyDown="OnGoToLineKeyDown" LostKeyboardFocus="OnGoToLineLostFocus" />
                 </StackPanel>
             </Border>
@@ -285,15 +324,19 @@
                            Visibility="Collapsed" TextWrapping="Wrap"
                            MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=WrapPanel}}" />
                 <Button x:Name="EncodingButton" Style="{StaticResource FlatButton}" FontSize="11.5"
-                        helpers:ButtonIcon.Glyph="&#xE8C1;" ToolTip="Encoding used when saving to the file" Click="OnEncodingClick" />
+                        helpers:ButtonIcon.Glyph="&#xE8C1;" ToolTip="{loc:Text 'Encoding used when saving to the file'}" Click="OnEncodingClick" />
                 <Button x:Name="EolButton" Style="{StaticResource FlatButton}" FontSize="11.5"
-                        helpers:ButtonIcon.Glyph="&#xE751;" ToolTip="Line ending" Click="OnEolClick" />
+                        helpers:ButtonIcon.Glyph="&#xE751;" ToolTip="{loc:Text 'Line ending'}" Click="OnEolClick" />
                 <Button x:Name="LanguageButton" Style="{StaticResource FlatButton}" FontSize="11.5"
-                        helpers:ButtonIcon.Glyph="&#xE943;" ToolTip="Language of this tab: colors and formatting" Click="OnLanguageClick" />
+                        helpers:ButtonIcon.Glyph="&#xE943;" ToolTip="{loc:Text 'Language of this tab: colors and formatting'}" Click="OnLanguageClick" />
                 <TextBlock x:Name="SaveText" VerticalAlignment="Center" FontSize="11.5"
                            Foreground="{DynamicResource Pad.Muted}" Margin="12,0,4,0" />
                 <Button x:Name="HistoryButton" Style="{StaticResource FlatButton}" FontSize="11.5"
-                        Content="History" helpers:ButtonIcon.Glyph="&#xE81C;" ToolTip="Versions of this note (Ctrl+Shift+H)" Click="OnHistoryClick" />
+                        Content="{loc:Text 'History'}" helpers:ButtonIcon.Glyph="&#xE81C;" ToolTip="{loc:Text 'Versions of this note (Ctrl+Shift+H)'}" Click="OnHistoryClick" />
+                <Button x:Name="MarkdownSplitButton" Style="{StaticResource FlatButton}" FontSize="11.5"
+                        Content="{loc:Text 'Split preview'}" helpers:ButtonIcon.Glyph="&#xE89A;"
+                        AutomationProperties.Name="{loc:Text 'Markdown split preview'}"
+                        ToolTip="{loc:Text 'Edit Markdown source beside a live preview (Ctrl+Shift+M)'}" Click="OnMarkdownSplitClick" />
             </WrapPanel>
         </Border>
 
@@ -303,11 +346,11 @@
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <helpers:DecorativeIcon Text="&#xE8AC;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Margin="0,0,8,0"
                                                Foreground="{DynamicResource Pad.Accent}" VerticalAlignment="Center" />
-                        <TextBlock Text="Rename note" FontWeight="SemiBold" Foreground="{DynamicResource Pad.WindowText}" />
+                        <TextBlock Text="{loc:Text 'Rename note'}" FontWeight="SemiBold" Foreground="{DynamicResource Pad.WindowText}" />
                     </StackPanel>
-                    <TextBox x:Name="RenameBox" KeyDown="OnRenameKeyDown" ui:ControlHelper.PlaceholderText="Tab name (empty for automatic)"
-                             AutomationProperties.Name="Note name" />
-                    <TextBlock Text="Enter to save · Esc to cancel" Foreground="{DynamicResource Pad.Muted}" FontSize="11" Margin="0,8,0,0" />
+                    <TextBox x:Name="RenameBox" KeyDown="OnRenameKeyDown" ui:ControlHelper.PlaceholderText="{loc:Text 'Tab name (empty for automatic)'}"
+                             AutomationProperties.Name="{loc:Text 'Note name'}" />
+                    <TextBlock Text="{loc:Text 'Enter to save · Esc to cancel'}" Foreground="{DynamicResource Pad.Muted}" FontSize="11" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
         </Popup>
@@ -320,18 +363,18 @@
         </Popup>
 
         <Popup x:Name="ClosedPopup" StaysOpen="False" Placement="Bottom" AllowsTransparency="True"
-               PlacementTarget="{Binding ElementName=ClosedNotesButton}">
+               PlacementTarget="{Binding ElementName=ClosedNotesButton}" PreviewKeyDown="OnClosedPopupKeyDown">
             <Border Background="{DynamicResource Pad.Popup}" BorderBrush="{DynamicResource Pad.PopupBorder}" BorderThickness="1" CornerRadius="8" Padding="8" Width="360">
                 <StackPanel>
-                    <TextBox x:Name="ClosedSearch" ui:ControlHelper.PlaceholderText="Search closed notes" TextChanged="OnClosedSearchChanged" />
+                    <TextBox x:Name="ClosedSearch" ui:ControlHelper.PlaceholderText="{loc:Text 'Search closed notes'}" TextChanged="OnClosedSearchChanged" />
                     <ListBox x:Name="ClosedList" MaxHeight="360" Margin="0,6,0,0" Background="Transparent" BorderThickness="0"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" MouseDoubleClick="OnClosedListDoubleClick">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <DockPanel Width="320">
-                                    <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Delete"
-                                            helpers:ButtonIcon.Glyph="&#xE74D;" Tag="{Binding}" Click="OnClosedDeleteClick" ToolTip="Move to the Recycle Bin" />
-                                    <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Reopen"
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="{loc:Text 'Delete'}"
+                                            helpers:ButtonIcon.Glyph="&#xE74D;" Tag="{Binding}" Click="OnClosedDeleteClick" ToolTip="{loc:Text 'Move to the Recycle Bin'}" />
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="{loc:Text 'Reopen'}"
                                             helpers:ButtonIcon.Glyph="&#xE777;" Foreground="{DynamicResource Pad.Accent}" Tag="{Binding}" Click="OnClosedReopenClick" />
                                     <StackPanel>
                                         <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontSize="12.5" />
@@ -341,7 +384,7 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-                    <TextBlock x:Name="ClosedEmpty" Text="No closed notes." Foreground="{DynamicResource Pad.Muted}" Margin="4,8" Visibility="Collapsed" />
+                    <TextBlock x:Name="ClosedEmpty" Text="{loc:Text 'No closed notes.'}" Foreground="{DynamicResource Pad.Muted}" Margin="4,8" Visibility="Collapsed" />
                 </StackPanel>
             </Border>
         </Popup>
@@ -353,5 +396,25 @@
 
         <!-- The credential vault's questions and revealed values, over the editor and history (row 3); last, so it is on top. -->
         <local:VaultCard x:Name="VaultCard" Grid.Row="3" />
+
+        <!-- StackChan presence: when someone stands behind the owner, the whole window is covered until
+             they leave or the owner clicks. Last child, so it sits above every row and the vault card. -->
+        <Button x:Name="PrivacyShield" Grid.Row="0" Grid.RowSpan="5" Visibility="Collapsed" Cursor="Hand"
+                Click="OnPrivacyShieldClick" AutomationProperties.Name="{loc:Text 'Someone is behind you. Click to show your notes.'}">
+            <Button.Template>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{DynamicResource Pad.Background}">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="&#xE72E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="40"
+                                       HorizontalAlignment="Center" Foreground="{DynamicResource Pad.Accent}" />
+                            <TextBlock Text="{loc:Text 'Someone is behind you'}" FontSize="20" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" Margin="0,14,0,4" Foreground="{DynamicResource Pad.WindowText}" />
+                            <TextBlock Text="{loc:Text 'StackChan hid your notes. Click anywhere to show them again.'}" FontSize="13"
+                                       HorizontalAlignment="Center" Foreground="{DynamicResource Pad.Muted}" />
+                        </StackPanel>
+                    </Border>
+                </ControlTemplate>
+            </Button.Template>
+        </Button>
     </Grid>
 </Window>

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Xml.Linq;
 using Kil0bitSystemMonitor.Services.Pad;
 using Xunit;
 
@@ -45,15 +46,16 @@ namespace Kil0bitSystemMonitor.Tests
         public void Settings_has_the_credentials_card_with_its_three_buttons()
         {
             string xaml = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml"));
-            Assert.Contains("Text=\"Credentials\"", xaml);
+            XDocument markup = UiMarkup.Load("SettingsWindow.xaml");
+            UiMarkup.Localized(markup, "Text", "Credentials");
             Assert.Contains("x:Name=\"PadVaultStatus\"", xaml);
             Assert.Contains("Glyph=\"&#xE72E;\"", xaml);
             Assert.Contains("x:Name=\"PadVaultChangePin\"", xaml);
             Assert.Contains("x:Name=\"PadVaultLock\"", xaml);
             Assert.Contains("x:Name=\"PadVaultReset\"", xaml);
-            Assert.Contains("Content=\"Change PIN&#x2026;\"", xaml);
-            Assert.Contains("Content=\"Lock now\"", xaml);
-            Assert.Contains("Content=\"Reset vault&#x2026;\"", xaml);
+            UiMarkup.Localized(markup, "Content", "Change PIN…");
+            UiMarkup.Localized(markup, "Content", "Lock now");
+            UiMarkup.Localized(markup, "Content", "Reset vault…");
             Assert.True(xaml.IndexOf("x:Name=\"PadThemeBox\"", StringComparison.Ordinal) < xaml.IndexOf("x:Name=\"PadVaultStatus\"", StringComparison.Ordinal));
         }
 

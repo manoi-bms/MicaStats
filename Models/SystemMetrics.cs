@@ -171,6 +171,7 @@ namespace Kil0bitSystemMonitor.Models
         public const int CurrentVersion = 1;
 
         private int _configVersion = CurrentVersion;
+        private string _appLanguage = "th";
 
         private bool _showOverlay = true;
         private bool _lockPosition = false;
@@ -279,6 +280,16 @@ namespace Kil0bitSystemMonitor.Models
         private string? _diskAccentColorHex = null;
 
         public int ConfigVersion { get => _configVersion; set { Set(ref _configVersion, value); } }
+
+        /// <summary>
+        /// Language used by application chrome. This deliberately does not set the process culture:
+        /// notes, timestamps and imported data must keep their existing formatting semantics.
+        /// </summary>
+        public string AppLanguage
+        {
+            get => _appLanguage;
+            set => Set(ref _appLanguage, string.Equals(value?.Trim(), "en", StringComparison.OrdinalIgnoreCase) ? "en" : "th");
+        }
 
         public bool ShowOverlay { get => _showOverlay; set { Set(ref _showOverlay, value); } }
         public bool LockPosition { get => _lockPosition; set { Set(ref _lockPosition, value); } }
@@ -601,6 +612,16 @@ namespace Kil0bitSystemMonitor.Models
         /// </summary>
         public bool PadMarkdown { get => _padMarkdown; set { Set(ref _padMarkdown, value); } }
 
+        /// <summary>Show original Markdown beside a read-only live preview when that workspace is available.</summary>
+        public bool PadMarkdownSplitPreview { get => _padMarkdownSplitPreview; set { Set(ref _padMarkdownSplitPreview, value); } }
+
+        /// <summary>The preview's share of the source/preview workspace; independent of AI/Search pane width.</summary>
+        public double PadMarkdownPreviewRatio
+        {
+            get => _padMarkdownPreviewRatio;
+            set { Set(ref _padMarkdownPreviewRatio, double.IsFinite(value) ? Math.Clamp(value, 0.2, 0.8) : 0.5); }
+        }
+
         /// <summary>Auto-close brackets and quotes in MicaPad.</summary>
         public bool PadAutoClose { get => _padAutoClose; set { Set(ref _padAutoClose, value); } }
 
@@ -718,6 +739,100 @@ namespace Kil0bitSystemMonitor.Models
         public string MeetingPlaybackDeviceId { get => _meetingPlaybackDeviceId; set => Set(ref _meetingPlaybackDeviceId, value ?? ""); }
         public string MeetingVoice { get => _meetingVoice; set => Set(ref _meetingVoice, string.IsNullOrWhiteSpace(value) ? "default" : value.Trim()); }
 
+        // ----- StackChan companion -----------------------------------------------------------
+        // The remembered address identifies only the robot the user selected. MicaStats never
+        // connects to an arbitrary nearby BLE device, and automatic head movement stays opt-in.
+        private bool _stackChanEnabled;
+        private bool _stackChanUseUsb;
+        private bool _stackChanAutoReconnect;
+        private string _stackChanDeviceAddress = "";
+        private string _stackChanDeviceName = "";
+        private bool _stackChanReactToLoad = true;
+        private bool _stackChanReactToAlerts = true;
+        private bool _stackChanReactToAi = true;
+        private bool _stackChanReactToMeeting = true;
+        private bool _stackChanAllowAutoMotion;
+        private bool _stackChanQuietMode;
+        private int _stackChanLedBrightness = 30;
+        private int _stackChanUpdateSeconds = 5;
+
+        public bool StackChanEnabled { get => _stackChanEnabled; set => Set(ref _stackChanEnabled, value); }
+        public bool StackChanUseUsb { get => _stackChanUseUsb; set => Set(ref _stackChanUseUsb, value); }
+        public bool StackChanAutoReconnect { get => _stackChanAutoReconnect; set => Set(ref _stackChanAutoReconnect, value); }
+        // The companion lives in robot memory; after a robot restart, reconnecting loads it again (RAM only, no flash).
+        private bool _stackChanAutoStartCompanion = true;
+        public bool StackChanAutoStartCompanion { get => _stackChanAutoStartCompanion; set => Set(ref _stackChanAutoStartCompanion, value); }
+        public string StackChanDeviceAddress { get => _stackChanDeviceAddress; set => Set(ref _stackChanDeviceAddress, (value ?? "").Trim()); }
+        public string StackChanDeviceName { get => _stackChanDeviceName; set => Set(ref _stackChanDeviceName, (value ?? "").Trim()); }
+        public bool StackChanReactToLoad { get => _stackChanReactToLoad; set => Set(ref _stackChanReactToLoad, value); }
+        public bool StackChanReactToAlerts { get => _stackChanReactToAlerts; set => Set(ref _stackChanReactToAlerts, value); }
+        public bool StackChanReactToAi { get => _stackChanReactToAi; set => Set(ref _stackChanReactToAi, value); }
+        public bool StackChanReactToMeeting { get => _stackChanReactToMeeting; set => Set(ref _stackChanReactToMeeting, value); }
+        public bool StackChanAllowAutoMotion { get => _stackChanAllowAutoMotion; set => Set(ref _stackChanAllowAutoMotion, value); }
+        public bool StackChanQuietMode { get => _stackChanQuietMode; set => Set(ref _stackChanQuietMode, value); }
+        public int StackChanLedBrightness { get => _stackChanLedBrightness; set => Set(ref _stackChanLedBrightness, Math.Clamp(value, 0, 100)); }
+        public int StackChanUpdateSeconds { get => _stackChanUpdateSeconds; set => Set(ref _stackChanUpdateSeconds, Math.Clamp(value, 2, 60)); }
+
+        // Presence: the robot camera, analysed in memory on this PC's GPU. Off until the owner turns it on.
+        private bool _stackChanPresenceEnabled;
+        private bool _stackChanGuardVault = true;
+        private bool _stackChanGuardBlur = true;
+        private bool _stackChanLockWindowsWhenAway;
+        private int _stackChanLockWindowsMinutes = 5;
+        private int _stackChanBreakMinutes = 50;
+        private bool _stackChanHeadInvertYaw;
+        private bool _stackChanHeadInvertPitch;
+        private bool _stackChanHeadDirectionChecked;
+
+        public bool StackChanPresenceEnabled { get => _stackChanPresenceEnabled; set => Set(ref _stackChanPresenceEnabled, value); }
+        public bool StackChanGuardVault { get => _stackChanGuardVault; set => Set(ref _stackChanGuardVault, value); }
+        public bool StackChanGuardBlur { get => _stackChanGuardBlur; set => Set(ref _stackChanGuardBlur, value); }
+        public bool StackChanLockWindowsWhenAway { get => _stackChanLockWindowsWhenAway; set => Set(ref _stackChanLockWindowsWhenAway, value); }
+        public int StackChanLockWindowsMinutes { get => _stackChanLockWindowsMinutes; set => Set(ref _stackChanLockWindowsMinutes, Math.Clamp(value, 1, 60)); }
+        public int StackChanBreakMinutes { get => _stackChanBreakMinutes; set => Set(ref _stackChanBreakMinutes, Math.Clamp(value, 15, 180)); }
+        public bool StackChanHeadInvertYaw { get => _stackChanHeadInvertYaw; set => Set(ref _stackChanHeadInvertYaw, value); }
+        public bool StackChanHeadInvertPitch { get => _stackChanHeadInvertPitch; set => Set(ref _stackChanHeadInvertPitch, value); }
+        public bool StackChanHeadDirectionChecked { get => _stackChanHeadDirectionChecked; set => Set(ref _stackChanHeadDirectionChecked, value); }
+
+        // ----- Turzx USB display -------------------------------------------------------------
+        private bool _turzxEnabled;
+        private bool _turzxAutoConnect = true;
+        private string _turzxPortName = "";
+        private string _turzxDeviceName = "";
+        private string _turzxOrientation = "Landscape";
+        private int _turzxBrightness = 85;
+        private string _turzxViewMode = "Dashboard";
+
+        public bool TurzxEnabled { get => _turzxEnabled; set => Set(ref _turzxEnabled, value); }
+        public bool TurzxAutoConnect { get => _turzxAutoConnect; set => Set(ref _turzxAutoConnect, value); }
+        public string TurzxPortName
+        {
+            get => _turzxPortName;
+            set => Set(ref _turzxPortName, (value ?? "").Trim().ToUpperInvariant());
+        }
+        public string TurzxDeviceName
+        {
+            get => _turzxDeviceName;
+            set => Set(ref _turzxDeviceName, (value ?? "").Trim());
+        }
+        public string TurzxOrientation
+        {
+            get => _turzxOrientation;
+            set => Set(ref _turzxOrientation, Kil0bitSystemMonitor.Services.Turzx.TurzxDimensions.FormatOrientation(
+                Kil0bitSystemMonitor.Services.Turzx.TurzxDimensions.ParseOrientation(value)));
+        }
+        public int TurzxBrightness
+        {
+            get => _turzxBrightness;
+            set => Set(ref _turzxBrightness, Math.Clamp(value, 0, 100));
+        }
+        public string TurzxViewMode
+        {
+            get => _turzxViewMode;
+            set => Set(ref _turzxViewMode, Kil0bitSystemMonitor.Services.Turzx.TurzxDimensions.FormatViewMode(
+                Kil0bitSystemMonitor.Services.Turzx.TurzxDimensions.ParseViewMode(value)));
+        }
+
         // ----- AI ---------------------------------------------------------------------------
         // Everything is off by default. No key or token is ever stored here: config.json is the
         // file people attach to bug reports, so secrets live in SecretStore (DPAPI) instead.
@@ -733,6 +848,8 @@ namespace Kil0bitSystemMonitor.Models
         private string _aiHotkey = "Ctrl+Alt+A";
         private int _aiDailyLimit = 100;
         private double _padPaneWidth = 360;
+        private bool _padMarkdownSplitPreview;
+        private double _padMarkdownPreviewRatio = 0.5;
         private double _askWidth = 640;
         private double _askHeight = 720;
         private bool _aiHistoryEnabled;

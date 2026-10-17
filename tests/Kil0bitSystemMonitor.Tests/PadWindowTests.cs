@@ -523,6 +523,89 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(7, BitConverter.ToUInt16(ico, 4));
         }
 
+        [Fact]
+        public void Tab_header_width_shrinks_proportionally_before_scrolling()
+        {
+            Assert.Equal(180d, MicaPadWindow.CalculateTabHeaderWidth(viewportWidth: 480, tabCount: 1));
+            Assert.Equal(160d, MicaPadWindow.CalculateTabHeaderWidth(viewportWidth: 480, tabCount: 3));
+            Assert.Equal(120d, MicaPadWindow.CalculateTabHeaderWidth(viewportWidth: 480, tabCount: 4));
+            Assert.Equal(100d, MicaPadWindow.CalculateTabHeaderWidth(viewportWidth: 480, tabCount: 10));
+        }
+
+        [Fact]
+        public void Markdown_formatting_shortcuts_wrap_selection_and_ignore_non_markdown() => WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Text = "hello";
+            window.Editor.Select(0, 5);
+            Assert.True(window.HandleShortcut(Key.B, ModifierKeys.Control));
+            Assert.Equal("**hello**", window.Editor.Document.Text);
+
+            window.Editor.Undo();
+            window.Editor.Select(0, 5);
+            Assert.True(window.HandleShortcut(Key.I, ModifierKeys.Control));
+            Assert.Equal("*hello*", window.Editor.Document.Text);
+
+            window.Editor.Undo();
+            window.Editor.Select(0, 5);
+            Assert.True(window.HandleShortcut(Key.K, ModifierKeys.Control));
+            Assert.Equal("[hello](url)", window.Editor.Document.Text);
+
+            window.Editor.Undo();
+            window.Editor.Select(0, 5);
+            Assert.True(window.HandleShortcut(Key.K, ModifierKeys.Control | ModifierKeys.Shift));
+            Assert.Contains("```", window.Editor.Document.Text);
+
+            // In Plain text mode, Ctrl+B is not intercepted as Markdown formatting.
+            window.ChooseLanguage(env.Workspace.Active!, "plain");
+            Assert.False(window.HandleShortcut(Key.B, ModifierKeys.Control));
+        });
+
+        [Fact]
+        public void Closed_popup_supports_keyboard_navigation_and_enter_to_reopen() => WithWindow((window, env, config) =>
+        {
+            window.Editor.Document.Insert(0, "closed body");
+            window.HandleShortcut(Key.W, ModifierKeys.Control);
+            env.Flush();
+
+            window.OpenClosedNotes();
+            Assert.Single(window.ClosedList.Items);
+            Assert.True(window.HandleClosedPopupKey(Key.Down));
+            Assert.Equal(0, window.ClosedList.SelectedIndex);
+
+            Assert.True(window.HandleClosedPopupKey(Key.Enter));
+            Assert.Equal("closed body", window.Editor.Document.Text);
+        });
+
+        [Fact]
+        public void Find_replace_bar_can_toggle_replace_row_visibility() => WithWindow((window, env, config) =>
+        {
+            window.FindBar.Open(replace: false);
+            Assert.Equal(Visibility.Collapsed, window.FindBar.ReplaceBox.Visibility);
+
+            window.FindBar.ToggleReplace();
+            Assert.Equal(Visibility.Visible, window.FindBar.ReplaceBox.Visibility);
+            Assert.Equal(Visibility.Visible, window.FindBar.ReplaceButtons.Visibility);
+
+            window.FindBar.ToggleReplace();
+            Assert.Equal(Visibility.Collapsed, window.FindBar.ReplaceBox.Visibility);
+        });
+
+        [Fact]
+        public void PendingScrub_try_scrub_updates_last_left_and_pane_close_buttons_use_flat_style() => WithWindow((window, env, config) =>
+        {
+            var note = env.Workspace.Active!;
+            env.Store.WriteSnapshot(note.Id, "secret-token-value", new DateTime(2026, 3, 29, 10, 0, 0));
+            var scrub = new PendingScrub(note.Id, "ABCDEFGH", "secret-token-value", "{{secret:ABCDEFGH}}");
+
+            int left = scrub.TryScrub(env.Store);
+            Assert.Equal(0, left);
+            Assert.Equal(0, scrub.LastLeft);
+
+            Assert.Equal(System.Windows.Input.Cursors.Hand, window.SearchPanel.CloseButton.Cursor);
+            Assert.Equal(System.Windows.Input.Cursors.Hand, window.HistoryPanel.CloseButton.Cursor);
+            Assert.Equal(System.Windows.Input.Cursors.Hand, window.AiPanel.CloseButton.Cursor);
+        });
+
         /// <summary>Walks up from the test binaries to the folder holding the app project.</summary>
         internal static string RepoRoot()
         {

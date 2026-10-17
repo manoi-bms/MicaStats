@@ -250,6 +250,27 @@ public class MeetingWindowTests
     });
 
     [Fact]
+    public Task Navigate_to_cited_segment_switches_to_transcript_tab_and_selects_segment() => UiThread.RunAsync(async () =>
+    {
+        var window = CreateWindow(Configured(), out var io, out var session, out _);
+        try
+        {
+            await session.StartAsync(new("mic", "out"));
+            io.Emit(MeetingSource.Output, TimeSpan.FromSeconds(4));
+            await WaitUntil(() => session.Segments.Count == 1 && window.TranscriptText.Text.Contains("rollout"));
+
+            window.MeetingTabs.SelectedIndex = 1;
+            string segId = session.Segments[0].Id;
+
+            Assert.False(window.NavigateToCitedSegment("S999"));
+            Assert.True(window.NavigateToCitedSegment(segId));
+            Assert.Equal(0, window.MeetingTabs.SelectedIndex);
+            Assert.Contains("Could we move the rollout to Thursday?", window.TranscriptText.Selection.Text);
+        }
+        finally { window.Close(); await Task.Yield(); }
+    });
+
+    [Fact]
     public Task Live_waveforms_render_both_themes_and_compact_pause_without_capturing_audio() => UiThread.RunAsync(async () =>
     {
         string output = Path.Combine(FindRepoRoot(), "artifacts", "meeting-ui");

@@ -266,6 +266,7 @@ public sealed class MeetingIntelligence : IAsyncDisposable
             ++_operationGeneration;
             CancelAutomaticLocked();
             _manualCancellation?.Cancel();
+            _manualCancellation?.Dispose();
             _manualCancellation = null;
             _manualActive = false;
             _isBusy = false;

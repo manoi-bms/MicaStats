@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Documents;
+using Kil0bitSystemMonitor.Services.Localization;
 using RichTextBox = System.Windows.Controls.RichTextBox;
 
 namespace Kil0bitSystemMonitor.Conference;
@@ -72,14 +73,31 @@ public sealed class MeetingTranscriptView : RichTextBox
         else ScrollToVerticalOffset(offset);
     }
 
+    internal bool SelectSegment(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return false;
+        for (int i = 0; i < _rows.Count; i++)
+        {
+            if (_rows[i] is MeetingSegment segment && string.Equals(segment.Id, id, StringComparison.Ordinal))
+            {
+                Block block = _blocks[i];
+                Selection.Select(block.ContentStart, block.ContentEnd);
+                block.BringIntoView();
+                Focus();
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static Block CreateSegment(MeetingSegment segment)
     {
         var section = new Section { Margin = new Thickness(0, 0, 0, 12) };
         var header = new Paragraph { Margin = new Thickness(0, 0, 0, 2), FontSize = 11, LineHeight = 16 };
-        var source = new Run(segment.Source == MeetingSource.Microphone ? "🎤 Microphone" : "🔊 Conference audio")
+            var source = new Run(UiText.Tr(segment.Source == MeetingSource.Microphone ? "🎤 Microphone" : "🔊 Conference audio"))
         {
             FontWeight = FontWeights.SemiBold,
-            ToolTip = $"Source reference: {segment.Id}",
+                ToolTip = UiText.Format("Source reference: {0}", segment.Id),
         };
         source.SetResourceReference(TextElement.ForegroundProperty, "Ask.Accent");
         header.Inlines.Add(source);
@@ -95,7 +113,7 @@ public sealed class MeetingTranscriptView : RichTextBox
             bool agreement = comparison.Asr1Succeeded && comparison.Asr2Succeeded &&
                 comparison.Asr1Text.Length > 0 && comparison.Asr2Text.Length > 0 && comparison.AlternativeText == null;
             if (agreement)
-                header.Inlines.Add(new Run("   · Both ASR services agree"));
+                header.Inlines.Add(new Run(UiText.Tr("   · Both ASR services agree")));
             else
             {
                 var notice = new Paragraph(new Run("⚠ " + comparison.Notice))
@@ -109,7 +127,7 @@ public sealed class MeetingTranscriptView : RichTextBox
             }
             if (comparison.AlternativeText is { } alternative)
             {
-                var alternate = new Paragraph(new Run("ASR1 alternative: " + alternative))
+                var alternate = new Paragraph(new Run(UiText.Format("ASR1 alternative: {0}", alternative)))
                 {
                     FontSize = 13,
                     Margin = new Thickness(0, 2, 0, 0),
@@ -123,7 +141,7 @@ public sealed class MeetingTranscriptView : RichTextBox
 
     private static Block CreateGap(MeetingGap gap)
     {
-        var paragraph = new Paragraph(new Run($"⏸ Listening gap   {Time(gap.Start)}–{(gap.End is { } end ? Time(end) : "ongoing")} · Not transcribed"))
+            var paragraph = new Paragraph(new Run(UiText.Format("⏸ Listening gap   {0}–{1} · Not transcribed", Time(gap.Start), gap.End is { } end ? Time(end) : UiText.Tr("ongoing"))))
         {
             FontSize = 12,
             Margin = new Thickness(0, 0, 0, 12),

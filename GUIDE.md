@@ -2,6 +2,54 @@
 
 A complete guide to using, customizing, and mastering your hardware telemetry overlay.
 
+The interface defaults to Thai. Change it at **การตั้งค่า → ทั่วไป → ภาษาแอป**
+(Settings → General → App language), choosing **ไทย** or **English**. The selection is
+remembered and interface labels update immediately. Notes, Markdown, stored task dates and
+AI response language keep their existing values. About includes an offline banner, the
+installed version, feature descriptions and project/support links.
+
+---
+
+## StackChan companion
+
+Open **Settings → StackChan**, enable the companion and choose **Bluetooth** or **USB**. With M5Stack factory firmware, use Bluetooth and keep **DANCE** open on the robot; its USB interface supplies power/debug. Disconnect other robot controller apps if connection fails.
+
+With **UIFlow 2.0**, select **USB**, find ports, choose the robot's COM port, and press **Start temporary USB companion**. This interrupts the robot's current program and runs the bundled companion temporarily in RAM. It does not flash firmware, overwrite files, reboot, or change calibration. After the robot restarts, MicaStats starts the companion again by itself when **Start the USB companion again after StackChan restarts** is on (the default); otherwise use Start again. Settings remembers your robot and selects its port for you. If the companion is already running, use **Connect** instead; normal Connect never interrupts the robot program. Close UIFlow WebTerminal, M5Burner and other serial tools before connecting. MicaStats verifies the companion identity before enabling device controls. Windows may assign a different COM port after reflashing.
+
+Use face presets or custom eye/mouth settings, independent left/right LED colors, and deliberate head positions or short gestures. Companion reactions reflect system load, alerts, AI work, and active meetings. Manual commands hold automatic reactions for 30 seconds. Automatic head movement is off by default. Quiet mode dims LEDs and blocks new movement; cancelling a gesture cancels remaining app steps and cannot stop an already accepted movement. Reconnect to the remembered robot is opt-in.
+
+The bundled UIFlow companion opens on a living character with smooth glances, eyelids and a gentle bob, while keeping CPU/RAM/GPU readings visible. It spends 12 seconds on the character, then 6 seconds each on overview and a larger metric chart. A header rail shows when the next view is due; AI and meeting cues reflect accepted activity. Quiet mode keeps the screen still. Activity-colored LEDs breathe slowly. Diagnostic events interrupt the screen for 20 seconds with a public metric name, the observed value and configured threshold; Quiet mode keeps that event visible. Manual colors remain steady during an alert. Stale telemetry stops rotation and animation. USB head controls require saved calibration; align and save the servos using M5Stack's official procedure before moving. When enabled, gentle automatic gestures share a 90-second cooldown and begin after the first 90 seconds.
+
+The optional **UIFlow 2.0 companion** adds a live CPU/RAM/GPU screen over USB or Bluetooth. Its script and instructions are in [firmware/uiflow2/README.md](firmware/uiflow2/README.md) and are included with the build. On Bluetooth it advertises as `MicaStatsStackChan`; generic UIFlow firmware needs this companion script. Installing UIFlow replaces factory firmware and requires servo calibration before head movement. MicaStats does not flash it automatically. Neither connection mode streams microphone or PC audio; only presence detection (below) uses the camera, over USB.
+
+### Presence detection
+
+Turn on **Presence detection** in **Settings → StackChan** while the USB companion runs. StackChan's camera sends small pictures over USB. MicaStats finds faces in them on the PC's best GPU and picks the high-performance GPU on two-GPU notebooks; the card names the GPU and the time per picture. Pictures stay in memory only. They are never saved, sent anywhere, or used to recognise who someone is. A red dot on the robot shows while its camera is on, and the robot turns the camera off by itself if MicaStats stops talking to it.
+
+- **It notices you.** When you come back after at least two minutes away, StackChan wakes and shows a welcome card with what happened while you were away: alerts, finished AI tasks, meetings, and the peak CPU, RAM or GPU reading.
+- **Its eyes follow you.** The eyes track your face.
+- **Its head finds and follows you.** With **Allow automatic head movement** on, the head sweeps slowly through safe angles to look for you whenever nobody is in view; a quick glance at another screen does not start a sweep. Once it sees you, it keeps your face in the centre of the picture. It calibrates itself as it goes: if your face moves the wrong way after a step it reverses that axis, if your face does not move at all the servo has reached its limit and it stops pushing that way, and it resizes its steps to how far your face moves. What it learns is saved. Tilt covers 5–85 degrees. **Check head direction** remains as a manual check.
+- **It guards your screen.** If a second face stays behind you for 1.5 seconds, StackChan looks worried, the MicaPad vault locks and MicaPad windows are covered until the person leaves or you click. A face in a poster or photo that never moves is ignored after 30 seconds.
+- **It dozes when you leave.** After 10 seconds without you, StackChan shows a sleepy face with dim lights. **Lock Windows when I leave** is off by default.
+- **It nags you kindly.** After a long stretch at the desk (50 minutes by default), it suggests a break; never during meetings.
+
+A covered camera or a stalled stream counts as "unknown", never "away", so it never locks anything.
+
+### การตรวจจับการมีคนอยู่
+
+เปิด **ตรวจจับการมีคนอยู่** ใน **การตั้งค่า → StackChan** ขณะที่อุปกรณ์คู่หู USB ทำงาน กล้องของ StackChan ส่งภาพขนาดเล็กผ่าน USB แล้ว MicaStats ตรวจหาใบหน้าบน GPU ที่ดีที่สุดของพีซี (โน้ตบุ๊กที่มี 2 GPU จะเลือก GPU ประสิทธิภาพสูง) ภาพอยู่ในหน่วยความจำเท่านั้น ไม่ถูกบันทึก ไม่ถูกส่งไปที่ใด และไม่ใช้ระบุตัวตน จุดสีแดงบนหุ่นยนต์แสดงขณะกล้องเปิด
+
+- StackChan ทักทายเมื่อคุณกลับมาหลังไม่อยู่อย่างน้อย 2 นาที พร้อมสรุปสิ่งที่เกิดขึ้น
+- ดวงตามองตามคุณ
+- เมื่อเปิดการขยับศีรษะอัตโนมัติ ศีรษะจะกวาดมองหาคุณเมื่อไม่มีใครอยู่ในภาพ และเมื่อพบใบหน้าครั้งแรกจะตรวจทิศทางศีรษะเองก่อนหันตามคุณ
+- เมื่อมีคนยืนข้างหลังนาน 1.5 วินาที StackChan จะล็อกห้องนิรภัย MicaPad และปิดบังหน้าต่าง MicaPad จนกว่าคนนั้นจะไป หรือจนกว่าคุณจะคลิก
+- StackChan พักเมื่อคุณลุกไป การล็อก Windows ปิดไว้เป็นค่าเริ่มต้น
+- StackChan เตือนให้พักเมื่อนั่งนาน แต่ไม่เตือนระหว่างประชุม
+
+เปิด **การตั้งค่า → StackChan** เปิดใช้งาน ค้นหาอุปกรณ์ เลือกหุ่นยนต์ แล้วเชื่อมต่อ หากใช้เฟิร์มแวร์โรงงานให้เปิด **DANCE** ค้างไว้ การควบคุมใช้ Bluetooth LE ส่วน USB จ่ายไฟ โหมดเงียบลดความสว่างและปิดการเคลื่อนไหวใหม่ การขยับศีรษะอัตโนมัติปิดไว้เป็นค่าเริ่มต้น สคริปต์ UIFlow 2.0 ที่ให้มาสามารถแสดง CPU/RAM/GPU แบบสดได้ แต่ต้องติดตั้งเฟิร์มแวร์และปรับเทียบเซอร์โวก่อน
+
+หากติดตั้ง UIFlow 2.0 แล้ว เลือก **USB** ค้นหาพอร์ต เลือกพอร์ต COM ของหุ่นยนต์ แล้วกด **เริ่มคู่หูผ่าน USB** โปรแกรมจะหยุดแอปปัจจุบันบนหุ่นยนต์และรันคู่หูใน RAM จนกว่าหุ่นยนต์จะเริ่มใหม่ โดยไม่แฟลช ไม่เขียนทับไฟล์ และไม่เปลี่ยนการปรับเทียบ หากคู่หูทำงานอยู่แล้วให้กด **เชื่อมต่อ** ปิด WebTerminal หรือเครื่องมือที่ใช้พอร์ตเดียวกันก่อนเชื่อมต่อ
+
 ---
 
 ## 🛠️ Getting Started
@@ -325,6 +373,26 @@ sent while you type, when a note opens or in the background — only when you ru
   shown. An instruction typed for **Ask AI…** works the same way. The **Try again** under a
   diagram that could not be drawn is another button: it draws that diagram again and sends
   nothing.
+* **Task and password tools in Ask AI…** work on the selection, or the current note with nothing
+  selected. Click **Review tasks** to ask about pending tasks and their tracked dates, or
+  **Protect passwords** to prepare credential storage. You can also write an instruction such
+  as `ซ่อนรหัสผ่านทั้งหมดใน credential manager` or “Mark the report task complete.” A successful
+  request shows proposed changes with icons, source lines and checkboxes. Choose the items and
+  click **Apply selected**; reading or proposing changes does not change your note. An edited
+  note, another tab, a read-only view or a stopped/failed request requires a fresh review.
+  Task dates stay in their separate metadata, with completion/reopening handled as usual.
+* **Password detection is local and conservative.** It recognizes explicit English/Thai labels
+  such as `password: …`, `รหัสผ่าน=…`, `api_key=…` and passwords in URLs. Recognized values are
+  hidden before the Ask AI request is sent; the model receives candidate IDs and labels. It can
+  miss unlabelled secrets, so inspect sensitive text before sending it. Storage requires review
+  and an existing credential vault or its PIN setup. Approved values are encrypted together,
+  then every exact copy in the current note becomes a credential reference. Undo history and
+  AI/preview content are cleared; older note versions are cleaned with retry if writes are busy.
+  Failed note edits restore the note and vault for retry. If the vault cannot roll back, the
+  review explains how to finish the same saved entries. A real file still needs **Ctrl+S** to
+  remove plaintext from that file. When recognized plaintext is present, the answer's ordinary
+  Replace/Insert actions are hidden; use the reviewed storage action. Ask AI tools accept at most
+  24,000 characters even when the selected model supports more.
 * **Ask in Search notes**: type a question and press **Ctrl+Enter**, or click **Ask** (**Enter**
   still only searches). The best 8 passages go to the model and the answer streams above the
   results; the status line says "Answering from 6 passages · api.anthropic.com", then
@@ -433,6 +501,33 @@ read-only labels beside the text; formatting changes text only through commands 
 **Reading font**: prose is shown in Segoe UI; fenced code, inline code, tables, front matter and
 `<kbd>` keys stay in the editor font, so code and columns line up. Turn it off in
 **Settings → MicaPad → Reading font** to see everything in the editor font.
+
+**Split preview**: click **Split preview** at the bottom of MicaPad, choose **☰ → Split Markdown
+preview**, or press **Ctrl+Shift+M**. Edit original Markdown on the left and read its live,
+selectable preview on the right. Updates follow a short typing pause; **Refresh** updates it
+immediately. The source uses the editor font and keeps literal markers, image syntax and fences.
+Task dates remain beside the source, with the existing right-click date editor.
+Scroll either side to bring the corresponding content into view on the other side. Editing keeps
+the preview aligned with the source without moving your caret or selection. Headings, lists, tables
+and code follow their source locations even when the two panes have different rendered heights.
+Drag the divider, or focus it and use the arrow keys, to resize the panes. Double-click it to
+return to equal widths. MicaPad remembers the view and divider independently of Search/AI widths.
+Search, AI and History temporarily replace the preview; closing them restores it.
+**Close** or **Ctrl+Shift+M** returns to the ordinary editor. Choose **Markdown** from the
+language button if the current tab uses another language.
+
+The preview supports headings, emphasis, lists, read-only task checkboxes, quotes, tables and
+fenced code, with local Mermaid drawing when **Draw diagrams** is enabled. Images, HTML, math
+and other extended syntax use readable text fallbacks; no web images are fetched. Link labels
+and addresses are selectable text. Long notes show a **Limited** notice: at most the first
+50,000 characters or 2,000 lines are previewed. The source and exported Markdown are unchanged.
+
+**Right-click menus** explain their context and group related commands. Task actions appear first
+when the caret is on a checklist item. Editing stays directly available; **Find & navigate** groups
+Find, Replace and Go to line. Tab menus group personalization, movement/location and closing;
+closed notes remain recoverable in **Closed notes**. Hover significant actions for a short explanation.
+Credential menus separate using a value, managing it and copying its reference, with read-only
+actions in history. Icons and keyboard shortcuts remain beside their labels.
 
 **Todo tracking**: type `- [] Send report` or `- [ ] Send report`. MicaPad displays a muted, read-only
 `(created: 2026-10-06 07:30)` automatically. **Ctrl+Enter** on the task, or right-click →

@@ -1,0 +1,67 @@
+# .NET AI harness options for MicaPad
+
+Research date: 2026-10-08
+
+## Recommendation
+
+Keep **Microsoft.Extensions.AI (MEAI)** as the provider/tool foundation under MicaPad's existing app-owned bounded harness, and extend that harness into the Pad. When the product needs durable sessions, planning, multi-step workflows, or richer human-in-the-loop orchestration, adopt **Microsoft Agent Framework's `HarnessAgent`** as the preferred full .NET harness. Evaluate **GitHub Copilot SDK** separately only if its turnkey autonomous runtime is worth a separate child process and coding-agent defaults.
+
+This split matches Microsoft's current ecosystem guidance: MEAI is the normal app-level AI layer; it is not an agent framework; MAF is for goal-directed multi-step orchestration; and Copilot SDK is the prebuilt, more opinionated harness ([Microsoft .NET AI ecosystem](https://learn.microsoft.com/en-us/dotnet/ai/dotnet-ai-ecosystem)). For MicaPad's present need—turn a request such as “move passwords into Credential Manager” into a reviewed app action—the missing piece is a safe tool surface in the Pad runner, not a new orchestration framework.
+
+## Fit criteria
+
+Repository evidence: [AiAssistant](../../Services/Ai/AiAssistant.cs) already uses MEAI function invocation with an eight-round budget, while [PadAiRunner](../../Services/Pad/Ai/PadAiRunner.cs) streams a single request without tools. The [project file](../../Kil0bitSystemMonitor.csproj) targets .NET 8 Windows and already references MEAI and the MCP Core SDK. This review compares documented capabilities and package metadata; it does not include an integration prototype or runtime benchmark.
+
+The decision favors an in-process .NET 8 WPF integration, existing Anthropic and OpenAI-compatible providers, streaming and cancellation, a hard turn/tool budget, explicit approval before mutations, MCP client interoperability, local session control, OpenTelemetry support, active maintenance, permissive licensing, and low migration risk. Credential operations remain owned by MicaPad: the model may identify redacted candidates and propose an operation, while the host displays exact effects and performs the vault write and note replacement after approval. A framework approval marker or permission callback does not replace that policy boundary.
+
+Harness planning todos are agent execution state. Connecting them to MicaPad's Markdown checkboxes and separate date metadata requires explicit app tools; framework todo support does not supply that integration automatically.
+
+## Ranked candidates
+
+| Rank | Candidate | Current evidence | Fit for MicaPad |
+|---|---|---|---|
+| 1 | **MEAI 10.10.0** | Stable, Microsoft-owned, MIT, .NET 8, updated 2026-09-09 ([NuGet](https://www.nuget.org/packages/Microsoft.Extensions.AI)). | **Best immediate foundation.** Already integrated, provider-neutral, smallest migration. |
+| 2 | **Microsoft Agent Framework / Harness 1.24.0** | Non-prerelease, MIT, .NET 8, released 2026-10-07; built on MEAI 10.10.x ([core](https://www.nuget.org/packages/Microsoft.Agents.AI/1.24.0), [Harness](https://www.nuget.org/packages/Microsoft.Agents.AI.Harness/)). | **Best fuller framework and native .NET harness.** Add when sessions/workflows are product requirements. |
+| 3 | **GitHub Copilot SDK 1.0.17** | Stable, GitHub-owned, MIT, .NET 8, released 2026-10-07 ([NuGet](https://www.nuget.org/packages/GitHub.Copilot.SDK)). | **Best ready-made process runtime, conditional.** Strong features, higher packaging and policy cost. |
+| 4 | **Semantic Kernel 1.80.1** | Stable, Microsoft-owned, MIT, .NET 8, updated 2026-09-03 ([NuGet](https://www.nuget.org/packages/Microsoft.SemanticKernel)). | Capable, but adds overlap and a likely later move to MAF. |
+| 5 | **AutoGen.NET 0.2.3** | Last stable NuGet update 2025-04-09 ([NuGet](https://www.nuget.org/packages/AutoGen)); upstream is in maintenance mode. | Do not adopt for new work. |
+| 6 | **LangChain.NET 0.17.1** | MIT, .NET 8, updated 2026-04-30 ([NuGet](https://www.nuget.org/packages/LangChain)). | Do not adopt for this app; governance and parity risk exceed its benefit. |
+
+### 1. Microsoft.Extensions.AI
+
+MEAI supplies `IChatClient`, automatic function invocation, middleware, caching, and OpenTelemetry while preserving provider choice ([package overview](https://www.nuget.org/packages/Microsoft.Extensions.AI)). `FunctionInvokingChatClient` exposes maximum iterations, maximum consecutive errors, concurrent invocation control, unknown-call termination, streaming, and cancellation ([API](https://learn.microsoft.com/en-us/dotnet/api/microsoft.extensions.ai.functioninvokingchatclient)). That maps directly to the existing eight-round MicaStats loop and allows the Pad to reuse the same limits.
+
+MEAI also has `ApprovalRequiredAIFunction`, but its current source and API remarks state that the wrapper only marks a call; the invoker must enforce approval ([API](https://learn.microsoft.com/en-us/dotnet/api/microsoft.extensions.ai.approvalrequiredaifunction), [source](https://github.com/dotnet/extensions/blob/main/src/Libraries/Microsoft.Extensions.AI.Abstractions/Functions/ApprovalRequiredAIFunction.cs)). MicaPad should therefore keep its own pending-action record and UI confirmation. For outbound MCP, the official Apache-2.0 [MCP C# SDK](https://github.com/modelcontextprotocol/csharp-sdk) converts discovered MCP tools into MEAI tools, so MCP does not require replacing the harness.
+
+MEAI does not provide durable agent sessions, planning, handoffs, or workflow checkpoints. MicaPad must continue to own chat history, compaction, policy, and persistence. That is currently an advantage because it keeps the vault and note mutation boundary explicit.
+
+### 2. Microsoft Agent Framework
+
+MAF is the strongest future framework. A `ChatClientAgent` can use any MEAI `IChatClient` and supports function tools, multi-turn sessions, structured output, streaming, middleware, and local or service-managed history ([agent concepts](https://learn.microsoft.com/en-us/agent-framework/concepts/agents)). The separate `Microsoft.Agents.AI.Harness` package layers on configurable per-request function-call limits, history persistence after each model call, optional bounded looping and compaction, session-backed planning/todos, tool approval, and OpenTelemetry ([Harness documentation](https://learn.microsoft.com/en-us/agent-framework/concepts/harness), [Harness NuGet](https://www.nuget.org/packages/Microsoft.Agents.AI.Harness/)). This is the closest in-process .NET answer to Pi-style harness behavior while retaining MicaPad's current `IChatClient` providers.
+
+Harness defaults need deliberate reduction for a desktop personal assistant. Todo and plan/execute modes are enabled by default, as are session file memory, standing/auto approval support, observability, .NET skills, and hosted web search where the provider supports it. Shared file access, background agents, and looping are opt-in; file/background/loop features are documented as experimental, and shell tooling is a separate prerelease package. MicaPad should set `DisableWebSearch`, disable file memory, skills, and tool auto-approval initially, omit file/shell tools, then add only app-owned tools. The approval flow returns exact tool arguments to the caller and resumes the same session after a decision ([tool approval](https://learn.microsoft.com/en-us/agent-framework/agents/tools/tool-approval)). MCP converts official C# SDK tools to `AIFunction` values ([MCP tools](https://learn.microsoft.com/en-us/agent-framework/agents/tools/local-mcp-tools)).
+
+MAF 1.24.0 targets .NET 8 and requires MEAI 10.10.0 plus MEAI Abstractions 10.10.1; related MAF packages should be pinned to the same release ([core dependencies](https://www.nuget.org/packages/Microsoft.Agents.AI/1.24.0), [workflow package](https://www.nuget.org/packages/Microsoft.Agents.AI.Workflows/1.24.0)). Microsoft calls MAF the direct successor to Semantic Kernel and AutoGen. Maturity needs a cautious label: packages are non-prerelease and Microsoft calls MAF production-ready, while some Learn quickstarts still show `--prerelease`, indicating fast-moving documentation and APIs ([MAF overview](https://learn.microsoft.com/en-us/agent-framework/overview/), [AutoGen status](https://github.com/microsoft/autogen)). A prototype must verify cancellation, session serialization, provider adapters, and that both per-request and outer loop limits stop reliably.
+
+### 3. GitHub Copilot SDK
+
+Copilot SDK is the closest .NET equivalent to Pi's ready-made harness. It provides persistent/resumable sessions, streaming, custom MEAI `AIFunction` tools, per-tool permission requests, pre/post tool hooks, OpenTelemetry, MCP over stdio and HTTP/SSE, memory, and automatic context compaction ([.NET SDK reference](https://github.com/github/copilot-sdk/blob/main/dotnet/README.md), [MCP](https://github.com/github/copilot-sdk/blob/main/docs/features/mcp.md)). BYOK supports OpenAI and OpenAI-compatible endpoints, Azure/OpenAI, Anthropic, Ollama, and local compatible servers, but documented BYOK authentication is API-key based rather than Entra ID or managed identity ([BYOK](https://github.com/github/copilot-sdk/blob/main/docs/auth/byok.md)).
+
+The cost is architectural: the SDK acquires and packages a pinned Copilot runtime for the target RID, launches `copilot-runtime` plus its adjacent Node runtime as a child process, and communicates by JSON-RPC ([architecture](https://github.com/github/copilot-sdk#architecture), [.NET runtime connection](https://github.com/github/copilot-sdk/blob/main/dotnet/README.md#runtimeconnection)). Default mode inherits Copilot CLI's coding-oriented tools and state. A MicaPad experiment must use `CopilotClientMode.Empty`, an explicit tool allowlist, disabled memory/session store unless deliberately enabled, and a custom permission handler. No documented universal maximum tool-iteration limit was established in this review, so the host would still need an outer timeout and turn budget. These costs make it a poor drop-in replacement for today's one-shot Pad runner, though it is credible if autonomous personal-assistant sessions become the main product.
+
+### 4–6. Lower-ranked options
+
+Semantic Kernel remains active and capable: it has automatic function calling, invocation filters, streaming with cancellation, chat history reducers, OpenAI-compatible endpoints, and OpenTelemetry ([function calling](https://learn.microsoft.com/en-us/semantic-kernel/concepts/ai-services/chat-completion/function-calling/), [filters](https://learn.microsoft.com/en-us/semantic-kernel/concepts/enterprise-readiness/filters), [chat history](https://learn.microsoft.com/en-us/semantic-kernel/concepts/ai-services/chat-completion/chat-history), [observability](https://learn.microsoft.com/en-us/semantic-kernel/concepts/enterprise-readiness/observability)). For new orchestration work, however, Microsoft positions MAF as its successor and provides an SK-to-MAF migration path. Adding SK now would duplicate MEAI abstractions and increase later migration cost.
+
+AutoGen is explicitly community-maintained and receives no new features; upstream directs new users to MAF ([repository notice](https://github.com/microsoft/autogen)). LangChain.NET is active enough to consider, but its own maintainer says serious progress is unlikely alone and is recruiting a core team ([repository](https://github.com/tryAGI/LangChain)). Its smaller governance base and lack of equally clear first-party approval/MCP/session contracts make it a weak dependency for credential-capable desktop software.
+
+All shortlisted libraries use permissive MIT licensing; the official MCP C# SDK is Apache-2.0. This review found active releases and published security policies for the Microsoft/GitHub projects, but did not perform a vulnerability audit or prove an absence of advisories. Adoption should include locked transitive versions, NuGet advisory scanning, SBOM/runtime inventory, and review of telemetry and transcript retention.
+
+## Staged handoff
+
+1. **Now:** keep MEAI and unify the Pad with the existing bounded runner. Add narrow read tools and proposal-only mutation tools. For password cleanup, scan locally, send only redacted labels/IDs to the model, show a modern exact-change review, and require app code to commit the vault write and note replacement as one recoverable operation after approval. Atomicity and rollback must be validated before release.
+2. **When external tools are needed:** add the official MCP C# client behind per-server trust, tool allowlists, timeouts, result-size limits, and a visible approval policy. Local in-process functions remain simpler for MicaPad-owned capabilities.
+3. **When workflows become multi-step:** prototype MAF `HarnessAgent` beside the current runner with nonessential defaults disabled. Require identical provider coverage, streaming/cancellation, hard budgets, resumable sessions, approval persistence, telemetry controls, and rollback before migration.
+4. **Only for a turnkey autonomous assistant:** run a separate Copilot SDK proof of concept in Empty mode and measure startup, packaged size, child-process recovery, auth/BYOK fit, and whether its coding-agent semantics can be constrained to MicaPad's personal-productivity domain.
+
+Stop after stages 1–2 unless real usage shows that users need durable autonomous workflows. That preserves a small trusted computing base while leaving a clear path to MAF or Copilot SDK later.

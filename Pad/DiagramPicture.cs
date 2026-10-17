@@ -7,6 +7,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 
 // UseWindowsForms puts System.Windows.Forms and System.Drawing in scope; these names exist in both.
 using Brushes = System.Windows.Media.Brushes;
@@ -160,15 +161,11 @@ namespace Kil0bitSystemMonitor.Pad
                 }
             }
 
-            var decoded = new BitmapImage();
-            decoded.BeginInit();
-            decoded.CacheOption = BitmapCacheOption.OnLoad;
             // A photo turned a quarter shows its stored height as its width.
-            if (decodeWidth > 0 && result.TurnedQuarter) decoded.DecodePixelHeight = decodeWidth;
-            else if (decodeWidth > 0) decoded.DecodePixelWidth = decodeWidth;
-            decoded.StreamSource = new MemoryStream(result.Png!);
-            decoded.EndInit();
-            decoded.Freeze();
+            var decoded = PngBitmap.DecodeFrozen(
+                result.Png!,
+                decodeWidth: decodeWidth > 0 && !result.TurnedQuarter ? decodeWidth : 0,
+                decodeHeight: decodeWidth > 0 && result.TurnedQuarter ? decodeWidth : 0);
             var bitmap = Upright(decoded, result.Orientation);
 
             lock (s_decoded)
@@ -224,12 +221,7 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>A PNG's width in pixels from its header (bytes 16-19, big-endian), or 0 when it is not a PNG.</summary>
-        private static int PngWidth(byte[] png)
-        {
-            if (png.Length < 24 || png[0] != 0x89 || png[1] != (byte)'P' || png[2] != (byte)'N' || png[3] != (byte)'G') return 0;
-            int width = png[16] << 24 | png[17] << 16 | png[18] << 8 | png[19];
-            return width > 0 ? width : 0;
-        }
+        private static int PngWidth(byte[] png) => PngBitmap.ReadWidth(png);
 
         /// <summary>
         /// The size a picture is shown at: its natural size, or for an image the <c>=WxH</c> it asks
@@ -293,7 +285,7 @@ namespace Kil0bitSystemMonitor.Pad
             {
                 var button = new Button
                 {
-                    Content = view.CodeHidden ? "Show code" : "Hide code",
+                    Content = UiText.Tr(view.CodeHidden ? "Show code" : "Hide code"),
                     HorizontalAlignment = HorizontalAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Top,
                     Margin = new Thickness(4),

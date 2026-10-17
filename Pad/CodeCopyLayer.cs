@@ -7,6 +7,7 @@ using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 
 // UseWindowsForms puts System.Windows.Forms and System.Drawing in scope; these names exist in both.
 using Brush = System.Windows.Media.Brush;
@@ -68,12 +69,12 @@ namespace Kil0bitSystemMonitor.Pad
 
             var content = new StackPanel { Orientation = Orientation.Horizontal };
             content.Children.Add(new TextBlock { Text = "\uE8C8", FontFamily = IconFont, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
-            content.Children.Add(new TextBlock { Text = "Copy", VerticalAlignment = VerticalAlignment.Center });
+            content.Children.Add(new TextBlock { Text = UiText.Tr("Copy"), VerticalAlignment = VerticalAlignment.Center });
             // The font size and padding of a diagram picture's Hide code button, in MicaPad's own colors.
             _button = new Button
             {
                 Content = content,
-                ToolTip = "Copy code",
+                ToolTip = UiText.Tr("Copy code"),
                 Focusable = false,
                 Cursor = Cursors.Arrow,
                 Template = BoxTemplate(),
@@ -83,7 +84,7 @@ namespace Kil0bitSystemMonitor.Pad
                 BorderThickness = new Thickness(1),
                 Visibility = Visibility.Collapsed,
             };
-            AutomationProperties.SetName(_button, "Copy code");
+            AutomationProperties.SetName(_button, UiText.Tr("Copy code"));
             _button.Click += (s, e) => Copy();
             _button.MouseEnter += (s, e) => PaintBackground();
             _button.MouseLeave += (s, e) => PaintBackground();

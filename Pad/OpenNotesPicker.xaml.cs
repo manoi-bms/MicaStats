@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using UserControl = System.Windows.Controls.UserControl;
@@ -145,9 +146,9 @@ namespace Kil0bitSystemMonitor.Pad
         {
             bool hasQuery = SearchInput.Text.Trim().Length > 0;
             ResultCount.Text = hasQuery && shown != total
-                ? $"{shown} of {total} notes"
-                : total == 1 ? "1 note" : $"{total} notes";
-            EmptyText.Text = total == 0 ? "No notes are open." : "No open notes match this search.";
+                ? UiText.Format("{0} of {1} notes", shown, total)
+                : total == 1 ? UiText.Tr("1 note") : UiText.Format("{0} notes", total);
+            EmptyText.Text = UiText.Tr(total == 0 ? "No notes are open." : "No open notes match this search.");
             EmptyText.Visibility = shown == 0 ? Visibility.Visible : Visibility.Collapsed;
             NotesList.Visibility = shown == 0 ? Visibility.Collapsed : Visibility.Visible;
             SearchPlaceholder.Visibility = SearchInput.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;

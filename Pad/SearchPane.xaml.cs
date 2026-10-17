@@ -14,6 +14,7 @@ using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
 using Kil0bitSystemMonitor.Services.Pad.Search;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using UserControl = System.Windows.Controls.UserControl;
@@ -369,7 +370,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             Rows = rows;
             Results.ItemsSource = rows;
-            StatusText.Text = _found = status;
+            StatusText.Text = UiText.Tr(_found = status);
         }
 
         /// <summary>Lists what a query found; with nothing found, the status says so.</summary>
@@ -377,7 +378,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         /// <summary>The status line for what a query found: the search status, and with nothing found, that too.</summary>
         private static string FoundStatus(IReadOnlyList<SearchRow> rows, string status) =>
-            rows.Count == 0 ? status + " · No notes found" : status;
+            rows.Count == 0 ? UiText.Format("{0} · No notes found", status) : status;
 
         // ---- the answer ----------------------------------------------------------------------
 
@@ -398,7 +399,7 @@ namespace Kil0bitSystemMonitor.Pad
             AnswerNote.Text = "";
             AnswerNote.Visibility = Visibility.Collapsed;
             if (AnswerBox.Shown.Length > 0) AnswerBox.ShowPlain("");
-            StatusText.Text = _found;
+            StatusText.Text = UiText.Tr(_found);
         }
 
         /// <summary>Shows a sentence where the answer would be, exactly as it is: AI is off, nothing matched.</summary>
@@ -423,7 +424,7 @@ namespace Kil0bitSystemMonitor.Pad
         private async Task StreamAnswerAsync(AskStart start, IAsyncEnumerable<PadAiUpdate> answer, CancellationTokenSource mine)
         {
             string found = FoundStatus(start.Rows, start.Status);
-            StatusText.Text = start.Answering ?? found;
+            StatusText.Text = UiText.Tr(start.Answering ?? found);
             AnswerStop.Visibility = Visibility.Visible;
             AnswerPanel.Visibility = Visibility.Visible;
 
@@ -472,8 +473,8 @@ namespace Kil0bitSystemMonitor.Pad
             ending ??= mine.IsCancellationRequested ? StoppedText : null;
             // A clean end with no text is not an answer: the status does not say "Answered".
             if (done && ending == null && nothing) ending = NoAnswerText;
-            StatusText.Text = done && ending == null ? start.Answered ?? found : found;
-            AnswerNote.Text = ending ?? "";
+            StatusText.Text = UiText.Tr(done && ending == null ? start.Answered ?? found : found);
+            AnswerNote.Text = ending == null ? "" : UiText.Tr(ending);
             AnswerNote.Visibility = When(ending != null);
             AnswerStop.Visibility = Visibility.Collapsed;
             AnswerCopy.Visibility = When(!nothing);

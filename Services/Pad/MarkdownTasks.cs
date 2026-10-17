@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor.Services.Pad
 {
@@ -50,13 +51,22 @@ namespace Kil0bitSystemMonitor.Services.Pad
             return new TextEdit(0, line.Length, replacement, left.Length + newline.Length + nextPrefix.Length, 0);
         }
 
-        /// <summary>Formats separately stored dates for read-only presentation.</summary>
+        /// <summary>Formats dates using the invariant syntax recognized by legacy imports.</summary>
         public static string FormatDates(TaskDateRecord task)
         {
-            string result = "(created: " + task.Created.ToString(DateFormat, CultureInfo.InvariantCulture);
-            if (task.Finished is { } finished)
-                result += "; finished: " + finished.ToString(DateFormat, CultureInfo.InvariantCulture);
-            return result + ")";
+            string created = task.Created.ToString(DateFormat, CultureInfo.InvariantCulture);
+            return task.Finished is { } finished
+                ? $"(created: {created}; finished: {finished.ToString(DateFormat, CultureInfo.InvariantCulture)})"
+                : $"(created: {created})";
+        }
+
+        /// <summary>Formats separately stored dates for localized, read-only UI presentation.</summary>
+        public static string FormatDisplayDates(TaskDateRecord task)
+        {
+            string created = task.Created.ToString(DateFormat, CultureInfo.InvariantCulture);
+            return task.Finished is { } finished
+                ? UiText.Format("(created: {0}; finished: {1})", created, finished.ToString(DateFormat, CultureInfo.InvariantCulture))
+                : UiText.Format("(created: {0})", created);
         }
 
         /// <summary>Recognizes the exact terminal suffix written by the former inline-date implementation.</summary>

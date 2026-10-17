@@ -5,6 +5,7 @@ using System.IO;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Diagnostics;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor.Ai
 {
@@ -62,25 +63,25 @@ namespace Kil0bitSystemMonitor.Ai
                     return host.RecordSlowdown();
                 case SuggestedActionKind.OpenDiagnostics:
                     host.OpenDiagnostics();
-                    return "Opened Diagnostics.";
+                    return UiText.Tr("Opened Diagnostics.");
                 case SuggestedActionKind.OpenProcessWindow:
                     host.OpenProcessWindow();
-                    return "Opened Processes.";
+                    return UiText.Tr("Opened Processes.");
                 default:
-                    return "MicaStats does not know how to do that, so nothing was done.";
+                    return UiText.Tr("MicaStats does not know how to do that, so nothing was done.");
             }
         }
 
         private static string EndProcess(SuggestedAction action, ISuggestedActionHost host)
         {
             if (action.Pid is not int pid || action.CreateTime is not long createTime || pid <= 0 || createTime <= 0)
-                return "This suggestion does not say exactly which process to end, so nothing was ended. Open Processes to choose one.";
+                return UiText.Tr("This suggestion does not say exactly which process to end, so nothing was ended. Open Processes to choose one.");
 
             if (pid == host.OwnProcessId)
-                return "That is MicaStats itself, so nothing was ended. Quit it from the overlay menu instead.";
+                return UiText.Tr("That is MicaStats itself, so nothing was ended. Quit it from the overlay menu instead.");
 
             string pidText = pid.ToString(CultureInfo.InvariantCulture);
-            string label = string.IsNullOrWhiteSpace(action.ProcessName) ? "That process" : action.ProcessName!;
+            string label = string.IsNullOrWhiteSpace(action.ProcessName) ? UiText.Tr("That process") : action.ProcessName!;
 
             ProcessSampler.RawProcess? live = null;
             foreach (var process in host.Processes())
@@ -93,19 +94,19 @@ namespace Kil0bitSystemMonitor.Ai
             }
 
             if (live is not { } found || found.CreateTime != createTime)
-                return label + " (PID " + pidText + ") is no longer running, or its PID now belongs to another process. Nothing was ended.";
+                return UiText.Format("{0} (PID {1}) is no longer running, or its PID now belongs to another process. Nothing was ended.", label, pidText);
 
             if (!string.IsNullOrWhiteSpace(action.ProcessName) &&
                 !string.Equals(found.Name, action.ProcessName, StringComparison.OrdinalIgnoreCase))
-                return "PID " + pidText + " is now " + found.Name + ", not " + action.ProcessName + ". Nothing was ended.";
+                return UiText.Format("PID {0} is now {1}, not {2}. Nothing was ended.", pidText, found.Name, action.ProcessName!);
 
             // Applied here as well as inside TryEndTask, to the name read just now.
             if (ProcessControl.IsCriticalProcess(found.Name))
-                return found.Name + " is a core Windows process. Ending it would stop the machine immediately, so MicaStats will not do it.";
+                return UiText.Format("{0} is a core Windows process. Ending it would stop the machine immediately, so MicaStats will not do it.", found.Name);
 
             EndTaskResult result = host.EndProcess(pid, createTime, found.Name, out string message);
             return result == EndTaskResult.AccessDenied
-                ? message + " To end it anyway, open Processes, select it, press End task, then Retry as administrator."
+                ? message + " " + UiText.Tr("To end it anyway, open Processes, select it, press End task, then Retry as administrator.")
                 : message;
         }
 
@@ -127,14 +128,14 @@ namespace Kil0bitSystemMonitor.Ai
                 if (recorder == null || !recorder.IsRunning)
                 {
                     DiagnosticsWindow.ShowDiagnostics(0);
-                    return "Slowdown recording is off, so there is nothing to save. Switch it on in Diagnostics > Slowdowns.";
+                    return UiText.Tr("Slowdown recording is off, so there is nothing to save. Switch it on in Diagnostics > Slowdowns.");
                 }
 
                 string? path = recorder.Capture(SlowdownCause.Manual);
                 DiagnosticsWindow.ShowDiagnostics(0);
                 return path == null
-                    ? "Nothing has been sampled yet. Try again in a few seconds."
-                    : "Saved " + Path.GetFileName(path) + ". It is listed in Diagnostics > Slowdowns.";
+                    ? UiText.Tr("Nothing has been sampled yet. Try again in a few seconds.")
+                    : UiText.Format("Saved {0}. It is listed in Diagnostics > Slowdowns.", Path.GetFileName(path));
             }
 
             public void OpenDiagnostics() => DiagnosticsWindow.ShowDiagnostics();

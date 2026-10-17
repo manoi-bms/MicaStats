@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using Kil0bitSystemMonitor.Services.Conference;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor.Conference;
 
@@ -17,14 +18,14 @@ public partial class MeetingWindow
         SelectedNotes.ItemsSource = _references.Selected;
         SelectedNotes.SelectedItem = _references.Selected.FirstOrDefault(x => x.Id == selectedId);
         NotesStatus.Text = _references.Status;
-        NotesCountText.Text = $"{_references.Selected.Count} selected";
+        NotesCountText.Text = UiText.Format("{0} selected", _references.Selected.Count);
     }
 
     private async void RefreshNotes_Click(object sender, RoutedEventArgs e)
     {
         try { await _references.RefreshAvailableAsync(_lifetime.Token); }
         catch (OperationCanceledException) { }
-        catch { NotesStatus.Text = "Could not list notes. Open MicaPad and try again."; }
+        catch { NotesStatus.Text = UiText.Tr("Could not list notes. Open MicaPad and try again."); }
     }
 
     private async void AddReference_Click(object sender, RoutedEventArgs e)
@@ -32,7 +33,7 @@ public partial class MeetingWindow
         if (AvailableNotes.SelectedItem is not MeetingNoteChoice choice) return;
         try { await _references.SelectAsync(choice.Id, _lifetime.Token); }
         catch (OperationCanceledException) { }
-        catch { NotesStatus.Text = "Could not read that note."; }
+        catch { NotesStatus.Text = UiText.Tr("Could not read that note."); }
     }
 
     private void RemoveReference_Click(object sender, RoutedEventArgs e)

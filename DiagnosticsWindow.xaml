@@ -2,12 +2,13 @@
     x:Class="Kil0bitSystemMonitor.DiagnosticsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:hw="clr-namespace:Kil0bitSystemMonitor.Services.HardwareInfo"
     xmlns:dg="clr-namespace:Kil0bitSystemMonitor.Services.Diagnostics"
     xmlns:hlp="clr-namespace:Kil0bitSystemMonitor.Helpers"
     xmlns:ai="clr-namespace:Kil0bitSystemMonitor.Ai"
-    Title="MicaStats Diagnostics"
+    Title="{loc:Text 'MicaStats Diagnostics'}"
     Width="620" Height="700" MinWidth="600" MinHeight="500"
     WindowStartupLocation="CenterScreen"
     Background="#0E0E13"
@@ -215,7 +216,7 @@
                                FontFamily="Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI" />
                     <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
                         <TextBlock Style="{StaticResource StripIcon}" Text="{x:Static hlp:UiGlyphs.Stopwatch}" />
-                        <TextBlock Style="{StaticResource SubLabel}" Text="ROLLING WINDOW" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'ROLLING WINDOW'}" VerticalAlignment="Center" />
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="1" HorizontalAlignment="Right">
@@ -225,7 +226,7 @@
                                FontFamily="Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,1,0,0">
                         <TextBlock Style="{StaticResource StripIcon}" Text="{x:Static hlp:UiGlyphs.Processes}" />
-                        <TextBlock Style="{StaticResource SubLabel}" Text="BUSIEST RIGHT NOW" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'BUSIEST RIGHT NOW'}" VerticalAlignment="Center" />
                     </StackPanel>
                 </StackPanel>
             </Grid>
@@ -239,24 +240,24 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="StatusText" Style="{StaticResource SubLabel}" VerticalAlignment="Center"
-                           Text="Reading…" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                           Text="{loc:Text 'Reading…'}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                     <Button Style="{StaticResource QuickButton}" Click="OnRefresh">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Refresh}" />
-                            <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Text 'Refresh'}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource QuickButton}" Click="OnOpenDataFolder">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Folder}" />
-                            <TextBlock Text="Data Folder" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Text 'Data Folder'}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource QuickButton}" Click="OnSaveReport">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Report}" />
-                            <TextBlock Text="Save Report" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Text 'Save Report'}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -270,7 +271,7 @@
                 <TabItem.Header>
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Style="{StaticResource TabIcon}" Text="{x:Static hlp:UiGlyphs.Stopwatch}" />
-                        <TextBlock Text="Slowdowns" FontSize="10.5" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Text 'Slowdowns'}" FontSize="10.5" FontWeight="SemiBold"
                                    FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
                                    VerticalAlignment="Center" />
                     </StackPanel>
@@ -283,16 +284,16 @@
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Stopwatch}" />
-                                    <TextBlock Style="{StaticResource CardHeader}" Text="Recording"
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'Recording'}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
 
                                 <TextBlock Style="{StaticResource SpecLabel}" TextWrapping="Wrap" Margin="0,0,0,8"
-                                           Text="Task Manager only shows the present instant, so by the time a freeze is over the process responsible has finished and left nothing behind. MicaStats keeps the last few minutes of per-process activity so the question can still be answered afterwards." />
+                                           Text="{loc:Text 'Task Manager only shows the present instant, so by the time a freeze is over the process responsible has finished and left nothing behind. MicaStats keeps the last few minutes of per-process activity so the question can still be answered afterwards.'}" />
 
-                                <CheckBox x:Name="RecordingCheck" Content="Keep a rolling window of activity"
+                                <CheckBox x:Name="RecordingCheck" Content="{loc:Text 'Keep a rolling window of activity'}"
                                           Click="OnToggleRecording" Margin="0,0,0,4" />
-                                <CheckBox x:Name="AutoCaptureCheck" Content="Save a report automatically when the machine struggles"
+                                <CheckBox x:Name="AutoCaptureCheck" Content="{loc:Text 'Save a report automatically when the machine struggles'}"
                                           Click="OnToggleAutoCapture" Margin="0,0,0,8" />
 
                                 <TextBlock x:Name="ThresholdText" Style="{StaticResource SubLabel}"
@@ -302,7 +303,7 @@
                                     <Button Style="{StaticResource QuickButton}" Margin="0" Click="OnRecordNow">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Report}" />
-                                            <TextBlock Text="Record what just happened" VerticalAlignment="Center" />
+                                            <TextBlock Text="{loc:Text 'Record what just happened'}" VerticalAlignment="Center" />
                                         </StackPanel>
                                     </Button>
                                 </StackPanel>
@@ -313,7 +314,7 @@
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Processes}" />
-                                    <TextBlock Style="{StaticResource CardHeader}" Text="Busiest right now"
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'Busiest right now'}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
                                 <ItemsControl x:Name="LiveProcessList">
@@ -336,7 +337,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <TextBlock x:Name="NoLiveText" Style="{StaticResource SubLabel}"
-                                           Text="Nothing sampled yet." Visibility="Collapsed" />
+                                           Text="{loc:Text 'Nothing sampled yet.'}" Visibility="Collapsed" />
                             </StackPanel>
                         </Border>
 
@@ -344,7 +345,7 @@
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Report}" />
-                                    <TextBlock Style="{StaticResource CardHeader}" Text="Saved reports"
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'Saved reports'}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
                                 <ItemsControl x:Name="ReportList">
@@ -363,18 +364,18 @@
                                                 </StackPanel>
                                                 <!-- Slowdown reports only, and only while the assistant is on. -->
                                                 <Button Grid.Column="1" Style="{StaticResource QuickButton}"
-                                                        Content="Explain" Click="OnExplainReport"
+                                                        Content="{loc:Text 'Explain'}" Click="OnExplainReport"
                                                         Tag="{Binding Path}" Visibility="{Binding ExplainVisibility}"
                                                         VerticalAlignment="Center" />
                                                 <Button Grid.Column="2" Style="{StaticResource QuickButton}"
-                                                        Content="Open" Click="OnOpenReport"
+                                                        Content="{loc:Text 'Open'}" Click="OnOpenReport"
                                                         Tag="{Binding Path}" VerticalAlignment="Center" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <TextBlock x:Name="NoReportsText" Style="{StaticResource SubLabel}" TextWrapping="Wrap"
-                                           Text="No reports yet. One appears here when the machine struggles, or when you record by hand." />
+                                           Text="{loc:Text 'No reports yet. One appears here when the machine struggles, or when you record by hand.'}" />
                             </StackPanel>
                         </Border>
 
@@ -387,7 +388,7 @@
                 <TabItem.Header>
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Style="{StaticResource TabIcon}" Text="{x:Static hlp:UiGlyphs.Boot}" />
-                        <TextBlock Text="Boot" FontSize="10.5" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Text 'Boot'}" FontSize="10.5" FontWeight="SemiBold"
                                    FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
                                    VerticalAlignment="Center" />
                     </StackPanel>
@@ -401,7 +402,7 @@
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.History}" />
-                                    <TextBlock Style="{StaticResource CardHeader}" Text="What held the last boot up"
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'What held the last boot up'}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
                                 <ItemsControl x:Name="DelayList">
@@ -425,7 +426,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <TextBlock x:Name="NoDelaysText" Style="{StaticResource SubLabel}" TextWrapping="Wrap"
-                                           Text="Windows recorded nothing slowing this boot down." />
+                                           Text="{loc:Text 'Windows recorded nothing slowing this boot down.'}" />
                             </StackPanel>
                         </Border>
 
@@ -433,11 +434,11 @@
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Processes}" />
-                                    <TextBlock Style="{StaticResource CardHeader}" Text="Starts with Windows"
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'Starts with Windows'}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource SubLabel}" TextWrapping="Wrap" Margin="0,0,0,8"
-                                           Text="Clearing a box stops that program launching at sign-in. Entries set for all users need administrator rights, so they are shown but cannot be changed here." />
+                                           Text="{loc:Text 'Clearing a box stops that program launching at sign-in. Entries set for all users need administrator rights, so they are shown but cannot be changed here.'}" />
                                 <ItemsControl x:Name="StartupList">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type dg:StartupEntry}">
@@ -469,7 +470,7 @@
                 <TabItem.Header>
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Style="{StaticResource TabIcon}" Text="{x:Static hlp:UiGlyphs.Battery}" />
-                        <TextBlock Text="Battery" FontSize="10.5" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Text 'Battery'}" FontSize="10.5" FontWeight="SemiBold"
                                    FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
                                    VerticalAlignment="Center" />
                     </StackPanel>
@@ -479,7 +480,7 @@
                     <StackPanel Margin="10">
                         <ItemsControl x:Name="BatteryGroups" ItemTemplate="{StaticResource SpecGroupTemplate}" />
                         <TextBlock Style="{StaticResource SubLabel}" TextWrapping="Wrap" Margin="2,2,2,0"
-                                   Text="Windows offers no battery health readout and never warns that a pack is wearing out. These figures come from the firmware's own report; the time remaining is worked out from the power actually being drawn, because Windows' own estimate is frequently unavailable." />
+                                   Text="{loc:Text 'Windows offers no battery health readout and never warns that a pack is wearing out. These figures come from the firmware\&#x27;s own report; the time remaining is worked out from the power actually being drawn, because Windows\&#x27; own estimate is frequently unavailable.'}" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -489,7 +490,7 @@
                 <TabItem.Header>
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Style="{StaticResource TabIcon}" Text="{x:Static hlp:UiGlyphs.Alert}" />
-                        <TextBlock Text="Alerts" FontSize="10.5" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Text 'Alerts'}" FontSize="10.5" FontWeight="SemiBold"
                                    FontFamily="Segoe UI Variable Small, Segoe UI Variable Text, Segoe UI"
                                    VerticalAlignment="Center" />
                     </StackPanel>
@@ -501,24 +502,40 @@
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Alert}" />
-                                    <TextBlock Style="{StaticResource CardHeader}" Text="Tell me when"
+                                    <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'Tell me when'}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource SpecLabel}" TextWrapping="Wrap" Margin="0,0,0,8"
-                                           Text="MicaStats has always watched these readings and never said anything about them. A drive fills overnight, a cooler clogs and the processor throttles for weeks — all of it visible only in a panel nobody had open at the time." />
+                                           Text="{loc:Text 'MicaStats has always watched these readings and never said anything about them. A drive fills overnight, a cooler clogs and the processor throttles for weeks — all of it visible only in a panel nobody had open at the time.'}" />
 
-                                <CheckBox x:Name="AlertsEnabledCheck" Content="Show a notice when a reading goes wrong"
+                                <CheckBox x:Name="AlertsEnabledCheck" Content="{loc:Text 'Show a notice when a reading goes wrong'}"
                                           Click="OnToggleAlerts" Margin="0,0,0,10" />
 
                                 <ItemsControl x:Name="AlertList">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type dg:AlertRule}">
-                                            <StackPanel Margin="0,0,0,5">
+                                            <StackPanel Margin="0,0,0,7">
                                                 <CheckBox IsChecked="{Binding Enabled, Mode=OneTime}"
                                                           Click="OnToggleAlertRule" Tag="{Binding}"
                                                           Content="{Binding Label}" />
-                                                <TextBlock Style="{StaticResource SubLabel}" Margin="24,1,0,0"
-                                                           Text="{Binding ThresholdText}" />
+                                                <StackPanel Orientation="Horizontal" Margin="24,3,0,0" VerticalAlignment="Center">
+                                                    <TextBox Width="52" MinHeight="22" Padding="5,2" FontSize="11"
+                                                             Text="{Binding ThresholdInputText, Mode=OneTime}"
+                                                             Tag="{Binding}"
+                                                             LostFocus="OnAlertThresholdLostFocus"
+                                                             KeyDown="OnAlertInputKeyDown" />
+                                                    <TextBlock Style="{StaticResource SubLabel}" Margin="4,0,10,0"
+                                                               VerticalAlignment="Center"
+                                                               Text="{Binding Unit}" />
+                                                    <TextBox Width="48" MinHeight="22" Padding="5,2" FontSize="11"
+                                                             Text="{Binding SustainInputText, Mode=OneTime}"
+                                                             Tag="{Binding}"
+                                                             LostFocus="OnAlertSustainLostFocus"
+                                                             KeyDown="OnAlertInputKeyDown" />
+                                                    <TextBlock Style="{StaticResource SubLabel}" Margin="4,0,0,0"
+                                                               VerticalAlignment="Center"
+                                                               Text="s" />
+                                                </StackPanel>
                                             </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

@@ -1,0 +1,286 @@
+<UserControl x:Class="Kil0bitSystemMonitor.Companion.StackChanPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.modernwpf.com/2019"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
+    xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers"
+    MinWidth="360">
+    <UserControl.Resources>
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlElevationBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="20,18"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Opacity" Value="0.68"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <TextBlock Text="StackChan" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock Text="{loc:Text 'Use your M5Stack StackChan as a local companion for system activity, alerts, AI, and meetings.'}"
+                   Opacity="0.68" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+        <Border Style="{StaticResource CardStyle}">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,16,0">
+                        <TextBlock Text="{loc:Text 'Companion connection'}" FontSize="16" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="ConnectionGuideText" Text="{loc:Text 'Factory firmware: open DANCE. UIFlow 2.0: run the MicaStats companion script. Control uses Bluetooth LE; USB supplies power and debug.'}"
+                                   Opacity="0.65" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                    </StackPanel>
+                    <ui:ToggleSwitch x:Name="EnabledToggle" Grid.Column="1" Toggled="OnSettingsToggled"
+                                     AutomationProperties.Name="{loc:Text 'Enable StackChan companion'}"/>
+                </Grid>
+
+                <TextBlock x:Name="ConnectionStatus" Text="{loc:Text 'StackChan companion is off.'}" FontWeight="SemiBold"
+                           TextWrapping="Wrap" Margin="0,14,0,4"/>
+                <TextBlock x:Name="ConnectionDetail" Text="{loc:Text 'All companion controls are off. Turn it on, start the robot control mode, then scan.'}"
+                           Opacity="0.68" FontSize="12" TextWrapping="Wrap"/>
+
+                <WrapPanel Margin="0,14,0,0">
+                    <TextBlock Text="{loc:Text 'Connection'}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,8"/>
+                    <ComboBox x:Name="ConnectionModeBox" MinWidth="180" SelectionChanged="OnConnectionModeChanged" Margin="0,0,0,8"
+                              AutomationProperties.Name="{loc:Text 'StackChan connection mode'}">
+                        <ComboBoxItem Tag="Bluetooth" Content="{loc:Text 'Bluetooth LE'}"/>
+                        <ComboBoxItem Tag="Usb" Content="{loc:Text 'USB serial'}"/>
+                    </ComboBox>
+                </WrapPanel>
+
+                <WrapPanel Margin="0,6,0,0">
+                    <Button x:Name="ScanButton" Content="{loc:Text 'Scan for StackChan'}" helpers:ButtonIcon.Glyph="&#xE721;"
+                            Click="OnScan" Padding="14,7" Margin="0,0,8,8"/>
+                    <ComboBox x:Name="DeviceList" MinWidth="240" MaxWidth="430" Margin="0,0,8,8" SelectionChanged="OnDeviceSelectionChanged"
+                              AutomationProperties.Name="{loc:Text 'Discovered StackChan devices'}"/>
+                    <Button x:Name="ConnectButton" Content="{loc:Text 'Connect'}" helpers:ButtonIcon.Glyph="&#xE8CE;"
+                            Click="OnConnect" Padding="14,7" Margin="0,0,8,8"/>
+                    <Button x:Name="StartUsbCompanionButton" Content="{loc:Text 'Start temporary USB companion'}" helpers:ButtonIcon.Glyph="&#xE768;"
+                            Click="OnStartUsbCompanion" Padding="14,7" Margin="0,0,8,8" Visibility="Collapsed"
+                            AutomationProperties.HelpText="{loc:Text 'Temporarily interrupts the current robot program and runs the bundled companion until StackChan restarts. It does not flash firmware, write files, reset settings, or calibrate servos.'}"
+                            ToolTip="{loc:Text 'Temporarily interrupts the current robot program and runs the bundled companion until StackChan restarts. It does not flash firmware, write files, reset settings, or calibrate servos.'}"/>
+                    <Button x:Name="CancelOperationButton" Content="{loc:Text 'Cancel scan or connection'}" helpers:ButtonIcon.Glyph="&#xE711;"
+                            Click="OnCancelOperation" Padding="14,7" Margin="0,0,8,8" Visibility="Collapsed"/>
+                    <Button x:Name="DisconnectButton" Content="{loc:Text 'Disconnect'}" helpers:ButtonIcon.Glyph="&#xE8CD;"
+                            Click="OnDisconnect" Padding="14,7" Margin="0,0,0,8"/>
+                </WrapPanel>
+
+                <TextBlock x:Name="UsbGuidanceText"
+                           Text="{loc:Text 'USB Connect joins a companion script that is already running. Start temporary USB companion interrupts the current robot program, loads the bundled script into memory, and runs it only until StackChan restarts. It does not flash firmware, write files, reset settings, or calibrate servos.'}"
+                           Opacity="0.68" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,8" Visibility="Collapsed"/>
+
+                <ui:ToggleSwitch x:Name="AutoReconnectToggle" Header="{loc:Text 'Reconnect to this robot when MicaStats starts'}"
+                                 Toggled="OnSettingsToggled" Margin="0,8,0,0"/>
+                <ui:ToggleSwitch x:Name="AutoStartCompanionToggle" Header="{loc:Text 'Start the USB companion again after StackChan restarts'}"
+                                 Toggled="OnSettingsToggled" Margin="0,4,0,0"
+                                 ToolTip="{loc:Text 'The companion lives only in robot memory. When the remembered robot answers without it, MicaStats loads it again into memory; it never flashes firmware or writes robot files.'}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource CardStyle}">
+            <StackPanel x:Name="ReactionControls">
+                <TextBlock Text="{loc:Text 'Companion reactions'}" FontSize="16" FontWeight="SemiBold"/>
+                <TextBlock Text="{loc:Text 'Only system readings, activity states, and public alert metrics are sent. Note text, prompts, transcripts, custom labels, and drive paths stay on this PC.'}"
+                           Opacity="0.65" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                <WrapPanel>
+                    <ui:ToggleSwitch x:Name="ReactLoadToggle" Header="{loc:Text 'System load'}" Toggled="OnSettingsToggled" Width="180" Margin="0,0,8,8"/>
+                    <ui:ToggleSwitch x:Name="ReactAlertsToggle" Header="{loc:Text 'Diagnostic alerts'}" Toggled="OnSettingsToggled" Width="180" Margin="0,0,8,8"/>
+                    <ui:ToggleSwitch x:Name="ReactAiToggle" Header="{loc:Text 'AI activity'}" Toggled="OnSettingsToggled" Width="180" Margin="0,0,8,8"/>
+                    <ui:ToggleSwitch x:Name="ReactMeetingToggle" Header="{loc:Text 'Meeting activity'}" Toggled="OnSettingsToggled" Width="180" Margin="0,0,8,8"/>
+                </WrapPanel>
+                <WrapPanel Margin="0,4,0,0">
+                    <ui:ToggleSwitch x:Name="AutoMotionToggle" Header="{loc:Text 'Allow automatic head movement'}"
+                                     Toggled="OnSettingsToggled" MinWidth="250" Margin="0,0,20,8"/>
+                    <ui:ToggleSwitch x:Name="QuietModeToggle" Header="{loc:Text 'Quiet mode (dim LEDs and block new movement)'}"
+                                     Toggled="OnSettingsToggled" MinWidth="300" Margin="0,0,0,8"/>
+                </WrapPanel>
+                <TextBlock Text="{loc:Text 'The animated companion keeps CPU, RAM, and GPU visible, then visits overview and metric spotlight. Alerts take priority. Quiet mode keeps the screen still.'}"
+                           TextWrapping="Wrap" Opacity="0.68" FontSize="12.5" Margin="0,4,0,0"/>
+                <StackPanel Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="{loc:Text 'LED brightness'}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{loc:Text 'Brightness used by automatic reactions.'}" Opacity="0.65" FontSize="12"/>
+                    </StackPanel>
+                    <WrapPanel Margin="0,8,0,0">
+                        <Slider x:Name="BrightnessSlider" Minimum="0" Maximum="100" TickFrequency="5" Width="150"
+                                ValueChanged="OnBrightnessChanged" AutomationProperties.Name="{loc:Text 'LED brightness'}"/>
+                        <TextBlock x:Name="BrightnessText" Width="44" TextAlignment="Right" VerticalAlignment="Center"/>
+                    </WrapPanel>
+                </StackPanel>
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,20,0">
+                        <TextBlock Text="{loc:Text 'Reaction interval'}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{loc:Text 'How often system load may update the companion.'}" Opacity="0.65" FontSize="12"/>
+                    </StackPanel>
+                    <ComboBox x:Name="UpdateIntervalBox" Grid.Column="1" Width="130" SelectionChanged="OnUpdateIntervalChanged">
+                        <ComboBoxItem Tag="2" Content="{loc:Text '2 seconds'}"/>
+                        <ComboBoxItem Tag="5" Content="{loc:Text '5 seconds'}"/>
+                        <ComboBoxItem Tag="10" Content="{loc:Text '10 seconds'}"/>
+                        <ComboBoxItem Tag="30" Content="{loc:Text '30 seconds'}"/>
+                        <ComboBoxItem Tag="60" Content="{loc:Text '60 seconds'}"/>
+                    </ComboBox>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="PresenceCard" Style="{StaticResource CardStyle}">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,16,0">
+                        <TextBlock Text="{loc:Text 'Presence detection'}" FontSize="16" FontWeight="SemiBold"/>
+                        <TextBlock Text="{loc:Text 'StackChan looks for you with its camera: it greets you, follows you with its eyes and head, guards your screen, rests when you leave, and reminds you to take breaks. Needs the USB companion.'}"
+                                   Opacity="0.65" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                    </StackPanel>
+                    <ui:ToggleSwitch x:Name="PresenceToggle" Grid.Column="1" Toggled="OnPresenceSettingsToggled"
+                                     AutomationProperties.Name="{loc:Text 'Detect people with the StackChan camera'}"/>
+                </Grid>
+
+                <Grid Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Border Width="160" Height="120" CornerRadius="6" ClipToBounds="True" Margin="0,0,16,0" VerticalAlignment="Top"
+                            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                        <Grid>
+                            <TextBlock Text="&#xE722;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="28" Opacity="0.4"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Image x:Name="PresencePreview" Stretch="Uniform" AutomationProperties.Name="{loc:Text 'Live camera preview with detected faces'}"/>
+                            <Canvas x:Name="PresenceBoxes" IsHitTestVisible="False"/>
+                        </Grid>
+                    </Border>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="CameraStateText" Text="{loc:Text 'Camera off'}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="PresenceStateText" Opacity="0.68" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                        <TextBlock x:Name="PresenceGpuText" Opacity="0.68" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                        <TextBlock Text="{loc:Text 'Pictures stay in memory on this PC. They are never saved, sent anywhere, or used to recognise who someone is. A red dot on StackChan shows while its camera is on.'}"
+                                   Opacity="0.65" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel x:Name="PresenceOptions" Margin="0,12,0,0">
+                    <WrapPanel>
+                        <ui:ToggleSwitch x:Name="GuardVaultToggle" Header="{loc:Text 'Lock the MicaPad vault when someone is behind you'}"
+                                         Toggled="OnPresenceSettingsToggled" MinWidth="300" Margin="0,0,20,8"/>
+                        <ui:ToggleSwitch x:Name="GuardBlurToggle" Header="{loc:Text 'Cover MicaPad windows when someone is behind you'}"
+                                         Toggled="OnPresenceSettingsToggled" MinWidth="300" Margin="0,0,0,8"/>
+                    </WrapPanel>
+                    <WrapPanel>
+                        <ui:ToggleSwitch x:Name="LockWindowsToggle" Header="{loc:Text 'Lock Windows when I leave'}"
+                                         Toggled="OnPresenceSettingsToggled" MinWidth="220" Margin="0,0,12,8"/>
+                        <ComboBox x:Name="LockWindowsMinutesBox" Width="130" VerticalAlignment="Bottom" Margin="0,0,0,12"
+                                  SelectionChanged="OnPresenceMinutesChanged" AutomationProperties.Name="{loc:Text 'Lock Windows after'}">
+                            <ComboBoxItem Tag="1" Content="{loc:Text '1 minute'}"/>
+                            <ComboBoxItem Tag="2" Content="{loc:Text '2 minutes'}"/>
+                            <ComboBoxItem Tag="5" Content="{loc:Text '5 minutes'}"/>
+                            <ComboBoxItem Tag="10" Content="{loc:Text '10 minutes'}"/>
+                            <ComboBoxItem Tag="15" Content="{loc:Text '15 minutes'}"/>
+                            <ComboBoxItem Tag="30" Content="{loc:Text '30 minutes'}"/>
+                        </ComboBox>
+                    </WrapPanel>
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,20,0">
+                            <TextBlock Text="{loc:Text 'Break reminder'}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{loc:Text 'After this long at your desk, StackChan suggests a stretch. Not during meetings.'}"
+                                       Opacity="0.65" FontSize="12" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <ComboBox x:Name="BreakMinutesBox" Grid.Column="1" Width="130" SelectionChanged="OnPresenceMinutesChanged"
+                                  AutomationProperties.Name="{loc:Text 'Break reminder'}">
+                            <ComboBoxItem Tag="30" Content="{loc:Text '30 minutes'}"/>
+                            <ComboBoxItem Tag="45" Content="{loc:Text '45 minutes'}"/>
+                            <ComboBoxItem Tag="50" Content="{loc:Text '50 minutes'}"/>
+                            <ComboBoxItem Tag="60" Content="{loc:Text '60 minutes'}"/>
+                            <ComboBoxItem Tag="90" Content="{loc:Text '90 minutes'}"/>
+                        </ComboBox>
+                    </Grid>
+                    <WrapPanel Margin="0,12,0,0">
+                        <Button x:Name="DirectionCheckButton" Content="{loc:Text 'Check head direction'}" helpers:ButtonIcon.Glyph="&#xE8AB;"
+                                Click="OnDirectionCheck" Padding="14,7" Margin="0,0,12,8"/>
+                        <TextBlock x:Name="DirectionCheckText" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420" Opacity="0.68" FontSize="12" Margin="0,0,0,8"
+                                   Text="{loc:Text 'Sit in front of StackChan, then check once so the head turns toward you. It moves the head by 10 degrees and back.'}"/>
+                    </WrapPanel>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="FaceControls" Style="{StaticResource CardStyle}">
+            <StackPanel>
+                <TextBlock Text="{loc:Text 'Face and LEDs'}" FontSize="16" FontWeight="SemiBold"/>
+                <TextBlock Text="{loc:Text 'Choose a face preset or send your own feature positions. Colors use six-digit RGB hex values.'}"
+                           Opacity="0.65" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                <WrapPanel>
+                    <Button x:Name="NeutralFaceButton" Content="{loc:Text 'Neutral'}" helpers:ButtonIcon.Glyph="&#xE899;" Tag="Neutral" Click="OnFace" Margin="0,0,8,8" Padding="12,6"/>
+                    <Button x:Name="HappyFaceButton" Content="{loc:Text 'Happy'}" helpers:ButtonIcon.Glyph="&#xE899;" Tag="Happy" Click="OnFace" Margin="0,0,8,8" Padding="12,6"/>
+                    <Button x:Name="BusyFaceButton" Content="{loc:Text 'Busy'}" helpers:ButtonIcon.Glyph="&#xE916;" Tag="Busy" Click="OnFace" Margin="0,0,8,8" Padding="12,6"/>
+                    <Button x:Name="ConcernedFaceButton" Content="{loc:Text 'Concerned'}" helpers:ButtonIcon.Glyph="&#xE7BA;" Tag="Concerned" Click="OnFace" Margin="0,0,8,8" Padding="12,6"/>
+                    <Button x:Name="SleepyFaceButton" Content="{loc:Text 'Sleepy'}" helpers:ButtonIcon.Glyph="&#xE708;" Tag="Sleepy" Click="OnFace" Margin="0,0,0,8" Padding="12,6"/>
+                </WrapPanel>
+                <WrapPanel Margin="0,6,0,4">
+                    <StackPanel Margin="0,0,12,8"><TextBlock Text="{loc:Text 'Left LED'}" Style="{StaticResource FieldLabelStyle}"/><TextBox x:Name="LeftColorBox" Width="110" Text="#22AADD"/></StackPanel>
+                    <StackPanel Margin="0,0,12,8"><TextBlock Text="{loc:Text 'Right LED'}" Style="{StaticResource FieldLabelStyle}"/><TextBox x:Name="RightColorBox" Width="110" Text="#22AADD"/></StackPanel>
+                    <StackPanel Margin="0,0,12,8"><TextBlock Text="{loc:Text 'Transition (seconds)'}" Style="{StaticResource FieldLabelStyle}"/><TextBox x:Name="RgbDurationBox" Width="110" Text="0.3"/></StackPanel>
+                    <Button x:Name="SetRgbButton" Content="{loc:Text 'Set LEDs'}" helpers:ButtonIcon.Glyph="&#xE790;" Click="OnSetRgb" Padding="12,6" VerticalAlignment="Bottom" Margin="0,0,0,8"/>
+                </WrapPanel>
+
+                <Expander Header="{loc:Text 'Advanced face editor'}" Margin="0,8,0,0">
+                    <StackPanel Margin="0,10,0,0">
+                        <TextBlock Text="{loc:Text 'X and Y: -100 to 100 · Rotation: 0 to 3600 · Weight: 0 to 100 · Size: -100 to 100'}"
+                                   Opacity="0.62" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="X" Style="{StaticResource FieldLabelStyle}"/><TextBlock Grid.Row="0" Grid.Column="2" Text="Y" Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="3" Text="{loc:Text 'Rotation'}" Style="{StaticResource FieldLabelStyle}"/><TextBlock Grid.Row="0" Grid.Column="4" Text="{loc:Text 'Weight'}" Style="{StaticResource FieldLabelStyle}"/><TextBlock Grid.Row="0" Grid.Column="5" Text="{loc:Text 'Size'}" Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Grid.Row="1" Text="{loc:Text 'Left eye'}" VerticalAlignment="Center"/><TextBox x:Name="LeftEyeX" Grid.Row="1" Grid.Column="1" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Left eye X'}"/><TextBox x:Name="LeftEyeY" Grid.Row="1" Grid.Column="2" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Left eye Y'}"/><TextBox x:Name="LeftEyeRotation" Grid.Row="1" Grid.Column="3" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Left eye rotation'}"/><TextBox x:Name="LeftEyeWeight" Grid.Row="1" Grid.Column="4" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Left eye weight'}"/><TextBox x:Name="LeftEyeSize" Grid.Row="1" Grid.Column="5" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Left eye size'}"/>
+                            <TextBlock Grid.Row="2" Text="{loc:Text 'Right eye'}" VerticalAlignment="Center"/><TextBox x:Name="RightEyeX" Grid.Row="2" Grid.Column="1" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Right eye X'}"/><TextBox x:Name="RightEyeY" Grid.Row="2" Grid.Column="2" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Right eye Y'}"/><TextBox x:Name="RightEyeRotation" Grid.Row="2" Grid.Column="3" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Right eye rotation'}"/><TextBox x:Name="RightEyeWeight" Grid.Row="2" Grid.Column="4" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Right eye weight'}"/><TextBox x:Name="RightEyeSize" Grid.Row="2" Grid.Column="5" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Right eye size'}"/>
+                            <TextBlock Grid.Row="3" Text="{loc:Text 'Mouth'}" VerticalAlignment="Center"/><TextBox x:Name="MouthX" Grid.Row="3" Grid.Column="1" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Mouth X'}"/><TextBox x:Name="MouthY" Grid.Row="3" Grid.Column="2" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Mouth Y'}"/><TextBox x:Name="MouthRotation" Grid.Row="3" Grid.Column="3" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Mouth rotation'}"/><TextBox x:Name="MouthWeight" Grid.Row="3" Grid.Column="4" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Mouth weight'}"/><TextBox x:Name="MouthSize" Grid.Row="3" Grid.Column="5" Text="0" Margin="2" AutomationProperties.Name="{loc:Text 'Mouth size'}"/>
+                        </Grid>
+                        <Button x:Name="ApplyAvatarButton" Content="{loc:Text 'Apply custom face'}" helpers:ButtonIcon.Glyph="&#xE8D4;" Click="OnApplyAvatar" Padding="12,6" HorizontalAlignment="Left" Margin="0,10,0,0"/>
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="HeadControls" Style="{StaticResource CardStyle}">
+            <StackPanel>
+                <TextBlock Text="{loc:Text 'Head control'}" FontSize="16" FontWeight="SemiBold"/>
+                <TextBlock x:Name="MotionAvailabilityText" Text="{loc:Text 'Calibrate the servos before moving the head. Automatic gestures are gentle and run at most once every 90 seconds.'}"
+                           Opacity="0.65" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                <WrapPanel>
+                    <StackPanel Width="230" Margin="0,0,20,10"><TextBlock Text="{loc:Text 'Yaw (-45° to 45°)'}" Style="{StaticResource FieldLabelStyle}"/><Slider x:Name="YawSlider" Minimum="-45" Maximum="45" Value="0" TickFrequency="5" AutomationProperties.Name="{loc:Text 'Head yaw'}"/><TextBlock x:Name="YawText" Text="0°" TextAlignment="Center"/></StackPanel>
+                    <StackPanel Width="230" Margin="0,0,20,10"><TextBlock Text="{loc:Text 'Pitch (15° to 65°)'}" Style="{StaticResource FieldLabelStyle}"/><Slider x:Name="PitchSlider" Minimum="15" Maximum="65" Value="45" TickFrequency="5" AutomationProperties.Name="{loc:Text 'Head pitch'}"/><TextBlock x:Name="PitchText" Text="45°" TextAlignment="Center"/></StackPanel>
+                    <StackPanel Width="180" Margin="0,0,0,10"><TextBlock Text="{loc:Text 'Speed (100 to 300)'}" Style="{StaticResource FieldLabelStyle}"/><Slider x:Name="SpeedSlider" Minimum="100" Maximum="300" Value="150" TickFrequency="25" AutomationProperties.Name="{loc:Text 'Head speed'}"/><TextBlock x:Name="SpeedText" Text="150" TextAlignment="Center"/></StackPanel>
+                </WrapPanel>
+                <WrapPanel Margin="0,4,0,0">
+                    <Button x:Name="MoveButton" Content="{loc:Text 'Move head'}" helpers:ButtonIcon.Glyph="&#xE8AB;" Click="OnMove" Padding="12,6" Margin="0,0,8,8"/>
+                    <Button x:Name="NeutralHeadButton" Content="{loc:Text 'Center (0°, 45°)'}" helpers:ButtonIcon.Glyph="&#xE73F;" Click="OnCenter" Padding="12,6" Margin="0,0,8,8"/>
+                    <Button x:Name="NodButton" Content="{loc:Text 'Nod'}" helpers:ButtonIcon.Glyph="&#xE70D;" Tag="Nod" Click="OnGesture" Padding="12,6" Margin="0,0,8,8"/>
+                    <Button x:Name="ShakeButton" Content="{loc:Text 'Shake'}" helpers:ButtonIcon.Glyph="&#xE8AB;" Tag="Shake" Click="OnGesture" Padding="12,6" Margin="0,0,8,8"/>
+                    <Button x:Name="LookAroundButton" Content="{loc:Text 'Look around'}" helpers:ButtonIcon.Glyph="&#xE7C1;" Tag="LookAround" Click="OnGesture" Padding="12,6" Margin="0,0,8,8"/>
+                    <Button x:Name="CancelGestureButton" Content="{loc:Text 'Cancel remaining gesture steps'}" helpers:ButtonIcon.Glyph="&#xE711;" Click="OnCancelGesture" Padding="12,6" Margin="0,0,0,8"/>
+                </WrapPanel>
+                <TextBlock Text="{loc:Text 'Cancel stops only movement steps that MicaStats has not sent yet; a movement already sent may finish.'}"
+                           Opacity="0.6" FontSize="11.5" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource CardStyle}" BorderBrush="{DynamicResource SystemAccentColorBrush}" BorderThickness="3,1,1,1">
+            <StackPanel>
+                <TextBlock Text="{loc:Text 'Firmware modes'}" FontWeight="SemiBold"/>
+                <TextBlock x:Name="FirmwareModeText" Text="{loc:Text 'Factory DANCE firmware supports face, lights, and head control. It does not support live numeric stats or PC audio.'}"
+                           Opacity="0.68" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                <TextBlock Text="{loc:Text 'The optional MicaStats UIFlow 2.0 companion adds live CPU, RAM, and GPU readings. Installing it replaces the factory firmware and requires servo calibration.'}"
+                           Opacity="0.68" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                <Button Content="{loc:Text 'UIFlow 2.0 setup guide'}" helpers:ButtonIcon.Glyph="&#xE774;" Click="OnOpenUiFlowGuide"
+                        Padding="12,6" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

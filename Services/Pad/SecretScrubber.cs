@@ -98,6 +98,26 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>How many versions the last try left holding it; -1 before any. A window says so again only when it changes.</summary>
         public int LastLeft { get; set; } = -1;
 
+        /// <summary>
+        /// Runs one scrub of the note's versions in <paramref name="store"/>, updating <see cref="LastLeft"/>.
+        /// Returns how many versions may still hold the value, or -1 when the scrub threw (logging ids and exception type only).
+        /// </summary>
+        public int TryScrub(NoteStore store, Action<string>? warn = null)
+        {
+            if (store == null) throw new ArgumentNullException(nameof(store));
+            try
+            {
+                int left = store.ScrubSnapshots(NoteId, Value, Reference);
+                LastLeft = left;
+                return left;
+            }
+            catch (Exception ex)
+            {
+                warn?.Invoke("Removing stored credential " + Id + " from the older versions of note " + NoteId + " failed (" + ex.GetType().Name + ")");
+                return -1;
+            }
+        }
+
         /// <summary>The ids only.</summary>
         public override string ToString() => "PendingScrub { NoteId = " + NoteId + ", Id = " + Id + " }";
     }

@@ -30,7 +30,7 @@ namespace Kil0bitSystemMonitor.Tests
                 var root = Assert.IsType<Grid>(window.Content);
                 Layout(root, 900, 640);
 
-                MenuItem colorMenu = Assert.IsType<MenuItem>(window.BuildTabMenu(note, null).Items[1]);
+                MenuItem colorMenu = ColorMenu(window.BuildTabMenu(note, null));
                 Assert.Equal("Tab color", colorMenu.Header);
                 Assert.Equal(new[] { "Blue", "Orange", "Green", "Purple", "Teal", "Amber", "Rose", "Violet", "Leaf", "Coral", "Pink", "Indigo" },
                     colorMenu.Items.Cast<MenuItem>().Select(item => Assert.IsType<string>(item.Header)));
@@ -78,7 +78,7 @@ namespace Kil0bitSystemMonitor.Tests
                 OpenNote note = env.Workspace.Open.First(candidate =>
                     !NoteTabColors.Choices.Any(choice => choice.Hue == candidate.TabColorHue));
                 int originalHue = note.TabColorHue;
-                MenuItem colorMenu = Assert.IsType<MenuItem>(window.BuildTabMenu(note, null).Items[1]);
+                MenuItem colorMenu = ColorMenu(window.BuildTabMenu(note, null));
                 MenuItem automatic = Assert.Single(colorMenu.Items.OfType<MenuItem>(), item => item.IsChecked);
                 Assert.Equal("Automatic color", automatic.Header);
                 Assert.False(automatic.IsEnabled);
@@ -89,7 +89,7 @@ namespace Kil0bitSystemMonitor.Tests
                 MenuItem blue = colorMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "Blue"));
                 blue.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, blue));
                 Assert.Equal(210, note.TabColorHue);
-                MenuItem updated = Assert.IsType<MenuItem>(window.BuildTabMenu(note, null).Items[1]);
+                MenuItem updated = ColorMenu(window.BuildTabMenu(note, null));
                 Assert.DoesNotContain(updated.Items.OfType<MenuItem>(), item => Equals(item.Header, "Automatic color"));
                 Assert.Equal("Blue", Assert.Single(updated.Items.OfType<MenuItem>(), item => item.IsChecked).Header);
             });
@@ -104,7 +104,7 @@ namespace Kil0bitSystemMonitor.Tests
                 Assert.True(env.Workspace.SetTabColorHue(note, hue));
                 ContextMenu menu = window.BuildTabMenu(note, null);
                 EditorMenus.Style(menu, window.TabPalette);
-                MenuItem colors = Assert.IsType<MenuItem>(menu.Items[1]);
+                MenuItem colors = ColorMenu(menu);
                 MenuItem selected = Assert.Single(colors.Items.OfType<MenuItem>(), item => item.IsChecked);
                 selected.Style = (System.Windows.Style)menu.FindResource(typeof(MenuItem));
                 selected.ApplyTemplate();
@@ -213,6 +213,9 @@ namespace Kil0bitSystemMonitor.Tests
                     SaveFixture(root, width, height, theme);
                 });
             });
+
+        private static MenuItem ColorMenu(ContextMenu menu) =>
+            Assert.Single(menu.Items.OfType<MenuItem>(), item => Equals(item.Header, "Tab color"));
 
         private static T TabPart<T>(MicaPadWindow window, OpenNote note, string name) where T : FrameworkElement
         {

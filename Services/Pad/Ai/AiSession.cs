@@ -102,7 +102,8 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         /// this same object (<see cref="Budget"/>).
         /// </param>
         public AiSession(PadAiAction action, string sourceText, bool fromSelection, string? instruction = null, string destination = "",
-                         string model = "", Func<DateTime>? utcNow = null, bool sourceFirst = false, AiBudget? budget = null)
+                         string model = "", Func<DateTime>? utcNow = null, bool sourceFirst = false, AiBudget? budget = null,
+                         SecretMask? sourceMask = null, Func<string, string>? redactInstruction = null)
         {
             Action = action;
             Original = sourceText ?? "";
@@ -112,14 +113,16 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
             SourceFirst = sourceFirst;
             Budget = budget ?? AiBudget.Standard;
             _utcNow = utcNow ?? (() => DateTime.UtcNow);
-            _mask = SecretMask.Of(Original);
+            _mask = sourceMask ?? SecretMask.Of(Original);
             // The text as it was selected, before a credential becomes its placeholder: where it was always measured.
-            Refusal = action.TooLong(Original, Budget);
+            Refusal = action.TooLong(Original, Budget)
+                ?? (ReferenceEquals(action, PadAiAction.Ask) ? action.TooLong(Original.Length) : null);
             // A refusal wins: text that cannot be sent is not asked an instruction for, which could never run.
             AwaitingInstruction = Refusal == null && ReferenceEquals(action, PadAiAction.Ask) && string.IsNullOrWhiteSpace(instruction);
             Instruction = ReferenceEquals(action, PadAiAction.Ask)
                 ? NotePassages.WithoutSecretParts((instruction ?? "").Trim())   // typed or pasted: part of a reference is cleaned too
                 : action.Instruction;
+            if (redactInstruction != null) Instruction = redactInstruction(Instruction);
             UserMessage = PadAiPrompts.ForAction(Instruction, _mask.Text);
         }
 
@@ -201,7 +204,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         }
 
         /// <summary>The cleaned result with each credential placeholder turned back into its pill.</summary>
-        public string ResultForNote => _mask.Unmask(CleanRaw);
+        public string ResultForNote => _mask.Unmask(CleanRaw, restorePlaintext: Action.Kind == PadAiKind.Rewrite);
 
         /// <summary>
         /// True when a line of <paramref name="result"/> would close a block opened by

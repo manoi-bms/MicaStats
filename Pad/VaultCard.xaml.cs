@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using ContextMenu = System.Windows.Controls.ContextMenu;
 using DataFormats = System.Windows.DataFormats;
@@ -145,10 +146,10 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         public void ShowStore(int length, int copies, Action<string?> store)
         {
-            string body = "It will be replaced by a reference. You need your PIN to see it again.\n\n"
-                          + string.Create(Inv, $"Secret: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 ({length} characters)");
+            string body = UiText.Tr("It will be replaced by a reference. You need your PIN to see it again.") + "\n\n"
+                          + UiText.Format("Secret: •••••••• ({0} characters)", length);
             if (copies > 1)
-                body += string.Create(Inv, $"\nAppears {copies} times in this note \u2014 every copy will be masked.");
+                body += "\n" + UiText.Format("Appears {0} times in this note — every copy will be masked.", copies);
 
             Begin("Store", "Store as credential", body, "Store", "Cancel");
             ShowField(LabelCaption, LabelBox, "Label (optional)");
@@ -198,18 +199,18 @@ namespace Kil0bitSystemMonitor.Pad
         internal static string WaitText(TimeSpan left)
         {
             long seconds = left <= TimeSpan.Zero ? 0 : (left.Ticks + TimeSpan.TicksPerSecond - 1) / TimeSpan.TicksPerSecond;
-            return string.Create(Inv, $"Too many wrong PINs. Try again in {seconds / 60}:{seconds % 60:00}.");
+            return UiText.Format("Too many wrong PINs. Try again in {0}:{1:00}.", seconds / 60, seconds % 60);
         }
 
         /// <summary>"Wrong PIN. n more tries before a wait."</summary>
         internal static string TriesText(int left) =>
-            left == 1 ? "Wrong PIN. 1 more try before a wait." : string.Create(Inv, $"Wrong PIN. {left} more tries before a wait.");
+            left == 1 ? UiText.Tr("Wrong PIN. 1 more try before a wait.") : UiText.Format("Wrong PIN. {0} more tries before a wait.", left);
 
         /// <summary>The tries left as a card opens, after wrong PINs typed earlier: "n more tries before a wait."</summary>
         internal static string TriesLeftText(int left) =>
-            left <= 0 ? "The next wrong PIN starts a wait."
-            : left == 1 ? "1 more try before a wait."
-            : string.Create(Inv, $"{left} more tries before a wait.");
+            left <= 0 ? UiText.Tr("The next wrong PIN starts a wait.")
+            : left == 1 ? UiText.Tr("1 more try before a wait.")
+            : UiText.Format("{0} more tries before a wait.", left);
 
         /// <summary>A PIN question's opening state: a running wait counts down with input refused; earlier wrong PINs show the tries left.</summary>
         private void ShowPinState(PinState? state)
@@ -368,7 +369,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void SetError(string text)
         {
-            ErrorText.Text = text;
+            ErrorText.Text = UiText.Tr(text);
             ErrorText.Visibility = text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -383,19 +384,19 @@ namespace Kil0bitSystemMonitor.Pad
                 Reset();
 
                 Mode = mode;
-                TitleText.Text = title;
-                BodyText.Text = body;
+                TitleText.Text = UiText.Tr(title);
+                BodyText.Text = UiText.Tr(body);
                 BodyText.Visibility = body.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
                 foreach (UIElement part in new UIElement[] { PinCaption, PinBox, Pin2Caption, PinBox2, Pin3Caption, PinBox3, LabelCaption, LabelBox, ValueBox, CopyButton })
                     part.Visibility = Visibility.Collapsed;
 
-                PrimaryButton.Content = primary;
+                PrimaryButton.Content = UiText.Tr(primary);
                 PrimaryButton.ContentTemplate = null;
                 PrimaryButton.ClearValue(ForegroundProperty);
                 PrimaryButton.SetResourceReference(StyleProperty, "AccentButtonStyle");
                 ButtonIcon.SetGlyph(PrimaryButton, PrimaryGlyph(mode, primary));
                 PrimaryButton.Visibility = Visibility.Visible;
-                SecondaryButton.Content = secondary;
+                SecondaryButton.Content = UiText.Tr(secondary);
                 ButtonIcon.SetGlyph(SecondaryButton, mode == "Reveal" ? "\uE890" : "\uE711");
                 Root.Visibility = Visibility.Visible;
             }
@@ -419,7 +420,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private static void ShowField(TextBlock caption, UIElement field, string text)
         {
-            caption.Text = text;
+            caption.Text = UiText.Tr(text);
             caption.Visibility = Visibility.Visible;
             field.Visibility = Visibility.Visible;
         }

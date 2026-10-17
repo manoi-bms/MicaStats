@@ -403,6 +403,37 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.True(doc.CanUndo);
             Assert.True(doc.Undo());
         }
+
+        [Fact]
+        public void Switching_away_from_crop_clears_pending_crop_and_apply_style_updates_selected_annotation() => UiThread.Run(() =>
+        {
+            var canvas = new Kil0bitSystemMonitor.Controls.AnnotationCanvas();
+            var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(
+                100, 100, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, new byte[100 * 100 * 4], 400);
+            canvas.Load(bitmap);
+            var shape = new ShapeAnnotation(CaptureTool.Rectangle, new ImgPoint(10, 10), new ImgPoint(50, 50))
+            {
+                ColorHex = "#FF453A",
+                Thickness = 3,
+            };
+            canvas.Document!.Add(shape);
+            canvas.SelectAnnotation(shape);
+            Assert.Same(shape, canvas.Selected);
+
+            Assert.True(canvas.ApplyStyleToSelected(colorHex: "#0A84FF", thickness: 6));
+            var updated = Assert.IsType<ShapeAnnotation>(Assert.Single(canvas.Document.Items));
+            Assert.Equal("#0A84FF", updated.ColorHex);
+            Assert.Equal(6, updated.Thickness);
+            Assert.Same(updated, canvas.Selected);
+
+            canvas.SetCropPreviewForTest(new PixelRect(5, 5, 40, 40));
+            canvas.Tool = CaptureTool.Crop;
+            canvas.SetCropPreviewForTest(new PixelRect(5, 5, 40, 40));
+            Assert.False(canvas.PendingCrop.IsEmpty);
+
+            canvas.Tool = CaptureTool.Rectangle;
+            Assert.True(canvas.PendingCrop.IsEmpty);
+        });
     }
 
     /// <summary>Hotkey strings, where a parsing slip means a shortcut silently never fires.</summary>
@@ -512,6 +543,62 @@ namespace Kil0bitSystemMonitor.Tests
         {
             var cfg = new Kil0bitSystemMonitor.Models.AppConfig { CaptureFormat = "tiff" };
             Assert.Equal(CaptureFormat.Png, CaptureSettings.From(cfg).Format);
+        }
+
+        [Fact]
+        public void PngBitmap_reads_header_dimensions_and_decodes_frozen_bitmap()
+        {
+            var source = System.Windows.Media.Imaging.BitmapSource.Create(
+                16, 12, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, new byte[16 * 12 * 4], 16 * 4);
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(source));
+            using var ms = new System.IO.MemoryStream();
+            encoder.Save(ms);
+            byte[] png = ms.ToArray();
+
+            Assert.True(Kil0bitSystemMonitor.Services.Pad.PngBitmap.TryReadSize(png, out int width, out int height));
+            Assert.Equal(16, width);
+            Assert.Equal(12, height);
+            Assert.Equal(16, Kil0bitSystemMonitor.Services.Pad.PngBitmap.ReadWidth(png));
+
+            var decoded = Kil0bitSystemMonitor.Services.Pad.PngBitmap.DecodeFrozen(png, decodeWidth: 8);
+            Assert.True(decoded.IsFrozen);
+            Assert.Equal(8, decoded.PixelWidth);
+        }
+
+        [Fact]
+        public void Capture_tool_tags_and_region_hint_have_thai_translations()
+        {
+            string[] keys =
+            {
+                "Select — move, resize or delete a mark (V)",
+                "Arrow (A)",
+                "Rectangle (R)",
+                "Ellipse (E)",
+                "Line (L)",
+                "Pen (P)",
+                "Highlighter (H)",
+                "Text (T)",
+                "Numbered step (N)",
+                "Redact — hide sensitive content (B)",
+                "Crop (C)",
+                "saved to {0}",
+                "Drag to select   ·   Click a window or screen   ·   M magnifier   ·   S snap   ·   A all   ·   Enter accept   ·   Esc cancel",
+            };
+            string previous = Kil0bitSystemMonitor.Services.Localization.UiText.Language;
+            try
+            {
+                Kil0bitSystemMonitor.Services.Localization.UiText.SetLanguage("th");
+                foreach (string key in keys)
+                {
+                    string thai = Kil0bitSystemMonitor.Services.Localization.UiText.Tr(key);
+                    Assert.NotEqual(key, thai);
+                }
+            }
+            finally
+            {
+                Kil0bitSystemMonitor.Services.Localization.UiText.SetLanguage(previous);
+            }
         }
     }
 }

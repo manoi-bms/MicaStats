@@ -10,6 +10,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 using static Kil0bitSystemMonitor.Pad.EditorMenus;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Point = System.Windows.Point;
@@ -35,6 +36,9 @@ namespace Kil0bitSystemMonitor.Pad
             get => (double)GetValue(TabHeaderWidthProperty);
             set => SetValue(TabHeaderWidthProperty, value);
         }
+
+        internal static double CalculateTabHeaderWidth(double viewportWidth, int tabCount) =>
+            Math.Clamp(viewportWidth / Math.Max(1, tabCount), 100d, 180d);
 
         private readonly HashSet<OpenNote> _navigationNotes = new();
         private INotifyCollectionChanged? _navigationTabs;
@@ -91,12 +95,12 @@ namespace Kil0bitSystemMonitor.Pad
 
         private MenuItem BuildTabColorMenu(OpenNote note)
         {
-            var menu = new MenuItem { Header = "Tab color", Icon = ColorSwatch(note.TabColorHue) };
+            var menu = new MenuItem { Header = UiText.Tr("Tab color"), Icon = ColorSwatch(note.TabColorHue) };
             if (!NoteTabColors.Choices.Any(choice => choice.Hue == note.TabColorHue))
             {
                 menu.Items.Add(new MenuItem
                 {
-                    Header = "Automatic color",
+                    Header = UiText.Tr("Automatic color"),
                     Icon = ColorSwatch(note.TabColorHue),
                     IsCheckable = true,
                     IsChecked = true,
@@ -127,7 +131,8 @@ namespace Kil0bitSystemMonitor.Pad
         {
             int count = TabStrip.Items.Count;
             OpenNotesCount.Text = count.ToString(CultureInfo.InvariantCulture);
-            AutomationProperties.SetName(OpenNotesButton, "Open notes, " + OpenNotesCount.Text + " in this window");
+            AutomationProperties.SetName(OpenNotesButton, UiText.Format("Open notes, {0} in this window", OpenNotesCount.Text));
+            if (TabScroller.ViewportWidth > 0) TabHeaderWidth = CalculateTabHeaderWidth(TabScroller.ViewportWidth, count);
         }
 
         internal void PrepareOpenNotes() => NotesPicker.Begin(_workspace.Open, _shown, _windowId);

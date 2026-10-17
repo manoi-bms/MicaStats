@@ -817,6 +817,22 @@ namespace Kil0bitSystemMonitor.Tests
         {
             Assert.Equal(AlertRule.Defaults.Count, AlertRuleSettings.Parse(line).Count);
         }
+
+        [Fact]
+        public void WithEditedValues_updates_and_clamps_threshold_and_sustain()
+        {
+            var rule = AlertRule.Defaults[0];
+            var edited = rule.WithEditedValues("88.5", "45");
+
+            Assert.Equal(88.5d, edited.Threshold);
+            Assert.Equal(45, edited.SustainSeconds);
+            Assert.Equal("88.5", edited.ThresholdInputText);
+            Assert.Equal("45", edited.SustainInputText);
+
+            var invalid = edited.WithEditedValues("not-a-number", "-99");
+            Assert.Equal(88.5d, invalid.Threshold);
+            Assert.Equal(0, invalid.SustainSeconds);
+        }
     }
 
     public class ProcessDiskRateTests

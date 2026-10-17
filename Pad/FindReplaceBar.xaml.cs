@@ -12,6 +12,7 @@ using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Folding;
 using ICSharpCode.AvalonEdit.Rendering;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using Brush = System.Windows.Media.Brush;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
@@ -73,9 +74,7 @@ namespace Kil0bitSystemMonitor.Pad
         public void Open(bool replace)
         {
             Visibility = Visibility.Visible;
-            var replaceVisibility = replace ? Visibility.Visible : Visibility.Collapsed;
-            ReplaceBox.Visibility = replaceVisibility;
-            ReplaceButtons.Visibility = replaceVisibility;
+            SetReplaceVisible(replace);
 
             if (_editor != null && _editor.SelectionLength > 0 && !_editor.SelectedText.Contains('\n'))
                 FindBox.Text = _editor.SelectedText;
@@ -83,6 +82,17 @@ namespace Kil0bitSystemMonitor.Pad
             FindBox.Focus();
             FindBox.SelectAll();
             Recompute();
+        }
+
+        /// <summary>Toggles whether the Replace row is visible inside the Find bar.</summary>
+        internal void ToggleReplace() => SetReplaceVisible(ReplaceBox.Visibility != Visibility.Visible);
+
+        private void SetReplaceVisible(bool replace)
+        {
+            var replaceVisibility = replace ? Visibility.Visible : Visibility.Collapsed;
+            ReplaceBox.Visibility = replaceVisibility;
+            ReplaceButtons.Visibility = replaceVisibility;
+            ToggleReplaceButton.Content = replace ? "\uE70E" : "\uE70D";
         }
 
         /// <summary>Hides the bar, clears the highlights and returns focus to the editor.</summary>
@@ -170,15 +180,15 @@ namespace Kil0bitSystemMonitor.Pad
             if (_editor == null) return;
             if (_matches.Count == 0)
             {
-                CountText.Text = FindBox.Text.Length == 0 ? "" : "No results";
+                CountText.Text = FindBox.Text.Length == 0 ? "" : UiText.Tr("No results");
                 return;
             }
 
             string total = _matches.Count.ToString("N0", Inv) + (_matches.Count >= FindReplaceEngine.MaxHighlights ? "+" : "");
             int index = _editor.SelectionLength > 0 ? FindReplaceEngine.IndexOf(_matches, _editor.SelectionStart) : -1;
             CountText.Text = index >= 0
-                ? (index + 1).ToString("N0", Inv) + " of " + total
-                : total + (_matches.Count == 1 ? " result" : " results");
+                ? UiText.Format("{0} of {1}", (index + 1).ToString("N0", Inv), total)
+                : UiText.Format(_matches.Count == 1 ? "{0} result" : "{0} results", total);
         }
 
         private void Select(FindMatch? match)
@@ -186,7 +196,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (_editor == null) return;
             if (match == null)
             {
-                CountText.Text = "No results";
+                CountText.Text = UiText.Tr("No results");
                 return;
             }
 
@@ -292,6 +302,8 @@ namespace Kil0bitSystemMonitor.Pad
         private void OnPreviousClick(object sender, RoutedEventArgs e) => FindPrevious();
 
         private void OnNextClick(object sender, RoutedEventArgs e) => FindNext();
+
+        private void OnToggleReplaceClick(object sender, RoutedEventArgs e) => ToggleReplace();
 
         private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
     }

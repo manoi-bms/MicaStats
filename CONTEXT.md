@@ -4,6 +4,49 @@ MicaStats provides desktop monitoring, MicaPad notes, and private AI assistance.
 
 ## Language
 
+**StackChan companion**:
+An optional nearby M5Stack robot that reflects MicaStats activity through its face, lights,
+and deliberate head gestures. The custom UIFlow companion can also show live system readings.
+
+**Presence detection**:
+The StackChan camera, analysed in memory on the PC's GPU, telling whether the owner is at
+the desk. It counts and locates faces only; it never identifies anyone.
+
+**Away**:
+Frames keep arriving but no face has been seen for a while. A covered camera or silent stream
+is *unknown*, never away.
+
+**Onlooker**:
+A second face staying in view behind the owner, which guards MicaPad. A face that never moves
+(a poster) stops counting.
+
+**Direction check**:
+A one-time head nudge that learns which way the head must turn, by watching the owner's face
+move in the picture.
+
+**USB companion session**:
+A wired connection to the custom UIFlow robot program. Starting a temporary companion
+replaces its current running program until the robot restarts, while preserving firmware,
+saved robot files and servo calibration.
+
+**Quiet mode**:
+A companion preference that dims its lights and prevents new head movements. A movement
+already accepted by the robot may still finish.
+
+**Turzx display**:
+An optional USB-C IPS secondary screen (such as the 3.5-inch `USB35INCHIPSV2` panel) that renders
+live system telemetry, thermal gauges, storage/network activity, or a desk clock over USB serial.
+Only hardware readings and public alert metrics are drawn; note text, prompts, and transcripts stay
+on this PC.
+
+**App language**:
+The remembered language of menus, settings, dialogs and generated UI status: Thai by default,
+or English. It is separate from note content, Markdown syntax, stored dates and AI response language.
+
+**About**:
+The Settings section containing the app's installed version, feature overview, project/support
+links and attribution, illustrated by an embedded banner available offline.
+
 **Open note**:
 A note held in a MicaPad tab, including tabs in other MicaPad windows.
 
@@ -21,6 +64,14 @@ the note keeps its color; changing the color affects appearance only.
 **Task**:
 A Markdown checkbox item in a MicaPad note, either pending or completed.
 
+**Markdown split preview**:
+A view with the editable original note on the left and a live, read-only rendering on the right.
+It changes presentation only. Its remembered divider ratio is separate from utility-pane width;
+Search, AI and History temporarily replace it. History's version preview remains a separate view.
+Source and preview scrolling follows matching content in both directions, using local source/render
+anchors. Preview updates follow the current source view without editing the document or moving its
+caret/selection; scroll synchronization itself does not rebuild the rendered document.
+
 **Task dates**:
 The time tracking first recorded a task and the time it was completed. Reopening keeps its
 created date and clears its finished date; completing it again records the new completion time.
@@ -28,6 +79,16 @@ Existing tasks with unknown history start tracking when first observed.
 These dates are task information stored separately from the editable note, displayed as read-only
 labels. The task's date editor allows explicit start/finish corrections; setting a finish completes
 the task and clearing it reopens the task. Copying task text does not copy its tracked dates.
+
+**Assistant review**:
+Task changes or credential storage proposed by Ask AI for its selected text or current note.
+The user chooses which changes to apply. Editing the note makes a review stale; a new request
+prepares a fresh review. Reading or proposing changes never applies them.
+
+**Credential candidate**:
+A possible password or secret found locally beside an explicit label or in a password-bearing
+URL. Candidates appear with a label and source location while their values remain hidden.
+Detection can miss unlabelled secrets; approving storage replaces exact copies in the current note.
 
 **Meeting session**:
 A period the user explicitly starts and stops to transcribe and analyze a conference.

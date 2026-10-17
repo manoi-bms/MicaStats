@@ -1,16 +1,21 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Automation;
+using System.Windows.Media;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Editing;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
 using Kil0bitSystemMonitor.Services.Pad.Ai;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using Clipboard = System.Windows.Clipboard;
+using Point = System.Windows.Point;
 
 namespace Kil0bitSystemMonitor.Pad
 {
@@ -21,6 +26,28 @@ namespace Kil0bitSystemMonitor.Pad
     /// </summary>
     internal static class EditorMenus
     {
+        internal sealed record MenuCaptionText(string Title, string Detail, string Glyph);
+        internal readonly record struct MenuPopupBounds(double MenuMaxWidth, double MenuMaxHeight, double ViewportMaxWidth, double ViewportMaxHeight);
+
+        internal const string MenuViewportWidthKey = "Pad.MenuViewportWidth";
+        internal const string MenuViewportHeightKey = "Pad.MenuViewportHeight";
+
+        private const double MenuScreenInset = 24;
+        private const double MenuCardHorizontalSpace = 20;
+        private const double MenuCardVerticalSpace = 22;
+        private const double DefaultMenuMaxWidth = 380;
+
+        private sealed class MenuSizingState
+        {
+            public bool Initialized;
+            public double RequestedMaxWidth = double.PositiveInfinity;
+            public double RequestedMaxHeight = double.PositiveInfinity;
+            public double AppliedMaxWidth = double.NaN;
+            public double AppliedMaxHeight = double.NaN;
+        }
+
+        private static readonly ConditionalWeakTable<ContextMenu, MenuSizingState> MenuSizing = new();
+
         private static PadMenuStyles? s_styles;
 
         /// <summary>The shared menu styles, loaded on first use (on the UI thread).</summary>
@@ -43,6 +70,132 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Style = MenuStyle;
             menu.HorizontalOffset = -10;
             menu.VerticalOffset = menu.Placement == PlacementMode.Top ? 14 : -8;
+            menu.Opened -= OnMenuOpened;
+            menu.Opened += OnMenuOpened;
+            ApplyMenuBounds(menu, SystemParameters.WorkArea.Width, SystemParameters.WorkArea.Height, 1, 1);
+        }
+
+        private static void OnMenuOpened(object sender, RoutedEventArgs e)
+        {
+            if (sender is not ContextMenu menu) return;
+            try
+            {
+                var (width, height, dpiX, dpiY) = PlacementWorkArea(menu);
+                ApplyMenuBounds(menu, width, height, dpiX, dpiY);
+            }
+            catch (Exception)
+            {
+                ApplyMenuBounds(menu, SystemParameters.WorkArea.Width, SystemParameters.WorkArea.Height, 1, 1);
+            }
+        }
+
+        private static (double Width, double Height, double DpiX, double DpiY) PlacementWorkArea(ContextMenu menu)
+        {
+            FrameworkElement? target = menu.PlacementTarget as FrameworkElement;
+            System.Drawing.Point point;
+            if (menu.Placement is PlacementMode.Mouse or PlacementMode.MousePoint || target == null || !target.IsVisible)
+            {
+                point = System.Windows.Forms.Cursor.Position;
+            }
+            else
+            {
+                Point screen = target.PointToScreen(new Point(target.ActualWidth / 2, target.ActualHeight / 2));
+                point = new System.Drawing.Point((int)Math.Round(screen.X), (int)Math.Round(screen.Y));
+            }
+
+            var area = System.Windows.Forms.Screen.FromPoint(point).WorkingArea;
+            DpiScale dpi = target != null && PresentationSource.FromVisual(target)?.CompositionTarget != null
+                ? VisualTreeHelper.GetDpi(target)
+                : new DpiScale(1, 1);
+            return (area.Width, area.Height, dpi.DpiScaleX, dpi.DpiScaleY);
+        }
+
+        private static void ApplyMenuBounds(ContextMenu menu, double workWidthPixels, double workHeightPixels, double dpiX, double dpiY)
+        {
+            MenuSizingState state = MenuSizing.GetOrCreateValue(menu);
+            if (!state.Initialized)
+            {
+                state.RequestedMaxWidth = menu.MaxWidth;
+                state.RequestedMaxHeight = menu.MaxHeight;
+                state.Initialized = true;
+            }
+            else
+            {
+                if (!Same(menu.MaxWidth, state.AppliedMaxWidth)) state.RequestedMaxWidth = menu.MaxWidth;
+                if (!Same(menu.MaxHeight, state.AppliedMaxHeight)) state.RequestedMaxHeight = menu.MaxHeight;
+            }
+
+            MenuPopupBounds bounds = FitMenuToWorkArea(workWidthPixels, workHeightPixels, dpiX, dpiY,
+                state.RequestedMaxWidth, state.RequestedMaxHeight);
+            menu.MaxWidth = bounds.MenuMaxWidth;
+            menu.MaxHeight = bounds.MenuMaxHeight;
+            state.AppliedMaxWidth = bounds.MenuMaxWidth;
+            state.AppliedMaxHeight = bounds.MenuMaxHeight;
+            menu.Resources[MenuViewportWidthKey] = bounds.ViewportMaxWidth;
+            menu.Resources[MenuViewportHeightKey] = bounds.ViewportMaxHeight;
+        }
+
+        private static bool Same(double left, double right) => left.Equals(right) || Math.Abs(left - right) < 0.01;
+
+        /// <summary>
+        /// Fits a popup card and its scrollable viewport into a monitor work area. Pixel inputs make
+        /// the DPI conversion explicit and keep this calculation deterministic for tests.
+        /// </summary>
+        internal static MenuPopupBounds FitMenuToWorkArea(double workWidthPixels, double workHeightPixels,
+            double dpiX, double dpiY, double requestedMaxWidth = double.PositiveInfinity,
+            double requestedMaxHeight = double.PositiveInfinity)
+        {
+            double scaleX = double.IsFinite(dpiX) && dpiX > 0 ? dpiX : 1;
+            double scaleY = double.IsFinite(dpiY) && dpiY > 0 ? dpiY : 1;
+            double workWidth = Math.Max(1, workWidthPixels / scaleX);
+            double workHeight = Math.Max(1, workHeightPixels / scaleY);
+            double availableWidth = Math.Max(1, workWidth - MenuScreenInset);
+            double availableHeight = Math.Max(1, workHeight - MenuScreenInset);
+            double widthCap = ValidCap(requestedMaxWidth) ? requestedMaxWidth : DefaultMenuMaxWidth;
+            double heightCap = ValidCap(requestedMaxHeight) ? requestedMaxHeight : availableHeight;
+            double menuWidth = Math.Max(1, Math.Min(availableWidth, Math.Min(DefaultMenuMaxWidth, widthCap)));
+            double menuHeight = Math.Max(1, Math.Min(availableHeight, heightCap));
+            return new MenuPopupBounds(
+                menuWidth,
+                menuHeight,
+                Math.Max(1, menuWidth - MenuCardHorizontalSpace),
+                Math.Max(1, menuHeight - MenuCardVerticalSpace));
+        }
+
+        private static bool ValidCap(double value) => double.IsFinite(value) && value > 0;
+
+        /// <summary>A compact, noninteractive explanation of the context this menu will act on.</summary>
+        internal static Separator AddCaption(ContextMenu menu, string title, string detail, string glyph)
+        {
+            var caption = new Separator
+            {
+                Style = (System.Windows.Style)Styles["Pad.MenuCaption"],
+                DataContext = new MenuCaptionText(title, detail, glyph),
+            };
+            menu.Items.Add(caption);
+            return caption;
+        }
+
+        /// <summary>A noninteractive heading that makes a long context menu easier to scan.</summary>
+        internal static Separator AddSection(ContextMenu menu, string title)
+        {
+            var section = new Separator
+            {
+                Style = (System.Windows.Style)Styles["Pad.MenuSection"],
+                DataContext = UiText.Tr(title),
+            };
+            menu.Items.Add(section);
+            return section;
+        }
+
+        /// <summary>Adds concise mouse and assistive-technology help without changing an action's header.</summary>
+        internal static MenuItem Describe(MenuItem item, string help)
+        {
+            string localized = UiText.Tr(help);
+            item.ToolTip = localized;
+            ToolTipService.SetShowOnDisabled(item, true);
+            AutomationProperties.SetHelpText(item, localized);
+            return item;
         }
 
         /// <summary>Where a failed menu command or shortcut is logged. Tests replace it (and put it back), so they never write the real log.</summary>
@@ -75,9 +228,9 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>A menu item; <paramref name="icon"/> is one Segoe Fluent Icons glyph shown left of the header.</summary>
-        public static MenuItem Item(string header, string? gesture, Action action, bool enabled = true, string? icon = null)
+        public static MenuItem Item(string header, string? gesture, Action action, bool enabled = true, string? icon = null, bool localize = true)
         {
-            var item = new MenuItem { Header = header, InputGestureText = gesture ?? "", IsEnabled = enabled, Icon = icon };
+            var item = new MenuItem { Header = localize ? UiText.Tr(header) : header, InputGestureText = gesture ?? "", IsEnabled = enabled, Icon = icon };
             item.Click += (s, e) => Guard("The menu command " + header, action);
             return item;
         }
@@ -116,19 +269,19 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Item("Select all", "Ctrl+A", () => editor.SelectAll(), hasText, icon: "\uE8B3"));
         }
 
-        /// <summary>Format ▸ for a Markdown tab (spec 2.4): each item is one undoable edit; no new shortcuts. Format table lines up the table the caret is in (spec 3) and is off elsewhere.</summary>
+        /// <summary>Format ▸ for a Markdown tab (spec 2.4): each item is one undoable edit. Format table lines up the table the caret is in (spec 3) and is off elsewhere.</summary>
         public static MenuItem FormatMenu(TextEditor editor)
         {
-            var format = new MenuItem { Header = "Format", Icon = "\uE8D2" };
-            void Add(string header, Func<string, int, int, TextEdit> edit, string? icon = null) =>
-                format.Items.Add(Item(header, null, () =>
+            var format = new MenuItem { Header = UiText.Tr("Format"), Icon = "\uE8D2" };
+            void Add(string header, Func<string, int, int, TextEdit> edit, string? icon = null, string? gesture = null) =>
+                format.Items.Add(Item(header, gesture, () =>
                     ApplyEdit(editor, edit(editor.Document.Text, editor.SelectionStart, editor.SelectionLength)), icon: icon));
 
-            Add("Bold", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "**"), "\uE8DD");
-            Add("Italic", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "*"), "\uE8DB");
+            Add("Bold", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "**"), "\uE8DD", "Ctrl+B");
+            Add("Italic", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "*"), "\uE8DB", "Ctrl+I");
             Add("Strikethrough", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "~~"), "\uEDE0");
             Add("Code", (t, s, l) => MarkdownFormatter.Wrap(t, s, l, "`"), "\uE943");
-            Add("Link", MarkdownFormatter.Link, "\uE71B");
+            Add("Link", MarkdownFormatter.Link, "\uE71B", "Ctrl+K");
             format.Items.Add(new Separator());
             Add("Heading 1", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading1), "\uE8E9");
             Add("Heading 2", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Heading2), "\uE8E9");
@@ -138,7 +291,7 @@ namespace Kil0bitSystemMonitor.Pad
             Add("Numbered list", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Numbered), "\uEA37");
             Add("Task", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Task), "\uE73A");
             Add("Quote", (t, s, l) => MarkdownFormatter.Prefix(t, s, l, LinePrefix.Quote), "\uE90A");
-            Add("Code block", MarkdownFormatter.CodeBlock, "\uE943");
+            Add("Code block", MarkdownFormatter.CodeBlock, "\uE943", "Ctrl+Shift+K");
             format.Items.Add(new Separator());
             bool inTable = TableFormatter.TableAt(editor.Document.Text, editor.CaretOffset) != null;
             format.Items.Add(Item("Format table", null, () =>
@@ -163,7 +316,7 @@ namespace Kil0bitSystemMonitor.Pad
             bool lastLine = blockEnd >= text.Length;
             bool oneLine = text.IndexOfAny(new[] { '\r', '\n' }, blockStart, blockEnd - blockStart) < 0;
 
-            var lines = new MenuItem { Header = "Lines", Icon = "\uEA37" };
+            var lines = new MenuItem { Header = UiText.Tr("Lines"), Icon = "\uEA37" };
             void Add(string header, string? gesture, Func<string, int, int, TextEdit?> operation, string? icon = null, bool enabled = true) =>
                 lines.Items.Add(Item(header, gesture, () => RunLineOperation(editor, operation), enabled, icon));
 
@@ -190,21 +343,21 @@ namespace Kil0bitSystemMonitor.Pad
         public static MenuItem ToolsMenu(TextEditor editor, Action<string> report, Func<DateTimeOffset> now)
         {
             bool selected = editor.SelectionLength > 0;
-            var tools = new MenuItem { Header = "Tools", Icon = "\uE90F" };
+            var tools = new MenuItem { Header = UiText.Tr("Tools"), Icon = "\uE90F" };
             MenuItem Tool(string header, Func<string, int, int, ToolOutcome> tool, bool enabled = true, string icon = "\uE943") =>
                 Item(header, null, () => RunTool(editor, report, tool), enabled, icon);
 
             tools.Items.Add(Tool("Base64 encode", (t, s, l) => TextTools.OnSelection(t, s, l, x => (TextTools.Base64Encode(x), null)), selected));
             tools.Items.Add(Tool("Base64 decode", (t, s, l) => TextTools.OnSelection(t, s, l, TextTools.Base64Decode), selected));
 
-            var convert = new MenuItem { Header = "Convert number", Icon = "\uE8EF", IsEnabled = selected };
+            var convert = new MenuItem { Header = UiText.Tr("Convert number"), Icon = "\uE8EF", IsEnabled = selected };
             foreach (var (header, target) in new[] { ("Decimal", NumberBase.Decimal), ("Hex", NumberBase.Hex), ("Binary", NumberBase.Binary), ("Octal", NumberBase.Octal) })
                 convert.Items.Add(Tool(header, (t, s, l) => TextTools.OnSelection(t, s, l, x => NumberConverter.Convert(x, target))));
             tools.Items.Add(convert);
 
             tools.Items.Add(Tool("Insert GUID", (t, s, l) => TextTools.Insert(s, l, TextTools.FormatGuid(Guid.NewGuid())), icon: "\uE943"));
 
-            var stamp = new MenuItem { Header = "Insert timestamp", Icon = "\uE787" };
+            var stamp = new MenuItem { Header = UiText.Tr("Insert timestamp"), Icon = "\uE787" };
             stamp.Items.Add(Tool("ISO 8601", (t, s, l) => TextTools.Insert(s, l, TextTools.Iso8601(now())), icon: "\uE787"));
             stamp.Items.Add(Tool("Date", (t, s, l) => TextTools.Insert(s, l, TextTools.Date(now())), icon: "\uE787"));
             stamp.Items.Add(Tool("Unix seconds", (t, s, l) => TextTools.Insert(s, l, TextTools.UnixSeconds(now())), icon: "\uE917"));
@@ -233,7 +386,7 @@ namespace Kil0bitSystemMonitor.Pad
         public static MenuItem AiMenu(TextEditor editor, bool enabled, Action<PadAiAction> run, Action setUp, Action? fixDiagram = null,
                                       bool diagrams = true)
         {
-            var ai = new MenuItem { Header = "AI", Icon = ((char)0xE99A).ToString() };
+            var ai = new MenuItem { Header = UiText.Tr("AI"), Icon = ((char)0xE99A).ToString() };
             if (!enabled)
             {
                 ai.Items.Add(Item(SetUpAiText, null, setUp, icon: "\uE713"));
@@ -280,13 +433,13 @@ namespace Kil0bitSystemMonitor.Pad
             if (editor.IsReadOnly) return false;
             if (editor.TextArea.Selection is RectangleSelection)
             {
-                report(RectangleRefused);
+                report(UiText.Tr(RectangleRefused));
                 return false;
             }
             var outcome = tool(editor.Document.Text, editor.SelectionStart, editor.SelectionLength);
             if (outcome.Edit is not TextEdit edit)
             {
-                report(outcome.Problem ?? TextTools.SelectFirst);
+                report(UiText.Tr(outcome.Problem ?? TextTools.SelectFirst));
                 return false;
             }
             ApplyEdit(editor, edit);

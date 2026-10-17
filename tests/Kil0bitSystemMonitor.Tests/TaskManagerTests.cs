@@ -151,6 +151,19 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal(1, hit[0].Pid);
         }
 
+        [Fact]
+        public void Filtering_matches_parent_process_name_case_insensitively()
+        {
+            var parent = P("pwsh.exe", 10, 1, 100);
+            var child = new ProcessUsage("dotnet.exe", 11, 5, 200) { ParentPid = 10, ParentName = "pwsh.exe" };
+            var unrelated = new ProcessUsage("notepad.exe", 12, 0, 50) { ParentPid = 4, ParentName = "explorer.exe" };
+            var all = new[] { parent, child, unrelated };
+
+            var hit = TaskManagerViewModel.Filter(all, "parent:PWSH");
+
+            Assert.Equal(new[] { 11 }, hit.Select(p => p.Pid).OrderBy(id => id));
+        }
+
         /// <summary>
         /// Typing a number searches the pid, because someone who knows the pid usually knows
         /// only the pid. Exact rather than substring: searching 42 must not bury the answer

@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad;
 using Kil0bitSystemMonitor.Services.Pad.Search;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using TextBox = System.Windows.Controls.TextBox;
 using UserControl = System.Windows.Controls.UserControl;
@@ -60,7 +61,7 @@ namespace Kil0bitSystemMonitor.Pad
                 RerankToggle.IsOn = cfg.PadRerank;
                 RerankServerBox.Text = cfg.PadRerankServer;
                 RerankModelBox.Text = cfg.PadRerankModel;
-                ServerHint.Text = ServerHelp;
+                ServerHint.Text = UiText.Tr(ServerHelp);
                 RefreshKeys();
                 RefreshEnabled();
                 RefreshIndex();
@@ -90,8 +91,8 @@ namespace Kil0bitSystemMonitor.Pad
             if (_host == null) return;
             var service = _host.Service();
             IndexStatus.Text = service == null
-                ? "The index is made when MicaPad opens."
-                : SearchStatusText.Index(service.Indexer.Progress, PadSearchSettings.From(_host.Config, _ => null));
+                ? UiText.Tr("The index is made when MicaPad opens.")
+                : UiText.Tr(SearchStatusText.Index(service.Indexer.Progress, PadSearchSettings.From(_host.Config, _ => null)));
             RebuildButton.IsEnabled = service != null;
         }
 
@@ -138,17 +139,17 @@ namespace Kil0bitSystemMonitor.Pad
             if (typed.Length == 0)
             {
                 set("");
-                ServerHint.Text = ServerHelp;
+                ServerHint.Text = UiText.Tr(ServerHelp);
                 return true;
             }
             if (!KrokiClient.TryParseServer(typed, out var server))
             {
                 box.Text = current();
-                ServerHint.Text = "Not a server address. Use http:// or https:// and a host name, like http://gpu:8000/v1.";
+                ServerHint.Text = UiText.Tr("Not a server address. Use http:// or https:// and a host name, like http://gpu:8000/v1.");
                 return false;
             }
             box.Text = server;
-            ServerHint.Text = ServerHelp;
+            ServerHint.Text = UiText.Tr(ServerHelp);
             if (server == current()) return false;
             set(server);
             return true;
@@ -203,7 +204,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
             catch (Exception ex)
             {
-                ShowKeyHint("The key could not be stored (" + ex.GetType().Name + "). It is still in the box; press Save to try again.");
+                ShowKeyHint(UiText.Format("The key could not be stored ({0}). It is still in the box; press Save to try again.", ex.GetType().Name));
                 return;
             }
             if (!string.Equals(_host.Secrets.Get(name), key, StringComparison.Ordinal))
@@ -229,7 +230,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void ShowKeyHint(string text)
         {
-            KeyHint.Text = text;
+            KeyHint.Text = UiText.Tr(text);
             KeyHint.Visibility = Visibility.Visible;
         }
 
@@ -251,15 +252,15 @@ namespace Kil0bitSystemMonitor.Pad
             if (_host == null) return;
             CommitServer(EmbeddingServerBox, () => _host.Config.PadEmbeddingServer, v => _host.Config.PadEmbeddingServer = v);
             var server = PadSearchSettings.From(_host.Config, _host.Secrets.Get).Embedding;
-            if (server == null) { EmbeddingTestResult.Text = "Enter the server address first."; return; }
+            if (server == null) { EmbeddingTestResult.Text = UiText.Tr("Enter the server address first."); return; }
 
             int run = ++_embeddingTestRun;
-            EmbeddingTestResult.Text = "Testing…";
+            EmbeddingTestResult.Text = UiText.Tr("Testing…");
             var result = await _host.Embedder.EmbedAsync(server, new[] { SearchIndexer.KnownGoodText }, TimeSpan.FromSeconds(15), default);
             if (run != _embeddingTestRun) return;   // a newer test of this server took over
             EmbeddingTestResult.Text = result.Vectors != null
-                ? "OK: " + result.Vectors[0].Length + " dimensions"
-                : "The server " + SearchFailureText.Describe(result.Failure, result.Status) + ".";
+                ? UiText.Format("OK: {0} dimensions", result.Vectors[0].Length)
+                : UiText.Format("The server {0}.", UiText.Tr(SearchFailureText.Describe(result.Failure, result.Status)));
         }
 
         private async void OnTestRerank(object sender, RoutedEventArgs e)
@@ -267,21 +268,21 @@ namespace Kil0bitSystemMonitor.Pad
             if (_host == null) return;
             CommitServer(RerankServerBox, () => _host.Config.PadRerankServer, v => _host.Config.PadRerankServer = v);
             var server = PadSearchSettings.From(_host.Config, _host.Secrets.Get).Reranker;
-            if (server == null) { RerankTestResult.Text = "Enter the server address first."; return; }
+            if (server == null) { RerankTestResult.Text = UiText.Tr("Enter the server address first."); return; }
 
             int run = ++_rerankTestRun;
-            RerankTestResult.Text = "Testing…";
+            RerankTestResult.Text = UiText.Tr("Testing…");
             var result = await _host.Reranker.RerankAsync(server, "test", new[] { "test", "other" }, 2, TimeSpan.FromSeconds(15), default);
             if (run != _rerankTestRun) return;   // a newer test of this server took over
             RerankTestResult.Text = result.Ranked != null
-                ? "OK"
-                : "The server " + SearchFailureText.Describe(result.Failure, result.Status) + ".";
+                ? UiText.Tr("OK")
+                : UiText.Format("The server {0}.", UiText.Tr(SearchFailureText.Describe(result.Failure, result.Status)));
         }
 
         private void OnRebuild(object sender, RoutedEventArgs e)
         {
             _host?.Service()?.Indexer.Rebuild();
-            IndexStatus.Text = "Rebuilding…";
+            IndexStatus.Text = UiText.Tr("Rebuilding…");
         }
     }
 }

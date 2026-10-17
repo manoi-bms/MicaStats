@@ -8,6 +8,7 @@ using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.ViewModels;
 using Kil0bitSystemMonitor.Models;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor
 {
@@ -1312,16 +1313,16 @@ namespace Kil0bitSystemMonitor
             int n = Helpers.SparklineGeometry.Bars(series, w, h, max, barW, barGap, _barScratch);
             if (n <= 0) return;
 
-            var rects = new RectangleF[n];
+            if (_barsExact == null || _barsExact.Length != n) _barsExact = new RectangleF[n];
             for (int i = 0; i < n; i++)
             {
                 var r = _barScratch[i];
-                rects[i] = new RectangleF(x + r.X, y + r.Y, r.Width, r.Height);
+                _barsExact[i] = new RectangleF(x + r.X, y + r.Y, r.Width, r.Height);
             }
 
             var prev = g.SmoothingMode;
             g.SmoothingMode = SmoothingMode.None;
-            g.FillRectangles(brush, rects);
+            g.FillRectangles(brush, _barsExact);
             g.SmoothingMode = prev;
         }
 
@@ -1348,13 +1349,13 @@ namespace Kil0bitSystemMonitor
                 int n = Helpers.SparklineGeometry.Bars(up, w, half, max, barW, barGap, _barScratch);
                 if (n > 0)
                 {
-                    var rects = new RectangleF[n];
+                    if (_barsExact == null || _barsExact.Length != n) _barsExact = new RectangleF[n];
                     for (int i = 0; i < n; i++)
                     {
                         var r = _barScratch[i];
-                        rects[i] = new RectangleF(x + r.X, axis - r.Height, r.Width, r.Height);
+                        _barsExact[i] = new RectangleF(x + r.X, axis - r.Height, r.Width, r.Height);
                     }
-                    g.FillRectangles(upBrush, rects);
+                    g.FillRectangles(upBrush, _barsExact);
                 }
             }
 
@@ -1363,13 +1364,13 @@ namespace Kil0bitSystemMonitor
                 int n = Helpers.SparklineGeometry.Bars(down, w, half, max, barW, barGap, _barScratch);
                 if (n > 0)
                 {
-                    var rects = new RectangleF[n];
+                    if (_barsExact == null || _barsExact.Length != n) _barsExact = new RectangleF[n];
                     for (int i = 0; i < n; i++)
                     {
                         var r = _barScratch[i];
-                        rects[i] = new RectangleF(x + r.X, axis + 1f, r.Width, r.Height);
+                        _barsExact[i] = new RectangleF(x + r.X, axis + 1f, r.Width, r.Height);
                     }
-                    g.FillRectangles(downBrush, rects);
+                    g.FillRectangles(downBrush, _barsExact);
                 }
             }
 
@@ -1723,7 +1724,7 @@ namespace Kil0bitSystemMonitor
         public void Dispose()
         {
             _disposed = true;
-            try { if (_onHistoryUpdated != null) _history.Updated -= _onHistoryUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _recoveryTimer?.Stop(); _recoveryTimer = null; _fadeTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
+            try { if (_onHistoryUpdated != null) _history.Updated -= _onHistoryUpdated; _config.Config.PropertyChanged -= _onConfigPropertyChanged; _zOrderTimer?.Dispose(); _recoveryTimer?.Stop(); _recoveryTimer = null; _fadeTimer?.Stop(); _hoverDwellTimer?.Stop(); _hideDebounceTimer?.Stop(); UnregisterAppBar(); ClearCaches(); _offscreenGraphics?.Dispose(); _offscreenBitmap?.Dispose(); _measureGraphics?.Dispose(); _measureBitmap?.Dispose(); _cachedBgBrush?.Dispose(); _cachedAccentBrush?.Dispose(); _cachedLabelBrush?.Dispose(); _cachedPodBrush?.Dispose(); _cachedHoverPen?.Dispose(); _cachedHoverBrush?.Dispose(); _cachedNetLabelBrush?.Dispose(); _cachedCpuRamLabelBrush?.Dispose(); _cachedGpuLabelBrush?.Dispose(); _cachedDiskLabelBrush?.Dispose(); _cachedNetAccentBrush?.Dispose(); _cachedCpuRamAccentBrush?.Dispose(); _cachedGpuAccentBrush?.Dispose(); _cachedDiskAccentBrush?.Dispose(); StackedLabelBrush?.Dispose(); StackedValueBrush?.Dispose(); StackedGraphBrush?.Dispose(); StackedUpBrush?.Dispose(); StackedTrackBrush?.Dispose(); if (_hWnd != IntPtr.Zero) DestroyWindow(_hWnd); if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon); } catch { }
         }
 
         /// <summary>The tab-separated shortcut column for MicaPad's menu item; empty when no valid hotkey is set.</summary>
@@ -1740,8 +1741,8 @@ namespace Kil0bitSystemMonitor
         {
             if (!config.AiAssistantEnabled) return null;
             return Services.Capture.HotkeyParser.TryParse(config.AiHotkey, out var mods, out uint vk)
-                ? "Ask MicaStats\u2026\t" + Services.Capture.HotkeyParser.Describe(mods, vk)
-                : "Ask MicaStats\u2026";
+                ? UiText.Tr("Ask MicaStats…") + "\t" + Services.Capture.HotkeyParser.Describe(mods, vk)
+                : UiText.Tr("Ask MicaStats…");
         }
 
         private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -1869,37 +1870,37 @@ namespace Kil0bitSystemMonitor
                 {
                     SetPreferredAppMode(2); AllowDarkModeForWindow(hWnd, true); FlushMenuThemes();
                     IntPtr hMenu = CreatePopupMenu();
-                    AppendMenu(hMenu, 0, 1010, "Show Stats Panel");
-                    AppendMenu(hMenu, 0, 1040, "Diagnostics…");
+                    AppendMenu(hMenu, 0, 1010, UiText.Tr("Show Stats Panel"));
+                    AppendMenu(hMenu, 0, 1040, UiText.Tr("Diagnostics…"));
                     // Offered here because this is where a person reaches the instant after a
                     // stall: the rolling window still holds what just happened, and a few
                     // seconds later it will not.
-                    AppendMenu(hMenu, 0, 1041, "Record Slowdown Now");
-                    AppendMenu(hMenu, 0, 1001, "Settings");
-                    AppendMenu(hMenu, 0, 1011, "Processes");
+                    AppendMenu(hMenu, 0, 1041, UiText.Tr("Record Slowdown Now"));
+                    AppendMenu(hMenu, 0, 1001, UiText.Tr("Settings"));
+                    AppendMenu(hMenu, 0, 1011, UiText.Tr("Processes"));
                     AppendMenu(hMenu, 0, 1012, "MicaPad" + PadShortcutLabel());
                     if (AskMenuText(_config.Config) is string askText) AppendMenu(hMenu, 0, 1013, askText);
-                    AppendMenu(hMenu, 0, 1014, "Meeting Assistant…");
-                    AppendMenu(hMenu, 0, 1002, "Task Manager");
+                    AppendMenu(hMenu, 0, 1014, UiText.Tr("Meeting Assistant…"));
+                    AppendMenu(hMenu, 0, 1002, UiText.Tr("Task Manager"));
                     AppendMenu(hMenu, 0x0800, 0, null);
-                    AppendMenu(hMenu, 0, 1020, "Capture Region	Ctrl+Shift+1");
-                    AppendMenu(hMenu, 0, 1021, "Capture Window	Ctrl+Shift+2");
-                    AppendMenu(hMenu, 0, 1022, "Capture Screen	Ctrl+Shift+3");
-                    AppendMenu(hMenu, 0, 1023, "Capture All Screens");
-                    AppendMenu(hMenu, 0, 1024, "Capture Scrolling…\tCtrl+Shift+4");
+                    AppendMenu(hMenu, 0, 1020, UiText.Tr("Capture Region") + "\tCtrl+Shift+1");
+                    AppendMenu(hMenu, 0, 1021, UiText.Tr("Capture Window") + "\tCtrl+Shift+2");
+                    AppendMenu(hMenu, 0, 1022, UiText.Tr("Capture Screen") + "\tCtrl+Shift+3");
+                    AppendMenu(hMenu, 0, 1023, UiText.Tr("Capture All Screens"));
+                    AppendMenu(hMenu, 0, 1024, UiText.Tr("Capture Scrolling…") + "\tCtrl+Shift+4");
                     AppendMenu(hMenu, 0x0800, 0, null);
-                    AppendMenu(hMenu, 0, 1030, "Show Desktop");
+                    AppendMenu(hMenu, 0, 1030, UiText.Tr("Show Desktop"));
                     if (Services.Update.UpdateNotifier.PendingVersion is string pending)
-                        AppendMenu(hMenu, 0, 1031, "Update to " + pending + "\u2026");
+                        AppendMenu(hMenu, 0, 1031, UiText.Format("Update to {0}…", pending));
                     AppendMenu(hMenu, 0x0800, 0, null);
-                    AppendMenu(hMenu, (_config.Config.AlwaysOnTop ? 0x0008U : 0), 1008, "Keep on Top");
-                    AppendMenu(hMenu, (_config.Config.HideOnFullscreen ? 0x0008U : 0), 1009, "Hide in Fullscreen");
-                    AppendMenu(hMenu, (_config.Config.LockPosition ? 0x0008U : 0), 1006, "Lock Position");
-                    AppendMenu(hMenu, (_config.Config.StickToTaskbar ? 0x0008U : 0), 1007, "Snap to Taskbar");
+                    AppendMenu(hMenu, (_config.Config.AlwaysOnTop ? 0x0008U : 0), 1008, UiText.Tr("Keep on Top"));
+                    AppendMenu(hMenu, (_config.Config.HideOnFullscreen ? 0x0008U : 0), 1009, UiText.Tr("Hide in Fullscreen"));
+                    AppendMenu(hMenu, (_config.Config.LockPosition ? 0x0008U : 0), 1006, UiText.Tr("Lock Position"));
+                    AppendMenu(hMenu, (_config.Config.StickToTaskbar ? 0x0008U : 0), 1007, UiText.Tr("Snap to Taskbar"));
                     AppendMenu(hMenu, 0x0800, 0, null);
-                    AppendMenu(hMenu, 0, 1003, "About");
+                    AppendMenu(hMenu, 0, 1003, UiText.Tr("About"));
                     AppendMenu(hMenu, 0x0800, 0, null);
-                    AppendMenu(hMenu, 0, 1004, "Exit");
+                    AppendMenu(hMenu, 0, 1004, UiText.Tr("Exit"));
                     SetForegroundWindow(hWnd);
 
                     Win32Helper.GetWindowRect(hWnd, out Win32Helper.RECT wr);

@@ -88,6 +88,17 @@ namespace Kil0bitSystemMonitor.Pad
             public bool Undone { get; set; }
 
             public CancellationTokenSource Cancel { get; } = new();
+            public PadAiToolSet? Tools { get; init; }
+            public string Snapshot { get; init; } = "";
+            public int SourceLineNumber { get; init; }
+            public bool ToolsSucceeded { get; set; }
+            public bool ToolsApplied { get; set; }
+            public IReadOnlyList<string>? StoredToolCredentials { get; set; }
+            public IReadOnlyList<string>? StoredToolProposalIds { get; set; }
+            public string ToolReviewNotice { get; set; } = "";
+            public string ToolActivity { get; set; } = "";
+            public IReadOnlyList<AiToolReviewRow>? ReviewRows { get; set; }
+            public string ReviewLanguage { get; set; } = "";
 
             /// <summary>The facts the pane was last drawn with.</summary>
             public AiSourceFacts? Drawn { get; set; }
@@ -235,6 +246,7 @@ namespace Kil0bitSystemMonitor.Pad
             AiPanel.RetryRequested += () => GuardAi("Trying an AI action again", RetryAi);
             AiPanel.CloseRequested += () => GuardAi("Closing the AI pane", () => CloseAi(focusEditor: true));
             AiPanel.InstructionEntered += instruction => GuardAi("Asking AI", () => EnterAiInstruction(instruction));
+            AiPanel.ToolChangesRequested += ids => GuardAi("Applying reviewed AI changes", () => ApplyAiToolChanges(ids));
             SearchPanel.Ask = AskNotesAsync;
             SearchPanel.CopyAnswer = answer => GuardAi("Copying an answer", () => CopyNotesAnswer(answer));
             SearchPanel.Warn = message => Warn(message);   // what the pane reports goes where the window's own warnings go
@@ -718,10 +730,17 @@ namespace Kil0bitSystemMonitor.Pad
             // Ask AI on a note that is not shown as Markdown (the fact that leaves Draw as diagram out
             // of the menu) starts with Source on: its answer is often code, which rendering shows wrongly.
             // The model's limits are read here, once: they refuse text that is too long, and size the request (StreamAiAsync).
+            AiBudget budget = AiBudgetForRequest();
+            PadAiToolSet? tools = ReferenceEquals(action, PadAiAction.Ask) && source.Length <= PadAiToolSet.MaxSourceLength
+                && action.TooLong(source, budget) == null
+                ? CreateAiTools(source, document, start) : null;
             var session = new AiSession(action, source, fromSelection, instruction, AiDestinationNow(), AiModelNow(),
                 sourceFirst: ReferenceEquals(action, PadAiAction.Ask) && !ReferenceEquals(_resolved.Effective, PadLanguages.Markdown),
-                budget: AiBudgetForRequest());
-            var run = new AiRun(session, note, document, instruction);
+                budget: budget, sourceMask: tools?.Mask, redactInstruction: tools == null ? null : tools.Redact);
+            var run = new AiRun(session, note, document, instruction)
+            {
+                Tools = tools, Snapshot = document.Text, SourceLineNumber = document.GetLineByOffset(start).LineNumber,
+            };
             if (fromSelection)
             {
                 // Text typed right before or right after the source stays outside it.
@@ -768,16 +787,21 @@ namespace Kil0bitSystemMonitor.Pad
                     request = session.UserMessage.Length;
                     ShowAi(run);
                     // The runner never throws and ends with Done, after a cancel too.
-                    await foreach (PadAiUpdate update in runner.RunAsync(session.UserMessage, token))
+                    await foreach (PadAiUpdate update in runner.RunAsync(session.UserMessage, token, run.Tools?.Functions,
+                        run.Tools == null ? null : PadAiPrompts.Tools))
                     {
                         switch (update.Kind)
                         {
                             case PadAiUpdateKind.Text:
+                                run.ToolActivity = "";
                                 if (!string.IsNullOrEmpty(update.Text))
                                 {
                                     session.Append(update.Text);
                                     back += update.Text.Length;
                                 }
+                                break;
+                            case PadAiUpdateKind.Tool:
+                                run.ToolActivity = ToolActivityOf(update.Text);
                                 break;
                             case PadAiUpdateKind.Error:
                                 failed = true;
@@ -791,6 +815,7 @@ namespace Kil0bitSystemMonitor.Pad
                         ShowAi(run);
                     }
                     session.Complete(stopped: token.IsCancellationRequested);
+                    run.ToolsSucceeded = !failed && !cutShort && !token.IsCancellationRequested;
                 }
             }
             catch (Exception ex)
@@ -915,7 +940,11 @@ namespace Kil0bitSystemMonitor.Pad
             run.Drawn = facts;
             run.Noticed = notice != null;
             AiPaneView view = run.Session.View(facts);
+            if (run.ToolActivity.Length > 0 && view.Running) view = view with { Activity = run.ToolActivity };
+            if (run.Tools?.Mask.PlaintextCount > 0)
+                view = view with { ShowReplace = false, CanReplace = false, ShowInsert = false, CanInsert = false };
             (AiDraw ?? AiPanel.Show)(notice == null ? view : view with { Status = notice });
+            DrawAiToolReview(run);
         }
 
         /// <summary>
@@ -1028,6 +1057,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void FollowSourceEdit(AiRun run)
         {
             bool turned = ReplaceWasUndoneOrRedone(run);
+            if (run.Tools != null) run.Noticed = true; // tool approval validates the whole snapshot, including edits outside the selection
             ReadFenceAfterUpdate(run);
             AiSourceFacts facts = AiFacts(run, fenceNow: false);
             if (turned || run.Noticed || facts != run.Drawn) DrawAi(run, facts);

@@ -12,6 +12,7 @@ using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Editing;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 using static Kil0bitSystemMonitor.Pad.EditorMenus;
 
 // UseWindowsForms puts System.Windows.Forms and System.Drawing in scope; these names exist in both.
@@ -311,8 +312,8 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (Vault == null) return;
             var items = menu.Items.Cast<object>().ToList();
-            int after = items.FindIndex(i => i is MenuItem { Header: "Copy as RTF" });
-            if (after < 0) after = items.FindIndex(i => i is MenuItem { Header: "Copy" });
+            int after = items.FindIndex(i => i is MenuItem item && Equals(item.Header, UiText.Tr("Copy as RTF")));
+            if (after < 0) after = items.FindIndex(i => i is MenuItem item && Equals(item.Header, UiText.Tr("Copy")));
             menu.Items.Insert(after + 1, Item("Store as credential\u2026", null, StoreSelection, CanStoreSelection(), icon: "\uE72E"));
         }
 
@@ -399,6 +400,7 @@ namespace Kil0bitSystemMonitor.Pad
             }
             document.UndoStack.ClearAll();
             DropAiTextAfterStore(note);   // the AI pane and an answer from notes may hold the value too
+            DropMarkdownPreviewAfterStore(note);
 
             // The note on disk and its versions. A version of the old text still queued (a pause, a
             // replace, a close) can land after this scrub while the writer is behind, and a version
@@ -412,19 +414,19 @@ namespace Kil0bitSystemMonitor.Pad
             int left = Scrub(scrub);
             if (written && left == 0) _pendingScrubs.Remove(scrub);
 
-            string status = !written ? "Stored as " + id + " \u2014 older versions are still being saved; they will be cleaned when that finishes"
-                : left < 0 ? "Stored as " + id + MayStillHoldText
+            string status = !written ? UiText.Format("Stored as {0} — older versions are still being saved; they will be cleaned when that finishes", id)
+                : left < 0 ? UiText.Format("Stored as {0}{1}", id, UiText.Tr(MayStillHoldText))
                 : StoredText(id, left);
             // MicaPad never writes the user's file by itself: it keeps the value until the user saves it.
-            if (note.Meta.IsFileBacked) status += " \u2014 save the file (Ctrl+S) to remove it there";
+            if (note.Meta.IsFileBacked) status += UiText.Tr(" — save the file (Ctrl+S) to remove it there");
             ShowStatus(status);
             if (HistoryPanel.Visibility == Visibility.Visible) ShowHistory();
         }
 
         private static string StoredText(string id, int left) =>
-            left == 0 ? "Stored as " + id
-            : left == 1 ? "Stored as " + id + " \u2014 1 older version still holds it"
-            : "Stored as " + id + " \u2014 " + left.ToString(CultureInfo.InvariantCulture) + " older versions still hold it";
+            left == 0 ? UiText.Format("Stored as {0}", id)
+            : left == 1 ? UiText.Format("Stored as {0} — 1 older version still holds it", id)
+            : UiText.Format("Stored as {0} — {1} older versions still hold it", id, left.ToString(CultureInfo.InvariantCulture));
 
         /// <summary>The status for a scrub that threw: nothing is known about the versions.</summary>
         private const string MayStillHoldText = " \u2014 older versions may still hold it; MicaPad will try again";
@@ -459,20 +461,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// One scrub of a note's versions: how many may still hold the value, or -1 when the scrub
         /// threw (logged with the ids and the exception's type only).
         /// </summary>
-        private int Scrub(PendingScrub scrub)
-        {
-            try
-            {
-                int left = _workspace.Store.ScrubSnapshots(scrub.NoteId, scrub.Value, scrub.Reference);
-                scrub.LastLeft = left;
-                return left;
-            }
-            catch (Exception ex)
-            {
-                Warn("Removing stored credential " + scrub.Id + " from the older versions of note " + scrub.NoteId + " failed (" + ex.GetType().Name + ")");
-                return -1;
-            }
-        }
+        private int Scrub(PendingScrub scrub) => scrub.TryScrub(_workspace.Store, Warn);
 
         /// <summary>
         /// The window tick: the pending scrubs run once the writer is idle, asked at most every two
@@ -505,7 +494,7 @@ namespace Kil0bitSystemMonitor.Pad
                     _pendingScrubs.Remove(scrub);
                     continue;
                 }
-                if (left != before) ShowStatus(left < 0 ? "Stored as " + scrub.Id + MayStillHoldText : StoredText(scrub.Id, left));
+                if (left != before) ShowStatus(left < 0 ? UiText.Format("Stored as {0}{1}", scrub.Id, UiText.Tr(MayStillHoldText)) : StoredText(scrub.Id, left));
             }
 
             _scrubRetryMs = _pendingScrubs.Count == 0 ? FirstScrubRetryMs : Math.Min(_scrubRetryMs * 2, MaxScrubRetryMs);
@@ -584,20 +573,34 @@ namespace Kil0bitSystemMonitor.Pad
             string id = reference.Id;
             var vault = LoadedVault();
             bool stored = vault?.Find(id) != null;
+            string status = UiText.Tr(!stored ? "Missing credential"
+                : vault!.IsUnlocked ? "Vault unlocked" : "Vault locked");
+            if (readOnly) status += UiText.Tr(" · Read-only note");
+            AddCaption(menu, UiText.Tr("Credential"), status, "\uE72E");
             if (stored)
             {
-                menu.Items.Add(Item("Reveal\u2026", null, () => RevealCredential(id), icon: "\uE7B3"));
-                menu.Items.Add(Item("Copy secret", null, () => CopyCredential(id), icon: "\uE8C8"));
+                AddSection(menu, "Use credential");
+                menu.Items.Add(Describe(Item("Reveal\u2026", null, () => RevealCredential(id), icon: "\uE7B3"),
+                    "Reveal the value for 30 seconds after unlocking when needed."));
+                menu.Items.Add(Describe(Item("Copy secret", null, () => CopyCredential(id), icon: "\uE8C8"),
+                    "Copy securely; MicaPad clears the clipboard after 30 seconds."));
                 if (!readOnly)
                 {
-                    menu.Items.Add(Item("Rename label\u2026", null, () => RenameCredential(id), icon: "\uE8AC"));
-                    menu.Items.Add(Item("Unmask", null, () => UnmaskCredential(reference), icon: "\uE785"));
-                    menu.Items.Add(Item("Delete credential\u2026", null, () => DeleteCredential(id), icon: "\uE74D"));
+                    AddSection(menu, "Manage credential");
+                    menu.Items.Add(Describe(Item("Rename label\u2026", null, () => RenameCredential(id), icon: "\uE8AC"),
+                        "Change the non-secret label shown for this credential."));
+                    menu.Items.Add(Describe(Item("Unmask", null, () => UnmaskCredential(reference), icon: "\uE785"),
+                        "Put the stored value back into this note as an undoable edit."));
+                    menu.Items.Add(Describe(Item("Delete credential\u2026", null, () => DeleteCredential(id), icon: "\uE74D"),
+                        "Delete the stored value after confirmation; note references will become missing."));
                 }
-                menu.Items.Add(new Separator());
             }
-            menu.Items.Add(Item("Copy reference", null, () => CopyPlainText(SecretTokens.Format(id), "a credential reference"), icon: "\uE71B"));
-            if (stored && !readOnly && vault!.IsUnlocked) menu.Items.Add(Item("Lock now", null, () => LockVault(vault), icon: "\uE72E"));
+            AddSection(menu, "Reference & security");
+            menu.Items.Add(Describe(Item("Copy reference", null, () => CopyPlainText(SecretTokens.Format(id), "a credential reference"), icon: "\uE71B"),
+                "Copy the safe credential reference, never the stored value."));
+            if (stored && !readOnly && vault!.IsUnlocked)
+                menu.Items.Add(Describe(Item("Lock now", null, () => LockVault(vault), icon: "\uE72E"),
+                    "Lock the credential vault immediately."));
         }
 
         /// <summary>Reveal...: the value in the card for 30 seconds, after the PIN unless unlocked. Its Copy is Copy secret.</summary>
@@ -605,7 +608,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (LoadedVault() is not { } vault || Stored(vault, id) is not { } info) return;
             string label = SecretPillGenerator.LabelOf(info);
-            WithUnlocked(vault, "To reveal " + Quoted(info) + ".", "Revealing a credential",
+            WithUnlocked(vault, UiText.Format("To reveal {0}.", Quoted(info)), "Revealing a credential",
                 () => VaultCard.ShowReveal(label, vault.Reveal(id), () => CopyCredential(id)), reveals: true);
         }
 
@@ -613,7 +616,7 @@ namespace Kil0bitSystemMonitor.Pad
         internal void CopyCredential(string id)
         {
             if (LoadedVault() is not { } vault || Stored(vault, id) is not { } info) return;
-            WithUnlocked(vault, "To copy " + Quoted(info) + ".", "Copying a credential",
+            WithUnlocked(vault, UiText.Format("To copy {0}.", Quoted(info)), "Copying a credential",
                 () => ShowStatus(SecretClipboard.Copy(vault.Reveal(id)) ? "Copied \u2014 clears in 30 s" : "Clipboard busy, try again"),
                 reveals: true);
         }
@@ -623,7 +626,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (LoadedVault() is not { } vault || Stored(vault, reference.Id) is not { } info) return;
             var document = Editor.Document;
-            WithUnlocked(vault, "To unmask " + Quoted(info) + ".", "Unmasking a credential", () =>
+            WithUnlocked(vault, UiText.Format("To unmask {0}.", Quoted(info)), "Unmasking a credential", () =>
             {
                 // The PIN question may have waited: the reference must still be where the menu found it.
                 if (!ReferenceEquals(Editor.Document, document) || !Holds(document, reference))
@@ -643,10 +646,10 @@ namespace Kil0bitSystemMonitor.Pad
         internal void DeleteCredential(string id)
         {
             if (LoadedVault() is not { } vault || Stored(vault, id) is not { } info) return;
-            string purpose = "To delete " + Quoted(info) + ".";
+            string purpose = UiText.Format("To delete {0}.", Quoted(info));
             WithUnlocked(vault, purpose, "Deleting a credential", () => VaultCard.ShowConfirm(
                 "Delete credential",
-                "Delete " + Quoted(info) + "? Notes that use " + id + " will show it as missing. This cannot be undone.",
+                UiText.Format("Delete {0}? Notes that use {1} will show it as missing. This cannot be undone.", Quoted(info), id),
                 "Delete",
                 // The vault may have locked while the question waited: then the PIN is asked again.
                 () => WithUnlocked(vault, purpose, "Deleting a credential", () => vault.Delete(id))));
@@ -692,8 +695,8 @@ namespace Kil0bitSystemMonitor.Pad
             if (InfoBar.Visibility == Visibility.Visible) return;
 
             _workspace.VaultNoticeShown = true;
-            ShowInfo("MicaPad could not open the credential vault on this Windows account, so it was moved to " + path
-                     + ". Stored credentials show as missing.", null, "Show folder", () => ShowInFolder(path));
+            ShowInfo(UiText.Format("MicaPad could not open the credential vault on this Windows account, so it was moved to {0}. Stored credentials show as missing.", path),
+                     null, UiText.Tr("Show folder"), () => ShowInFolder(path));
         }
     }
 }

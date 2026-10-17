@@ -1,5 +1,6 @@
 using System;
 using Kil0bitSystemMonitor.Services.Ai;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor.Services.Pad.Ai
 {
@@ -17,32 +18,31 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
 
         public static string Describe(string provider, string? compatibleBaseUrl)
         {
-            if (!IsCompatible(provider)) return Sent + "Anthropic (" + Anthropic + ")." + Never;
+            if (!IsCompatible(provider)) return UiText.Format("Text you run an AI action on, and passages found for a question, go to Anthropic ({0}). Stored credentials are never sent.", Anthropic);
 
             if (Endpoint(compatibleBaseUrl) is not { } uri)
-                return "The base URL is not a valid http or https address, so nothing can be sent.";
+                return UiText.Tr("The base URL is not a valid http or https address, so nothing can be sent.");
 
-            if (uri.IsLoopback) return "Everything stays on this PC (" + uri.Host + ").";
+            if (uri.IsLoopback) return UiText.Format("Everything stays on this PC ({0}).", uri.Host);
 
-            return Sent + uri.Host + "." + Never;
+            return UiText.Format("Text you run an AI action on, and passages found for a question, go to {0}. Stored credentials are never sent.", uri.Host);
         }
 
         /// <summary>The line under "Let Ask MicaStats search your notes": where what Ask looks up goes.</summary>
         public static string NotesInAsk(string provider, string? compatibleBaseUrl)
         {
-            const string Lookup = "passages and notes Ask looks up ";
-            if (!IsCompatible(provider)) return "When a question needs them, " + Lookup + "go to Anthropic (" + Anthropic + ")." + Never;
+            if (!IsCompatible(provider)) return UiText.Format("When a question needs them, passages and notes Ask looks up go to Anthropic ({0}). Stored credentials are never sent.", Anthropic);
 
             if (Endpoint(compatibleBaseUrl) is not { } uri)
-                return "The base URL is not a valid http or https address, so nothing can be sent.";
+                return UiText.Tr("The base URL is not a valid http or https address, so nothing can be sent.");
 
-            if (uri.IsLoopback) return "Passages and notes Ask looks up stay on this PC (" + uri.Host + ").";
+            if (uri.IsLoopback) return UiText.Format("Passages and notes Ask looks up stay on this PC ({0}).", uri.Host);
 
-            return "When a question needs them, " + Lookup + "go to " + uri.Host + "." + Never;
+            return UiText.Format("When a question needs them, passages and notes Ask looks up go to {0}. Stored credentials are never sent.", uri.Host);
         }
 
         /// <summary>The line under "Let MCP clients search your notes".</summary>
-        public const string NotesInMcp = "Programs you connected through MCP (Settings → AI) can search and read your notes. What they do with the text is up to them. Stored credentials are never given out.";
+        public static string NotesInMcp => UiText.Tr("Programs you connected through MCP (Settings → AI) can search and read your notes. What they do with the text is up to them. Stored credentials are never given out.");
 
         /// <summary>
         /// The destination in a word or two, for the AI pane's source line and the notes status:
@@ -54,7 +54,7 @@ namespace Kil0bitSystemMonitor.Services.Pad.Ai
         {
             if (!IsCompatible(provider)) return Anthropic;
             if (Endpoint(compatibleBaseUrl) is not { } uri) return "";
-            return uri.IsLoopback ? ThisPc : uri.Host;
+            return uri.IsLoopback ? UiText.Tr(ThisPc) : uri.Host;
         }
 
         /// <summary>

@@ -2,15 +2,38 @@
 
 ## Source of truth
 
-Status: Active. Updated 2026-10-06. Scope: Meeting Assistant, Settings, and MicaPad task tracking, open-note navigation/appearance and action surfaces in the Windows desktop application. Evidence: `Conference/MeetingWindow.xaml`, its partial classes, `SettingsWindow.xaml`, `Ai/AiSettingsPanel.xaml`, `Pad/SearchSettingsPanel.xaml`, `Services/Ai/AskPalette.cs`, `Ai/AskThemeApplier.cs`, `Ai/ChatStyles.xaml`, `docs/meeting-assistant.md`, the conference specification, `Pad/MicaPadWindow.xaml`, `Pad/MicaPadWindow.Tasks.cs`, `Pad/TaskDateEditor.xaml`, `Services/Pad/MarkdownTasks.cs`, `Services/Pad/NoteTabColors.cs`, `Helpers/ButtonIcon.cs`, `.scratch/ui-icon-compliance/spec.md`, `.scratch/micapad-tab-colors/spec.md`, `.scratch/micapad-task-date-editing/spec.md`, `docs/research/micapad-open-note-navigation.md` and `docs/research/micapad-todo-productivity.md`. The existing app themes are the visual baseline; research cites official product guidance.
+Status: Active. Updated 2026-10-14. Scope: Meeting Assistant, Settings, and MicaPad task tracking, open-note navigation/appearance, Markdown split preview and action surfaces in the Windows desktop application. Evidence: `Conference/MeetingWindow.xaml`, its partial classes, `SettingsWindow.xaml`, `Ai/AiSettingsPanel.xaml`, `Pad/SearchSettingsPanel.xaml`, `Services/Ai/AskPalette.cs`, `Ai/AskThemeApplier.cs`, `Ai/ChatStyles.xaml`, `docs/meeting-assistant.md`, the conference specification, `Pad/MicaPadWindow.xaml`, `Pad/MicaPadWindow.Tasks.cs`, `Pad/MicaPadWindow.MarkdownPreview.cs`, `Pad/MarkdownPreviewPane.xaml`, `Pad/MarkdownPreviewDocument.cs`, `.scratch/micapad-markdown-split/spec.md`, `Pad/TaskDateEditor.xaml`, `Services/Pad/MarkdownTasks.cs`, `Services/Pad/NoteTabColors.cs`, `Helpers/ButtonIcon.cs`, `.scratch/ui-icon-compliance/spec.md`, `.scratch/micapad-tab-colors/spec.md`, `.scratch/micapad-task-date-editing/spec.md`, `docs/research/micapad-open-note-navigation.md` and `docs/research/micapad-todo-productivity.md`. The existing app themes are the visual baseline; research cites official product guidance.
+
+Physical StackChan display evidence: `firmware/uiflow2/micastats_companion.py`, `tests/firmware/test_stackchan_companion.py`, `docs/research/stackchan-screen-design.md`, `.scratch/stackchan-screen/spec.md` and the owner-confirmed working USB session. The display scope is the documented 320x240 landscape LCD on the M5Stack UIFlow2 StackChan image.
+
+Personality and event evidence: `docs/research/stackchan-personality.md`,
+`.scratch/stackchan-personality/spec.md`, the host StackChan protocol/service,
+and `artifacts/stackchan-personality/validation.md`. USB validation observes all
+three views, RGB animation, alert interruption/recovery and saved calibration;
+physical motor alignment and gesture validation remain separate.
+
+Living-display evidence (2026-10-14): `.scratch/stackchan-dynamic-ui/spec.md`, `docs/research/stackchan-dynamic-ui.md`, the current renderer and deterministic animation tests, and synthetic previews under `artifacts/stackchan-dynamic-ui/previews/`. Live inspection confirms Quiet mode off and USB telemetry active; the earlier screen's motion was too subtle. After the owner's flicker report, face frames moved to a reusable RGB565 buffer and one completed LCD transfer. The physical USB probe observed all three views and 107 animation poses, with a maximum face render of 36ms.
 
 ## Brand
+
+Application language is a remembered UI preference: Thai by default, English available under
+General settings using native language names. Translate interface labels and generated status
+messages through shared catalogs. Preserve stable command/config identifiers, technical names,
+user text, exports and date storage. Existing open labels update without disrupting editing;
+AI response language remains a separate preference. Missing translations retain readable English.
+
+About uses an embedded panoramic illustration with sufficient contrast beneath real product
+and version text, then wrapping icon cards, support actions and accurate attribution. The artwork
+is decorative; readable labels carry the information. Verify Thai/English, light/dark themes
+and constrained widths. Images must work offline without development-machine paths.
 
 Calm, precise, capable Windows software. Trust comes from visible recording state, explicit actions, understandable sources and honest configuration status. Avoid decorative dashboards, invented activity meters, oversized marketing headings and hardcoded service identities or hosts.
 
 The owner requests professional, modern, informative and user-friendly UI for every new dialog and modification. Use meaningful icons or suitable images on key actions and section headers, paired with clear text. Prefer existing Fluent icon fonts and theme resources. Visual cues should help recognition without adding clutter. Keep common actions easy to find, preserve familiar keyboard behavior, show useful feedback, and fit small windows before adding decoration. Audit popup commands and secondary Settings/panel actions as well as primary buttons; verify icon semantics and changing labels, not just presence in initial markup.
 
 ## Product goals
+
+Markdown authors can edit original source and read its rendered result side by side. Split preview is an explicit, remembered view preference; opening it does not change note content, tracking dates, undo history or export. Success means a writer can identify the editable side, read current rendering status and resize the two panels without interrupting typing.
 
 Make service setup, listening state and the next useful action immediately clear. Help an attendee follow a transcript, prepare supported responses and choose when to speak or export. Preserve explicit capture, automatic local transcript recovery, manual full-report export and configured-provider boundaries. Success means an unconfigured user can find setup, and an active user can identify inputs, status, supporting evidence, persistence state and any listening gap at a glance.
 
@@ -21,6 +44,8 @@ Non-goals: automatic conference replies, attendee identification, new audio capa
 Primary user: a conference attendee monitoring live speech while multitasking. They need readable transcript context, concise assistance and predictable audio controls. A first-time user configures their own compatible services before using the workflow. Public-repository users must never inherit another user's service address.
 
 ## Information architecture
+
+StackChan opens on a living character with compact CPU/RAM/GPU readings beneath its face. Fresh telemetry spends 12 seconds on the character, 6 on the three-card overview, then 6 on metric spotlight (CPU/RAM/GPU in turn). Header dots and a thin dwell rail identify view timing; measured battery voltage and dashboard age remain visible. Recent abnormal events interrupt immediately with an allowlisted metric name, actual value and configured threshold for the host's 20-second event window, then return to the character. Quiet mode holds a still overview or visible alert. Stale telemetry stops rotation; no scrolling or required interaction.
 
 MicaPad uses readable horizontal document tabs for immediate switching and an Open notes button with this window's count for discovery. Ctrl+P opens an on-demand vertical list of all open notes, filtered locally by title or source path. Rows show title, location or scratch-note identity, and current/other-window context. Retain Ctrl+Tab tab order, numeric shortcuts, drag reorder and the existing activation/persistence paths. Keep New note reachable outside overflow. The picker preserves editor width while writing; a permanent rail or multi-row strip is outside this change.
 
@@ -36,9 +61,19 @@ State precedes detail. Data density serves reading; spacing and alignment group 
 
 ## Visual language
 
+The physical LCD uses a dark blue-black background, slightly lighter panels, pale high-contrast text, cyan CPU accents, mint RAM accents and lavender GPU accents. Use documented Montserrat12/18/24 fonts, 12-pixel outer margins, subtle borders and 8-pixel rounded panels. Percentages and labels carry meaning independently of color. The main character has pale eyes with cyan irises, eased glances with pauses, smooth closing/opening eyelids and a gentle bob. Thinking dots, decorative meeting arcs and busy accents illustrate accepted activity without implying measured audio or AI progress. Temporary render offsets preserve signed manual avatar commands. Alert entry adds one gentle border emphasis, then holds steady. LEDs breathe slowly at or below configured brightness; alert strips alternate with a slow orange pulse, AI strips offset their breathing, and Quiet/stale states stay steady. Explicit RGB commands pause ambient animation until automatic dashboard updates resume. Automatic head gestures require opt-in, verified saved calibration and a shared 90-second cooldown; no initial connection gesture.
+
 Reuse dynamic `Ask.*` palette resources and ModernWpf controls. Use the existing Segoe UI Variable / Segoe UI typefaces, approximately 13–14 px body text, 11–12 px secondary labels, 16–18 px section titles and a restrained 20 px window heading. Use a consistent 4/8 px spacing rhythm, 16–24 px region padding, subtle one-pixel borders and moderate corner radii. Accent the primary action and state sparingly. Avoid unnecessary gradients, large shadows and animation. Use restrained Fluent/MDL2 icons beside readable labels; retain established navigation cues, explicit automation names and words for every state. Check glyph meanings against [Microsoft's icon catalog](https://learn.microsoft.com/en-us/windows/apps/design/iconography/segoe-ui-symbol-font); keep labels for actions with no exact glyph and use swatches for colors.
 
 ## Components
+
+StackChan has one fixed header, an isolated avatar/activity panel, three metric cards and a local-status footer. Charts plot at most 18 actual received samples on a fixed 0..100 scale; unknown values break the line. A single sample is a point, not a fabricated history. Numbers round to whole percentages for desk-distance reading. Redraw only changed labels/panel regions. The transport badge identifies the latest accepted USB/BLE source; it does not promise ongoing connectivity.
+
+MicaPad Ask AI keeps proposed task and credential changes in an inline review inside its existing pane. Show a shield/checklist heading, a brief explanation that nothing has changed yet, and individually selectable rows with action icons, redacted task labels or credential labels, and source line numbers. Apply selected is explicit and remains separate from Copy/Insert; show source-changed and partial/failure states clearly. Preserve selections while redrawing. Only completed, current requests can apply; switched notes, edited documents, read-only views and cancelled requests disable the action. Candidate values stay hidden in the review and model payloads. Reuse the credential PIN card only when a vault must first be created. The review scrolls with the result at narrow/short sizes and uses shared Thai/English text and Pad theme resources.
+
+Markdown split view uses labeled Source and Preview headers, a meaningful two-pane icon on its labeled toggle, and the existing Pad palette. Original source remains editable with visible Markdown markers and fences; the right document is rendered, selectable and read-only. Keep history's version preview separate. Utility panes can temporarily replace the right preview, retaining its independent divider preference. The preview uses brief debounced updates, a helpful empty state, explicit long-note limits and safe source fallbacks for unsupported content.
+
+MicaPad right-click menus begin with a compact contextual caption, then meaningful section labels and familiar command rows with icons and keyboard gestures. Keep editing commands direct; group Find, Replace and Go to line under Find & navigate. Put current-task actions first, personalization and movement before tab-closing actions, and separate credential use, management and reference/security. Explain significant effects in tooltips and accessible help. Captions are noninteractive, never repeat selected text or credential values, and preserve keyboard navigation. Bound popup height to the work area and scroll internally in constrained layouts.
 
 MicaPad tabs use Pad palette resources, a readable minimum title width, a distinct active background/accent edge and semibold title, and full-title/path tooltips. Close buttons appear for the current or hovered/focused tab, retaining their reserved width to avoid label movement. Open notes is a non-modal searchable picker with a virtualized vertical list, a visible current marker, meaningful automation names and an empty state. Use metadata only; no content preview or network search.
 
@@ -58,9 +93,13 @@ Summary & answers has visible empty-state guidance, AI settings access, a labele
 
 ## Accessibility
 
+On the LCD, use text contrast of at least 4.5:1 for normal text and words alongside colored status. This adapts WCAG guidance to hardware, not a device accessibility certification. Unknown metrics are `--`, unknown voltage is `BAT --`, and first-use guidance is readable without a phone. Avoid flashing and mandatory touch; provide pauses between glances and a still display through Quiet mode. ASCII labels are a documented built-in-font constraint; desktop setup remains Thai/English.
+
 Target WCAG 2.2 AA principles as applicable to desktop WPF; this is a target, not a certification. Keep controls keyboard-reachable with visible focus, meaningful automation names, persistent labels and readable text contrast in each inherited theme. State must use words as well as color. Maintain logical Tab order and avoid changing focus during asynchronous updates. No flashing or motion required.
 
 ## Responsive behavior
+
+The Markdown divider begins balanced, supports mouse and keyboard resizing, remembers its ratio, and resets on double-click. Fit both panels to the actual available width at normal and 420x260 minimum sizes, with wrapping captions. Scrolling either source or preview brings the same Markdown content into view on the other side, using source-to-rendered block anchors rather than document-height percentages. Coalesce scroll and render work, prevent feedback jumps, and keep the current edited region aligned after updates or resizing without moving the caret, selection or keyboard focus. Bound long-note work and explain preview limits.
 
 MicaPad retains a single scrolling strip at its 420-pixel minimum width. The Open notes/New note actions stay visible. The picker fits the window width and available height, scrolls internally, and wraps long titles while keeping paths secondary. Validate synthetic many-note fixtures at 900x640 and 420x260 in both Pad themes.
 
@@ -73,6 +112,10 @@ Support the declared minimum window size and typical 1120–1280 px desktop widt
 Audio setup can collapse after Start to give transcript and answers more room while keeping Stop and both waveforms visible. Keep session facts in the footer instead of squeezing the status text between buttons and counters. Small workspaces with multiple controls must scroll internally.
 
 ## Interaction states
+
+StackChan starts with waiting guidance and unavailable metrics. A valid USB hello updates the transport badge without inventing PC readings. Accepted dashboard packets update only supplied fields and reset the displayed data age; face/RGB commands do not refresh that age. Manual desktop controls can suspend telemetry for 30 seconds, so increasing age never asserts a disconnection. Waiting/Ready/Quiet/Alert/AI working/Meeting active/PC busy use bounded friendly guidance. This screen adds no touch actions; all existing desktop controls retain their behavior.
+
+Ctrl+Shift+M and Split preview open or close the Markdown source/preview view. A changed note renders immediately; typing coalesces into a short delayed update with an honest updating state. Changing language, entering history/vault, replacing the utility pane, hiding or exiting cancels pending work and clears the previous rendered content. Returning to the normal Markdown workspace restores the chosen view. Credential scrubbing clears stale preview content immediately. Preview rendering is local, uses existing drawing/network preferences and safe-link rules, and starts no AI action.
 
 Opening Open notes focuses its search. Up/Down changes the highlighted result without changing the note; Enter or one click activates it, and Escape cancels. Return focus to the editor only for keyboard cancellation or a chosen note; outside-click dismissal must not steal focus. Preserve current selection and caret on cancellation. Refresh an open picker after rename, close, reorder or window movement while retaining a still-valid highlighted note. Clear its rows and query when dismissed and on vault/hide/exit so stale note references do not outlive the surface.
 
@@ -88,8 +131,16 @@ Use short, direct labels: Start listening, Stop, Speak, Stop speaking, Configure
 
 ## Implementation constraints
 
+The physical renderer uses verified M5 LCD primitives and existing MicroPython modules without new dependencies. Protocol v1 retains existing command fields and correlation; companion dashboards optionally add a fixed alert schema, and USB hello optionally reports saved calibration availability. Read actual NVS zeros without writes; reject motion if either is absent/invalid, and disable USB head controls accordingly. Maintain 20ms cooperative polling, independent bounded streams, conservative motor limits and existing RGB fades. Limit face frames to 12.5/s on a reusable 210x108 RGB565 canvas; clear and draw off screen, then transfer the completed frame once through `drawRawBuf` with the pixel count and byte swapping enabled. Use native framebuffer ellipses for upright presets and retain rotated manual geometry. Rebase elapsed clocks after a pause beyond `ticks_diff`'s signed range. Update the dwell rail at most four times per second. Screen animation never calls motors. Avoid full-screen clearing after setup; redraw the bounded body only when a view changes, and update smaller regions between changes. Histories remain bounded to real received samples. Validate deterministic firmware/host tests, synthetic previews, and physical RAM startup/USB acknowledgements. Physical motor verification also requires correct calibration and physical alignment.
+
 WPF on .NET 8 for Windows, existing ModernWpf/Ask themes, no new dependencies. Reuse the MicaPad AtomicFile/AutosaveWriter persistence pattern. Flush on normal window close and application exit; sudden termination can still lose pending results or writes, so do not promise universal zero loss. Preserve meeting generation, cancellation, credential filtering and quota behavior. All endpoint defaults are empty. Run targeted fake-provider/WPF tests, then full repository checks and a staged Release at BelowNormal priority, serialized. Inspect rendered screenshots for clipping and visual hierarchy; screenshots must use synthetic content and no real capture/network. Hardware recognition and playback remain a separate controlled manual check.
 
 ## Open questions
 
 No blocking design questions. Model IDs and protocol capabilities remain those of the existing ASR/TTS adapters; arbitrary provider protocols and authentication are outside this change.
+
+### StackChan companion
+
+USB is a selectable alternative to Bluetooth for the custom UIFlow companion. Show the connection method, COM port and verified connection state before controls. Keep normal Connect separate from Start USB companion: the latter visibly explains that it interrupts the current robot program and runs only until the robot restarts. It neither flashes firmware nor overwrites device files. Identify a USB session through the companion handshake, and disable device actions until it succeeds. Preserve quiet mode and existing movement limits on either connection.
+
+Settings adds a dedicated StackChan page using inherited ModernWpf brushes and Thai/English localization. Put connection guidance and actual connection state first, then companion preferences, face, lights and head controls. Wrap actions and status text; keep labels persistent and keyboard reachable. Show capability availability in words, and preserve manual drafts during background status updates. Discover only after an explicit scan; connection is explicit unless the user enables remembered-device reconnect. Require factory DANCE mode and explain that USB supplies power/debug. Quiet mode dims lights and blocks new head commands. Automatic movement starts off. Cancel gesture cancels remaining app steps; it cannot stop an already accepted motor movement. Factory BLE offers no arbitrary screen text/audio, physical Stop, calibration or measured battery telemetry. Verify synthetic panel fixtures in dark/light themes and retain a separate honest hardware-validation boundary.

@@ -205,6 +205,26 @@ namespace Kil0bitSystemMonitor.Tests
             }
         }
 
+        [Fact]
+        public void HistoryBarGraph_formats_hover_tooltip_with_sample_value_and_age()
+        {
+            var s = new Series(10);
+            s.Add(15.5f);
+            s.Add(30.0f);
+            s.Add(42.0f);
+
+            // Rightmost bar is at the right edge of a 100px-wide graph:
+            string? latest = Controls.HistoryBarGraph.FormatHoverTooltip(s, x: 99.0, width: 100.0, unit: "%");
+            Assert.Equal("42.0% (now)", latest);
+
+            // Two bars to the left (step = 3px for BarWidth=2, Gap=1 => x around 93):
+            string? older = Controls.HistoryBarGraph.FormatHoverTooltip(s, x: 93.0, width: 100.0, unit: "%");
+            Assert.Equal("15.5% (-2s)", older);
+
+            // Far left where no sample has been recorded yet:
+            Assert.Null(Controls.HistoryBarGraph.FormatHoverTooltip(s, x: 5.0, width: 100.0, unit: "%"));
+        }
+
         [System.Runtime.InteropServices.DllImport("gdi32.dll")]
         private static extern bool DeleteObject(IntPtr o);
     }

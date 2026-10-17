@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.ViewModels;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor
 {
@@ -29,10 +30,10 @@ namespace Kil0bitSystemMonitor
             _expected = count.ToString(inv);
 
             Heading.Text = count == 0
-                ? "Nothing here can be ended"
-                : "End " + _expected + (count == 1 ? " process?" : " processes?");
-            Cost.Text = count == 0 ? "" : "They are using " + TaskManagerViewModel.FormatTotals(
-                TaskManagerViewModel.Totals(plan.ToEnd)) + " between them.";
+                ? UiText.Tr("Nothing here can be ended")
+                : UiText.Format(count == 1 ? "End {0} process?" : "End {0} processes?", _expected);
+            Cost.Text = count == 0 ? "" : UiText.Format("Together they are using {0}.",
+                TaskManagerViewModel.FormatTotals(TaskManagerViewModel.Totals(plan.ToEnd)));
 
             Targets.ItemsSource = plan.ToEnd
                 .Select(p => p.Name + "   ·   PID " + p.Pid.ToString(inv)
@@ -49,12 +50,12 @@ namespace Kil0bitSystemMonitor
 
             if (count == 0)
             {
-                Instruction.Text = "Every match is protected from being ended.";
+                Instruction.Text = UiText.Tr("Every match is protected from being ended.");
                 Confirmation.IsEnabled = false;
             }
             else
             {
-                Instruction.Text = "Type " + _expected + " to end these processes. This cannot be undone.";
+                Instruction.Text = UiText.Format("Type {0} to end these processes. This cannot be undone.", _expected);
             }
 
             Loaded += (s, e) => Confirmation.Focus();

@@ -6,6 +6,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Services;
+using Kil0bitSystemMonitor.Services.Localization;
+using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.ViewModels;
 
 // System.Windows.Forms is in scope via UseWindowsForms and defines its own Button and
@@ -92,8 +94,8 @@ namespace Kil0bitSystemMonitor
             EndTaskButton.IsEnabled = count > 0;
             ExplainButton.IsEnabled = count == 1;
             EndTaskButton.Content = count > 1
-                ? "End " + count.ToString(CultureInfo.InvariantCulture) + " tasks"
-                : "End task";
+                ? UiText.Format("End {0} tasks", count)
+                : UiText.Tr("End task");
 
             // A different selection invalidates the previous refusal.
             _pendingElevation = null;
@@ -105,14 +107,14 @@ namespace Kil0bitSystemMonitor
         }
 
         /// <summary>
-        /// Sorts by the clicked column, flipping direction on a second click. The header text is
-        /// the key, mapped by <see cref="TaskManagerViewModel.ColumnFor"/>.
+        /// Sorts by the clicked column, flipping direction on a second click. The attached key is
+        /// stable when the visible header changes language or the user reorders columns.
         /// </summary>
         private void OnHeaderClick(object sender, RoutedEventArgs e)
         {
             if (e.OriginalSource is not GridViewColumnHeader header || header.Column == null) return;
-            if (TaskManagerViewModel.ColumnFor(header.Column.Header as string) is { } column)
-                _model.SortBy(column);
+            string key = ProcessSortKey.GetKey(header.Column);
+            if (TaskManagerViewModel.ColumnFor(key) is { } column) _model.SortBy(column);
         }
 
         /// <summary>End all filtered: everything the search currently matches.</summary>
@@ -133,7 +135,7 @@ namespace Kil0bitSystemMonitor
             // One batch at a time: a second confirm while one is running would race it.
             if (_model.Ending)
             {
-                _model.Message = "Still ending the previous batch; try again when it finishes.";
+                _model.Message = UiText.Tr("Still ending the previous batch; try again when it finishes.");
                 return;
             }
 
@@ -146,7 +148,7 @@ namespace Kil0bitSystemMonitor
             // Ending is folded into CanEndAllFiltered rather than assigning EndAllButton.IsEnabled
             // directly, so the XAML binding stays live for the rest of the window's life.
             _model.Ending = true;
-            _model.Message = "Ending " + plan.ToEnd.Count.ToString(CultureInfo.InvariantCulture) + "…";
+            _model.Message = UiText.Format("Ending {0}…", plan.ToEnd.Count);
 
             System.Threading.Tasks.Task.Run(() =>
             {
@@ -154,7 +156,7 @@ namespace Kil0bitSystemMonitor
                 try { outcome = BulkEnd.Run(plan.ToEnd).Describe(); }
                 catch (Exception ex)
                 {
-                    outcome = "Ending the processes failed; the log has the detail.";
+                    outcome = UiText.Tr("Ending the processes failed; the log has the detail.");
                     DiagnosticsLog.Error("processes", "Ending selected or filtered processes failed", ex);
                 }
 
@@ -218,14 +220,14 @@ namespace Kil0bitSystemMonitor
         /// Relaunches this executable elevated to end one process, then exits. MicaStats itself
         /// never holds administrator rights — the consent is for a single termination.
         /// </summary>
-        private void OnRetryElevated(object sender, RoutedEventArgs e)
+        private async void OnRetryElevated(object sender, RoutedEventArgs e)
         {
             if (_pendingElevation is not { } target) return;
 
             string? exe = Environment.ProcessPath;
             if (string.IsNullOrEmpty(exe))
             {
-                _model.Message = "Could not locate MicaStats to relaunch it.";
+                _model.Message = UiText.Tr("Could not locate MicaStats to relaunch it.");
                 return;
             }
 
@@ -244,26 +246,103 @@ namespace Kil0bitSystemMonitor
                 using var elevated = System.Diagnostics.Process.Start(psi);
                 if (elevated == null)
                 {
-                    _model.Message = "Windows did not start the elevated helper.";
+                    _model.Message = UiText.Tr("Windows did not start the elevated helper.");
                     return;
                 }
 
-                elevated.WaitForExit(10_000);
+                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(10));
+                try
+                {
+                    await elevated.WaitForExitAsync(cts.Token);
+                }
+                catch (OperationCanceledException) { }
+
                 _model.Message = elevated.HasExited && elevated.ExitCode == 0
-                    ? "Ended " + target.Name + " as administrator."
-                    : "Could not end " + target.Name + " even elevated. Windows may be protecting it.";
+                    ? UiText.Format("Ended {0} as administrator.", target.Name)
+                    : UiText.Format("Could not end {0} even with administrator rights. Windows may be protecting it.", target.Name);
             }
             catch (System.ComponentModel.Win32Exception)
             {
                 // Dismissing the consent prompt throws ERROR_CANCELLED. That is an answer, not
                 // a fault, and reporting it as an error would say something went wrong when the
                 // user simply declined.
-                _model.Message = "Cancelled — " + target.Name + " is still running.";
+                _model.Message = UiText.Format("Cancelled — {0} is still running.", target.Name);
             }
 
             _pendingElevation = null;
             RetryElevated.Visibility = Visibility.Collapsed;
             _model.Refresh();
+        }
+
+        private void OnProcessContextMenuOpened(object sender, RoutedEventArgs e)
+        {
+            int count = ProcessList.SelectedItems.Count;
+            MenuEndTask.IsEnabled = count > 0;
+            MenuExplain.Visibility = ExplainActions.ButtonVisibility;
+            MenuExplain.IsEnabled = count == 1;
+
+            bool hasSinglePath = count == 1 &&
+                                 !string.IsNullOrWhiteSpace(Detail.ImagePath) &&
+                                 System.IO.File.Exists(Detail.ImagePath);
+            MenuOpenLocation.IsEnabled = hasSinglePath;
+            MenuCopyPath.IsEnabled = count == 1 && !string.IsNullOrWhiteSpace(Detail.ImagePath) && Detail.ImagePath != "—";
+        }
+
+        private void OnOpenFileLocation(object sender, RoutedEventArgs e)
+        {
+            string path = Detail.ImagePath;
+            if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path)) return;
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    "explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
+            }
+            catch { }
+        }
+
+        private void OnCopyPath(object sender, RoutedEventArgs e)
+        {
+            string path = Detail.ImagePath;
+            if (string.IsNullOrWhiteSpace(path) || path == "—") return;
+            try
+            {
+                System.Windows.Clipboard.SetText(path);
+                _model.Message = UiText.Tr("Copied to clipboard");
+            }
+            catch { }
+        }
+
+        private void OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.F &&
+                (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0)
+            {
+                SearchBox.Focus();
+                SearchBox.SelectAll();
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == System.Windows.Input.Key.Escape)
+            {
+                if (!string.IsNullOrEmpty(SearchBox.Text))
+                {
+                    SearchBox.Text = string.Empty;
+                    e.Handled = true;
+                    return;
+                }
+                e.Handled = true;
+                try { Close(); } catch { }
+                return;
+            }
+
+            if (e.Key == System.Windows.Input.Key.Delete &&
+                !SearchBox.IsKeyboardFocusWithin &&
+                ProcessList.SelectedItems.Count > 0)
+            {
+                e.Handled = true;
+                OnEndTask(this, new RoutedEventArgs());
+            }
         }
     }
 }

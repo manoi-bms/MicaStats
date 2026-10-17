@@ -2,9 +2,10 @@
     x:Class="Kil0bitSystemMonitor.CaptureEditorWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:ctrl="clr-namespace:Kil0bitSystemMonitor.Controls"
-    Title="MicaStats Capture"
+    Title="{loc:Text 'MicaStats Capture'}"
     Width="1120" Height="780" MinWidth="900" MinHeight="520"
     WindowStartupLocation="CenterScreen"
     Background="#0E0E13"
@@ -138,33 +139,33 @@
                   first stray click leaves a mark on the capture.
                 -->
                 <RadioButton x:Name="ToolSelect" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE8B0;" Tag="Select — move, resize or delete a mark (V)"
+                             Content="&#xE8B0;" Tag="{loc:Text 'Select — move, resize or delete a mark (V)'}"
                              IsChecked="True" Checked="OnToolChecked" />
                 <Rectangle Width="1" Height="24" Fill="#26FFFFFF" Margin="5,0,8,0" />
                 <RadioButton x:Name="ToolArrow" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE9AC;" Tag="Arrow (A)" Checked="OnToolChecked" />
+                             Content="&#xE9AC;" Tag="{loc:Text 'Arrow (A)'}" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolRect" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE739;" Tag="Rectangle (R)" Checked="OnToolChecked" />
+                             Content="&#xE739;" Tag="{loc:Text 'Rectangle (R)'}" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolEllipse" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xED66;" Tag="Ellipse (E)" Checked="OnToolChecked" />
+                             Content="&#xED66;" Tag="{loc:Text 'Ellipse (E)'}" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolLine" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE738;" Tag="Line (L)" Checked="OnToolChecked" />
+                             Content="&#xE738;" Tag="{loc:Text 'Line (L)'}" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolPen" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE70F;" Tag="Pen (P)" Checked="OnToolChecked" />
+                             Content="&#xE70F;" Tag="{loc:Text 'Pen (P)'}" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolHighlight" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE7E6;" Tag="Highlighter (H)" Checked="OnToolChecked" />
+                             Content="&#xE7E6;" Tag="{loc:Text 'Highlighter (H)'}" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolText" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE8D2;" Tag="Text (T)" Checked="OnToolChecked" />
+                             Content="&#xE8D2;" Tag="{loc:Text 'Text (T)'}" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolStep" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE9D5;" Tag="Numbered step (N)" Checked="OnToolChecked" />
+                             Content="&#xE9D5;" Tag="{loc:Text 'Numbered step (N)'}" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolRedact" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xED1A;" Tag="Redact — hide sensitive content (B)" Checked="OnToolChecked" />
+                             Content="&#xED1A;" Tag="{loc:Text 'Redact — hide sensitive content (B)'}" Checked="OnToolChecked" />
                 <RadioButton x:Name="ToolCrop" Style="{StaticResource ToolButton}" GroupName="tool"
-                             Content="&#xE7A8;" Tag="Crop (C)" Checked="OnToolChecked" />
+                             Content="&#xE7A8;" Tag="{loc:Text 'Crop (C)'}" Checked="OnToolChecked" />
 
                 <Rectangle Width="1" Height="24" Fill="#26FFFFFF" Margin="8,0" />
 
-                <TextBlock Style="{StaticResource BarLabel}" Text="COLOUR" Margin="0,0,6,0" />
+                <TextBlock Style="{StaticResource BarLabel}" Text="{loc:Text 'COLOUR'}" Margin="0,0,6,0" />
                 <RadioButton x:Name="ColorRed" Style="{StaticResource Swatch}" GroupName="colour"
                              Background="#FF453A" Tag="#FF453A" IsChecked="True" Checked="OnColourChecked" />
                 <RadioButton Style="{StaticResource Swatch}" GroupName="colour"
@@ -180,17 +181,17 @@
                 <RadioButton Style="{StaticResource Swatch}" GroupName="colour"
                              Background="#101014" Tag="#101014" Checked="OnColourChecked" />
 
-                <TextBlock Style="{StaticResource BarLabel}" Text="SIZE" />
+                <TextBlock Style="{StaticResource BarLabel}" Text="{loc:Text 'SIZE'}" />
                 <Slider x:Name="ThicknessSlider" Width="92" Minimum="1" Maximum="14" Value="3"
                         VerticalAlignment="Center" TickFrequency="1" IsSnapToTickEnabled="True"
                         ValueChanged="OnThicknessChanged" />
 
-                <TextBlock Style="{StaticResource BarLabel}" Text="HIDE" />
+                <TextBlock Style="{StaticResource BarLabel}" Text="{loc:Text 'HIDE'}" />
                 <ComboBox x:Name="RedactStyleBox" Width="94" VerticalAlignment="Center"
                           SelectedIndex="0" SelectionChanged="OnRedactStyleChanged">
-                    <ComboBoxItem Content="Pixelate" />
-                    <ComboBoxItem Content="Blur" />
-                    <ComboBoxItem Content="Solid" />
+                    <ComboBoxItem Content="{loc:Text 'Pixelate'}" />
+                    <ComboBoxItem Content="{loc:Text 'Blur'}" />
+                    <ComboBoxItem Content="{loc:Text 'Solid'}" />
                 </ComboBox>
             </WrapPanel>
         </Border>
@@ -206,37 +207,37 @@
 
                 <StackPanel Orientation="Horizontal">
                     <Button x:Name="UndoButton" Style="{StaticResource ActionButton}" Click="OnUndo"
-                            ToolTip="Undo (Ctrl+Z)">
+                            ToolTip="{loc:Text 'Undo (Ctrl+Z)'}">
                         <TextBlock Text="&#xE7A7;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
                     </Button>
                     <Button x:Name="RedoButton" Style="{StaticResource ActionButton}" Click="OnRedo"
-                            ToolTip="Redo (Ctrl+Y)">
+                            ToolTip="{loc:Text 'Redo (Ctrl+Y)'}">
                         <TextBlock Text="&#xE7A6;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
                     </Button>
-                    <Button Style="{StaticResource ActionButton}" Click="OnClear" ToolTip="Remove all marks">
+                    <Button Style="{StaticResource ActionButton}" Click="OnClear" ToolTip="{loc:Text 'Remove all marks'}">
                         <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
                     </Button>
                     <Button x:Name="ApplyCropButton" Style="{StaticResource ActionButton}" Click="OnApplyCrop"
-                            ToolTip="Apply the pending crop (Enter)" Content="Apply crop" />
+                            ToolTip="{loc:Text 'Apply the pending crop (Enter)'}" Content="{loc:Text 'Apply crop'}" />
                     <Button Style="{StaticResource ActionButton}" Click="OnResetCrop"
-                            ToolTip="Restore the full capture" Content="Reset crop" />
+                            ToolTip="{loc:Text 'Restore the full capture'}" Content="{loc:Text 'Reset crop'}" />
 
                     <!-- Zoom. The percent is screen pixels per image pixel, so 100% is the capture's real size. -->
                     <Rectangle Width="1" Height="20" Fill="#26FFFFFF" Margin="2,0,8,0" />
                     <Button x:Name="ZoomOutButton" Style="{StaticResource ActionButton}" Click="OnZoomOut"
-                            ToolTip="Zoom out (Ctrl+&#x2212; or Ctrl+wheel)">
+                            ToolTip="{loc:Text 'Zoom out (Ctrl+− or Ctrl+wheel)'}">
                         <TextBlock Text="&#xE71F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
                     </Button>
                     <Button x:Name="ZoomActualButton" Style="{StaticResource ActionButton}" Click="OnZoomActual"
-                            ToolTip="Actual size (Ctrl+0)">
+                            ToolTip="{loc:Text 'Actual size (Ctrl+0)'}">
                         <TextBlock x:Name="ZoomText" Text="100%" MinWidth="30" TextAlignment="Center" />
                     </Button>
                     <Button x:Name="ZoomInButton" Style="{StaticResource ActionButton}" Click="OnZoomIn"
-                            ToolTip="Zoom in (Ctrl++ or Ctrl+wheel)">
+                            ToolTip="{loc:Text 'Zoom in (Ctrl++ or Ctrl+wheel)'}">
                         <TextBlock Text="&#xE8A3;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
                     </Button>
                     <Button x:Name="ZoomFitButton" Style="{StaticResource ActionButton}" Click="OnZoomFit"
-                            ToolTip="Fit to window" Content="Fit" />
+                            ToolTip="{loc:Text 'Fit to window'}" Content="{loc:Text 'Fit'}" />
                 </StackPanel>
 
                 <!-- Trimmed when the bar is narrow, so the tooltip always has the whole message. -->
@@ -245,26 +246,26 @@
                            ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button Style="{StaticResource ActionButton}" Click="OnPin" ToolTip="Pin on top of everything">
+                    <Button Style="{StaticResource ActionButton}" Click="OnPin" ToolTip="{loc:Text 'Pin on top of everything'}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE718;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
                                        FontSize="12" Margin="0,0,5,0" />
-                            <TextBlock Text="Pin" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Text 'Pin'}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button Style="{StaticResource ActionButton}" Click="OnOpenFolder" ToolTip="Open the captures folder">
+                    <Button Style="{StaticResource ActionButton}" Click="OnOpenFolder" ToolTip="{loc:Text 'Open the captures folder'}">
                         <TextBlock Text="&#xED25;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
                     </Button>
-                    <Button Style="{StaticResource ActionButton}" Click="OnSaveAs" Content="Save as…" />
-                    <Button Style="{StaticResource ActionButton}" Click="OnSave" ToolTip="Save to the captures folder (Ctrl+S)">
+                    <Button Style="{StaticResource ActionButton}" Click="OnSaveAs" Content="{loc:Text 'Save as…'}" />
+                    <Button Style="{StaticResource ActionButton}" Click="OnSave" ToolTip="{loc:Text 'Save to the captures folder (Ctrl+S)'}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE74E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
                                        FontSize="12" Margin="0,0,5,0" />
-                            <TextBlock Text="Save" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Text 'Save'}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button Style="{StaticResource PrimaryButton}" Click="OnCopy" ToolTip="Copy to clipboard (Ctrl+C)"
-                            Content="Copy" />
+                    <Button Style="{StaticResource PrimaryButton}" Click="OnCopy" ToolTip="{loc:Text 'Copy to clipboard (Ctrl+C)'}"
+                            Content="{loc:Text 'Copy'}" />
                 </StackPanel>
             </Grid>
         </Border>

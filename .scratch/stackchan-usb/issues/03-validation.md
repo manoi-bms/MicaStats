@@ -1,0 +1,6 @@
+# USB validation and local deployment
+Status: complete
+Blocked by: 02-implementation (complete)
+
+Acceptance: Serial BelowNormal targeted tests, firmware tests and staged Release; verify hardware handshake/dashboard without head movement where available; back up and deploy normally; state any physical gaps.
+Evidence: Full suite 6,441 passed with no failures/skips; final targeted 111 passed, firmware 27 passed. All builds/tests serial at BelowNormal via test.ps1 for .NET. Staged Release has zero warnings/errors. Normal Quit, backup, 64 verified deployed hashes and installed-process relaunch succeeded. After the owner's UIFlow re-burn, native discovery found COM9 with the same MAC identity. Hardware probe passed RAM startup, hello, dashboard, face and RGB acknowledgements and clean disconnect. Live app normal Connect, Happy face and RGB passed; owner confirmed operation. Automatic motion remained off, and no head commands were sent because servo-zero calibration data is missing. No agent flash/reset/calibration/device-file writes. Initial COM8 failures are historical evidence. Evidence: artifacts/stackchan-usb/validation.md, hardware-probe.json, usb-check.json, deployment.json and ui-smoke.json.

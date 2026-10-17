@@ -3,6 +3,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Kil0bitSystemMonitor.Services.Conference;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor.Conference;
 
@@ -40,8 +41,8 @@ public partial class MeetingWindow
         _speechSources = question.Sources.Count == 0 ? new[] { "unsupported-answer" } : question.Sources.ToArray();
         MeetingTabs.SelectedItem = SpeechTab;
         SpeechStatus.Text = IsTtsConfigured()
-            ? "Answer prepared. Press Speak when ready."
-            : "Answer prepared. Configure the speech service to play it.";
+            ? UiText.Tr("Answer prepared. Press Speak when ready.")
+            : UiText.Tr("Answer prepared. Configure the speech service to play it.");
     }
 
     private void SpeechText_Changed(object sender, TextChangedEventArgs e)
@@ -54,7 +55,7 @@ public partial class MeetingWindow
         if (_busy || _closing || _closed || _refreshingVoices || _speech.IsBusy) return;
         if (!IsTtsConfigured())
         {
-            SpeechStatus.Text = "Configure the speech service before loading voices.";
+            SpeechStatus.Text = UiText.Tr("Configure the speech service before loading voices.");
             RefreshServiceReadiness();
             return;
         }
@@ -68,7 +69,7 @@ public partial class MeetingWindow
         _voiceRefresh = refresh;
         MeetingServiceEndpoints.TryNormalizeBaseUrl(_config.MeetingTtsBaseUrl, out string endpointAtStart);
         _refreshingVoices = true;
-        _voiceCatalogStatus = "Loading available voices…";
+        _voiceCatalogStatus = UiText.Tr("Loading available voices…");
         RefreshSpeech();
         try
         {
@@ -78,10 +79,10 @@ public partial class MeetingWindow
             string selected = (VoiceChoice.SelectedItem as MeetingVoice)?.Id ?? _config.MeetingVoice;
             VoiceChoice.ItemsSource = voices;
             VoiceChoice.SelectedItem = voices.FirstOrDefault(x => x.Id == selected);
-            _voiceCatalogStatus = VoiceChoice.SelectedItem == null ? "Choose a voice from the refreshed catalog." : "Voices refreshed.";
+            _voiceCatalogStatus = UiText.Tr(VoiceChoice.SelectedItem == null ? "Choose a voice from the refreshed catalog." : "Voices refreshed.");
         }
         catch (OperationCanceledException) { }
-        catch { _voiceCatalogStatus = "Could not refresh voices. Try again."; }
+        catch { _voiceCatalogStatus = UiText.Tr("Could not refresh voices. Try again."); }
         finally
         {
             if (ReferenceEquals(_voiceRefresh, refresh))
@@ -98,20 +99,20 @@ public partial class MeetingWindow
         if (_busy || _closing || _closed || _speech.IsBusy || _refreshingVoices) return;
         if (!IsTtsConfigured())
         {
-            SpeechStatus.Text = "Configure the speech service before speaking.";
+            SpeechStatus.Text = UiText.Tr("Configure the speech service before speaking.");
             RefreshServiceReadiness();
             return;
         }
         if (PlaybackChoice.SelectedItem is not MeetingDevice device || VoiceChoice.SelectedItem is not MeetingVoice voice)
-        { SpeechStatus.Text = "Choose an available playback device and voice."; return; }
+        { SpeechStatus.Text = UiText.Tr("Choose an available playback device and voice."); return; }
         if (string.IsNullOrWhiteSpace(SpeechText.Text) || SpeechText.Text.Length > 4096)
-        { SpeechStatus.Text = "Enter between 1 and 4,096 characters. Edit longer text before speaking."; return; }
+        { SpeechStatus.Text = UiText.Tr("Enter between 1 and 4,096 characters. Edit longer text before speaking."); return; }
         _voiceCatalogStatus = null;
         _config.MeetingPlaybackDeviceId = device.Id;
         _config.MeetingVoice = voice.Id;
         try { await _speech.SpeakAsync(SpeechText.Text, voice.Id, device.Id, _speechSources, _lifetime.Token); }
         catch (OperationCanceledException) { }
-        catch { SpeechStatus.Text = "Speech failed. Check the service and playback device."; }
+        catch { SpeechStatus.Text = UiText.Tr("Speech failed. Check the service and playback device."); }
         RefreshState();
     }
 
@@ -138,9 +139,9 @@ public partial class MeetingWindow
     private void ResetVoiceCatalog()
     {
         _voiceCatalogStatus = null;
-        VoiceChoice.ItemsSource = new[] { new MeetingVoice("default", "Default") };
+        VoiceChoice.ItemsSource = new[] { new MeetingVoice("default", UiText.Tr("Default")) };
         VoiceChoice.SelectedIndex = _config.MeetingVoice == "default" ? 0 : -1;
         if (VoiceChoice.SelectedIndex < 0)
-            SpeechStatus.Text = "Refresh voices to validate your saved voice.";
+        SpeechStatus.Text = UiText.Tr("Refresh voices to validate your saved voice.");
     }
 }

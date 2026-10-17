@@ -114,8 +114,11 @@ public class MeetingSettingsTests
     {
         string xaml = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml"));
         string code = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml.cs"));
+        XDocument markup = UiMarkup.Load("SettingsWindow.xaml");
 
-        Assert.Contains("Content=\"Meeting\" Tag=\"Meeting\"", xaml);
+        XElement meeting = Assert.Single(markup.Descendants(), element =>
+            element.Attribute("Tag")?.Value == "Meeting" && UiMarkup.EnglishKey(element.Attribute("Content")) == "Meeting");
+        Assert.Equal("NavigationViewItem", meeting.Name.LocalName);
         Assert.Contains("x:Name=\"MeetingSection\"", xaml);
         Assert.Contains("x:Name=\"MeetingAsr2BaseUrlBox\"", xaml);
         Assert.Contains("x:Name=\"MeetingAsr1BaseUrlBox\"", xaml);

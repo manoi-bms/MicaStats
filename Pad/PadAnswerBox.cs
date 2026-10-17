@@ -8,6 +8,7 @@ using Kil0bitSystemMonitor.Ai;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 
 // UseWindowsForms puts System.Windows.Forms in scope; these names exist in both.
 using ContextMenu = System.Windows.Controls.ContextMenu;
@@ -55,6 +56,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>True when the document last built asked for a diagram's picture: only then does a theme change mean building it again.</summary>
         private bool _picturesAsked;
         private bool _warned;
+        private bool _observerWarned;
 
         /// <summary>Builds the box empty and dark; <see cref="ApplyTheme"/> switches it.</summary>
         public PadAnswerBox()
@@ -67,7 +69,7 @@ namespace Kil0bitSystemMonitor.Pad
                 ChatRender render = NewRender();
                 try
                 {
-                    return ChatDocument.Build(ChatMarkdown.Parse(raw), render);
+                    return MarkdownDocumentFactory(raw, render);
                 }
                 finally
                 {
@@ -85,8 +87,22 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Turns Markdown into the document shown. Tests replace it to make rendering fail.</summary>
         internal Func<string, FlowDocument> BuildDocument { get; set; }
 
+        /// <summary>
+        /// Builds a Markdown document with this view's render settings. The default is the Ask
+        /// renderer used by AI answers. A non-AI view may replace this to make a presentation-only
+        /// transformation while retaining this box's menus, theme and diagram lifecycle.
+        /// </summary>
+        internal Func<string, ChatRender, FlowDocument> MarkdownDocumentFactory { get; set; } =
+            static (raw, render) => ChatDocument.Build(ChatMarkdown.Parse(raw), render);
+
         /// <summary>Where a render failure is reported, once per box. Tests replace it so nothing reaches the real log.</summary>
         internal Action<string> Warn { get; set; } = message => DiagnosticsLog.Warn("pad", message);
+
+        /// <summary>Every failed render, separate from the once-only diagnostic warning.</summary>
+        internal event Action? RenderFailed;
+
+        /// <summary>Raised after this box replaces its FlowDocument, including local diagram/theme redraws.</summary>
+        internal event Action? DocumentReplaced;
 
         /// <summary>
         /// Draws the answer's Mermaid blocks; null leaves them as code. The app's own by default
@@ -306,6 +322,7 @@ namespace Kil0bitSystemMonitor.Pad
             ChatDocument.RemoveLinks(document);
             Document = document;
             document.PagePadding = new Thickness(0);
+            NotifyObservers(DocumentReplaced);
             // The chat renderer gives a code block the Ask window's menu, which follows the theme only inside that window.
             foreach (TextBoxBase code in ChatDocument.All<TextBoxBase>(document)) GiveMenu(code);
             // A diagram's picture too; its entries (Copy image, Copy source) are the renderer's own.
@@ -321,9 +338,14 @@ namespace Kil0bitSystemMonitor.Pad
             chat.Items.Clear();
 
             var menu = new ContextMenu();
+            EditorMenus.AddCaption(menu, UiText.Tr("Diagram"), UiText.Tr("Copy the image or its source"), "\uE8A9");
             foreach (object entry in entries)
             {
-                if (entry is MenuItem { Icon: null } item) item.Icon = CopyGlyph;   // both entries copy something
+                if (entry is MenuItem item)
+                {
+                    if (item.Icon == null) item.Icon = CopyGlyph;   // both entries copy something
+                    EditorMenus.Describe(item, "Copy from this rendered diagram.");
+                }
                 menu.Items.Add(entry);
             }
             Paint(menu);
@@ -333,6 +355,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>Reports a render failure once, by its type only: the message could quote the answer.</summary>
         private void Report(Exception ex)
         {
+            NotifyObservers(RenderFailed);
             if (_warned) return;
             _warned = true;
             try
@@ -345,12 +368,36 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
+        private void NotifyObservers(Action? observers)
+        {
+            if (observers == null) return;
+            foreach (Action observer in observers.GetInvocationList())
+            {
+                try { observer(); }
+                catch (Exception ex)
+                {
+                    // One observer must not block later feedback or turn a successful render
+                    // into fallback text. Report once, without a message that could quote a note.
+                    if (_observerWarned) continue;
+                    _observerWarned = true;
+                    try { Warn("Rendered text observer failed (" + ex.GetType().Name + ")"); }
+                    catch (Exception) { } // diagnostic sinks must not break rendering either
+                }
+            }
+        }
+
         /// <summary>Copy and Select all for <paramref name="box"/>, in the pad's look and current theme.</summary>
         private void GiveMenu(TextBoxBase box)
         {
             var menu = new ContextMenu();
-            menu.Items.Add(new MenuItem { Header = "Copy", Icon = CopyGlyph, Command = ApplicationCommands.Copy, CommandTarget = box });
-            menu.Items.Add(new MenuItem { Header = "Select all", Icon = SelectAllGlyph, Command = ApplicationCommands.SelectAll, CommandTarget = box });
+            bool code = !ReferenceEquals(box, this);
+            EditorMenus.AddCaption(menu, UiText.Tr(code ? "Code block" : "Read-only text"), UiText.Tr("Select and copy without editing"), code ? "\uE943" : "\uE8A5");
+            menu.Items.Add(EditorMenus.Describe(
+                new MenuItem { Header = UiText.Tr("Copy"), Icon = CopyGlyph, Command = ApplicationCommands.Copy, CommandTarget = box },
+                "Copy the selected text."));
+            menu.Items.Add(EditorMenus.Describe(
+                new MenuItem { Header = UiText.Tr("Select all"), Icon = SelectAllGlyph, Command = ApplicationCommands.SelectAll, CommandTarget = box },
+                "Select all text in this read-only view."));
             Paint(menu);
             box.ContextMenu = menu;
         }

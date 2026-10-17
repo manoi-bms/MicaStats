@@ -42,7 +42,7 @@ namespace Kil0bitSystemMonitor.Pad
             var line = document.GetLineByOffset(offset);
             if (line.EndOffset != offset || _lookup(document, line.LineNumber) is not { } task) return null;
 
-            return new TaskDateElement(" " + MarkdownTasks.FormatDates(task), _palette().Muted);
+            return new TaskDateElement(" " + MarkdownTasks.FormatDisplayDates(task), _palette().Muted);
         }
     }
 

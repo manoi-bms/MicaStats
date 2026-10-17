@@ -2,6 +2,7 @@
     x:Class="Kil0bitSystemMonitor.StatsPanelWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
     xmlns:ui="http://schemas.modernwpf.com/2019"
     xmlns:vm="clr-namespace:Kil0bitSystemMonitor.ViewModels"
     xmlns:ctrl="clr-namespace:Kil0bitSystemMonitor.Controls"
@@ -10,7 +11,7 @@
     WindowStyle="None"
     ResizeMode="NoResize"
     ShowInTaskbar="False"
-    SizeToContent="Height"
+    SizeToContent="{loc:Text 'Height'}"
     Width="372"
     MaxHeight="880"
     ShowActivated="True"
@@ -183,13 +184,13 @@
                             <Button Style="{StaticResource QuickButton}" Click="OnOpenHardware">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Cpu}" />
-                                    <TextBlock Text="Hardware" VerticalAlignment="Center" />
+                                    <TextBlock Text="{loc:Text 'Hardware'}" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
                             <Button Style="{StaticResource QuickButton}" Click="OnOpenDiagnostics">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Style="{StaticResource ButtonIcon}" Text="{x:Static hlp:UiGlyphs.Stopwatch}" />
-                                    <TextBlock Text="Diagnostics" VerticalAlignment="Center" />
+                                    <TextBlock Text="{loc:Text 'Diagnostics'}" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -211,7 +212,7 @@
                         <Grid Margin="0,0,0,7">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Cpu}" />
-                                <TextBlock Style="{StaticResource CardHeader}" Text="CPU" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'CPU'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
                                        Text="{Binding CpuHeaderText}" />
@@ -265,7 +266,7 @@
                         </ItemsControl>
 
                         <Grid Margin="0,4,0,0">
-                            <TextBlock Style="{StaticResource SubLabel}" Text="UPTIME" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'UPTIME'}" VerticalAlignment="Center" />
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding UptimeText}" />
                         </Grid>
@@ -275,7 +276,7 @@
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                                 <TextBlock Style="{StaticResource SubIcon}" Text="{x:Static hlp:UiGlyphs.Temperature}" />
                                 <TextBlock Style="{StaticResource CardHeader}" Foreground="{StaticResource DataCyan}"
-                                           Text="SENSORS" VerticalAlignment="Center" />
+                                           Text="{loc:Text 'SENSORS'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <ItemsControl ItemsSource="{Binding CpuSensorRows}" x:Name="CpuSensorList">
                                 <ItemsControl.ItemTemplate>
@@ -301,9 +302,9 @@
                             <!-- MicaStats' own list first: it opens instantly from a snapshot
                                  already in memory, which is the whole point when the machine is
                                  too busy for the Windows one. That stays reachable beside it. -->
-                            <Button Style="{StaticResource QuickButton}" Content="Processes" Click="OnOpenProcesses" />
-                            <Button Style="{StaticResource QuickButton}" Content="Task Manager" Tag="taskmgr" Click="OnQuickAction" />
-                            <Button Style="{StaticResource QuickButton}" Content="Resource Monitor" Tag="resmon" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Processes'}" Click="OnOpenProcesses" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Task Manager'}" Tag="taskmgr" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Resource Monitor'}" Tag="resmon" Click="OnQuickAction" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -323,7 +324,7 @@
                         <Grid Margin="0,0,0,9">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Memory}" />
-                                <TextBlock Style="{StaticResource CardHeader}" Text="MEMORY" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'MEMORY'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
                                        Text="{Binding MemoryRingText}" />
@@ -336,7 +337,7 @@
                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                     <TextBlock Text="{Binding MemoryRingText}" FontSize="14" FontWeight="SemiBold"
                                                Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
-                                    <TextBlock Text="MEMORY" FontSize="7.5" Foreground="#6EE9EDF2"
+                                    <TextBlock Text="{loc:Text 'MEMORY'}" FontSize="7.5" Foreground="#6EE9EDF2"
                                                HorizontalAlignment="Center" Margin="0,1,0,0" />
                                 </StackPanel>
                             </Grid>
@@ -345,7 +346,7 @@
                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                     <TextBlock Text="{Binding CommitRingText}" FontSize="14" FontWeight="SemiBold"
                                                Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
-                                    <TextBlock Text="COMMIT" FontSize="7.5" Foreground="#6EE9EDF2"
+                                    <TextBlock Text="{loc:Text 'COMMIT'}" FontSize="7.5" Foreground="#6EE9EDF2"
                                                HorizontalAlignment="Center" Margin="0,1,0,0" />
                                 </StackPanel>
                             </Grid>
@@ -355,7 +356,7 @@
                         <Grid Margin="0,10,0,0">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataCyan}" />
-                                <TextBlock Style="{StaticResource SubLabel}" Text="Used" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'Used'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding MemUsedText}" />
@@ -363,7 +364,7 @@
                         <Grid Margin="0,4,0,0">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DimDot}" />
-                                <TextBlock Style="{StaticResource SubLabel}" Text="Free" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'Free'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding MemFreeText}" />
@@ -371,7 +372,7 @@
                         <Grid Margin="0,4,0,0">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataRed}" />
-                                <TextBlock Style="{StaticResource SubLabel}" Text="Committed" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'Committed'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding MemCommitGbText}" />
@@ -379,7 +380,7 @@
                         <Grid Margin="0,4,0,0">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DimDot}" />
-                                <TextBlock Style="{StaticResource SubLabel}" Text="Cached" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'Cached'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding MemCachedText}" />
@@ -404,7 +405,7 @@
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                                 <TextBlock Style="{StaticResource SubIcon}" Text="{x:Static hlp:UiGlyphs.Memory}" />
                                 <TextBlock Style="{StaticResource CardHeader}" Foreground="{StaticResource DataCyan}"
-                                           Text="TOP MEMORY" VerticalAlignment="Center" />
+                                           Text="{loc:Text 'TOP MEMORY'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <ItemsControl ItemsSource="{Binding MemoryTopProcesses}">
                                 <ItemsControl.ItemTemplate>
@@ -423,8 +424,8 @@
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
-                            <Button Style="{StaticResource QuickButton}" Content="Task Manager" Tag="taskmgr" Click="OnQuickAction" />
-                            <Button Style="{StaticResource QuickButton}" Content="Resource Monitor" Tag="resmon" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Task Manager'}" Tag="taskmgr" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Resource Monitor'}" Tag="resmon" Click="OnQuickAction" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -446,7 +447,7 @@
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
                             <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Battery}" />
-                            <TextBlock Style="{StaticResource CardHeader}" Text="BATTERY" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'BATTERY'}" VerticalAlignment="Center" />
                             <TextBlock Style="{StaticResource SubLabel}" Margin="8,0,0,0" VerticalAlignment="Center"
                                        Text="{Binding BatteryStateText}" />
                         </StackPanel>
@@ -469,15 +470,15 @@
                             <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Health}"
                                        VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1">
-                                <TextBlock Style="{StaticResource SubLabel}" Text="HEALTH" />
+                                <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'HEALTH'}" />
                                 <TextBlock Style="{StaticResource LegendValue}" Text="{Binding BatteryHealthText}" />
                             </StackPanel>
                         </Grid>
 
                         <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
-                            <Button Style="{StaticResource QuickButton}" Content="Power Settings"
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Power Settings'}"
                                     Tag="ms-settings:batterysaver" Click="OnQuickAction" />
-                            <Button Style="{StaticResource QuickButton}" Content="Diagnostics"
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Diagnostics'}"
                                     Click="OnOpenDiagnostics" />
                         </StackPanel>
                     </StackPanel>
@@ -498,7 +499,7 @@
                         <Grid Margin="0,0,0,2">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Gpu}" />
-                                <TextBlock Style="{StaticResource CardHeader}" Text="GPU" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'GPU'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
                                        Text="{Binding GpuValueText}" />
@@ -512,7 +513,7 @@
                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                     <TextBlock Text="{Binding GpuValueText}" FontSize="10.5" FontWeight="SemiBold"
                                                Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
-                                    <TextBlock Text="GPU" FontSize="6.5" Foreground="#6EE9EDF2"
+                                    <TextBlock Text="{loc:Text 'GPU'}" FontSize="6.5" Foreground="#6EE9EDF2"
                                                HorizontalAlignment="Center" />
                                 </StackPanel>
                             </Grid>
@@ -522,14 +523,14 @@
                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                     <TextBlock Text="{Binding GpuTempText}" FontSize="10.5" FontWeight="SemiBold"
                                                Foreground="#F2FFFFFF" HorizontalAlignment="Center" />
-                                    <TextBlock Text="TMP" FontSize="6.5" Foreground="#6EE9EDF2"
+                                    <TextBlock Text="{loc:Text 'TMP'}" FontSize="6.5" Foreground="#6EE9EDF2"
                                                HorizontalAlignment="Center" />
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
 
                         <Grid Margin="0,0,0,7">
-                            <TextBlock Style="{StaticResource SubLabel}" Text="VRAM" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'VRAM'}" VerticalAlignment="Center" />
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding GpuVramText}" />
                         </Grid>
@@ -550,7 +551,7 @@
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                                 <TextBlock Style="{StaticResource SubIcon}" Text="{x:Static hlp:UiGlyphs.Temperature}" />
                                 <TextBlock Style="{StaticResource CardHeader}" Foreground="{StaticResource DataCyan}"
-                                           Text="SENSORS" VerticalAlignment="Center" />
+                                           Text="{loc:Text 'SENSORS'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <ItemsControl ItemsSource="{Binding GpuSensorRows}">
                                 <ItemsControl.ItemTemplate>
@@ -576,7 +577,7 @@
                             <ctrl:HistoryBarGraph Height="40" Mode="Bars" Max="100"
                                                   Series="{Binding GpuSeries}"
                                                   Tick="{Binding Tick}" />
-                            <TextBlock Text="This sensor could not be read on this system."
+                            <TextBlock Text="{loc:Text 'This sensor could not be read on this system.'}"
                                        FontSize="9.5" Foreground="#55EDEDF2"
                                        HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <TextBlock.Style>
@@ -593,8 +594,8 @@
                         </Grid>
 
                         <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
-                            <Button Style="{StaticResource QuickButton}" Content="Task Manager" Tag="taskmgr" Click="OnQuickAction" />
-                            <Button Style="{StaticResource QuickButton}" Content="Display Settings" Tag="ms-settings:display" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Task Manager'}" Tag="taskmgr" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Display Settings'}" Tag="ms-settings:display" Click="OnQuickAction" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -614,7 +615,7 @@
                         <Grid Margin="0,0,0,9">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Network}" />
-                                <TextBlock Style="{StaticResource CardHeader}" Text="NETWORK" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'NETWORK'}" VerticalAlignment="Center" />
                             </StackPanel>
                         </Grid>
 
@@ -627,7 +628,7 @@
                                 <TextBlock Style="{StaticResource BigValue}" Text="{Binding NetUpBigText}" />
                                 <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                     <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataRed}" />
-                                    <TextBlock Style="{StaticResource SubLabel}" Text="Upload" VerticalAlignment="Center" />
+                                    <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'Upload'}" VerticalAlignment="Center" />
                                 </StackPanel>
                             </StackPanel>
                             <StackPanel Grid.Column="1" HorizontalAlignment="Right">
@@ -635,7 +636,7 @@
                                            HorizontalAlignment="Right" />
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,2,0,0">
                                     <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataCyan}" />
-                                    <TextBlock Style="{StaticResource SubLabel}" Text="Download" VerticalAlignment="Center" />
+                                    <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'Download'}" VerticalAlignment="Center" />
                                 </StackPanel>
                             </StackPanel>
                         </Grid>
@@ -649,35 +650,35 @@
 
                         <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
                             <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataRed}" />
-                            <TextBlock Style="{StaticResource SubLabel}" Text="Peak ↑" VerticalAlignment="Center" Margin="0,0,5,0" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'Peak ↑'}" VerticalAlignment="Center" Margin="0,0,5,0" />
                             <TextBlock Style="{StaticResource LegendValue}" Text="{Binding NetPeakUpText}"
                                        VerticalAlignment="Center" Margin="0,0,16,0" />
                             <Ellipse Style="{StaticResource LegendDot}" Fill="{StaticResource DataCyan}" />
-                            <TextBlock Style="{StaticResource SubLabel}" Text="Peak ↓" VerticalAlignment="Center" Margin="0,0,5,0" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'Peak ↓'}" VerticalAlignment="Center" Margin="0,0,5,0" />
                             <TextBlock Style="{StaticResource LegendValue}" Text="{Binding NetPeakDownText}"
                                        VerticalAlignment="Center" />
                         </StackPanel>
 
                         <!-- Connection identity and session totals -->
                         <Grid Margin="0,9,0,0">
-                            <TextBlock Style="{StaticResource SubLabel}" Text="ADAPTER" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'ADAPTER'}" VerticalAlignment="Center" />
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding NetAdapterText}" TextTrimming="CharacterEllipsis" MaxWidth="220" />
                         </Grid>
                         <Grid Margin="0,4,0,0">
-                            <TextBlock Style="{StaticResource SubLabel}" Text="IP ADDRESS" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'IP ADDRESS'}" VerticalAlignment="Center" />
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding NetIpText}" />
                         </Grid>
                         <Grid Margin="0,4,0,0">
-                            <TextBlock Style="{StaticResource SubLabel}" Text="SESSION" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'SESSION'}" VerticalAlignment="Center" />
                             <TextBlock Style="{StaticResource LegendValue}" HorizontalAlignment="Right"
                                        Text="{Binding NetTotalsText}" />
                         </Grid>
 
                         <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
-                            <Button Style="{StaticResource QuickButton}" Content="Network Settings" Tag="ms-settings:network" Click="OnQuickAction" />
-                            <Button Style="{StaticResource QuickButton}" Content="Connections" Tag="ncpa.cpl" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Network Settings'}" Tag="ms-settings:network" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Connections'}" Tag="ncpa.cpl" Click="OnQuickAction" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -700,7 +701,7 @@
                         <Grid Margin="0,0,0,7">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Disk}" />
-                                <TextBlock Style="{StaticResource CardHeader}" Text="DISKS" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'DISKS'}" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource HeaderValue}" HorizontalAlignment="Right"
                                        Text="{Binding DiskValueText}" />
@@ -731,8 +732,8 @@
                         </ItemsControl>
 
                         <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
-                            <Button Style="{StaticResource QuickButton}" Content="Disk Management" Tag="diskmgmt.msc" Click="OnQuickAction" />
-                            <Button Style="{StaticResource QuickButton}" Content="Storage Settings" Tag="ms-settings:storagesense" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Disk Management'}" Tag="diskmgmt.msc" Click="OnQuickAction" />
+                            <Button Style="{StaticResource QuickButton}" Content="{loc:Text 'Storage Settings'}" Tag="ms-settings:storagesense" Click="OnQuickAction" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -756,10 +757,10 @@
                         <Grid Margin="0,0,0,7">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Style="{StaticResource CardIcon}" Text="{x:Static hlp:UiGlyphs.Processes}" />
-                                <TextBlock Style="{StaticResource CardHeader}" Text="PROCESSES"
+                                <TextBlock Style="{StaticResource CardHeader}" Text="{loc:Text 'PROCESSES'}"
                                            Foreground="{StaticResource DataCyan}" VerticalAlignment="Center" />
                             </StackPanel>
-                            <TextBlock Style="{StaticResource SubLabel}" Text="CPU"
+                            <TextBlock Style="{StaticResource SubLabel}" Text="{loc:Text 'CPU'}"
                                        HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
 

@@ -55,7 +55,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
         private readonly List<ChatRun> _runs = new();
 
         internal ChatBlock(ChatBlockKind kind, int level = 0, int depth = 0, int number = 0, string language = "", string code = "",
-                            ChatTable? table = null, bool closed = true)
+                            ChatTable? table = null, bool closed = true, int sourceLine = 1, int sourceEndLine = 0)
         {
             Kind = kind;
             Level = level;
@@ -65,6 +65,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
             Code = code;
             Table = table;
             Closed = closed;
+            SourceLine = sourceLine;
+            SourceEndLine = Math.Max(sourceLine, sourceEndLine);
         }
 
         /// <summary>What the block is.</summary>
@@ -97,9 +99,17 @@ namespace Kil0bitSystemMonitor.Services.Ai
         /// </summary>
         public bool Closed { get; }
 
+        /// <summary>The 1-based source line that introduced this block.</summary>
+        internal int SourceLine { get; }
+
+        /// <summary>The last 1-based source line consumed by this block.</summary>
+        internal int SourceEndLine { get; private set; }
+
         internal void Add(IReadOnlyList<ChatRun> runs) => _runs.AddRange(runs);
 
         internal void AddBreak() => _runs.Add(new ChatRun("\n"));
+
+        internal void IncludeSourceLine(int line) => SourceEndLine = Math.Max(SourceEndLine, line);
     }
 
     /// <summary>
@@ -183,7 +193,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                     for (; j < lines.Length && fences[j] == MdFence.Inside; j++) code.Add(Unindent(lines[j], indent));
                     // Past the last line means the text ended inside the fence (still streaming).
                     blocks.Add(new ChatBlock(ChatBlockKind.Code, language: fence.Groups[2].Value, code: string.Join("\n", code),
-                        closed: j < lines.Length));
+                        closed: j < lines.Length, sourceLine: i + 1, sourceEndLine: Math.Max(i + 1, j)));
                     i = j;   // the closing fence, or past the end
                     open = null;
                     blank = false;
@@ -216,7 +226,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 if (i > noTableThrough && !continues && (kind is MdBlock.Paragraph or MdBlock.Definition)
                     && TryTable(lines, fences, i, ref noTableThrough, out ChatTable? table, out int lastRow))
                 {
-                    blocks.Add(new ChatBlock(ChatBlockKind.Table, table: table));
+                    blocks.Add(new ChatBlock(ChatBlockKind.Table, table: table, sourceLine: i + 1, sourceEndLine: lastRow + 1));
                     levels.Clear();
                     open = null;
                     blank = false;
@@ -227,7 +237,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                 switch (kind)
                 {
                     case MdBlock.Rule:
-                        blocks.Add(new ChatBlock(ChatBlockKind.Rule));
+                        blocks.Add(new ChatBlock(ChatBlockKind.Rule, sourceLine: i + 1));
                         levels.Clear();
                         open = null;
                         break;
@@ -236,7 +246,7 @@ namespace Kil0bitSystemMonitor.Services.Ai
                     {
                         Match m = HeadingRx.Match(line);
                         string content = ClosingHashesRx.Replace(line.Substring(m.Length).Trim(), "");
-                        var heading = new ChatBlock(ChatBlockKind.Heading, level: Math.Min(3, m.Groups[1].Length));
+                        var heading = new ChatBlock(ChatBlockKind.Heading, level: Math.Min(3, m.Groups[1].Length), sourceLine: i + 1);
                         heading.Add(ParseInline(content));
                         blocks.Add(heading);
                         levels.Clear();
@@ -255,10 +265,11 @@ namespace Kil0bitSystemMonitor.Services.Ai
                         }
                         else
                         {
-                            open = new ChatBlock(ChatBlockKind.Quote);
+                            open = new ChatBlock(ChatBlockKind.Quote, sourceLine: i + 1);
                             blocks.Add(open);
                             levels.Clear();
                         }
+                        open.IncludeSourceLine(i + 1);
                         open.Add(ParseInline(content.Trim()));
                         break;
                     }
@@ -271,7 +282,8 @@ namespace Kil0bitSystemMonitor.Services.Ai
                         Match m = numbered ? numberMatch! : BulletRx.Match(line);
                         int depth = DepthOf(levels, Width(m.Groups[1].Value));
                         itemContent = Width(line.Substring(0, m.Length));
-                        open = new ChatBlock(numbered ? ChatBlockKind.Numbered : ChatBlockKind.Bullet, depth: depth, number: number);
+                        open = new ChatBlock(numbered ? ChatBlockKind.Numbered : ChatBlockKind.Bullet,
+                                             depth: depth, number: number, sourceLine: i + 1);
                         open.Add(ParseInline(line.Substring(m.Length).Trim()));
                         blocks.Add(open);
                         break;
@@ -294,10 +306,11 @@ namespace Kil0bitSystemMonitor.Services.Ai
                         }
                         else
                         {
-                            open = new ChatBlock(ChatBlockKind.Paragraph);
+                            open = new ChatBlock(ChatBlockKind.Paragraph, sourceLine: i + 1);
                             blocks.Add(open);
                             levels.Clear();
                         }
+                        open.IncludeSourceLine(i + 1);
                         open.Add(ParseInline(content));
                         break;
                     }

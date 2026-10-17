@@ -11,6 +11,7 @@ using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Ai.Mcp;
 using Kil0bitSystemMonitor.Services.Capture;
+using Kil0bitSystemMonitor.Services.Localization;
 using Microsoft.Extensions.AI;
 
 // UseWindowsForms puts System.Windows.Forms in scope, which has its own UserControl.
@@ -73,7 +74,7 @@ namespace Kil0bitSystemMonitor.Ai
                 CompatibleModelBox.Text = cfg.AiCompatibleModel;
                 ShowContextWindow();
                 HotkeyBox.Text = cfg.AiHotkey;
-                HotkeyHint.Text = HotkeyHelp;
+            HotkeyHint.Text = UiText.Tr(HotkeyHelp);
                 LimitBox.Text = cfg.AiDailyLimit.ToString(CultureInfo.InvariantCulture);
                 HistoryToggle.IsOn = cfg.AiHistoryEnabled;
                 AskThemeBox.SelectedIndex = cfg.AskTheme == Kil0bitSystemMonitor.Services.Pad.PadThemes.Light ? 1 : 0;
@@ -234,7 +235,7 @@ namespace Kil0bitSystemMonitor.Ai
             if (key.Length == 0)
             {
                 box.Clear();
-                ShowKeyHint("Paste the key into the box first, then press Save.");
+                ShowKeyHint(UiText.Tr("Paste the key into the box first, then press Save."));
                 return;
             }
 
@@ -244,19 +245,19 @@ namespace Kil0bitSystemMonitor.Ai
             }
             catch (Exception ex)
             {
-                ShowKeyHint("The key could not be stored (" + ex.GetType().Name + "). It is still in the box; press Save to try again.");
+                ShowKeyHint(UiText.Format("The key could not be stored ({0}). It is still in the box; press Save to try again.", ex.GetType().Name));
                 return;
             }
 
             // The store never throws for a locked or unwritable file, so believe only what it reads back.
             if (!string.Equals(_host.Secrets.Get(name), key, StringComparison.Ordinal))
             {
-                ShowKeyHint("The key could not be stored. It is still in the box; press Save to try again.");
+                ShowKeyHint(UiText.Tr("The key could not be stored. It is still in the box; press Save to try again."));
                 return;
             }
 
             box.Clear();
-            ShowKeyHint("Saved. The key is stored encrypted for your Windows account and is not shown again.");
+            ShowKeyHint(UiText.Tr("Saved. The key is stored encrypted for your Windows account and is not shown again."));
             RefreshKeys();
             _ = RefreshModelsAsync();
         }
@@ -267,10 +268,10 @@ namespace Kil0bitSystemMonitor.Ai
             _host.Secrets.Remove(name);
             // Has is also false while the file is locked, so the file must be readable too.
             if (!_host.Secrets.CanRead() || _host.Secrets.Has(name))
-                ShowKeyHint("The key could not be removed. The file that holds it is not available; try again.");
+                ShowKeyHint(UiText.Tr("The key could not be removed. The file that holds it is not available; try again."));
             else
             {
-                ShowKeyHint("Removed.");
+                ShowKeyHint(UiText.Tr("Removed."));
                 _ = RefreshModelsAsync();
             }
             RefreshKeys();
@@ -289,7 +290,7 @@ namespace Kil0bitSystemMonitor.Ai
             string key = ModelCatalog.KeyOf(snapshot);
             _models = Array.Empty<AiModelInfo>();
             FillModelBox(CurrentModelBox(), _models);
-            ModelStatusText.Text = "Loading…";
+            ModelStatusText.Text = UiText.Tr("Loading…");
             RefreshModelsButton.IsEnabled = false;
 
             AiModelList list;
@@ -312,8 +313,8 @@ namespace Kil0bitSystemMonitor.Ai
             _models = list.Models;
             FillModelBox(CurrentModelBox(), list.Models);
             ModelStatusText.Text = list.Problem == null
-                ? list.Models.Count.ToString(CultureInfo.InvariantCulture) + (list.Models.Count == 1 ? " model from " : " models from ") + list.Host
-                : list.Problem + " You can still type a model name.";
+                ? UiText.Format(list.Models.Count == 1 ? "{0} model from {1}" : "{0} models from {1}", list.Models.Count, list.Host)
+                : list.Problem + " " + UiText.Tr("You can still type a model name.");
             RefreshModelsButton.IsEnabled = true;
 
             if (ModelCatalog.Learn(_host.Config, list.Models)) _host.Save();
@@ -369,7 +370,8 @@ namespace Kil0bitSystemMonitor.Ai
         {
             if (_loading || _host == null) return;
             string text = ContextWindowBox.Text.Trim();
-            if (string.Equals(text, "Auto", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(text, "Auto", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(text, UiText.Tr("Auto"), StringComparison.CurrentCultureIgnoreCase))
             {
                 SaveContextWindow(0);
                 return;
@@ -400,7 +402,7 @@ namespace Kil0bitSystemMonitor.Ai
             try
             {
                 ContextWindowBox.SelectedIndex = -1;
-                ContextWindowBox.Text = _host.Config.AiContextWindow == 0 ? "Auto"
+                ContextWindowBox.Text = _host.Config.AiContextWindow == 0 ? UiText.Tr("Auto")
                     : _host.Config.AiContextWindow.ToString("N0", CultureInfo.InvariantCulture);
             }
             finally { _loading = wasLoading; }
@@ -420,13 +422,14 @@ namespace Kil0bitSystemMonitor.Ai
             AiBudget budget = CurrentBudget();
             if (!budget.InTokens)
             {
-                ModelLimitsText.Text = "Context window not known for this model: the standard limits are used. Set it below if you know it.";
+                ModelLimitsText.Text = UiText.Tr("Context window not known for this model: the standard limits are used. Set it below if you know it.");
                 return;
             }
-            string source = _host.Config.AiContextWindow > 0 ? "set here" : "from the server";
-            ModelLimitsText.Text = "Context window " + budget.ContextTokens.ToString("N0", CultureInfo.InvariantCulture)
-                + " tokens (" + source + ") · answers up to " + budget.AskOutputTokens.ToString("N0", CultureInfo.InvariantCulture)
-                + " tokens · MicaPad reads up to about " + budget.ReadInput.ToString("N0", CultureInfo.InvariantCulture) + " tokens of text";
+            string source = UiText.Tr(_host.Config.AiContextWindow > 0 ? "set here" : "from the server");
+            ModelLimitsText.Text = UiText.Format("Context window {0} tokens ({1}) · answers up to {2} tokens · MicaPad reads up to about {3} tokens of text",
+                budget.ContextTokens.ToString("N0", CultureInfo.InvariantCulture), source,
+                budget.AskOutputTokens.ToString("N0", CultureInfo.InvariantCulture),
+                budget.ReadInput.ToString("N0", CultureInfo.InvariantCulture));
         }
 
         private void ShowKeyHint(string text)
@@ -461,7 +464,7 @@ namespace Kil0bitSystemMonitor.Ai
             if (_host == null) return;
             int run = ++_testRun;
             TestButton.IsEnabled = false;
-            TestResultText.Text = "Testing\u2026";
+            TestResultText.Text = UiText.Tr("Testing…");
 
             AiClientResult result;
             try
@@ -476,7 +479,7 @@ namespace Kil0bitSystemMonitor.Ai
 
             if (result.Client is not { } client)
             {
-                Report(run, result.Problem ?? "The provider could not be set up.");
+                Report(run, result.Problem ?? UiText.Tr("The provider could not be set up."));
                 return;
             }
 
@@ -489,8 +492,8 @@ namespace Kil0bitSystemMonitor.Ai
                     timeout.Token));
                 string text = reply.Text.Trim();
                 string outcome = text.Length == 0
-                    ? "Connected, but the model sent back no text."
-                    : "Connected. The model replied: " + (text.Length > 60 ? text.Substring(0, 60) + "\u2026" : text);
+                    ? UiText.Tr("Connected, but the model sent back no text.")
+                    : UiText.Tr("Connected. The model replied:") + " " + (text.Length > 60 ? text.Substring(0, 60) + "\u2026" : text);
                 Report(run, outcome + ConnectionContextSuffix());
             }
             catch (Exception ex)
@@ -515,7 +518,7 @@ namespace Kil0bitSystemMonitor.Ai
         {
             AiBudget budget = CurrentBudget();
             return budget.InTokens
-                ? " · " + budget.ContextTokens.ToString("N0", CultureInfo.InvariantCulture) + "-token context"
+                ? UiText.Format(" · {0}-token context", budget.ContextTokens.ToString("N0", CultureInfo.InvariantCulture))
                 : "";
         }
 
@@ -529,7 +532,7 @@ namespace Kil0bitSystemMonitor.Ai
             if (text.Length == 0)
             {
                 _host.Config.AiHotkey = "";
-                HotkeyHint.Text = "Shortcut off. Ask MicaStats is still in the overlay's right-click menu.";
+                HotkeyHint.Text = UiText.Tr("Shortcut off. Ask MicaStats is still in the overlay's right-click menu.");
                 _host.Save();
                 return;
             }
@@ -538,13 +541,13 @@ namespace Kil0bitSystemMonitor.Ai
             {
                 string normal = HotkeyParser.Describe(mods, vk);
                 HotkeyBox.Text = normal;
-                HotkeyHint.Text = HotkeyHelp;
+                HotkeyHint.Text = UiText.Tr(HotkeyHelp);
                 _host.Config.AiHotkey = normal;
                 _host.Save();
             }
             else
             {
-                HotkeyHint.Text = "Not a valid shortcut. Use one or more of Ctrl, Alt, Shift, Win and one key, like Ctrl+Alt+A.";
+                HotkeyHint.Text = UiText.Tr("Not a valid shortcut. Use one or more of Ctrl, Alt, Shift, Win and one key, like Ctrl+Alt+A.");
             }
         }
 
@@ -560,7 +563,7 @@ namespace Kil0bitSystemMonitor.Ai
             }
             else
             {
-                LimitHint.Text = "Enter a whole number from 1 to 10000.";
+                LimitHint.Text = UiText.Tr("Enter a whole number from 1 to 10000.");
             }
         }
 
@@ -568,11 +571,8 @@ namespace Kil0bitSystemMonitor.Ai
         {
             if (_host == null) return;
             var usage = _host.Usage();
-            string used = usage == null
-                ? ""
-                : "Used today: " + usage.UsedToday.ToString(CultureInfo.InvariantCulture) + " of "
-                  + _host.Config.AiDailyLimit.ToString(CultureInfo.InvariantCulture) + ". ";
-            LimitHint.Text = used + "Each Send or Explain counts once, however many lookups it takes; Test connection does not count. Resets at midnight.";
+            string used = usage == null ? "" : UiText.Format("Used today: {0} of {1}. ", usage.UsedToday, _host.Config.AiDailyLimit);
+            LimitHint.Text = used + UiText.Tr("Each Send or Explain counts once, however many lookups it takes; Test connection does not count. Resets at midnight.");
         }
 
         // ---- theme ---------------------------------------------------------------------------
@@ -602,16 +602,15 @@ namespace Kil0bitSystemMonitor.Ai
             RefreshHistory();
             // DeleteAll swallows I/O errors, so the size afterwards is the truth.
             HistoryHint.Text = (_host.History.SizeBytes() == 0
-                ? "History deleted. "
-                : "History could not be deleted completely. ") + HistoryHint.Text;
+                ? UiText.Tr("History deleted. ")
+                : UiText.Tr("History could not be deleted completely. ")) + HistoryHint.Text;
         }
 
         private void RefreshHistory()
         {
             if (_host == null) return;
             long bytes = _host.History?.SizeBytes() ?? 0;
-            HistoryHint.Text = "One row a minute (every five minutes after a day) of CPU, memory, temperatures, disk, network, battery and the busiest process, so questions about the past can be answered. Kept on this PC for 7 days; using "
-                               + FormatSize(bytes) + ".";
+            HistoryHint.Text = UiText.Format("One row a minute (every five minutes after a day) of CPU, memory, temperatures, disk, network, battery and the busiest process, so questions about the past can be answered. Kept on this PC for 7 days; using {0}.", FormatSize(bytes));
             DeleteHistoryButton.IsEnabled = _host.History != null;
         }
 
@@ -653,7 +652,7 @@ namespace Kil0bitSystemMonitor.Ai
             }
             else
             {
-                McpStatusText.Text = "Enter a port number from 1024 to 65535.";
+                McpStatusText.Text = UiText.Tr("Enter a port number from 1024 to 65535.");
             }
         }
 
@@ -662,7 +661,7 @@ namespace Kil0bitSystemMonitor.Ai
             if (_host == null) return;
             string? token = EnsureToken();
             if (token == null) return;
-            TryCopy(token, sensitive: true, "Token copied.");
+            TryCopy(token, sensitive: true, UiText.Tr("Token copied."));
         }
 
         private void OnRegenerateToken(object sender, RoutedEventArgs e)
@@ -671,15 +670,15 @@ namespace Kil0bitSystemMonitor.Ai
             string token = SecretStore.NewToken();
             _host.Secrets.Set(SecretNames.McpToken, token);
             McpStatusText.Text = string.Equals(_host.Secrets.Get(SecretNames.McpToken), token, StringComparison.Ordinal)
-                ? "New token made. Copy the Claude Code command again: the old token no longer works."
-                : "The token could not be changed; the old one still works.";
+                ? UiText.Tr("New token made. Copy the Claude Code command again: the old token no longer works.")
+                : UiText.Tr("The token could not be changed; the old one still works.");
         }
 
         private void OnCopyDesktopConfig(object sender, RoutedEventArgs e)
         {
             if (_host == null) return;
             TryCopy(McpConfigSnippets.ClaudeDesktopJson(_host.ExePath), sensitive: false,
-                "Copied. In Claude Desktop open Settings > Developer > Edit Config, merge it into claude_desktop_config.json, then restart Claude Desktop.");
+                UiText.Tr("Copied. In Claude Desktop open Settings > Developer > Edit Config, merge it into claude_desktop_config.json, then restart Claude Desktop."));
         }
 
         private void OnCopyCodeCommand(object sender, RoutedEventArgs e)
@@ -690,12 +689,12 @@ namespace Kil0bitSystemMonitor.Ai
                 string? token = EnsureToken();
                 if (token == null) return;
                 TryCopy(McpConfigSnippets.ClaudeCodeHttpCommand(_host.Config.AiMcpHttpPort, token), sensitive: true,
-                    "Copied. Run it in a terminal where Claude Code is installed.");
+                    UiText.Tr("Copied. Run it in a terminal where Claude Code is installed."));
             }
             else
             {
                 TryCopy(McpConfigSnippets.ClaudeCodeStdioCommand(_host.ExePath), sensitive: false,
-                    "Copied. Run it in a terminal where Claude Code is installed.");
+                    UiText.Tr("Copied. Run it in a terminal where Claude Code is installed."));
             }
         }
 
@@ -713,7 +712,7 @@ namespace Kil0bitSystemMonitor.Ai
             }
             catch (ExternalException)
             {
-                McpStatusText.Text = "The clipboard is busy. Try again.";
+                McpStatusText.Text = UiText.Tr("The clipboard is busy. Try again.");
             }
         }
 
@@ -730,7 +729,7 @@ namespace Kil0bitSystemMonitor.Ai
             _host.Secrets.Set(SecretNames.McpToken, token);
             if (string.Equals(_host.Secrets.Get(SecretNames.McpToken), token, StringComparison.Ordinal)) return token;
 
-            McpStatusText.Text = "The token could not be stored, so nothing was copied. Try again.";
+            McpStatusText.Text = UiText.Tr("The token could not be stored, so nothing was copied. Try again.");
             return null;
         }
 
@@ -746,9 +745,9 @@ namespace Kil0bitSystemMonitor.Ai
             CopyCodeButton.IsEnabled = mode != AiMcpModes.Off;
             McpHint.Text = mode switch
             {
-                AiMcpModes.Stdio => "Claude starts MicaStats.exe --mcp, which reads this running MicaStats over a private pipe. Nothing listens on the network. Read-only.",
-                AiMcpModes.Http => "While MicaStats runs it answers MCP at http://127.0.0.1:" + port + "/mcp, on this PC only, for clients that send the token. Read-only. A client that starts MicaStats.exe --mcp sees only the files on disk in this mode.",
-                _ => "Off. Claude Desktop and Claude Code cannot read MicaStats data.",
+                AiMcpModes.Stdio => UiText.Tr("Claude starts MicaStats.exe --mcp, which reads this running MicaStats over a private pipe. Nothing listens on the network. Read-only."),
+                AiMcpModes.Http => UiText.Format("While MicaStats runs it answers MCP at http://127.0.0.1:{0}/mcp, on this PC only, for clients that send the token. Read-only. A client that starts MicaStats.exe --mcp sees only the files on disk in this mode.", port),
+                _ => UiText.Tr("Off. Claude Desktop and Claude Code cannot read MicaStats data."),
             };
 
             string? problem = mode == AiMcpModes.Http ? _host.McpHttpProblem() : null;

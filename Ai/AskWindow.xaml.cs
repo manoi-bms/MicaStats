@@ -13,6 +13,7 @@ using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 
 // UseWindowsForms puts System.Windows.Forms in scope, which has its own KeyEventArgs and Button.
 using Button = System.Windows.Controls.Button;
@@ -175,7 +176,7 @@ namespace Kil0bitSystemMonitor.Ai
 
             // Sun (E706) offers the light theme, moon (E708) the dark one.
             ThemeButton.Content = _palette.IsDark ? "\uE706" : "\uE708";
-            ThemeButton.ToolTip = _palette.IsDark ? "Switch to light theme" : "Switch to dark theme";
+            ThemeButton.ToolTip = UiText.Tr(_palette.IsDark ? "Switch to light theme" : "Switch to dark theme");
             AskMenus.Retheme(this, _palette);
             PadThemeApplier.ApplyTitleBar(this, _palette.IsDark);
         }
@@ -231,7 +232,7 @@ namespace Kil0bitSystemMonitor.Ai
             QuestionBox.Text = question;
             if (IsBusy)
             {
-                SetStatus("Your question is in the box. Press Send when this answer has finished, or Stop it first.");
+                SetStatus(UiText.Tr("Your question is in the box. Press Send when this answer has finished, or Stop it first."));
                 return Task.CompletedTask;
             }
             return StartSend();
@@ -363,7 +364,7 @@ namespace Kil0bitSystemMonitor.Ai
             if (setup.Ask is not { } ask)
             {
                 setup.Resource?.Dispose();
-                ShowProblem(setup.Problem ?? "The assistant is not set up yet. Open Settings > AI.", offerSettings: true, offerRetry: false);
+                ShowProblem(setup.Problem ?? UiText.Tr("The assistant is not set up yet. Open Settings > AI."), offerSettings: true, offerRetry: false);
                 return;
             }
 
@@ -420,7 +421,7 @@ namespace Kil0bitSystemMonitor.Ai
                             break;
                         case AssistantUpdateKind.Error:
                             failed = true;
-                            string message = update.Text ?? "The assistant could not answer.";
+                    string message = update.Text ?? UiText.Tr("The assistant could not answer.");
                             turn.ShowNote(message);
                             ShowProblem(message, offerSettings: message.Contains("Settings > AI", StringComparison.Ordinal), offerRetry: true);
                             break;
@@ -467,15 +468,15 @@ namespace Kil0bitSystemMonitor.Ai
             // Only the question that was answered is cleared; anything typed meanwhile stays.
             if (QuestionBox.Text.Trim() == question) QuestionBox.Clear();
             if (!cutShort && turn.RawText.Length == 0 && turn.ActionButtons.Count == 0)
-                turn.ShowNote("The model sent back no text. Try asking again.");
+                    turn.ShowNote(UiText.Tr("The model sent back no text. Try asking again."));
             SetStatus(trimmed ? TrimmedStatus :
-                turn.ActionButtons.Count > 0 ? "Suggestions do nothing until you click them." : "");
+                        turn.ActionButtons.Count > 0 ? UiText.Tr("Suggestions do nothing until you click them.") : "");
         }
 
         private void ShowStopped(AskTurnView turn, int generation)
         {
-            turn.ShowNote("Stopped.");
-            if (generation == _generation) SetStatus("Stopped. Your question is still in the box.");
+                turn.ShowNote(UiText.Tr("Stopped."));
+                if (generation == _generation) SetStatus(UiText.Tr("Stopped. Your question is still in the box."));
         }
 
         /// <summary>
@@ -504,7 +505,7 @@ namespace Kil0bitSystemMonitor.Ai
         {
             if (generation != _generation)
             {
-                SetStatus("That suggestion belongs to a conversation that was cleared, so it does nothing now.");
+                SetStatus(UiText.Tr("That suggestion belongs to a conversation that was cleared, so it does nothing now."));
                 return;
             }
 
@@ -514,7 +515,7 @@ namespace Kil0bitSystemMonitor.Ai
             }
             catch (Exception ex)
             {
-                SetStatus("That did not work: " + ex.Message);
+                SetStatus(UiText.Format("That did not work: {0}", ex.Message));
             }
         }
 
@@ -620,8 +621,8 @@ namespace Kil0bitSystemMonitor.Ai
                 Kil0bitSystemMonitor.Services.DiagnosticsLog.Warn("ai", "Reading the day's question count failed (" + ex.GetType().Name + ")");
             }
             HintText.Text = usage is { } u
-                ? HintBase + " · " + u.Used.ToString(CultureInfo.InvariantCulture) + " of " + u.Limit.ToString(CultureInfo.InvariantCulture) + " today"
-                : HintBase;
+                ? UiText.Format("Enter to send · Shift+Enter for a new line · {0} of {1} today", u.Used, u.Limit)
+                : UiText.Tr(HintBase);
         }
 
         /// <summary>
@@ -748,6 +749,26 @@ namespace Kil0bitSystemMonitor.Ai
         private void OnComposerMouseDown(object sender, MouseButtonEventArgs e)
         {
             if (!QuestionBox.IsKeyboardFocusWithin) QuestionBox.Focus();
+        }
+
+        internal bool HandleShortcutKey(Key key, ModifierKeys modifiers)
+        {
+            if (modifiers == ModifierKeys.Control && key == Key.N)
+            {
+                NewConversation();
+                return true;
+            }
+            return false;
+        }
+
+        protected override void OnPreviewKeyDown(KeyEventArgs e)
+        {
+            if (HandleShortcutKey(e.Key, Keyboard.Modifiers))
+            {
+                e.Handled = true;
+                return;
+            }
+            base.OnPreviewKeyDown(e);
         }
 
         /// <summary>Enter sends, Shift+Enter adds a line, Escape stops an answer in progress.</summary>

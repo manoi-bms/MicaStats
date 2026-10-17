@@ -8,6 +8,7 @@ using System.Windows.Threading;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.HardwareInfo;
+using Kil0bitSystemMonitor.Services.Localization;
 
 // System.Windows.Forms is in scope via UseWindowsForms and defines its own KeyEventArgs.
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
@@ -81,7 +82,7 @@ namespace Kil0bitSystemMonitor
 
         private async Task BeginGatherAsync()
         {
-            StatusText.Text = "Reading hardware…";
+            StatusText.Text = UiText.Tr("Reading hardware…");
             HardwareSnapshot snap;
             try
             {
@@ -90,14 +91,14 @@ namespace Kil0bitSystemMonitor
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("hardware", "Gather crashed", ex);
-                StatusText.Text = "Hardware could not be read — see the diagnostics log.";
+            StatusText.Text = UiText.Tr("Hardware could not be read — see the diagnostics log.");
                 return;
             }
 
             _snapshot = snap;
             Tabs.ItemsSource = snap.Tabs;
             if (Tabs.Items.Count > 0 && Tabs.SelectedIndex < 0) Tabs.SelectedIndex = 0;
-            StatusText.Text = "Gathered in " + snap.GatherDuration.TotalMilliseconds.ToString("0") + " ms";
+        StatusText.Text = UiText.Format("Gathered in {0} ms", snap.GatherDuration.TotalMilliseconds.ToString("0"));
             StartLiveStrip();
         }
 
@@ -133,14 +134,14 @@ namespace Kil0bitSystemMonitor
             try
             {
                 string path = HardwareInfoService.SaveReport(_snapshot);
-                StatusText.Text = "Saved " + path;
+            StatusText.Text = UiText.Format("Saved {0}", path);
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
                     "explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
             }
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("hardware", "Report save failed", ex);
-                StatusText.Text = "Report could not be saved — see the diagnostics log.";
+            StatusText.Text = UiText.Tr("Report could not be saved — see the diagnostics log.");
             }
         }
 

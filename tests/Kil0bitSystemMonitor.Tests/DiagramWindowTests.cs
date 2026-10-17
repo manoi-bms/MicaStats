@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml.Linq;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Pad;
@@ -141,12 +142,13 @@ namespace Kil0bitSystemMonitor.Tests
         public void Settings_has_the_diagram_and_kroki_cards()
         {
             string xaml = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml"));
+            XDocument markup = UiMarkup.Load("SettingsWindow.xaml");
 
             foreach (string name in new[] { "PadDiagramsToggle", "PadKrokiToggle", "PadKrokiServerBox", "PadKrokiHint" })
                 Assert.Contains("x:Name=\"" + name + "\"", xaml);
-            Assert.Contains("Text=\"Draw diagrams\"", xaml);
-            Assert.Contains("Text=\"Draw other types with Kroki\"", xaml);
-            Assert.Contains("Sends the diagram's text (only that block) to this server. Use your own Kroki server for private notes.", xaml);
+            UiMarkup.Localized(markup, "Text", "Draw diagrams");
+            UiMarkup.Localized(markup, "Text", "Draw other types with Kroki");
+            UiMarkup.ContainsLocalized(markup, "Text", "Sends the diagram's text (only that block) to this server. Use your own Kroki server for private notes.");
         }
 
         [Fact]

@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <!-- Must match the project under test: it exposes WPF types (Dispatcher, Media.Color). -->
-        <TargetFramework>net8.0-windows</TargetFramework>
+        <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
         <UseWPF>true</UseWPF>
         <UseWindowsForms>true</UseWindowsForms>
         <Nullable>enable</Nullable>

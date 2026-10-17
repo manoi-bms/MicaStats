@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Services.Conference;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor.Conference;
 
@@ -43,14 +44,14 @@ public partial class MeetingWindow
                 ? $"{(20 * Math.Log10(peak)).ToString("0", CultureInfo.InvariantCulture)} dBFS" : "−∞ dBFS";
             status.Text = !listening ? _session.State switch
             {
-                MeetingState.Paused => "⏸ Paused for speech",
-                MeetingState.Faulted => "⚠ Capture stopped",
-                _ => "Not listening",
-            } : snapshot == null ? "Audio display unavailable"
-                : snapshot.Age == null ? "Waiting for audio"
-                : !recent ? "No recent audio"
-                : peak >= 0.98f ? "⚠ Near clipping · reduce input level"
-                : peak >= 0.01f ? "● Sound detected" : "Quiet";
+            MeetingState.Paused => UiText.Tr("⏸ Paused for speech"),
+            MeetingState.Faulted => UiText.Tr("⚠ Capture stopped"),
+            _ => UiText.Tr("Not listening"),
+        } : snapshot == null ? UiText.Tr("Audio display unavailable")
+            : snapshot.Age == null ? UiText.Tr("Waiting for audio")
+            : !recent ? UiText.Tr("No recent audio")
+            : peak >= 0.98f ? UiText.Tr("⚠ Near clipping · reduce input level")
+            : peak >= 0.01f ? UiText.Tr("● Sound detected") : UiText.Tr("Quiet");
         }
     }
 }

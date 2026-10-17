@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Windows.Threading;
+using System.Xml.Linq;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Pad;
 using Kil0bitSystemMonitor.Services.Pad;
@@ -84,14 +85,15 @@ namespace Kil0bitSystemMonitor.Tests
         {
             string xaml = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml"));
             string code = File.ReadAllText(Path.Combine(PadWindowTests.RepoRoot(), "SettingsWindow.xaml.cs"));
+            XDocument markup = UiMarkup.Load("SettingsWindow.xaml");
 
             Assert.Contains("x:Name=\"PadReadingFontToggle\"", xaml);
-            Assert.Contains("Text=\"Reading font\"", xaml);
-            Assert.Contains("Text=\"Prose in Markdown notes uses Segoe UI; code and tables stay in the editor font.\"", xaml);
+            UiMarkup.Localized(markup, "Text", "Reading font");
+            UiMarkup.Localized(markup, "Text", "Prose in Markdown notes uses Segoe UI; code and tables stay in the editor font.");
             Assert.Contains("x:Name=\"PadWebImagesToggle\"", xaml);
-            Assert.Contains("Text=\"Load images from the web\"", xaml);
-            Assert.Contains("Text=\"Images with an http or https address are downloaded when the note is shown. Off: only images on this PC are shown.\"", xaml);
-            Assert.Contains("markmap and math block in Markdown notes, drawn on this PC, and a preview under each image.", xaml);
+            UiMarkup.Localized(markup, "Text", "Load images from the web");
+            UiMarkup.Localized(markup, "Text", "Images with an http or https address are downloaded when the note is shown. Off: only images on this PC are shown.");
+            UiMarkup.ContainsLocalized(markup, "Text", "markmap and math block in Markdown notes, drawn on this PC, and a preview under each image.");
             Assert.Contains("cfg.PadReadingFont = PadReadingFontToggle.IsOn;", code);
             Assert.Contains("cfg.PadWebImages = PadWebImagesToggle.IsOn;", code);
             Assert.Contains("PadReadingFontToggle.IsOn = cfg.PadReadingFont;", code);

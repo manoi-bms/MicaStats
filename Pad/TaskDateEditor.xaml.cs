@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using Button = System.Windows.Controls.Button;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
@@ -169,7 +170,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void ShowError(string? error)
         {
-            ErrorText.Text = error ?? "";
+            ErrorText.Text = error == null ? "" : UiText.Tr(error);
             ErrorText.Visibility = string.IsNullOrEmpty(error) ? Visibility.Collapsed : Visibility.Visible;
         }
 

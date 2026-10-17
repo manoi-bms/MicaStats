@@ -440,7 +440,7 @@ namespace Kil0bitSystemMonitor.Capture
 
             private void DrawHint(DrawingContext dc)
             {
-                var ft = Text(_hint ?? "Drag to select   ·   Click a window or screen   ·   M magnifier   ·   S snap   ·   A all   ·   Enter accept   ·   Esc cancel",
+                var ft = Text(Kil0bitSystemMonitor.Services.Localization.UiText.Tr(_hint ?? "Drag to select   ·   Click a window or screen   ·   M magnifier   ·   S snap   ·   A all   ·   Enter accept   ·   Esc cancel"),
                     12, Color.FromRgb(0xDD, 0xE3, 0xEA));
 
                 var monitor = CaptureGeometry.MonitorAt(_monitors, _cursorX, _cursorY);
@@ -453,14 +453,16 @@ namespace Kil0bitSystemMonitor.Capture
                 dc.DrawText(ft, new Point(plate.X + 10, plate.Y + 6));
             }
 
+            private static readonly Typeface s_hudTypeface = new(
+                new FontFamily("Segoe UI Variable Text, Segoe UI"),
+                FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+
             private static FormattedText Text(string text, double size, Color color)
             {
                 var brush = new SolidColorBrush(color);
                 brush.Freeze();
                 return new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                    new Typeface(new FontFamily("Segoe UI Variable Text, Segoe UI"),
-                        FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
-                    size, brush, 96);
+                    s_hudTypeface, size, brush, 96);
             }
 
             private const int SnapThreshold = 8;

@@ -291,6 +291,40 @@ namespace Kil0bitSystemMonitor.Tests
         });
 
         [Fact]
+        public void Privacy_shield_covers_the_window_until_clicked() => WithWindow((window, env, config) =>
+        {
+            Assert.Equal(Visibility.Collapsed, window.PrivacyShield.Visibility);
+
+            window.SetPrivacyShield(true);
+            Assert.Equal(Visibility.Visible, window.PrivacyShield.Visibility);
+
+            Click(window.PrivacyShield);
+            Assert.Equal(Visibility.Collapsed, window.PrivacyShield.Visibility);
+        });
+
+        [Fact]
+        public void Privacy_shield_closes_every_popup() => WithWindow((window, env, config) =>
+        {
+            var popups = new[] { window.RenamePopup, window.OpenNotesPopup, window.ClosedPopup, window.TaskDatesPopup };
+            foreach (var popup in popups) popup.IsOpen = true;
+
+            window.SetPrivacyShield(true);
+
+            Assert.All(popups, popup => Assert.False(popup.IsOpen));
+        });
+
+        [Fact]
+        public void A_window_opened_while_guarded_starts_covered()
+        {
+            MicaPadWindow.GuardActive = true;
+            try
+            {
+                WithWindow((window, env, config) => Assert.Equal(Visibility.Visible, window.PrivacyShield.Visibility));
+            }
+            finally { MicaPadWindow.GuardActive = false; }
+        }
+
+        [Fact]
         public void Lock_now_locks_and_says_so() => WithWindow((window, env, config) =>
         {
             string id = Bank(env);
@@ -405,7 +439,7 @@ namespace Kil0bitSystemMonitor.Tests
 
             window.Editor.CaretOffset = 4;                         // at the start of the pill
             window.RefreshEditorMenu();
-            Assert.Equal(new[] { "Reveal\u2026", "Copy secret", "Rename label\u2026", "Unmask", "Delete credential\u2026", "-", "Copy reference" },
+            Assert.Equal(new[] { "Reveal\u2026", "Copy secret", "Rename label\u2026", "Unmask", "Delete credential\u2026", "Copy reference" },
                          PadMenuTests.Headers(window.EditorMenu));
 
             window.Editor.CaretOffset = 4 + reference.Length;      // just after it: the editor menu
@@ -416,7 +450,7 @@ namespace Kil0bitSystemMonitor.Tests
             window.PreviewEditor.Text = "old " + reference;
             window.PreviewEditor.CaretOffset = 4;
             window.RefreshPreviewMenu();
-            Assert.Equal(new[] { "Reveal\u2026", "Copy secret", "-", "Copy reference" }, PadMenuTests.Headers(window.PreviewMenu));
+            Assert.Equal(new[] { "Reveal\u2026", "Copy secret", "Copy reference" }, PadMenuTests.Headers(window.PreviewMenu));
             window.PreviewEditor.CaretOffset = 0;
             window.RefreshPreviewMenu();
             Assert.Equal(new[] { "Copy", "Select all" }, PadMenuTests.Headers(window.PreviewMenu));

@@ -1,6 +1,7 @@
 <UserControl x:Class="Kil0bitSystemMonitor.Pad.SearchSettingsPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
              xmlns:ui="http://schemas.modernwpf.com/2019"
              xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers">
     <!-- Settings → MicaPad → Search (search spec 2). Keys go to the secret store and are never shown again. -->
@@ -15,30 +16,30 @@
                 <StackPanel Orientation="Horizontal">
                     <helpers:DecorativeIcon Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
                                             Margin="0,0,8,0" VerticalAlignment="Center" />
-                    <TextBlock Text="Search by meaning" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="{loc:Text 'Search by meaning'}" FontWeight="SemiBold" FontSize="15" />
                 </StackPanel>
                 <TextBlock Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
-                           Text="Sends passages of your notes to the embedding server below to find notes by meaning. Keyword search works without it. Turning this off deletes the stored vectors." />
+                           Text="{loc:Text 'Sends passages of your notes to the embedding server below to find notes by meaning. Keyword search works without it. Turning this off deletes the stored vectors.'}" />
             </StackPanel>
             <ui:ToggleSwitch Grid.Column="2" x:Name="MeaningToggle" Toggled="OnMeaningToggled" VerticalAlignment="Center" />
         </Grid>
 
         <StackPanel x:Name="EmbeddingFields" Margin="0,0,0,8">
-            <TextBlock Text="Embedding server" FontSize="12.5" Opacity="0.8" />
+            <TextBlock Text="{loc:Text 'Embedding server'}" FontSize="12.5" Opacity="0.8" />
             <TextBox x:Name="EmbeddingServerBox" Width="300" HorizontalAlignment="Left" LostFocus="OnEmbeddingServerChanged" />
-            <TextBlock Text="Model" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
+            <TextBlock Text="{loc:Text 'Model'}" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
             <TextBox x:Name="EmbeddingModelBox" Width="300" HorizontalAlignment="Left" LostFocus="OnEmbeddingModelChanged" />
-            <TextBlock Text="API key" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
+            <TextBlock Text="{loc:Text 'API key'}" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
             <WrapPanel x:Name="EmbeddingKeyEntry">
                 <PasswordBox x:Name="EmbeddingKeyBox" Width="240" />
-                <Button Content="Save" helpers:ButtonIcon.Glyph="&#xE74E;" Margin="8,0,0,0" Click="OnSaveEmbeddingKey" />
+                <Button Content="{loc:Text 'Save'}" helpers:ButtonIcon.Glyph="&#xE74E;" Margin="8,0,0,0" Click="OnSaveEmbeddingKey" />
             </WrapPanel>
             <WrapPanel x:Name="EmbeddingKeySaved" Visibility="Collapsed">
-                <TextBlock Text="Saved" VerticalAlignment="Center" Opacity="0.8" />
-                <Button Content="Remove" helpers:ButtonIcon.Glyph="&#xE74D;" Margin="8,0,0,0" Click="OnRemoveEmbeddingKey" />
+                <TextBlock Text="{loc:Text 'Saved'}" VerticalAlignment="Center" Opacity="0.8" />
+                <Button Content="{loc:Text 'Remove'}" helpers:ButtonIcon.Glyph="&#xE74D;" Margin="8,0,0,0" Click="OnRemoveEmbeddingKey" />
             </WrapPanel>
             <WrapPanel Margin="0,6,0,0">
-                <Button x:Name="EmbeddingTestButton" Content="Test" helpers:ButtonIcon.Glyph="&#xE703;" Click="OnTestEmbedding" />
+                <Button x:Name="EmbeddingTestButton" Content="{loc:Text 'Test'}" helpers:ButtonIcon.Glyph="&#xE703;" Click="OnTestEmbedding" />
                 <TextBlock x:Name="EmbeddingTestResult" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="12.5" TextWrapping="Wrap" />
             </WrapPanel>
         </StackPanel>
@@ -53,30 +54,30 @@
                 <StackPanel Orientation="Horizontal">
                     <helpers:DecorativeIcon Text="&#xE8CB;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
                                             Margin="0,0,8,0" VerticalAlignment="Center" />
-                    <TextBlock Text="Rerank results" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="{loc:Text 'Rerank results'}" FontWeight="SemiBold" FontSize="15" />
                 </StackPanel>
                 <TextBlock Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
-                           Text="Sends your query and the best passages to the reranker below to put the most relevant first. Needs Search by meaning." />
+                           Text="{loc:Text 'Sends your query and the best passages to the reranker below to put the most relevant first. Needs Search by meaning.'}" />
             </StackPanel>
             <ui:ToggleSwitch Grid.Column="2" x:Name="RerankToggle" Toggled="OnRerankToggled" VerticalAlignment="Center" />
         </Grid>
 
         <StackPanel x:Name="RerankFields" Margin="0,0,0,8">
-            <TextBlock Text="Reranker server" FontSize="12.5" Opacity="0.8" />
+            <TextBlock Text="{loc:Text 'Reranker server'}" FontSize="12.5" Opacity="0.8" />
             <TextBox x:Name="RerankServerBox" Width="300" HorizontalAlignment="Left" LostFocus="OnRerankServerChanged" />
-            <TextBlock Text="Model" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
+            <TextBlock Text="{loc:Text 'Model'}" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
             <TextBox x:Name="RerankModelBox" Width="300" HorizontalAlignment="Left" LostFocus="OnRerankModelChanged" />
-            <TextBlock Text="API key" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
+            <TextBlock Text="{loc:Text 'API key'}" FontSize="12.5" Opacity="0.8" Margin="0,6,0,0" />
             <WrapPanel x:Name="RerankKeyEntry">
                 <PasswordBox x:Name="RerankKeyBox" Width="240" />
-                <Button Content="Save" helpers:ButtonIcon.Glyph="&#xE74E;" Margin="8,0,0,0" Click="OnSaveRerankKey" />
+                <Button Content="{loc:Text 'Save'}" helpers:ButtonIcon.Glyph="&#xE74E;" Margin="8,0,0,0" Click="OnSaveRerankKey" />
             </WrapPanel>
             <WrapPanel x:Name="RerankKeySaved" Visibility="Collapsed">
-                <TextBlock Text="Saved" VerticalAlignment="Center" Opacity="0.8" />
-                <Button Content="Remove" helpers:ButtonIcon.Glyph="&#xE74D;" Margin="8,0,0,0" Click="OnRemoveRerankKey" />
+                <TextBlock Text="{loc:Text 'Saved'}" VerticalAlignment="Center" Opacity="0.8" />
+                <Button Content="{loc:Text 'Remove'}" helpers:ButtonIcon.Glyph="&#xE74D;" Margin="8,0,0,0" Click="OnRemoveRerankKey" />
             </WrapPanel>
             <WrapPanel Margin="0,6,0,0">
-                <Button x:Name="RerankTestButton" Content="Test" helpers:ButtonIcon.Glyph="&#xE703;" Click="OnTestRerank" />
+                <Button x:Name="RerankTestButton" Content="{loc:Text 'Test'}" helpers:ButtonIcon.Glyph="&#xE703;" Click="OnTestRerank" />
                 <TextBlock x:Name="RerankTestResult" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="12.5" TextWrapping="Wrap" />
             </WrapPanel>
         </StackPanel>
@@ -86,7 +87,7 @@
 
         <WrapPanel Margin="0,8,0,0">
             <TextBlock x:Name="IndexStatus" VerticalAlignment="Center" FontSize="12.5" Opacity="0.8" TextWrapping="Wrap" MaxWidth="360" />
-            <Button x:Name="RebuildButton" Content="Rebuild index" helpers:ButtonIcon.Glyph="&#xE72C;" Margin="12,0,0,0" Click="OnRebuild" />
+            <Button x:Name="RebuildButton" Content="{loc:Text 'Rebuild index'}" helpers:ButtonIcon.Glyph="&#xE72C;" Margin="12,0,0,0" Click="OnRebuild" />
         </WrapPanel>
     </StackPanel>
 </UserControl>

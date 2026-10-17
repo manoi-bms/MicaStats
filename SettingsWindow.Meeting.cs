@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services.Conference;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor
 {
@@ -27,14 +28,14 @@ namespace Kil0bitSystemMonitor
             MeetingAsr2BaseUrlBox.Text = config.MeetingAsr2BaseUrl;
             MeetingAsr1BaseUrlBox.Text = config.MeetingAsr1BaseUrl;
             MeetingTtsBaseUrlBox.Text = config.MeetingTtsBaseUrl;
-            MeetingServicesStatus.Text = DescribeMeetingReadiness(config);
+            MeetingServicesStatus.Text = DescribeMeetingReadinessForDisplay(config);
         }
 
         private async void OnSaveMeetingServices(object sender, System.Windows.RoutedEventArgs e)
         {
             foreach (var test in _meetingServiceTests) test.Cancel();
             SaveMeetingServicesButton.IsEnabled = false;
-            MeetingServicesStatus.Text = "Saving…";
+            MeetingServicesStatus.Text = UiText.Tr("Saving…");
             try
             {
                 string status = await SaveMeetingServiceSettingsAsync(
@@ -44,9 +45,12 @@ namespace Kil0bitSystemMonitor
                     MeetingTtsBaseUrlBox.Text,
                     App.ApplyMeetingServiceSettingsAsync,
                     _config.SaveConfig);
-                MeetingServicesStatus.Text = status;
+                bool saved = status.StartsWith("Saved.", StringComparison.Ordinal);
+                MeetingServicesStatus.Text = saved
+                    ? DescribeMeetingReadinessForDisplay(_config.Config, saved: true)
+                    : TranslateMeetingServiceStatus(status);
 
-                if (status.StartsWith("Saved.", StringComparison.Ordinal))
+                if (saved)
                 {
                     MeetingAsr2BaseUrlBox.Text = _config.Config.MeetingAsr2BaseUrl;
                     MeetingAsr1BaseUrlBox.Text = _config.Config.MeetingAsr1BaseUrl;
@@ -55,7 +59,7 @@ namespace Kil0bitSystemMonitor
             }
             catch
             {
-                MeetingServicesStatus.Text = "Settings could not be applied. Try again.";
+                MeetingServicesStatus.Text = UiText.Tr("Settings could not be applied. Try again.");
             }
             finally
             {
@@ -112,5 +116,25 @@ namespace Kil0bitSystemMonitor
             string state = transcription + (tts ? " Speech output configured." : " Speech output not configured (optional).");
             return saved ? "Saved. " + state : state;
         }
+
+        private static string DescribeMeetingReadinessForDisplay(AppConfig config, bool saved = false)
+        {
+            bool asr2 = MeetingServiceEndpoints.TryNormalizeBaseUrl(config.MeetingAsr2BaseUrl, out _);
+            bool asr1 = MeetingServiceEndpoints.TryNormalizeBaseUrl(config.MeetingAsr1BaseUrl, out _);
+            bool tts = MeetingServiceEndpoints.TryNormalizeBaseUrl(config.MeetingTtsBaseUrl, out _);
+            string transcription = asr2 || asr1
+                ? UiText.Format("Transcription configured ({0}).", asr2 && asr1 ? "ASR2, ASR1" : asr2 ? "ASR2" : "ASR1")
+                : UiText.Tr("Configure one ASR service for transcription.");
+            if (config.MeetingAsrService == "Both")
+                transcription = asr2 && asr1
+                    ? UiText.Tr("ASR2 + ASR1 comparison configured.")
+                    : UiText.Tr("ASR2 + ASR1 comparison needs both endpoints; configure both or select a single service.");
+            string state = transcription + " " + UiText.Tr(tts
+                ? "Speech output configured."
+                : "Speech output not configured (optional).");
+            return saved ? UiText.Tr("Saved.") + " " + state : state;
+        }
+
+        private static string TranslateMeetingServiceStatus(string status) => UiText.Tr(status);
     }
 }

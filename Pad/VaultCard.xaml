@@ -3,6 +3,7 @@
     x:ClassModifier="internal"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
     xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers">
 
     <!-- Every vault question MicaPad asks, and a revealed value, in one card over the editor area.
@@ -45,7 +46,7 @@
                            Foreground="{DynamicResource Pad.AlertRed}" Visibility="Collapsed" />
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-                    <Button x:Name="CopyButton" Content="Copy" MinWidth="80" Margin="0,0,8,0"
+                    <Button x:Name="CopyButton" Content="{loc:Text 'Copy'}" MinWidth="80" Margin="0,0,8,0"
                             helpers:ButtonIcon.Glyph="&#xE8C8;"
                             Style="{DynamicResource AccentButtonStyle}" Click="OnCopyClick" />
                     <Button x:Name="PrimaryButton" MinWidth="80" Margin="0,0,8,0"

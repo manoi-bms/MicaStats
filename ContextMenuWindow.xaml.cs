@@ -5,6 +5,7 @@ using System.Windows.Interop;
 using Kil0bitSystemMonitor.ViewModels;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Helpers;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor
 {
@@ -35,14 +36,14 @@ namespace Kil0bitSystemMonitor
 
             var menu = new ContextMenu();
 
-            var settingsItem = new MenuItem { Header = "Settings" };
+            var settingsItem = new MenuItem { Header = UiText.Tr("Settings") };
             settingsItem.Click += (s, e) =>
             {
                 App.OpenSettings(_viewModel, _config);
                 this.Close();
             };
 
-            var processesItem = new MenuItem { Header = "Processes" };
+            var processesItem = new MenuItem { Header = UiText.Tr("Processes") };
             processesItem.Click += (s, e) =>
             {
                 TaskManagerWindow.ShowOrActivate(App.SharedProcessSampler);
@@ -56,24 +57,24 @@ namespace Kil0bitSystemMonitor
                 this.Close();
             };
 
-            var meetingItem = new MenuItem { Header = "Meeting Assistant…" };
+            var meetingItem = new MenuItem { Header = UiText.Tr("Meeting Assistant…") };
             meetingItem.Click += (s, e) => { App.OpenMeeting(); this.Close(); };
 
-            var taskMgrItem = new MenuItem { Header = "Task Manager" };
+            var taskMgrItem = new MenuItem { Header = UiText.Tr("Task Manager") };
             taskMgrItem.Click += (s, e) =>
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("taskmgr") { UseShellExecute = true });
                 this.Close();
             };
 
-            var aboutItem = new MenuItem { Header = "About" };
+            var aboutItem = new MenuItem { Header = UiText.Tr("About") };
             aboutItem.Click += (s, e) =>
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/manoi-bms/MicaStats") { UseShellExecute = true });
                 this.Close();
             };
 
-            var exitItem = new MenuItem { Header = "Exit" };
+            var exitItem = new MenuItem { Header = UiText.Tr("Exit") };
             exitItem.Click += (s, e) => App.Quit();
 
             menu.Items.Add(settingsItem);

@@ -60,6 +60,9 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>The language applied now.</summary>
         public PadLanguage Current { get; private set; } = PadLanguages.Plain;
 
+        /// <summary>Original source is displayed without inline Markdown replacements in split view.</summary>
+        internal bool SourceOnly { get; private set; }
+
         /// <summary>True while syntax colors are installed.</summary>
         internal bool HasSyntaxColors => _syntax != null;
 
@@ -99,18 +102,19 @@ namespace Kil0bitSystemMonitor.Pad
         /// to is left as it is: re-installing would unfold everything and recompute a big file's
         /// folds on every save.
         /// </summary>
-        public void Apply(PadLanguage language)
+        public void Apply(PadLanguage language, bool sourceOnly = false)
         {
             var document = _editor.Document;
             if (document != null && _failed.TryGetValue(document, out _)) language = PadLanguages.Plain;
-            if (ReferenceEquals(language, Current) && ReferenceEquals(document, _appliedTo)) return;
+            if (ReferenceEquals(language, Current) && ReferenceEquals(document, _appliedTo) && SourceOnly == sourceOnly) return;
 
             Clear();
             Current = language;
+            SourceOnly = sourceOnly;
             _appliedTo = document;
             var view = _editor.TextArea.TextView;
 
-            if (ReferenceEquals(language, PadLanguages.Markdown))
+            if (ReferenceEquals(language, PadLanguages.Markdown) && !sourceOnly)
             {
                 _markdownCache = new MarkdownDocumentCache(ReportFailure);
                 _markdownCache.StructureChanged += OnStructureChanged;

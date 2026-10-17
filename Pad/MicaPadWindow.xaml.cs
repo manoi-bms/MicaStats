@@ -20,6 +20,7 @@ using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Pad;
+using Kil0bitSystemMonitor.Services.Localization;
 using Kil0bitSystemMonitor.Services.Pad.Search;
 using static Kil0bitSystemMonitor.Pad.EditorMenus;
 
@@ -113,6 +114,7 @@ namespace Kil0bitSystemMonitor.Pad
             ConfigureLinks(PreviewEditor);
             ConfigureVault();
             ConfigureTaskDates();
+            ApplyGuardOnOpen();
             Editor.TextArea.TextView.MouseHover += OnEditorMouseHover;
             Editor.TextArea.TextView.MouseHoverStopped += (s, e) => _linkTip.IsOpen = false;
             FindBar.Attach(Editor);
@@ -154,6 +156,7 @@ namespace Kil0bitSystemMonitor.Pad
             SearchPanel.ResultChosen += OpenSearchResult;
             SearchPanel.Run = RunSearchAsync;
             ConfigureAi();
+            ConfigureMarkdownPreview();
             InitPaneSplitter();
             FindBar.ReplacingAll += () =>
             {
@@ -165,6 +168,8 @@ namespace Kil0bitSystemMonitor.Pad
                 () => _workspace.SaveSession());
             _workspace.Open.CollectionChanged += OnOpenChanged;
             _config.PropertyChanged += OnConfigChanged;
+            WeakEventManager<INotifyPropertyChanged, PropertyChangedEventArgs>.AddHandler(
+                UiText.Provider, nameof(INotifyPropertyChanged.PropertyChanged), OnUiLanguageChanged);
             Editor.TextArea.Caret.PositionChanged += (s, e) => UpdateCaretText();
 
             // Normal, not Background: sustained typing keeps input work queued, and a tick below it
@@ -303,6 +308,9 @@ namespace Kil0bitSystemMonitor.Pad
         private void Present()
         {
             _hidden = false;
+            _markdownPreviewHidden = false;
+            UpdateMarkdownPreviewView();
+            ApplyPaneLayout();
             if (_state != null) _state.Open = true;
             _workspace.ActivateWindow(_windowId);
             _workspace.SaveSession();
@@ -370,6 +378,9 @@ namespace Kil0bitSystemMonitor.Pad
             CaptureViewState();                    // the placement from before full screen, if any
             if (IsFullScreen) ToggleFullScreen();  // so MicaPad comes back windowed (GUIDE; Part 4 fix wave)
             _hidden = true;
+            _markdownPreviewHidden = true;
+            UpdateMarkdownPreviewView();
+            ApplyPaneLayout();
             if (_state != null) _state.Open = false;
             StopAi();                              // no request runs behind a hidden window
             StopNotesAnswer();                     // nor an answer from notes
@@ -488,9 +499,11 @@ namespace Kil0bitSystemMonitor.Pad
             bool ctrl = modifiers == ModifierKeys.Control;
             bool ctrlShift = modifiers == (ModifierKeys.Control | ModifierKeys.Shift);
             bool alt = modifiers == ModifierKeys.Alt;
-            // Keys that act on the note's lines or its bookmarks.
+            bool isMarkdown = ReferenceEquals(_resolved.Effective, PadLanguages.Markdown);
+            // Keys that act on the note's lines, its bookmarks, or its Markdown formatting.
             bool noteKey = (ctrl && key is Key.D or Key.J or Key.F2) || (ctrlShift && key is Key.Up or Key.Down)
-                           || (modifiers is ModifierKeys.None or ModifierKeys.Shift && key == Key.F2);
+                           || (modifiers is ModifierKeys.None or ModifierKeys.Shift && key == Key.F2)
+                           || (isMarkdown && ((ctrl && key is Key.B or Key.I or Key.K) || (ctrlShift && key == Key.K)));
 
             if (ctrl && key == Key.N) NewTab();
             else if (ctrlShift && key == Key.N) NewWindow();
@@ -517,6 +530,7 @@ namespace Kil0bitSystemMonitor.Pad
             else if (ctrlShift && key == Key.H) ToggleHistory();
             else if (ctrlShift && key == Key.F) ToggleSearch();
             else if (ctrlShift && key == Key.A) ToggleAi();
+            else if (ctrlShift && key == Key.M) ToggleMarkdownPreview();
             // Esc again, back in the editor, closes the pane (search spec 1); a text box (go to line, rename) keeps its Esc.
             else if (modifiers == ModifierKeys.None && key == Key.Escape && SearchPanel.Visibility == Visibility.Visible
                      && Keyboard.FocusedElement is not System.Windows.Controls.TextBox) CloseSearch();
@@ -531,6 +545,14 @@ namespace Kil0bitSystemMonitor.Pad
             else if (EditingKeysAllowed && ctrlShift && key == Key.Up) MoveLines(down: false);
             else if (EditingKeysAllowed && ctrlShift && key == Key.Down) MoveLines(down: true);
             else if (EditingKeysAllowed && ctrl && key == Key.J) RunLineOperation(Editor, LineOperations.Join);
+            else if (EditingKeysAllowed && isMarkdown && ctrl && key == Key.B)
+                ApplyEdit(Editor, MarkdownFormatter.Wrap(Editor.Document.Text, Editor.SelectionStart, Editor.SelectionLength, "**"));
+            else if (EditingKeysAllowed && isMarkdown && ctrl && key == Key.I)
+                ApplyEdit(Editor, MarkdownFormatter.Wrap(Editor.Document.Text, Editor.SelectionStart, Editor.SelectionLength, "*"));
+            else if (EditingKeysAllowed && isMarkdown && ctrl && key == Key.K)
+                ApplyEdit(Editor, MarkdownFormatter.Link(Editor.Document.Text, Editor.SelectionStart, Editor.SelectionLength));
+            else if (EditingKeysAllowed && isMarkdown && ctrlShift && key == Key.K)
+                ApplyEdit(Editor, MarkdownFormatter.CodeBlock(Editor.Document.Text, Editor.SelectionStart, Editor.SelectionLength));
             else return false;
             return true;
         }
@@ -575,12 +597,15 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnOccurrenceDocumentChanged(object? sender, DocumentChangeEventArgs e)
         {
+            bool hadMarks = _occurrences.Offsets.Count > 0;
             _occurrences.Offsets = Array.Empty<int>();
             _occurrences.Length = 0;
             OccurrenceText.Visibility = Visibility.Collapsed;
-            Editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
+            if (hadMarks)
+                Editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
             _occurrenceTimer.Stop();
-            _occurrenceTimer.Start();
+            if (Editor.SelectionLength > 0)
+                _occurrenceTimer.Start();
         }
 
         /// <summary>The occurrence boxes; for tests.</summary>
@@ -623,7 +648,10 @@ namespace Kil0bitSystemMonitor.Pad
 
             if (found.Offsets.Count > 0)
             {
-                OccurrenceText.Text = OccurrenceFinder.Describe(found.Offsets.Count, found.Capped);
+                OccurrenceText.Text = found.Capped
+                    ? UiText.Format("{0}+ matches", OccurrenceFinder.Cap.ToString("N0", System.Globalization.CultureInfo.InvariantCulture))
+                    : UiText.Format(found.Offsets.Count == 1 ? "1 match" : "{0} matches",
+                        found.Offsets.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture));
                 OccurrenceText.Visibility = Visibility.Visible;
             }
             else
@@ -645,6 +673,7 @@ namespace Kil0bitSystemMonitor.Pad
             _statusTimer?.Stop();
             _config.PropertyChanged -= OnConfigChanged;
             DetachOpenNotesNavigation();
+            DetachMarkdownPreview();
             DetachPaneSplitter();
             _workspace.Open.CollectionChanged -= OnOpenChanged;
             foreach (var (document, changed) in _docHandlers) document.Changed -= changed;
@@ -738,6 +767,8 @@ namespace Kil0bitSystemMonitor.Pad
         {
             if (_shown != null) SaveViewState(_shown);
             _shown = null;
+            ClearMarkdownPreview();
+            UpdateMarkdownPreviewView();
             HideInfo();
             EndPreview();
             HistoryPanel.Visibility = Visibility.Collapsed;
@@ -986,28 +1017,40 @@ namespace Kil0bitSystemMonitor.Pad
         {
             FrameworkElement target = anchor ?? TabStrip;
             var menu = NewMenu(target, PlacementMode.MousePoint);
-            menu.Items.Add(Item("Rename…", null, () => BeginRename(note, target), icon: "\uE8AC"));
-            menu.Items.Add(BuildTabColorMenu(note));
-            menu.Items.Add(Item("Close", null, () => CloseTab(note), icon: "\uE711"));
-            menu.Items.Add(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.TabsOf(_windowId).Count > 1, icon: "\uE89F"));
+            string kind = UiText.Tr(note.Meta.IsFileBacked ? "File-backed note" : "MicaPad note");
+            string place = UiText.Tr(ReferenceEquals(_shown, note) ? "Current note" : "Other open note");
+            AddCaption(menu, note.Title, UiText.Format("{0} · {1}", place, kind), "\uE8A5");
 
-            menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Move to new window", null, () => MoveToNewWindow(note), _workspace.TabsOf(_windowId).Count > 1, icon: "\uE8A7"));
+            AddSection(menu, "Personalize");
+            menu.Items.Add(Describe(Item("Rename…", null, () => BeginRename(note, target), icon: "\uE8AC"),
+                "Change the title shown on this note's tab."));
+            menu.Items.Add(Describe(BuildTabColorMenu(note), "Choose a memorable color for this note's tab."));
+
+            AddSection(menu, "Move & locate");
+            menu.Items.Add(Describe(Item("Move to new window", null, () => MoveToNewWindow(note), _workspace.TabsOf(_windowId).Count > 1, icon: "\uE8A7"),
+                "Open this note in a separate MicaPad window."));
             var others = OtherWindows();
             if (others.Count > 0)
             {
-                var moveTo = new MenuItem { Header = "Move to", Icon = "\uE7C2" };
+                var moveTo = new MenuItem { Header = UiText.Tr("Move to"), Icon = "\uE7C2" };
                 // Doubled: a menu header reads "_" as an access key, and file names are full of them.
-                foreach (var other in others) moveTo.Items.Add(Item(other.ActiveTitle.Replace("_", "__"), null, () => MoveToWindow(note, other), icon: "\uE7C2"));
-                menu.Items.Add(moveTo);
+                foreach (var other in others) moveTo.Items.Add(Item(other.ActiveTitle.Replace("_", "__"), null, () => MoveToWindow(note, other), icon: "\uE7C2", localize: false));
+                menu.Items.Add(Describe(moveTo, "Move this note to another open MicaPad window."));
             }
 
             if (note.Meta.SourcePath is string path)
             {
-                menu.Items.Add(new Separator());
-                menu.Items.Add(Item("Copy file path", null, () => CopyFilePath(path), icon: "\uE8C8"));
-                menu.Items.Add(Item("Show in folder", null, () => ShowInFolder(path), icon: "\uE838"));
+                menu.Items.Add(Describe(Item("Copy file path", null, () => CopyFilePath(path), icon: "\uE8C8"),
+                    "Copy the full source-file path."));
+                menu.Items.Add(Describe(Item("Show in folder", null, () => ShowInFolder(path), icon: "\uE838"),
+                    "Open the source file's folder."));
             }
+
+            AddSection(menu, "Close");
+            menu.Items.Add(Describe(Item("Close", null, () => CloseTab(note), icon: "\uE711"),
+                "Close this tab. The note remains available in Closed notes."));
+            menu.Items.Add(Describe(Item("Close other tabs", null, () => CloseOtherTabs(note), _workspace.TabsOf(_windowId).Count > 1, icon: "\uE89F"),
+                "Close the other tabs. Their notes remain available in Closed notes."));
             return menu;
         }
 
@@ -1133,7 +1176,7 @@ namespace Kil0bitSystemMonitor.Pad
                 return;
             }
             int lines = TextLines.Split(code).Lines.Count;
-            ShowStatus(lines == 1 ? "Copied" : "Copied " + lines + " lines");
+            ShowStatus(lines == 1 ? "Copied" : UiText.Format("Copied {0} lines", lines));
         }
 
         /// <summary>
@@ -1179,7 +1222,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void OnTabScrollChanged(object sender, ScrollChangedEventArgs e)
         {
-            if (TabScroller.ViewportWidth > 0) TabHeaderWidth = Math.Clamp(TabScroller.ViewportWidth, 100, 180);
+            if (TabScroller.ViewportWidth > 0) TabHeaderWidth = CalculateTabHeaderWidth(TabScroller.ViewportWidth, TabStrip.Items.Count);
             var visibility = TabScroller.ScrollableWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
             ScrollLeftButton.Visibility = visibility;
             ScrollRightButton.Visibility = visibility;
@@ -1689,7 +1732,7 @@ namespace Kil0bitSystemMonitor.Pad
             PreviewEditor.FontFamily = MonoFamily;   // the preview keeps today's look: no reading font
             PreviewEditor.FontSize = Editor.FontSize;
             PreviewEditor.WordWrap = Editor.WordWrap;
-            PreviewText.Text = "Viewing " + HistoryRows.When(snapshot.Stamp, DateTime.Now);
+            PreviewText.Text = UiText.Format("Viewing {0}", HistoryRows.When(snapshot.Stamp, DateTime.Now));
             PreviewPanel.Visibility = Visibility.Visible;
             // Compare stays on while the user walks through versions.
             if (_comparing) StartCompare();
@@ -1701,7 +1744,7 @@ namespace Kil0bitSystemMonitor.Pad
             _previewGeneration++;
             _comparing = false;
             _diff.Hide();
-            CompareButton.Content = "Compare with current";
+            CompareButton.Content = UiText.Tr("Compare with current");
             DiffSummary.Visibility = Visibility.Collapsed;
             PreviewPanel.Visibility = Visibility.Collapsed;
             _previewVersion = "";
@@ -1774,7 +1817,7 @@ namespace Kil0bitSystemMonitor.Pad
         {
             _previewGeneration++;
             ShowVersionText();
-            CompareButton.Content = "Compare with current";
+            CompareButton.Content = UiText.Tr("Compare with current");
             DiffSummary.Visibility = Visibility.Collapsed;
         }
 
@@ -1795,8 +1838,8 @@ namespace Kil0bitSystemMonitor.Pad
         {
             int generation = ++_previewGeneration;
             ShowVersionText();                        // the version stays on screen until the diff is ready
-            CompareButton.Content = "Show this version";
-            DiffSummary.Text = "Comparing…";
+            CompareButton.Content = UiText.Tr("Show this version");
+            DiffSummary.Text = UiText.Tr("Comparing…");
             DiffSummary.Visibility = Visibility.Visible;
 
             string version = _previewVersion;
@@ -1825,7 +1868,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (outcome == null)
             {
                 DiagnosticsLog.Warn("pad", "Comparing a version failed (" + failure + ")");
-                DiffSummary.Text = "Could not compare";
+                DiffSummary.Text = UiText.Tr("Could not compare");
                 return;
             }
             DiffSummary.Text = outcome.Summary;
@@ -1834,7 +1877,9 @@ namespace Kil0bitSystemMonitor.Pad
             _diff.Show(outcome.Rows);
         }
 
-        private void OnClosedNotesClick(object sender, RoutedEventArgs e)
+        private void OnClosedNotesClick(object sender, RoutedEventArgs e) => OpenClosedNotes();
+
+        internal void OpenClosedNotes()
         {
             _closedRows = new List<ClosedNoteRow>(HistoryRows.Closed(_workspace.ClosedNotes(), DateTime.Now));
             ClosedSearch.Text = "";
@@ -1853,9 +1898,65 @@ namespace Kil0bitSystemMonitor.Pad
             ClosedEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
+        private void OnClosedPopupKeyDown(object sender, KeyEventArgs e)
+        {
+            Key key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (HandleClosedPopupKey(key)) e.Handled = true;
+        }
+
+        internal bool HandleClosedPopupKey(Key key)
+        {
+            int count = ClosedList.Items.Count;
+            if (key == Key.Down)
+            {
+                if (count > 0)
+                {
+                    ClosedList.SelectedIndex = Math.Clamp(ClosedList.SelectedIndex + 1, 0, count - 1);
+                    ClosedList.ScrollIntoView(ClosedList.SelectedItem);
+                }
+                return true;
+            }
+            if (key == Key.Up)
+            {
+                if (count > 0)
+                {
+                    ClosedList.SelectedIndex = Math.Clamp(ClosedList.SelectedIndex <= 0 ? 0 : ClosedList.SelectedIndex - 1, 0, count - 1);
+                    ClosedList.ScrollIntoView(ClosedList.SelectedItem);
+                }
+                return true;
+            }
+            if (key == Key.Enter)
+            {
+                var row = ClosedList.SelectedItem as ClosedNoteRow
+                          ?? (count > 0 ? ClosedList.Items[0] as ClosedNoteRow : null);
+                if (row != null) ReopenClosedRow(row);
+                return true;
+            }
+            if (key == Key.Escape)
+            {
+                ClosedPopup.IsOpen = false;
+                return true;
+            }
+            return false;
+        }
+
+        private void OnClosedListDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (ClosedList.SelectedItem is ClosedNoteRow row)
+            {
+                ReopenClosedRow(row);
+                e.Handled = true;
+            }
+        }
+
         private void OnClosedReopenClick(object sender, RoutedEventArgs e)
         {
             if ((sender as FrameworkElement)?.Tag is not ClosedNoteRow row) return;
+            ReopenClosedRow(row);
+        }
+
+        private void ReopenClosedRow(ClosedNoteRow row)
+        {
             ClosedPopup.IsOpen = false;
             var note = _workspace.Reopen(row.Id, _windowId);
             if (note != null) ShowNote(note);
@@ -2035,6 +2136,9 @@ namespace Kil0bitSystemMonitor.Pad
             menu.Items.Add(Check("Line numbers", null, _config.PadShowLineNumbers,
                 () => _config.PadShowLineNumbers = !_config.PadShowLineNumbers, icon: "\uEA37"));
             menu.Items.Add(Check("Markdown formatting", null, _config.PadMarkdown, () => _config.PadMarkdown = !_config.PadMarkdown, icon: "\uE8D2"));
+            var splitPreview = Check("Split Markdown preview", "Ctrl+Shift+M", MarkdownPreviewVisible, ToggleMarkdownPreview, icon: "\uE89A");
+            splitPreview.IsEnabled = CanMarkdownPreview && !VaultCard.IsOpen;
+            menu.Items.Add(splitPreview);
             menu.Items.Add(Check("Auto-close brackets and quotes", null, _config.PadAutoClose, () => _config.PadAutoClose = !_config.PadAutoClose, icon: "\uE943"));
             menu.Items.Add(Check("Always on top", null, Topmost, ToggleTopmost, icon: "\uE718"));
             menu.Items.Add(Check("Full screen", "F11", IsFullScreen, ToggleFullScreen, icon: "\uE740"));
@@ -2088,30 +2192,69 @@ namespace Kil0bitSystemMonitor.Pad
             EditorMenus.Style(menu, _palette);
             ModernWpf.ThemeManager.SetRequestedTheme(menu, _palette.IsDark ? ModernWpf.ElementTheme.Dark : ModernWpf.ElementTheme.Light);
 
-            AddEditGroup(menu, editor, readOnly);
-            if (readOnly) return;
+            if (readOnly)
+            {
+                AddCaption(menu, UiText.Tr("History version"), UiText.Tr("Read-only · Select and copy text"), "\uE81C");
+                AddSection(menu, "Edit");
+                AddEditGroup(menu, editor, readOnly: true);
+                return;
+            }
+
+            bool currentTask = ReferenceEquals(editor, Editor) && IsCurrentTask();
+            if (currentTask)
+            {
+                var line = editor.Document.GetLineByOffset(editor.CaretOffset);
+                bool done = MarkdownTasks.IsFinished(editor.Document.GetText(line));
+                string detail = UiText.Format("Line {0}", line.LineNumber.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                if (_taskDates.TryGetValue(editor.Document, out var tasks) && tasks.DatesOfLine(line.LineNumber) is { } dates)
+                    detail += " · " + MarkdownTasks.FormatDisplayDates(dates);
+                AddCaption(menu, UiText.Tr(done ? "Task · Completed" : "Task · Pending"), detail, done ? "\uE930" : "\uE73A");
+
+                int firstTaskAction = menu.Items.Count;
+                AddTaskMenuItem(menu);
+                for (int i = firstTaskAction; i < menu.Items.Count; i++)
+                {
+                    if (menu.Items[i] is not MenuItem action) continue;
+                    string help = action.Header as string == UiText.Tr("Edit task dates…")
+                        ? "Correct the protected start and finish dates for this task."
+                        : done ? "Mark this task as pending again." : "Complete this task and record its finish time.";
+                    Describe(action, help);
+                }
+            }
+            else
+            {
+                int line = editor.Document.GetLineByOffset(editor.CaretOffset).LineNumber;
+                if (editor.SelectionLength > 0)
+                    AddCaption(menu, UiText.Tr("Selected text"), UiText.Format("{0} characters selected · {1}",
+                        editor.SelectionLength.ToString("N0", System.Globalization.CultureInfo.CurrentCulture), _resolved.DisplayName), "\uE8B0");
+                else
+                    AddCaption(menu, UiText.Format("{0} note", _resolved.DisplayName),
+                        UiText.Format("Line {0}", line.ToString(System.Globalization.CultureInfo.InvariantCulture)), "\uE8A5");
+            }
+
+            AddSection(menu, "Edit");
+            AddEditGroup(menu, editor, readOnly: false);
 
             if (ReferenceEquals(editor, Editor))
             {
-                int copyAt = menu.Items.Cast<object>().ToList().FindIndex(i => i is MenuItem { Header: "Copy" });
-                if (copyAt >= 0) menu.Items.Insert(copyAt + 1, Item("Copy as RTF", null, CopyAsRtf, icon: "\uE8C8"));
+                int copyAt = menu.Items.Cast<object>().ToList().FindIndex(i => i is MenuItem item && Equals(item.Header, UiText.Tr("Copy")));
+                if (copyAt >= 0) menu.Items.Insert(copyAt + 1, Describe(Item("Copy as RTF", null, CopyAsRtf, icon: "\uE8C8"),
+                    "Copy the selection with its syntax colors and plain-text fallback."));
                 AddStoreItem(menu);
             }
 
-            menu.Items.Add(new Separator());
+            AddSection(menu, "Write & tools");
             if (ReferenceEquals(editor, Editor) && ReferenceEquals(_resolved.Effective, PadLanguages.Markdown))
-            {
-                AddTaskMenuItem(menu);
-                menu.Items.Add(FormatMenu(editor));
-            }
-            menu.Items.Add(LinesMenu(editor, MoveLines));
-            menu.Items.Add(ToolsMenu(editor, ShowStatus, () => Now()));
-            if (ReferenceEquals(editor, Editor)) menu.Items.Add(BuildAiMenu());
+                menu.Items.Add(Describe(FormatMenu(editor), "Apply Markdown formatting to the selection or current line."));
+            menu.Items.Add(Describe(LinesMenu(editor, MoveLines), "Duplicate, move, join, sort, or clean up lines."));
+            menu.Items.Add(Describe(ToolsMenu(editor, ShowStatus, () => Now()), "Convert selected text or insert generated values."));
+            if (ReferenceEquals(editor, Editor)) menu.Items.Add(Describe(BuildAiMenu(), "Use the configured assistant with this note or selection."));
 
-            menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));
-            menu.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true), icon: "\uE8AB"));
-            menu.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine, icon: "\uE8AD"));
+            var navigate = new MenuItem { Header = UiText.Tr("Find & navigate"), Icon = "\uE721" };
+            navigate.Items.Add(Item("Find", "Ctrl+F", () => FindBar.Open(replace: false), icon: "\uE721"));
+            navigate.Items.Add(Item("Replace", "Ctrl+H", () => FindBar.Open(replace: true), icon: "\uE8AB"));
+            navigate.Items.Add(Item("Go to line…", "Ctrl+G", ShowGoToLine, icon: "\uE8AD"));
+            menu.Items.Add(Describe(navigate, "Find text, replace matches, or jump to a line."));
         }
 
         // ---- copy as RTF ---------------------------------------------------------------------
@@ -2295,7 +2438,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private EventHandler? _paneVisibilityChanged;
 
-        private UIElement[] PaneElements() => new UIElement[] { SearchPanel, AiPanel, HistoryPanel };
+        private UIElement[] PaneElements() => new UIElement[] { SearchPanel, AiPanel, HistoryPanel, MarkdownPreviewPanel };
 
         private void DetachPaneSplitter()
         {
@@ -2307,7 +2450,7 @@ namespace Kil0bitSystemMonitor.Pad
 
         private void InitPaneSplitter()
         {
-            _paneVisibilityChanged = (s, args) => ApplyPaneLayout();
+            _paneVisibilityChanged = (s, args) => { UpdateMarkdownPreviewView(); ApplyPaneLayout(); };
             foreach (UIElement pane in PaneElements())
                 PaneVisibilityDescriptor.AddValueChanged(pane, _paneVisibilityChanged);
             EditorArea.SizeChanged += (s, args) => ApplyPaneLayout();
@@ -2322,9 +2465,14 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         private void ApplyPaneLayout()
         {
-            bool resizable = SearchPanel.Visibility == Visibility.Visible || AiPanel.Visibility == Visibility.Visible;
+            bool resizable = SearchPanel.Visibility == Visibility.Visible || AiPanel.Visibility == Visibility.Visible || MarkdownPreviewVisible;
             PaneSplitter.Visibility = resizable ? Visibility.Visible : Visibility.Collapsed;
             EditorColumn.Width = new GridLength(1, GridUnitType.Star);
+            if (MarkdownPreviewVisible)
+            {
+                ApplyMarkdownPreviewLayout();
+                return;
+            }
             if (!resizable)
             {
                 PaneColumn.MinWidth = 0;
@@ -2348,6 +2496,7 @@ namespace Kil0bitSystemMonitor.Pad
         private double EditorMinWhileMoving()
         {
             double area = EditorArea.ActualWidth - SplitterWidth;
+            if (MarkdownPreviewVisible) return MarkdownPreviewMinimum(Math.Max(0, area));
             return area > 0 ? Math.Min(PaneWidth.EditorMin, Math.Max(0, area - PaneWidth.Min)) : 0;
         }
 
@@ -2357,14 +2506,18 @@ namespace Kil0bitSystemMonitor.Pad
         /// </summary>
         internal void PaneDragEnded(double paneActualWidth)
         {
-            _config.PadPaneWidth = PaneWidth.Fit(paneActualWidth, EditorArea.ActualWidth - SplitterWidth);
+            if (MarkdownPreviewVisible && MarkdownPreviewAreaWidth > 0)
+                _config.PadMarkdownPreviewRatio = paneActualWidth / MarkdownPreviewAreaWidth;
+            else
+                _config.PadPaneWidth = PaneWidth.Fit(paneActualWidth, EditorArea.ActualWidth - SplitterWidth);
             ApplyPaneLayout();   // the value may not have changed, so no notice would come
         }
 
         /// <summary>A double-click on the splitter.</summary>
         internal void ResetPaneWidth()
         {
-            _config.PadPaneWidth = PaneWidth.Default;
+            if (MarkdownPreviewVisible) _config.PadMarkdownPreviewRatio = 0.5;
+            else _config.PadPaneWidth = PaneWidth.Default;
             ApplyPaneLayout();
         }
 
@@ -2459,6 +2612,12 @@ namespace Kil0bitSystemMonitor.Pad
                 if (Dispatcher.CheckAccess()) ApplyPaneLayout();
                 else Dispatcher.BeginInvoke(new Action(ApplyPaneLayout));
             }
+            else if (e.PropertyName is nameof(AppConfig.PadMarkdownSplitPreview) or nameof(AppConfig.PadMarkdownPreviewRatio))
+            {
+                void ApplyPreviewPreference() { UpdateMarkdownPreviewView(); ApplyPaneLayout(); }
+                if (Dispatcher.CheckAccess()) ApplyPreviewPreference();
+                else Dispatcher.BeginInvoke(new Action(ApplyPreviewPreference));
+            }
             else if (e.PropertyName == nameof(AppConfig.PadTheme))
             {
                 if (Dispatcher.CheckAccess()) ApplyTheme();
@@ -2477,6 +2636,16 @@ namespace Kil0bitSystemMonitor.Pad
             }
         }
 
+        private void OnUiLanguageChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(UiTextProvider.Language)) return;
+            UpdateCaretText();
+            UpdateCharsText();
+            UpdateSaveText();
+            _linkTip.Content = UiText.Tr("Ctrl+Click to open");
+            Editor.TextArea.TextView.Redraw();
+        }
+
         /// <summary>The time the timestamp tools insert. Tests replace it.</summary>
         internal Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.Now;
 
@@ -2485,7 +2654,7 @@ namespace Kil0bitSystemMonitor.Pad
         /// <summary>A short message in the status bar for 5 s (a link that failed, a busy clipboard, a tool that cannot apply).</summary>
         internal void ShowStatus(string message)
         {
-            StatusMessage.Text = message;
+            StatusMessage.Text = UiText.Tr(message);
             StatusMessage.Visibility = Visibility.Visible;
             if (_statusTimer == null)
             {
@@ -2526,7 +2695,7 @@ namespace Kil0bitSystemMonitor.Pad
             if (!OpenLink(uri)) ShowStatus("That link could not be opened.");
         }
 
-        private readonly System.Windows.Controls.ToolTip _linkTip = new() { Content = "Ctrl+Click to open", Placement = PlacementMode.Mouse };
+        private readonly System.Windows.Controls.ToolTip _linkTip = new() { Content = UiText.Tr("Ctrl+Click to open"), Placement = PlacementMode.Mouse };
 
         private void OnEditorMouseHover(object sender, System.Windows.Input.MouseEventArgs e)
         {
@@ -2599,6 +2768,7 @@ namespace Kil0bitSystemMonitor.Pad
             FindBar.ApplyPalette(_palette);
             AiPanel.ApplyTheme(_palette.IsDark);
             SearchPanel.ApplyTheme(_palette.IsDark);
+            MarkdownPreviewPanel.ApplyTheme(_palette.IsDark);
             _occurrences.Fill = PadThemeApplier.ToBrush(_palette.Occurrence);
             area.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
 
@@ -2647,7 +2817,7 @@ namespace Kil0bitSystemMonitor.Pad
         private void ApplyEditorFont()
         {
             var mono = MonoFamily;
-            bool reading = _config.PadReadingFont && ReferenceEquals(_language.Current, PadLanguages.Markdown);
+            bool reading = _config.PadReadingFont && !_language.SourceOnly && ReferenceEquals(_language.Current, PadLanguages.Markdown);
             var family = reading ? ReadingFont : mono;
             var monoFont = reading ? mono : null;
             if (ReferenceEquals(Editor.FontFamily, family) && ReferenceEquals(_language.MonoFont, monoFont)) return;
@@ -2673,10 +2843,10 @@ namespace Kil0bitSystemMonitor.Pad
         private void UpdateCaretText()
         {
             var caret = Editor.TextArea.Caret;
-            CaretText.Text = PadText.CaretPosition(caret.Line, caret.Column);
+            CaretText.Text = UiText.Format("Ln {0}, Col {1}", caret.Line, caret.Column);
         }
 
-        private void UpdateCharsText() => CharsText.Text = PadText.CharCount(Editor.Document?.TextLength ?? 0);
+        private void UpdateCharsText() => CharsText.Text = UiText.Format("{0:N0} chars", Editor.Document?.TextLength ?? 0);
 
         // ---- language ------------------------------------------------------------------------
 
@@ -2695,7 +2865,8 @@ namespace Kil0bitSystemMonitor.Pad
             _resolved = PadLanguages.Resolve(_shown.Meta.Language, _shown.Meta.SourcePath, _config.PadMarkdown, Editor.Document.TextLength);
             if (_taskDates.TryGetValue(Editor.Document, out var tasks)) tasks.Initialize();
             LanguageButton.Content = _resolved.DisplayName;
-            _language.Apply(_resolved.Effective);
+            if (_markdownPreviewTimer == null) _language.Apply(_resolved.Effective);
+            else UpdateMarkdownPreviewView(refresh: true);
             ApplyEditorFont();
         }
 
@@ -2735,15 +2906,22 @@ namespace Kil0bitSystemMonitor.Pad
 
             if (_shown.SaveState == SaveState.Failed)
             {
-                SaveText.Text = "Not saved — retrying";
+                SaveText.Text = UiText.Tr("Not saved — retrying");
                 SaveText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.AlertRed");
                 return;
             }
 
             SaveText.SetResourceReference(TextBlock.ForegroundProperty, "Pad.Muted");
-            if (_shown.SaveState == SaveState.Saving || _workspace.HasPendingChanges(_shown)) SaveText.Text = "Saving…";
-            else if (_shown.LastSavedUtc is DateTime saved) SaveText.Text = PadText.SavedAgo(DateTime.UtcNow - saved);
-            else SaveText.Text = "Saved";
+            if (_shown.SaveState == SaveState.Saving || _workspace.HasPendingChanges(_shown)) SaveText.Text = UiText.Tr("Saving…");
+            else if (_shown.LastSavedUtc is DateTime saved)
+            {
+                TimeSpan elapsed = DateTime.UtcNow - saved;
+                if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+                SaveText.Text = elapsed.TotalSeconds < 60 ? UiText.Format("Saved {0}s ago", (int)elapsed.TotalSeconds)
+                    : elapsed.TotalMinutes < 60 ? UiText.Format("Saved {0}m ago", (int)elapsed.TotalMinutes)
+                    : UiText.Format("Saved {0}h ago", (int)elapsed.TotalHours);
+            }
+            else SaveText.Text = UiText.Tr("Saved");
         }
 
         // ---- placement, identity, icon ------------------------------------------------------

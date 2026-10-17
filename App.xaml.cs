@@ -47,6 +47,8 @@ namespace Kil0bitSystemMonitor
         /// <summary>The config the search follows and its handler, removed at exit.</summary>
         private static Kil0bitSystemMonitor.Models.AppConfig? s_padSearchConfig;
         private static System.ComponentModel.PropertyChangedEventHandler? s_padSearchConfigChanged;
+        private Kil0bitSystemMonitor.Models.AppConfig? m_uiLanguageConfig;
+        private System.ComponentModel.PropertyChangedEventHandler? m_uiLanguageChanged;
 
         /// <summary>MicaPad's search; null until MicaPad first opens or a note tool first reads the notes.</summary>
         internal static Kil0bitSystemMonitor.Services.Pad.Search.NoteSearchService? PadSearch => s_padRuntime?.Search;
@@ -221,6 +223,17 @@ namespace Kil0bitSystemMonitor
             m_config = config;
             ConfigService = config;
 
+            // Apply the persisted UI language before constructing any window. The observable
+            // provider also refreshes localized bindings in windows that are already open.
+            Kil0bitSystemMonitor.Services.Localization.UiText.SetLanguage(config.Config.AppLanguage);
+            m_uiLanguageConfig = config.Config;
+            m_uiLanguageChanged = (_, changed) =>
+            {
+                if (changed.PropertyName == nameof(Kil0bitSystemMonitor.Models.AppConfig.AppLanguage))
+                    Kil0bitSystemMonitor.Services.Localization.UiText.SetLanguage(config.Config.AppLanguage);
+            };
+            m_uiLanguageConfig.PropertyChanged += m_uiLanguageChanged;
+
             // Diagnostics file at %APPDATA%\MicaStats\logs — the investigation trail requested
             // alongside the hardware inspector. Startup identity plus any dispatcher crash.
             Kil0bitSystemMonitor.Services.DiagnosticsLog.Log("app",
@@ -308,6 +321,8 @@ namespace Kil0bitSystemMonitor
             Kil0bitSystemMonitor.Services.Update.UpdateNotifier.ScheduleStartupCheck(config.Config, Dispatcher);
 
             StartDiagnostics(config);
+            StartStackChan(config);
+            StartTurzx(config);
 
             // The 7-day history now, and the assistant and the MCP servers as they are added (App.Ai.cs).
             StartAi(config, m_telemetry, m_history, Dispatcher);
@@ -905,11 +920,15 @@ namespace Kil0bitSystemMonitor
                 m_padMaintenanceTimer?.Stop();
                 if (s_padSearchConfig != null && s_padSearchConfigChanged != null)
                     s_padSearchConfig.PropertyChanged -= s_padSearchConfigChanged;
+                if (m_uiLanguageConfig != null && m_uiLanguageChanged != null)
+                    m_uiLanguageConfig.PropertyChanged -= m_uiLanguageChanged;
                 s_padRuntime?.Dispose();   // the feeder, the search, then the workspace
                 m_captureHotkeys?.Dispose();
                 // Before anything the AI tools read, and before the shared sampler: the history
                 // recorder may hold a sampler lease for its once-a-minute top process.
                 StopAi();
+                StopStackChan();
+                StopTurzx();
                 // The watchdog owns nothing else here — its scans are a static kernel snapshot,
                 // not a lease on m_history or SharedProcessSampler — so stopping it first just
                 // silences its timer earliest; it does not have to precede anything below it.

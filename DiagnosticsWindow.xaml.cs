@@ -12,6 +12,7 @@ using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Models;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Diagnostics;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using Button = System.Windows.Controls.Button;
 using CheckBox = System.Windows.Controls.CheckBox;
@@ -128,7 +129,7 @@ namespace Kil0bitSystemMonitor
 
         private async Task BeginGatherAsync()
         {
-            StatusText.Text = "Reading the boot log…";
+            StatusText.Text = UiText.Tr("Reading the boot log…");
 
             // Boot first: it is the slowest of the three, and the tab most likely to be opened.
             try
@@ -138,11 +139,11 @@ namespace Kil0bitSystemMonitor
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("diagnostics", "Boot gather crashed", ex);
-                _boot = new BootAnalysis { Problem = "The boot log could not be read — see the diagnostics log." };
+                _boot = new BootAnalysis { Problem = UiText.Tr("The boot log could not be read — see the diagnostics log.") };
             }
             ApplyBoot();
 
-            StatusText.Text = "Reading the battery…";
+            StatusText.Text = UiText.Tr("Reading the battery…");
             try
             {
                 if (BatteryMonitor.HasBattery())
@@ -168,17 +169,17 @@ namespace Kil0bitSystemMonitor
             var parts = new List<string>();
 
             if (_boot?.Latest is { } latest)
-                parts.Add("Last boot " + latest.SecondsText);
+            parts.Add(UiText.Format("Last boot {0}", latest.SecondsText));
             else if (!string.IsNullOrWhiteSpace(_boot?.Problem))
                 parts.Add(_boot!.Problem!);
 
             if (_boot != null && _boot.Entries.Count > 0)
-                parts.Add(StartupEntries.Summarise(_boot.Entries) + " at sign-in");
+            parts.Add(UiText.Format("{0} at sign-in", StartupEntries.Summarise(_boot.Entries)));
 
             if (_health is { Any: true } && _health.HealthPercent >= 0)
-                parts.Add("Battery " + _health.HealthPercent.ToString("F0", CultureInfo.InvariantCulture) + "%");
+            parts.Add(UiText.Format("Battery {0}%", _health.HealthPercent.ToString("F0", CultureInfo.InvariantCulture)));
 
-            return parts.Count == 0 ? "Ready." : string.Join("  ·  ", parts);
+        return parts.Count == 0 ? UiText.Tr("Ready.") : string.Join("  ·  ", parts);
         }
 
         private void ApplyBoot()
@@ -255,7 +256,7 @@ namespace Kil0bitSystemMonitor
             var recorder = App.Recorder;
             if (recorder == null || !recorder.IsRunning)
             {
-                LiveRecorderText.Text = "Off";
+            LiveRecorderText.Text = UiText.Tr("Off");
                 LiveBusiestText.Text = "—";
                 LiveProcessList.ItemsSource = null;
                 NoLiveText.Visibility = Visibility.Visible;
@@ -265,7 +266,7 @@ namespace Kil0bitSystemMonitor
             var frames = recorder.Frames;
             if (frames.Count == 0)
             {
-                LiveRecorderText.Text = "Starting…";
+            LiveRecorderText.Text = UiText.Tr("Starting…");
                 LiveBusiestText.Text = "—";
                 LiveProcessList.ItemsSource = null;
                 NoLiveText.Visibility = Visibility.Visible;
@@ -304,14 +305,14 @@ namespace Kil0bitSystemMonitor
             var recorder = App.Recorder;
             if (recorder == null || !recorder.IsRunning)
             {
-                StatusText.Text = "Recording is off, so there is no window to save. Switch it on above.";
+            StatusText.Text = UiText.Tr("Recording is off, so there is no window to save. Switch it on above.");
                 return;
             }
 
             string? path = recorder.Capture(SlowdownCause.Manual);
             if (path == null)
             {
-                StatusText.Text = "Nothing has been sampled yet — give it a few seconds.";
+            StatusText.Text = UiText.Tr("Nothing has been sampled yet — give it a few seconds.");
                 return;
             }
 
@@ -365,7 +366,44 @@ namespace Kil0bitSystemMonitor
             App.ConfigService?.SaveConfig();
             App.ApplyDiagnosticsSettings();
 
-            StatusText.Text = _rules[index].Describe() + (box.IsChecked == true ? " — on" : " — off");
+        StatusText.Text = _rules[index].Describe() + UiText.Tr(box.IsChecked == true ? " — on" : " — off");
+        }
+
+        private void OnAlertThresholdLostFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is not System.Windows.Controls.TextBox box || box.Tag is not AlertRule rule) return;
+            CommitAlertEdit(rule.Id, thresholdText: box.Text, sustainText: null, box, isThreshold: true);
+        }
+
+        private void OnAlertSustainLostFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is not System.Windows.Controls.TextBox box || box.Tag is not AlertRule rule) return;
+            CommitAlertEdit(rule.Id, thresholdText: null, sustainText: box.Text, box, isThreshold: false);
+        }
+
+        private void OnAlertInputKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter || sender is not System.Windows.Controls.TextBox box) return;
+            e.Handled = true;
+            Keyboard.ClearFocus();
+        }
+
+        private void CommitAlertEdit(string ruleId, string? thresholdText, string? sustainText, System.Windows.Controls.TextBox box, bool isThreshold)
+        {
+            var config = Config;
+            if (config == null) return;
+
+            int index = _rules.FindIndex(r => string.Equals(r.Id, ruleId, StringComparison.OrdinalIgnoreCase));
+            if (index < 0) return;
+
+            var updated = _rules[index].WithEditedValues(thresholdText, sustainText);
+            _rules[index] = updated;
+            box.Text = isThreshold ? updated.ThresholdInputText : updated.SustainInputText;
+
+            config.AlertRules = AlertRuleSettings.Serialize(_rules);
+            App.ConfigService?.SaveConfig();
+            App.ApplyDiagnosticsSettings();
+            StatusText.Text = updated.Describe() + UiText.Tr(updated.Enabled ? " — on" : " — off");
         }
 
         /// <summary>
@@ -388,8 +426,8 @@ namespace Kil0bitSystemMonitor
             }
 
             StatusText.Text = entry.Name + (wanted
-                ? " will start with Windows."
-                : " will no longer start with Windows.");
+                    ? UiText.Tr(" will start with Windows.")
+                    : UiText.Tr(" will no longer start with Windows."));
         }
 
         private void OnOpenReport(object sender, RoutedEventArgs e)
@@ -405,7 +443,7 @@ namespace Kil0bitSystemMonitor
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("diagnostics", "Could not open " + path, ex);
-                StatusText.Text = "That report could not be opened — see the diagnostics log.";
+            StatusText.Text = UiText.Tr("That report could not be opened — see the diagnostics log.");
             }
         }
 
@@ -429,14 +467,14 @@ namespace Kil0bitSystemMonitor
             {
                 string path = DiagnosticsService.SaveReport(_boot, _health, _battery, _rules, _reports);
                 ApplyReports();
-                StatusText.Text = "Saved " + path;
+            StatusText.Text = UiText.Format("Saved {0}", path);
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
                     "explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
             }
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("diagnostics", "Report save failed", ex);
-                StatusText.Text = "The report could not be saved — see the diagnostics log.";
+            StatusText.Text = UiText.Tr("The report could not be saved — see the diagnostics log.");
             }
         }
 

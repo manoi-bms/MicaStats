@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Kil0bitSystemMonitor.Services.Localization;
 
 namespace Kil0bitSystemMonitor.Services.Pad
 {
@@ -46,8 +47,8 @@ namespace Kil0bitSystemMonitor.Services.Pad
         /// <summary>"Today", "Yesterday", or the date.</summary>
         public static string GroupOf(DateTime stamp, DateTime localNow)
         {
-            if (stamp.Date == localNow.Date) return "Today";
-            if (stamp.Date == localNow.Date.AddDays(-1)) return "Yesterday";
+            if (stamp.Date == localNow.Date) return UiText.Tr("Today");
+            if (stamp.Date == localNow.Date.AddDays(-1)) return UiText.Tr("Yesterday");
             return stamp.ToString("d MMM yyyy", Inv);
         }
 
@@ -61,7 +62,9 @@ namespace Kil0bitSystemMonitor.Services.Pad
             var rows = new List<ClosedNoteRow>(newestFirst.Count);
             foreach (var meta in newestFirst)
             {
-                string when = meta.ClosedAtUtc is DateTime closed ? "Closed " + When(closed.ToLocalTime(), localNow) : "Closed";
+                string when = meta.ClosedAtUtc is DateTime closed
+                    ? UiText.Format("Closed {0}", When(closed.ToLocalTime(), localNow))
+                    : UiText.Tr("Closed");
                 string detail = meta.SourcePath == null ? when : when + " · " + meta.SourcePath;
                 rows.Add(new ClosedNoteRow(meta.Id, meta.Title, detail));
             }

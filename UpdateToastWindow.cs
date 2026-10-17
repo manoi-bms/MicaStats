@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Update;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
@@ -53,7 +54,7 @@ namespace Kil0bitSystemMonitor
             Background = Brushes.Transparent;
             SizeToContent = SizeToContent.WidthAndHeight;
             ShowActivated = false;           // must never steal focus from what the user is doing
-            Title = "MicaStats Update";
+            Title = UiText.Tr("MicaStats Update");
 
             Content = BuildCard(release);
 
@@ -86,7 +87,7 @@ namespace Kil0bitSystemMonitor
 
             stack.Children.Add(new TextBlock
             {
-                Text = "Update available",
+                Text = UiText.Tr("Update available"),
                 FontSize = 10.5,
                 FontWeight = FontWeights.SemiBold,
                 FontFamily = new FontFamily("Segoe UI Variable Small, Segoe UI"),
@@ -105,7 +106,7 @@ namespace Kil0bitSystemMonitor
 
             stack.Children.Add(new TextBlock
             {
-                Text = $"You have {UpdateService.CurrentVersionText}. Windows will ask for permission to install.",
+                Text = UiText.Format("You have {0}. Windows will ask for permission to install.", UpdateService.CurrentVersionText),
                 FontSize = 11,
                 Foreground = new SolidColorBrush(Color.FromArgb(0xB0, 0xE9, 0xED, 0xF2)),
                 TextWrapping = TextWrapping.Wrap,
@@ -114,13 +115,13 @@ namespace Kil0bitSystemMonitor
             });
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            buttons.Children.Add(ToastButton.Create("Install", Color.FromRgb(0x3F, 0xD2, 0xE4), primary: true, Color.FromRgb(0x06, 0x22, 0x2A), () =>
+            buttons.Children.Add(ToastButton.Create(UiText.Tr("Install"), Color.FromRgb(0x3F, 0xD2, 0xE4), primary: true, Color.FromRgb(0x06, 0x22, 0x2A), () =>
             {
                 InstallRequested?.Invoke();
                 Close();
             }));
-            buttons.Children.Add(ToastButton.Create("Later", Color.FromRgb(0x3F, 0xD2, 0xE4), primary: false, Color.FromRgb(0x06, 0x22, 0x2A), Close));
-            buttons.Children.Add(ToastButton.Create("Skip this version", Color.FromRgb(0x3F, 0xD2, 0xE4), primary: false, Color.FromRgb(0x06, 0x22, 0x2A), () =>
+            buttons.Children.Add(ToastButton.Create(UiText.Tr("Later"), Color.FromRgb(0x3F, 0xD2, 0xE4), primary: false, Color.FromRgb(0x06, 0x22, 0x2A), Close));
+            buttons.Children.Add(ToastButton.Create(UiText.Tr("Skip this version"), Color.FromRgb(0x3F, 0xD2, 0xE4), primary: false, Color.FromRgb(0x06, 0x22, 0x2A), () =>
             {
                 SkipRequested?.Invoke();
                 Close();

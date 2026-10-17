@@ -139,7 +139,7 @@ public sealed class SettingsIconGuidelineTests
             Assert.Equal(expectedGlyph, glyph);
             var button = new Button
             {
-                Content = source.Attribute("Content")!.Value,
+                Content = EnglishLabel(source.Attribute("Content")!.Value),
                 Padding = new Thickness(14, 7, 14, 7),
                 Margin = new Thickness(0, 0, 8, 6),
             };
@@ -178,7 +178,11 @@ public sealed class SettingsIconGuidelineTests
     });
 
     private static XElement FindButton(XDocument markup, string content) => Assert.Single(markup.Descendants(),
-        element => element.Name.LocalName == "Button" && (string?)element.Attribute("Content") == content);
+        element => element.Name.LocalName == "Button" && EnglishLabel((string?)element.Attribute("Content")) == content);
+
+    private static string? EnglishLabel(string? value) =>
+        value?.StartsWith("{loc:Text '", StringComparison.Ordinal) == true
+            ? value[11..^2].Replace("\\'", "'").Replace("\\\\", "\\") : value;
 
     private static XElement FindNamedButton(XDocument markup, string name) => Assert.Single(markup.Descendants(),
         element => element.Name.LocalName == "Button" && element.Attributes()

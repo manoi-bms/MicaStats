@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Kil0bitSystemMonitor.Helpers;
 using Kil0bitSystemMonitor.Services.Watchdog;
+using Kil0bitSystemMonitor.Services.Localization;
 
 using Brushes = System.Windows.Media.Brushes;
 using Color = System.Windows.Media.Color;
@@ -73,7 +74,7 @@ namespace Kil0bitSystemMonitor
             Background = Brushes.Transparent;
             SizeToContent = SizeToContent.WidthAndHeight;
             ShowActivated = false;           // must never steal focus: its button is destructive
-            Title = "MicaStats runaway search";
+            Title = UiText.Tr("MicaStats runaway search");
 
             Content = BuildCard(onEndAll);
 
@@ -107,14 +108,14 @@ namespace Kil0bitSystemMonitor
             foreach (var finding in findings) totalCpu += finding.CpuSeconds;
 
             string what = findings.Count == 1
-                ? "An orphaned " + findings[0].Name
-                : findings.Count.ToString(CultureInfo.InvariantCulture) + " orphaned searches";
+                ? UiText.Format("An orphaned {0}", findings[0].Name)
+                : UiText.Format("{0} orphaned searches", findings.Count);
 
             string cost = totalCpu >= 120
-                ? (totalCpu / 60d).ToString("0", CultureInfo.InvariantCulture) + " minutes"
-                : totalCpu.ToString("0", CultureInfo.InvariantCulture) + " seconds";
+                ? UiText.Format("{0} minutes", (totalCpu / 60d).ToString("0", CultureInfo.InvariantCulture))
+                : UiText.Format("{0} seconds", totalCpu.ToString("0", CultureInfo.InvariantCulture));
 
-            return what + ", " + cost + " of CPU burned";
+            return UiText.Format("{0}, {1} of CPU burned", what, cost);
         }
 
         private UIElement BuildCard(Action<IReadOnlyList<OrphanFinding>> onEndAll)
@@ -137,7 +138,7 @@ namespace Kil0bitSystemMonitor
             });
             heading.Children.Add(new TextBlock
             {
-                Text = "Runaway search",
+                Text = UiText.Tr("Runaway search"),
                 FontSize = 10.5,
                 FontWeight = FontWeights.SemiBold,
                 FontFamily = new FontFamily("Segoe UI Variable Small, Segoe UI"),
@@ -168,13 +169,13 @@ namespace Kil0bitSystemMonitor
             });
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            buttons.Children.Add(ToastButton.Create("End them", Amber, primary: true,
+            buttons.Children.Add(ToastButton.Create(UiText.Tr("End them"), Amber, primary: true,
                 Color.FromRgb(0x2A, 0x18, 0x06), () =>
                 {
                     onEndAll(_findings);
                     Close();
                 }));
-            buttons.Children.Add(ToastButton.Create("Dismiss", Amber, primary: false,
+            buttons.Children.Add(ToastButton.Create(UiText.Tr("Dismiss"), Amber, primary: false,
                 Color.FromRgb(0x2A, 0x18, 0x06), Close));
             stack.Children.Add(buttons);
 

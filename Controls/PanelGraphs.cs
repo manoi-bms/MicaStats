@@ -111,6 +111,14 @@ namespace Kil0bitSystemMonitor.Controls
         public Brush ProgressBrush { get => (Brush)GetValue(ProgressBrushProperty); set => SetValue(ProgressBrushProperty, value); }
         public Brush TrackBrush { get => (Brush)GetValue(TrackBrushProperty); set => SetValue(TrackBrushProperty, value); }
 
+        private Pen? _cachedTrackPen;
+        private Brush? _cachedTrackBrush;
+        private double _cachedTrackThickness;
+
+        private Pen? _cachedProgressPen;
+        private Brush? _cachedProgressBrush;
+        private double _cachedProgressThickness;
+
         protected override void OnRender(DrawingContext dc)
         {
             double w = ActualWidth, h = ActualHeight;
@@ -118,16 +126,33 @@ namespace Kil0bitSystemMonitor.Controls
             double radius = (Math.Min(w, h) - thickness) / 2.0;
             if (radius <= 0) return;
 
+            var trackBrush = TrackBrush;
+            if (_cachedTrackPen == null || !ReferenceEquals(_cachedTrackBrush, trackBrush) || _cachedTrackThickness != thickness)
+            {
+                _cachedTrackBrush = trackBrush;
+                _cachedTrackThickness = thickness;
+                _cachedTrackPen = new Pen(trackBrush, thickness);
+                if (trackBrush.IsFrozen) _cachedTrackPen.Freeze();
+            }
+
             var center = new Point(w / 2.0, h / 2.0);
-            dc.DrawEllipse(null, new Pen(TrackBrush, thickness), center, radius, radius);
+            dc.DrawEllipse(null, _cachedTrackPen, center, radius, radius);
 
             double pct = Math.Clamp((double)GetValue(VisualValueProperty), 0.0, 100.0);
             if (pct <= 0.05) return;
 
-            var pen = new Pen(ProgressBrush, thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+            var progressBrush = ProgressBrush;
+            if (_cachedProgressPen == null || !ReferenceEquals(_cachedProgressBrush, progressBrush) || _cachedProgressThickness != thickness)
+            {
+                _cachedProgressBrush = progressBrush;
+                _cachedProgressThickness = thickness;
+                _cachedProgressPen = new Pen(progressBrush, thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                if (progressBrush.IsFrozen) _cachedProgressPen.Freeze();
+            }
+
             if (pct >= 99.95)
             {
-                dc.DrawEllipse(null, pen, center, radius, radius);
+                dc.DrawEllipse(null, _cachedProgressPen, center, radius, radius);
                 return;
             }
 
@@ -142,7 +167,7 @@ namespace Kil0bitSystemMonitor.Controls
                 ctx.ArcTo(end, new Size(radius, radius), 0, sweep > Math.PI, SweepDirection.Clockwise, true, false);
             }
             geometry.Freeze();
-            dc.DrawGeometry(null, pen, geometry);
+            dc.DrawGeometry(null, _cachedProgressPen, geometry);
         }
     }
 
@@ -213,10 +238,32 @@ namespace Kil0bitSystemMonitor.Controls
         // graph (not the bar), so taller bars reach into brighter colour — the iStat look.
         private static readonly Pen GridPen = FrozenHairline(0x12);
         private static readonly Pen FloorPen = FrozenHairline(0x28);
+        private static readonly Pen MirroredAxisPen = FrozenDashed(0x46, 2, 2);
+        private static readonly Pen BaselinePen = FrozenDashed(0x3C, 3, 3);
+
+        private Brush? _cachedBarSource;
+        private Brush? _cachedSecSource;
+        private double _cachedHeight;
+        private Brush? _cachedFill;
+        private Brush? _cachedUpFill;
+        private Brush? _cachedDownFill;
 
         private static Pen FrozenHairline(byte alpha)
         {
-            var pen = new Pen(new SolidColorBrush(Color.FromArgb(alpha, 0xFF, 0xFF, 0xFF)), 1.0);
+            var brush = new SolidColorBrush(Color.FromArgb(alpha, 0xFF, 0xFF, 0xFF));
+            brush.Freeze();
+            var pen = new Pen(brush, 1.0);
+            pen.Freeze();
+            return pen;
+        }
+
+        private static Pen FrozenDashed(byte alpha, double dash, double gap)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(alpha, 0xFF, 0xFF, 0xFF));
+            brush.Freeze();
+            var dashStyle = new DashStyle(new double[] { dash, gap }, 0);
+            dashStyle.Freeze();
+            var pen = new Pen(brush, 1.0) { DashStyle = dashStyle };
             pen.Freeze();
             return pen;
         }
@@ -231,6 +278,68 @@ namespace Kil0bitSystemMonitor.Controls
             { MappingMode = BrushMappingMode.Absolute };
             g.Freeze();
             return g;
+        }
+
+        /// <summary>
+        /// Formats the hover readout for the bar at horizontal position <paramref name="x"/>
+        /// across a graph of <paramref name="width"/> pixels, or returns <c>null</c> if no
+        /// sample occupies that slot.
+        /// </summary>
+        public static string? FormatHoverTooltip(Series? primary, double x, double width, string unit = "%")
+        {
+            if (primary == null || primary.Availability != Availability.Value || primary.Count == 0)
+                return null;
+            if (width <= BarStep || x < 0 || x > width)
+                return null;
+
+            int k = (int)Math.Floor((width - x) / BarStep);
+            if (k < 0) k = 0;
+
+            int idx = primary.Count - 1 - k;
+            if (idx < 0 || idx >= primary.Count)
+                return null;
+
+            string age = k == 0
+                ? "now"
+                : "-" + k.ToString(System.Globalization.CultureInfo.InvariantCulture) + "s";
+            string val = primary[idx].ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + unit;
+            return val + " (" + age + ")";
+        }
+
+        protected override void OnMouseMove(System.Windows.Input.MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            Point pt = e.GetPosition(this);
+            string unit = Max == 100d ? "%" : "";
+            ToolTip = FormatHoverTooltip(Series, pt.X, ActualWidth, unit);
+        }
+
+        protected override void OnMouseLeave(System.Windows.Input.MouseEventArgs e)
+        {
+            base.OnMouseLeave(e);
+            ToolTip = null;
+        }
+
+        private void EnsureGradients(double h, double axisY)
+        {
+            var barSource = BarBrush;
+            var secSource = SecondaryBrush;
+            if (ReferenceEquals(_cachedBarSource, barSource) &&
+                ReferenceEquals(_cachedSecSource, secSource) &&
+                _cachedHeight == h &&
+                _cachedFill != null &&
+                _cachedUpFill != null &&
+                _cachedDownFill != null)
+            {
+                return;
+            }
+
+            _cachedBarSource = barSource;
+            _cachedSecSource = secSource;
+            _cachedHeight = h;
+            _cachedFill = GradientFor(barSource, 0, h);
+            _cachedUpFill = GradientFor(secSource, axisY, 0);
+            _cachedDownFill = GradientFor(barSource, axisY, h);
         }
 
         protected override void OnRender(DrawingContext dc)
@@ -257,10 +366,11 @@ namespace Kil0bitSystemMonitor.Controls
             }
 
             int slots = (int)((w + (BarStep - BarWidth)) / BarStep);
+            double axisY = Math.Round(h / 2.0);
+            EnsureGradients(h, axisY);
 
             if (Mode == GraphMode.Mirrored)
             {
-                double axisY = Math.Round(h / 2.0);
                 double halfH = axisY - 1;
 
                 // Half-scale guides either side of the axis, then bars rooted bright at the
@@ -269,8 +379,8 @@ namespace Kil0bitSystemMonitor.Controls
                 dc.DrawLine(GridPen, new Point(0, axisY - guide + 0.5), new Point(w, axisY - guide + 0.5));
                 dc.DrawLine(GridPen, new Point(0, axisY + guide - 0.5), new Point(w, axisY + guide - 0.5));
 
-                Brush upFill = GradientFor(SecondaryBrush, axisY, 0);
-                Brush downFill = GradientFor(BarBrush, axisY, h);
+                Brush upFill = _cachedUpFill!;
+                Brush downFill = _cachedDownFill!;
 
                 for (int k = 0; k < slots; k++)
                 {
@@ -295,10 +405,7 @@ namespace Kil0bitSystemMonitor.Controls
                     }
                 }
 
-                var axisPen = new Pen(new SolidColorBrush(Color.FromArgb(0x46, 0xFF, 0xFF, 0xFF)), 1.0)
-                { DashStyle = new DashStyle(new double[] { 2, 2 }, 0) };
-                axisPen.Freeze();
-                dc.DrawLine(axisPen, new Point(0, axisY - 0.5), new Point(w, axisY - 0.5));
+                dc.DrawLine(MirroredAxisPen, new Point(0, axisY - 0.5), new Point(w, axisY - 0.5));
                 return;
             }
 
@@ -309,7 +416,7 @@ namespace Kil0bitSystemMonitor.Controls
             }
             dc.DrawLine(FloorPen, new Point(0, h - 0.5), new Point(w, h - 0.5));
 
-            Brush fill = GradientFor(BarBrush, 0, h);
+            Brush fill = _cachedFill!;
             for (int k = 0; k < slots; k++)
             {
                 double x = w - BarWidth - k * BarStep;
@@ -348,10 +455,7 @@ namespace Kil0bitSystemMonitor.Controls
         /// <summary>An unreadable sensor gets a dashed baseline, never empty bars.</summary>
         private static void DrawBaseline(DrawingContext dc, double w, double h)
         {
-            var pen = new Pen(new SolidColorBrush(Color.FromArgb(0x3C, 0xFF, 0xFF, 0xFF)), 1.0)
-            { DashStyle = new DashStyle(new double[] { 3, 3 }, 0) };
-            pen.Freeze();
-            dc.DrawLine(pen, new Point(0, h - 0.5), new Point(w, h - 0.5));
+            dc.DrawLine(BaselinePen, new Point(0, h - 0.5), new Point(w, h - 0.5));
         }
     }
 }

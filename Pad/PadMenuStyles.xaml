@@ -34,6 +34,52 @@
         </Setter>
     </Style>
 
+    <Style x:Key="Pad.MenuCaption" TargetType="Separator">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Grid Margin="6,5,8,7" MaxWidth="336">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource Pad.IconFont}" FontSize="17"
+                                   Foreground="{DynamicResource Pad.Accent}" VerticalAlignment="Top" Margin="4,3,0,0" />
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Pad.Text}" FontWeight="SemiBold"
+                                       FontSize="13" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource Pad.Muted}" FontSize="11.5"
+                                       Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="282" />
+                        </StackPanel>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Pad.MenuSection" TargetType="Separator">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Grid Margin="6,7,8,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="1" Text="{Binding}" Foreground="{DynamicResource Pad.Muted}"
+                                   FontFamily="{StaticResource Pad.MenuFont}" FontSize="10.5" FontWeight="SemiBold" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style TargetType="MenuItem">
         <Setter Property="OverridesDefaultStyle" Value="True" />
         <Setter Property="Foreground" Value="{DynamicResource Pad.Text}" />
@@ -64,7 +110,9 @@
                                    Focusable="False" PopupAnimation="Fade"
                                    IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
                                 <ContentControl Template="{StaticResource Pad.MenuCard}">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MinWidth="180">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MinWidth="180"
+                                                  MaxHeight="{DynamicResource Pad.MenuViewportHeight}"
+                                                  MaxWidth="{DynamicResource Pad.MenuViewportWidth}">
                                         <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" Grid.IsSharedSizeScope="True" />
                                     </ScrollViewer>
                                 </ContentControl>
@@ -109,7 +157,9 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ContextMenu">
                     <ContentControl Template="{StaticResource Pad.MenuCard}">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MinWidth="200">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MinWidth="200"
+                                      MaxHeight="{DynamicResource Pad.MenuViewportHeight}"
+                                      MaxWidth="{DynamicResource Pad.MenuViewportWidth}">
                             <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
                         </ScrollViewer>
                     </ContentControl>

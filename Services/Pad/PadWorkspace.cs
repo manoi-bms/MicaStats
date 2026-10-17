@@ -702,20 +702,16 @@ namespace Kil0bitSystemMonitor.Services.Pad
         {
             foreach (var scrub in _pendingScrubs.ToList())
             {
-                try
+                int left = scrub.TryScrub(_store, _warn);
+                if (left == 0)
                 {
-                    int left = _store.ScrubSnapshots(scrub.NoteId, scrub.Value, scrub.Reference);
-                    if (left == 0)
-                    {
-                        _pendingScrubs.Remove(scrub);
-                        continue;
-                    }
+                    _pendingScrubs.Remove(scrub);
+                    continue;
+                }
+                if (left > 0)
+                {
                     _warn("Stored credential " + scrub.Id + ": " + left.ToString(CultureInfo.InvariantCulture)
                           + " older version(s) of note " + scrub.NoteId + " may still hold it");
-                }
-                catch (Exception ex)
-                {
-                    _warn("Removing stored credential " + scrub.Id + " from the older versions of note " + scrub.NoteId + " failed (" + ex.GetType().Name + ")");
                 }
             }
             return _pendingScrubs.Count;

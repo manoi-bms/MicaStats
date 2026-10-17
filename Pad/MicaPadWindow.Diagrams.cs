@@ -60,7 +60,11 @@ namespace Kil0bitSystemMonitor.Pad
         }
 
         /// <summary>Settings → MicaPad changed Draw diagrams, Kroki, the Kroki server or Load images from the web.</summary>
-        private void ApplyDiagramSettings() => _language.RefreshDiagrams();
+        private void ApplyDiagramSettings()
+        {
+            _language.RefreshDiagrams();
+            UpdateMarkdownPreviewView(refresh: true);
+        }
 
         /// <summary>The folder of the shown tab's file, where relative image paths start; null for a note (R12).</summary>
         private string? FolderOfShown() => _shown?.Meta.SourcePath is string path ? Path.GetDirectoryName(path) : null;

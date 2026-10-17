@@ -2,6 +2,7 @@
     x:Class="Kil0bitSystemMonitor.Pad.SearchPane"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:Kil0bitSystemMonitor.Services.Localization"
     xmlns:local="clr-namespace:Kil0bitSystemMonitor.Pad"
     xmlns:helpers="clr-namespace:Kil0bitSystemMonitor.Helpers"
     Background="{DynamicResource Pad.Chrome}">
@@ -10,20 +11,48 @@
          Ask (MicaPad AI spec 4) adds an answer drawn from those passages, above them.
          Colors are the MicaPad window's Pad.* brushes, so the pane follows its theme. -->
 
+    <UserControl.Resources>
+        <Style x:Key="PaneFlatButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource Pad.TextSoft}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="Transparent" BorderBrush="Transparent" BorderThickness="1"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Pad.Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource Pad.Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <Border BorderBrush="{DynamicResource Pad.Border}" BorderThickness="1,0,0,0">
         <DockPanel>
             <DockPanel DockPanel.Dock="Top" Margin="12,8,6,8">
-                <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                        FontSize="10" Padding="8,6" ToolTip="Close (Ctrl+Shift+F)" Click="OnCloseClick" />
+                <Button x:Name="CloseButton" x:FieldModifier="internal" Style="{StaticResource PaneFlatButton}"
+                        DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                        FontSize="10" Padding="8,6" ToolTip="{loc:Text 'Close (Ctrl+Shift+F)'}" Click="OnCloseClick" />
                 <helpers:DecorativeIcon x:Name="HeadingGlyph" DockPanel.Dock="Left" Text="&#xE721;" Margin="0,0,7,0"
                                         FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
                                         Foreground="{DynamicResource Pad.Accent}" VerticalAlignment="Center" />
-                <TextBlock Text="Search notes" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Text="{loc:Text 'Search notes'}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
             </DockPanel>
             <DockPanel DockPanel.Dock="Top" Margin="12,0,12,4">
-                <Button x:Name="AskButton" DockPanel.Dock="Right" Content="Ask" FontSize="12" Padding="10,4" Margin="6,0,0,0"
-                        helpers:ButtonIcon.Glyph="&#xE8BD;"
-                        VerticalAlignment="Stretch" ToolTip="Answer from your notes (Ctrl+Enter)" Click="OnAskClick" />
+                <Button x:Name="AskButton" DockPanel.Dock="Right" Content="{loc:Text 'Ask'}" FontSize="12" Padding="10,4" Margin="6,0,0,0"
+                        helpers:ButtonIcon.Glyph="&#xE8BD;" Cursor="Hand"
+                        VerticalAlignment="Stretch" ToolTip="{loc:Text 'Answer from your notes (Ctrl+Enter)'}" Click="OnAskClick" />
                 <TextBox x:Name="QueryBox"
                          Background="{DynamicResource Pad.Background}" Foreground="{DynamicResource Pad.Text}"
                          BorderBrush="{DynamicResource Pad.Border}" CaretBrush="{DynamicResource Pad.Text}"
@@ -46,12 +75,12 @@
                     <TextBlock x:Name="AnswerNote" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed"
                                Foreground="{DynamicResource Pad.TextSoft}" FontSize="12" />
                     <WrapPanel>
-                        <Button x:Name="AnswerStop" Content="Stop" FontSize="12" Padding="10,4" Margin="0,6,6,0"
+                        <Button x:Name="AnswerStop" Content="{loc:Text 'Stop'}" FontSize="12" Padding="10,4" Margin="0,6,6,0"
                                 helpers:ButtonIcon.Glyph="&#xE71A;"
                                 Visibility="Collapsed" Click="OnAnswerStopClick" />
-                        <Button x:Name="AnswerCopy" Content="Copy" FontSize="12" Padding="10,4" Margin="0,6,6,0"
+                        <Button x:Name="AnswerCopy" Content="{loc:Text 'Copy'}" FontSize="12" Padding="10,4" Margin="0,6,6,0"
                                 helpers:ButtonIcon.Glyph="&#xE8C8;"
-                                Visibility="Collapsed" ToolTip="Copy the answer" Click="OnAnswerCopyClick" />
+                                Visibility="Collapsed" ToolTip="{loc:Text 'Copy the answer'}" Click="OnAnswerCopyClick" />
                     </WrapPanel>
                 </StackPanel>
             </Border>

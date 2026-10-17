@@ -19,6 +19,24 @@ public partial class App
                 ? config.MeetingAsr1BaseUrl : config.MeetingAsr2BaseUrl);
             var session = new MeetingSession(capture, asr,
                 transcriptStore: new MeetingTranscriptStore(MeetingTranscriptStore.DefaultRoot));
+            IDisposable? companionMeeting = null;
+            var companionGate = new object();
+            bool companionClosed = false;
+            void UpdateCompanionMeeting()
+            {
+                lock (companionGate)
+                {
+                    if (companionClosed) return;
+                    if (session.IsActive)
+                        companionMeeting ??= Services.StackChan.CompanionActivity.Enter(Services.StackChan.StackChanActivity.Meeting);
+                    else
+                    {
+                        companionMeeting?.Dispose();
+                        companionMeeting = null;
+                    }
+                }
+            }
+            session.Changed += UpdateCompanionMeeting;
             var analyzer = new MeetingAnalyzer(() => AiProviderFactory.Create(config, AiSecrets), AiUsage,
                 () => config.AiDailyLimit, CurrentBudget, () => config.AiAssistantEnabled,
                 () => config.MeetingAiResponseLanguage);
@@ -32,7 +50,12 @@ public partial class App
             var speech = new MeetingSpeech(session, tts, new WasapiMeetingPlayback());
             s_meetingWindow = new MeetingWindow(config, capture, session, asr, intelligence,
                 () => (AiUsage.UsedToday, config.AiDailyLimit), references, speech, tts);
-            s_meetingWindow.Closed += (_, _) => s_meetingWindow = null;
+            s_meetingWindow.Closed += (_, _) =>
+            {
+                session.Changed -= UpdateCompanionMeeting;
+                lock (companionGate) { companionClosed = true; companionMeeting?.Dispose(); }
+                s_meetingWindow = null;
+            };
             s_meetingWindow.Show();
         }
         if (s_meetingWindow != null)

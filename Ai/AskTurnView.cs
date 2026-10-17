@@ -9,6 +9,7 @@ using System.Windows.Documents;
 using Kil0bitSystemMonitor.Services;
 using Kil0bitSystemMonitor.Services.Ai;
 using Kil0bitSystemMonitor.Services.Ai.Tools;
+using Kil0bitSystemMonitor.Services.Localization;
 
 // UseWindowsForms puts System.Windows.Forms in scope; these names exist in both.
 using Button = System.Windows.Controls.Button;
@@ -187,15 +188,16 @@ namespace Kil0bitSystemMonitor.Ai
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 6, 0),
             });
-            copyContent.Children.Add(new TextBlock { Text = "Copy", VerticalAlignment = VerticalAlignment.Center });
+            CopyLabel = new TextBlock { Text = UiText.Tr("Copy"), VerticalAlignment = VerticalAlignment.Center };
+            copyContent.Children.Add(CopyLabel);
             CopyButton = new Button
             {
                 Style = ChatStyles.Get("ChatFlatButton"),
                 Content = copyContent,
-                ToolTip = "Copy this answer (Markdown)",
+                ToolTip = UiText.Tr("Copy this answer (Markdown)"),
                 Margin = new Thickness(-8, 0, 0, 0),
             };
-            CopyButton.Click += (s, e) => SetClipboard(RawText);
+            CopyButton.Click += (s, e) => CopyAnswer();
             TimeText = new TextBlock
             {
                 FontSize = 11.5,
@@ -292,6 +294,34 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>Copies <see cref="RawText"/> through <see cref="SetClipboard"/>.</summary>
         public Button CopyButton { get; }
 
+        /// <summary>The label inside <see cref="CopyButton"/>.</summary>
+        internal TextBlock CopyLabel { get; }
+
+        private System.Windows.Threading.DispatcherTimer? _copyFeedbackTimer;
+
+        /// <summary>How long <see cref="CopyLabel"/> shows "Copied" after clicking <see cref="CopyButton"/>.</summary>
+        internal TimeSpan CopyFeedbackDuration { get; set; } = TimeSpan.FromMilliseconds(1500);
+
+        private void CopyAnswer()
+        {
+            SetClipboard(RawText);
+            CopyLabel.Text = UiText.Tr("Copied");
+            if (_released) return;
+            if (_copyFeedbackTimer == null)
+            {
+                var weak = new WeakReference<AskTurnView>(this);
+                _copyFeedbackTimer = new System.Windows.Threading.DispatcherTimer();
+                _copyFeedbackTimer.Tick += (s, e) =>
+                {
+                    if (s is System.Windows.Threading.DispatcherTimer timer) timer.Stop();
+                    if (weak.TryGetTarget(out var turn)) turn.CopyLabel.Text = UiText.Tr("Copy");
+                };
+            }
+            _copyFeedbackTimer.Stop();
+            _copyFeedbackTimer.Interval = CopyFeedbackDuration;
+            _copyFeedbackTimer.Start();
+        }
+
         /// <summary>When the answer finished, HH:mm.</summary>
         public TextBlock TimeText { get; }
 
@@ -368,6 +398,7 @@ namespace Kil0bitSystemMonitor.Ai
         {
             _released = true;
             _redraw.Cancel();
+            _copyFeedbackTimer?.Stop();
         }
 
         /// <summary>
@@ -624,7 +655,7 @@ namespace Kil0bitSystemMonitor.Ai
         }
 
         /// <summary>What the activity line says before any tool has run.</summary>
-        internal const string Thinking = "Thinking…";
+        internal static string Thinking => UiText.Tr("Thinking…");
 
         /// <summary>The longest part of a tool's name the activity line shows.</summary>
         private const int MaxToolNameLength = 40;
@@ -637,18 +668,18 @@ namespace Kil0bitSystemMonitor.Ai
         /// </summary>
         internal static string ActivityFor(string tool) => tool switch
         {
-            "get_live_status" => "Reading live status…",
-            "get_top_processes" => "Checking top processes…",
-            "get_history" => "Looking at history…",
-            "list_slowdown_reports" => "Listing slowdown reports…",
-            "get_slowdown_report" => "Reading a slowdown report…",
-            "list_alerts" => "Checking alerts…",
-            "get_hardware" => "Reading hardware info…",
-            "get_battery" => "Checking the battery…",
-            "get_boot_summary" => "Checking startup times…",
-            "search_notes" => "Searching notes…",
-            "get_note" => "Reading a note…",
-            _ => "Using " + ShortName(tool) + "…",
+                "get_live_status" => UiText.Tr("Reading live status…"),
+                "get_top_processes" => UiText.Tr("Checking top processes…"),
+                "get_history" => UiText.Tr("Looking at history…"),
+                "list_slowdown_reports" => UiText.Tr("Listing slowdown reports…"),
+                "get_slowdown_report" => UiText.Tr("Reading a slowdown report…"),
+                "list_alerts" => UiText.Tr("Checking alerts…"),
+                "get_hardware" => UiText.Tr("Reading hardware info…"),
+                "get_battery" => UiText.Tr("Checking the battery…"),
+                "get_boot_summary" => UiText.Tr("Checking startup times…"),
+                "search_notes" => UiText.Tr("Searching notes…"),
+                "get_note" => UiText.Tr("Reading a note…"),
+                _ => UiText.Format("Using {0}…", ShortName(tool)),
         };
 
         private static string ShortName(string name)
@@ -677,17 +708,17 @@ namespace Kil0bitSystemMonitor.Ai
         /// <summary>What a tool chip says for a tool; an unknown tool shows its name.</summary>
         internal static string ToolLabel(string name) => name switch
         {
-            "get_live_status" => "Read live status",
-            "get_top_processes" => "Checked top processes",
-            "get_history" => "Looked at history",
-            "list_slowdown_reports" => "Listed slowdown reports",
-            "get_slowdown_report" => "Read a slowdown report",
-            "list_alerts" => "Checked alerts",
-            "get_hardware" => "Read hardware info",
-            "get_battery" => "Checked the battery",
-            "get_boot_summary" => "Checked startup times",
-            "search_notes" => "Searched notes",
-            "get_note" => "Read a note",
+                "get_live_status" => UiText.Tr("Read live status"),
+                "get_top_processes" => UiText.Tr("Checked top processes"),
+                "get_history" => UiText.Tr("Looked at history"),
+                "list_slowdown_reports" => UiText.Tr("Listed slowdown reports"),
+                "get_slowdown_report" => UiText.Tr("Read a slowdown report"),
+                "list_alerts" => UiText.Tr("Checked alerts"),
+                "get_hardware" => UiText.Tr("Read hardware info"),
+                "get_battery" => UiText.Tr("Checked the battery"),
+                "get_boot_summary" => UiText.Tr("Checked startup times"),
+                "search_notes" => UiText.Tr("Searched notes"),
+                "get_note" => UiText.Tr("Read a note"),
             _ => name,
         };
     }

@@ -183,6 +183,41 @@ namespace Kil0bitSystemMonitor.Tests
             Assert.Equal("The password is {{secret:K7Q2M9XD}}.", Rendered(box));
         });
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void A_failed_observer_preserves_later_feedback_and_reports_only_its_type(bool renderFailure) => UiThread.Run(() =>
+        {
+            var warnings = new List<string>();
+            var box = new PadAnswerBox { Warn = warnings.Add };
+            int notified = 0;
+            Action failed = () => throw new ArgumentException("private observer content");
+            if (renderFailure)
+            {
+                box.BuildDocument = _ => throw new InvalidOperationException("private rendered content");
+                box.RenderFailed += failed;
+                box.RenderFailed += () => notified++;
+            }
+            else
+            {
+                box.DocumentReplaced += failed;
+                box.DocumentReplaced += () => notified++;
+            }
+
+            box.ShowMarkdown("**synthetic note**");
+            box.ShowMarkdown("**synthetic note**");
+
+            Assert.Equal(2, notified);
+            Assert.Equal(renderFailure ? "**synthetic note**" : "synthetic note", Rendered(box));
+            string observerWarning = Assert.Single(warnings, warning => warning.Contains("observer", StringComparison.Ordinal));
+            Assert.Contains("ArgumentException", observerWarning, StringComparison.Ordinal);
+            Assert.All(warnings, warning =>
+            {
+                Assert.DoesNotContain("private", warning, StringComparison.Ordinal);
+                Assert.DoesNotContain("synthetic note", warning, StringComparison.Ordinal);
+            });
+        });
+
         // ---- links are text: nothing in the box navigates or opens anything ----------------------
 
         private static List<Hyperlink> Links(PadAnswerBox box) => AiAskWindowTests.Descendants<Hyperlink>(box.Document);

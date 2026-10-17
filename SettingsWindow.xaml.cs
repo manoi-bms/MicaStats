@@ -6,6 +6,7 @@ using System.Linq;
 using System.IO;
 using Kil0bitSystemMonitor.ViewModels;
 using Kil0bitSystemMonitor.Services;
+using Kil0bitSystemMonitor.Services.Localization;
 using Kil0bitSystemMonitor.Helpers;
 using ModernWpf.Controls;
 
@@ -42,6 +43,7 @@ namespace Kil0bitSystemMonitor
             try 
             {
                 this.InitializeComponent();
+                InitializeLanguageSettings();
                 InitializeMeetingServiceTests();
                 
                 // Set custom icon
@@ -50,6 +52,14 @@ namespace Kil0bitSystemMonitor
                 Kil0bitSystemMonitor.Helpers.Win32Helper.SetAppIcon(new System.Windows.Interop.WindowInteropHelper(this).Handle, iconPath);
 
                 this.DataContext = _viewModel;
+                StackChanPanel.Load(App.StackChan, _config.Config, App.StackChanPresence);
+                TurzxPanel.Load(App.Turzx, _config.Config);
+                Closed += (_, _) =>
+                {
+                    try { StackChanPanel.Detach(); } catch { }
+                    try { TurzxPanel.Detach(); } catch { }
+                    try { StartupService.SetStartup(_config.Config.LaunchOnStartup); } catch { }
+                };
                 
                 // Load heavy hardware lists in background to keep UI snappy
                 LoadHardwareDataAsync();
@@ -87,10 +97,10 @@ namespace Kil0bitSystemMonitor
             try
             {
                 NetAdapterCombo.Items.Clear();
-                NetAdapterCombo.Items.Add(new ComboBoxItem { Content = "Default" });
+                NetAdapterCombo.Items.Add(new ComboBoxItem { Content = UiText.Tr("Default"), Tag = "Default" });
                 foreach (var adapter in adapters)
                 {
-                    NetAdapterCombo.Items.Add(new ComboBoxItem { Content = adapter });
+                    NetAdapterCombo.Items.Add(new ComboBoxItem { Content = adapter, Tag = adapter });
                 }
             }
             catch { }
@@ -101,10 +111,10 @@ namespace Kil0bitSystemMonitor
             try
             {
                 GpuAdapterCombo.Items.Clear();
-                GpuAdapterCombo.Items.Add(new ComboBoxItem { Content = "Default" });
+                GpuAdapterCombo.Items.Add(new ComboBoxItem { Content = UiText.Tr("Default"), Tag = "Default" });
                 foreach (var gpu in gpus)
                 {
-                    GpuAdapterCombo.Items.Add(new ComboBoxItem { Content = gpu });
+                    GpuAdapterCombo.Items.Add(new ComboBoxItem { Content = gpu, Tag = gpu });
                 }
             }
             catch { }
@@ -193,7 +203,7 @@ namespace Kil0bitSystemMonitor
             var item = e.AddedItems[0] as ComboBoxItem;
             if (item == null) return;
 
-            string themeName = item.Content?.ToString() ?? "Default";
+            string themeName = item.Tag?.ToString() ?? "Default";
             
             switch (themeName)
             {
@@ -281,6 +291,7 @@ namespace Kil0bitSystemMonitor
             c.ShowBackground = false;
             c.ShowGraphs = false;
             c.StackedTaskbar = true;
+            c.AppLanguage = "th";
             c.NetLabelColorHex = null; c.CpuRamLabelColorHex = null; c.GpuLabelColorHex = null; c.DiskLabelColorHex = null;
             c.NetAccentColorHex = null; c.CpuRamAccentColorHex = null; c.GpuAccentColorHex = null; c.DiskAccentColorHex = null;
             _config.SaveConfig();
@@ -290,10 +301,10 @@ namespace Kil0bitSystemMonitor
         {
             ContentDialog resetDialog = new ContentDialog
             {
-                Title = "Factory Reset",
-                Content = "Are you sure you want to reset all settings to factory defaults?\n\nThis will revert all monitoring, general, and appearance preferences to their original states. This action cannot be undone.",
-                PrimaryButtonText = "Reset All",
-                CloseButtonText = "Cancel",
+                Title = UiText.Tr("Factory Reset"),
+                Content = UiText.Tr("Are you sure you want to reset all settings to factory defaults?\n\nThis will revert all monitoring, general, and appearance preferences to their original states. This action cannot be undone."),
+                PrimaryButtonText = UiText.Tr("Reset All"),
+                CloseButtonText = UiText.Tr("Cancel"),
                 DefaultButton = ContentDialogButton.Close
             };
 
@@ -342,8 +353,20 @@ namespace Kil0bitSystemMonitor
             c.StackedTaskbar = true;
             c.NetLabelColorHex = null; c.CpuRamLabelColorHex = null; c.GpuLabelColorHex = null; c.DiskLabelColorHex = null;
             c.NetAccentColorHex = null; c.CpuRamAccentColorHex = null; c.GpuAccentColorHex = null; c.DiskAccentColorHex = null;
+
+            c.TurzxEnabled = false;
+            c.TurzxAutoConnect = true;
+            c.TurzxPortName = string.Empty;
+            c.TurzxDeviceName = string.Empty;
+            c.TurzxOrientation = "Landscape";
+            c.TurzxBrightness = 80;
+            c.TurzxViewMode = "Dashboard";
+            TurzxPanel.Load(App.Turzx, c);
             
             StartupService.SetStartup(false);
+            UiText.SetLanguage(c.AppLanguage);
+            InitializeLanguageSettings();
+            RefreshLocalizedSettingsText();
             _config.SaveConfig();
         }
 
@@ -454,6 +477,8 @@ namespace Kil0bitSystemMonitor
                 UpdatesSection.Visibility = Visibility.Collapsed;
                 PadSection.Visibility = Visibility.Collapsed;
                 MeetingSection.Visibility = Visibility.Collapsed;
+                StackChanSection.Visibility = Visibility.Collapsed;
+                TurzxSection.Visibility = Visibility.Collapsed;
                 AiSection.Visibility = Visibility.Collapsed;
 
                 switch (sectionName)
@@ -465,6 +490,8 @@ namespace Kil0bitSystemMonitor
                     case "Capture": CaptureSection.Visibility = Visibility.Visible; break;
                     case "MicaPad": PadSection.Visibility = Visibility.Visible; LoadPadSettings(); break;
                     case "Meeting": MeetingSection.Visibility = Visibility.Visible; LoadMeetingSettings(); break;
+                    case "StackChan": StackChanSection.Visibility = Visibility.Visible; break;
+                    case "Turzx": TurzxSection.Visibility = Visibility.Visible; break;
                     case "AI": AiSection.Visibility = Visibility.Visible; LoadAiSettings(); break;
                     case "Diagnostics": DiagnosticsSection.Visibility = Visibility.Visible; LoadDiagnosticsSettings(); break;
                     case "Updates": UpdatesSection.Visibility = Visibility.Visible; break;
@@ -542,8 +569,8 @@ namespace Kil0bitSystemMonitor
 
         // ---- MicaPad ----------------------------------------------------------------------
 
-        private const string PadHotkeyHelp = "Shows MicaPad from anywhere. Leave empty to turn it off.";
-        private const string PadKrokiHelp = "The Kroki server, like https://kroki.io or http://localhost:8000.";
+        private static string PadHotkeyHelp => UiText.Tr("Shows MicaPad from anywhere. Leave empty to turn it off.");
+        private static string PadKrokiHelp => UiText.Tr("The Kroki server, like https://kroki.io or http://localhost:8000.");
         private static readonly int[] PadHistoryChoices = { 30, 90, 180, 365 };
         private static readonly int[] PadFontSizes = { 10, 11, 12, 13, 14, 15, 16, 18, 20, 24 };
 
@@ -619,6 +646,8 @@ namespace Kil0bitSystemMonitor
 
         protected override void OnClosed(EventArgs e)
         {
+            StackChanPanel.Detach();
+            TurzxPanel.Detach();
             foreach (var test in _meetingServiceTests) test.Dispose();
             if (_padVaultSubscribed)
             {
@@ -661,10 +690,10 @@ namespace Kil0bitSystemMonitor
         {
             var dialog = new ContentDialog
             {
-                Title = "Reset the credential vault?",
-                Content = "Deletes every stored credential. References in your notes will show as missing. This cannot be undone.",
-                PrimaryButtonText = "Reset vault",
-                CloseButtonText = "Cancel",
+                Title = UiText.Tr("Reset the credential vault?"),
+                Content = UiText.Tr("Deletes every stored credential. References in your notes will show as missing. This cannot be undone."),
+                PrimaryButtonText = UiText.Tr("Reset vault"),
+                CloseButtonText = UiText.Tr("Cancel"),
                 DefaultButton = ContentDialogButton.Close
             };
             ModernWpf.ThemeManager.SetRequestedTheme(dialog, ModernWpf.ElementTheme.Dark);
@@ -705,7 +734,7 @@ namespace Kil0bitSystemMonitor
             if (text.Length == 0)
             {
                 _config.Config.PadHotkey = "";
-                PadHotkeyHint.Text = "Shortcut off. MicaPad is still in the overlay's right-click menu.";
+                PadHotkeyHint.Text = UiText.Tr("Shortcut off. MicaPad is still in the overlay's right-click menu.");
                 _config.SaveConfig();
                 return;
             }
@@ -720,7 +749,7 @@ namespace Kil0bitSystemMonitor
             }
             else
             {
-                PadHotkeyHint.Text = "Not a valid shortcut. Use one or more of Ctrl, Alt, Shift, Win and one key, like Ctrl+Alt+N.";
+                PadHotkeyHint.Text = UiText.Tr("Not a valid shortcut. Use one or more of Ctrl, Alt, Shift, Win and one key, like Ctrl+Alt+N.");
             }
         }
 
@@ -743,7 +772,7 @@ namespace Kil0bitSystemMonitor
             var entry = Kil0bitSystemMonitor.Services.Pad.KrokiClient.ResolveEntry(PadKrokiServerBox.Text, current);
             PadKrokiServerBox.Text = entry.BoxText;
             PadKrokiHint.Text = entry.Refused
-                ? "Not a server address, so MicaPad still uses " + current + ". Use http:// or https:// and a host name, like https://kroki.io."
+                ? UiText.Format("Not a server address, so MicaPad still uses {0}. Use http:// or https:// and a host name, like https://kroki.io.", current)
                 : PadKrokiHelp;
             if (entry.Save == null) return false;
             _config.Config.PadKrokiServer = entry.Save;
@@ -886,7 +915,7 @@ namespace Kil0bitSystemMonitor
             {
                 using var dialog = new System.Windows.Forms.FolderBrowserDialog
                 {
-                    Description = "Where should MicaStats save captures?",
+                    Description = UiText.Tr("Where should MicaStats save captures?"),
                     UseDescriptionForTitle = true,
                     SelectedPath = CaptureFolderBox.Text,
                 };
@@ -960,12 +989,12 @@ namespace Kil0bitSystemMonitor
             try
             {
                 AutoUpdateToggle.IsOn = _config.Config.AutoCheckUpdates;
-                UpdateHeadline.Text = "MicaStats " + Kil0bitSystemMonitor.Services.Update.UpdateService.CurrentVersionText;
+                UpdateHeadline.Text = UiText.Format("MicaStats {0}", Kil0bitSystemMonitor.Services.Update.UpdateService.CurrentVersionText);
 
                 // A background check may already have found something before this page opened.
                 var pending = Kil0bitSystemMonitor.Services.Update.UpdateNotifier.Pending;
                 if (pending != null) ShowAvailable(pending);
-                else UpdateStatusText.Text = "You are up to date as far as the last check could tell.";
+                else UpdateStatusText.Text = UiText.Tr("You are up to date as far as the last check could tell.");
             }
             catch (Exception ex)
             {
@@ -984,8 +1013,8 @@ namespace Kil0bitSystemMonitor
         private void ShowAvailable(Kil0bitSystemMonitor.Services.Update.ReleaseInfo release)
         {
             _pendingRelease = release;
-            UpdateHeadline.Text = "MicaStats " + release.TagName + " is available";
-            UpdateStatusText.Text = "You have " + Kil0bitSystemMonitor.Services.Update.UpdateService.CurrentVersionText + ".";
+            UpdateHeadline.Text = UiText.Format("MicaStats {0} is available", release.TagName);
+            UpdateStatusText.Text = UiText.Format("You have {0}.", Kil0bitSystemMonitor.Services.Update.UpdateService.CurrentVersionText);
             UpdateActionPanel.Visibility = Visibility.Visible;
             SkipUpdateButton.Visibility = Visibility.Visible;
         }
@@ -993,7 +1022,7 @@ namespace Kil0bitSystemMonitor
         private async void OnCheckUpdates(object sender, RoutedEventArgs e)
         {
             CheckUpdatesButton.IsEnabled = false;
-            UpdateStatusText.Text = "Checking GitHub\u2026";
+            UpdateStatusText.Text = UiText.Tr("Checking GitHub\u2026");
             try
             {
                 var result = await Kil0bitSystemMonitor.Services.Update.UpdateNotifier
@@ -1001,7 +1030,7 @@ namespace Kil0bitSystemMonitor
 
                 if (result.Error != null)
                 {
-                    UpdateStatusText.Text = result.Error;
+                    UpdateStatusText.Text = LocalizeUpdateStatus(result.Error);
                 }
                 else if (result.UpdateAvailable && result.Release != null)
                 {
@@ -1009,8 +1038,8 @@ namespace Kil0bitSystemMonitor
                 }
                 else
                 {
-                    UpdateHeadline.Text = "MicaStats " + Kil0bitSystemMonitor.Services.Update.UpdateService.CurrentVersionText;
-                    UpdateStatusText.Text = "This is the latest version.";
+                    UpdateHeadline.Text = UiText.Format("MicaStats {0}", Kil0bitSystemMonitor.Services.Update.UpdateService.CurrentVersionText);
+                    UpdateStatusText.Text = UiText.Tr("This is the latest version.");
                     UpdateActionPanel.Visibility = Visibility.Collapsed;
                 }
             }
@@ -1034,7 +1063,7 @@ namespace Kil0bitSystemMonitor
             {
                 var progress = new Progress<double>(p => UpdateProgress.Value = p);
                 _downloadedInstaller = await Kil0bitSystemMonitor.Services.Update.UpdateService.DownloadAsync(
-                    _pendingRelease, progress, msg => UpdateStatusText.Text = msg);
+                    _pendingRelease, progress, msg => UpdateStatusText.Text = LocalizeUpdateStatus(msg));
 
                 if (_downloadedInstaller == null)
                 {
@@ -1043,21 +1072,21 @@ namespace Kil0bitSystemMonitor
                     return;
                 }
 
-                UpdateStatusText.Text = "Starting the installer\u2026 approve the Windows prompt to continue.";
+                UpdateStatusText.Text = UiText.Tr("Starting the installer\u2026 approve the Windows prompt to continue.");
                 if (Kil0bitSystemMonitor.Services.Update.UpdateService.LaunchInstaller(_downloadedInstaller))
                 {
                     Kil0bitSystemMonitor.Services.Update.UpdateNotifier.Clear();
                 }
                 else
                 {
-                    UpdateStatusText.Text = "The installer did not start. It is saved in your temp folder.";
+                    UpdateStatusText.Text = UiText.Tr("The installer did not start. It is saved in your temp folder.");
                     InstallUpdateButton.IsEnabled = true;
                 }
             }
             catch (Exception ex)
             {
                 Kil0bitSystemMonitor.Services.DiagnosticsLog.Error("update", "Install failed", ex);
-                UpdateStatusText.Text = "Update failed \u2014 see the diagnostics log.";
+                UpdateStatusText.Text = UiText.Tr("Update failed \u2014 see the diagnostics log.");
                 InstallUpdateButton.IsEnabled = true;
             }
         }
@@ -1068,7 +1097,20 @@ namespace Kil0bitSystemMonitor
             Kil0bitSystemMonitor.Services.Update.UpdateNotifier.Skip(_config.Config, _pendingRelease.TagName);
             _config.SaveConfig();
             UpdateActionPanel.Visibility = Visibility.Collapsed;
-            UpdateStatusText.Text = "Skipped " + _pendingRelease.TagName + ". It will not be announced again.";
+            UpdateStatusText.Text = UiText.Format("Skipped {0}. It will not be announced again.", _pendingRelease.TagName);
+        }
+
+        private static string LocalizeUpdateStatus(string message)
+        {
+            const string downloading = "Downloading ";
+            if (message.StartsWith(downloading, StringComparison.Ordinal) && message.EndsWith("\u2026", StringComparison.Ordinal))
+                return UiText.Format("Downloading {0}\u2026", message[downloading.Length..^1]);
+
+            const string returned = "GitHub returned ";
+            if (message.StartsWith(returned, StringComparison.Ordinal))
+                return UiText.Format("GitHub returned {0}", message[returned.Length..]);
+
+            return UiText.Tr(message);
         }
 
         private void OnOpenReleases(object sender, RoutedEventArgs e)
@@ -1115,26 +1157,34 @@ namespace Kil0bitSystemMonitor
         private void UpdateSlowdownWindowText(int seconds)
         {
             SlowdownWindowText.Text = seconds < 120
-                ? seconds.ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds"
-                : (seconds / 60).ToString(System.Globalization.CultureInfo.InvariantCulture) + " minutes";
+                ? UiText.Format("{0} seconds", seconds)
+                : UiText.Format("{0} minutes", seconds / 60);
         }
 
         private void UpdateAlertRulesText(Kil0bitSystemMonitor.Models.AppConfig config)
         {
             var rules = Kil0bitSystemMonitor.Services.Diagnostics.AlertRuleSettings.Parse(config.AlertRules);
             var on = new System.Collections.Generic.List<string>();
-            foreach (var rule in rules) if (rule.Enabled) on.Add(rule.Describe());
+            foreach (var rule in rules)
+            {
+                if (!rule.Enabled) continue;
+                on.Add(UiText.Format("{0} {1} {2} for {3} s",
+                    UiText.Tr(rule.Label),
+                    UiText.Tr(rule.Above ? "above" : "below"),
+                    rule.ThresholdText,
+                    rule.SustainSeconds));
+            }
 
             AlertRulesText.Text = on.Count == 0
-                ? "No rules are switched on. Choose which readings matter in the Diagnostics window."
-                : "Watching: " + string.Join("; ", on) + ".  Edit these in the Diagnostics window.";
+                ? UiText.Tr("No rules are switched on. Choose which readings matter in the Diagnostics window.")
+                : UiText.Format("Watching: {0}. Edit these in the Diagnostics window.", string.Join("; ", on));
         }
 
         private void UpdateBatteryModuleText()
         {
             BatteryModuleText.Text = Kil0bitSystemMonitor.Services.Diagnostics.BatteryMonitor.HasBattery()
-                ? "Shows charge beside the other modules, with the label reading CHG while it fills."
-                : "This machine has no battery, so the module stays hidden whatever this is set to.";
+                ? UiText.Tr("Shows charge beside the other modules, with the label reading CHG while it fills.")
+                : UiText.Tr("This machine has no battery, so the module stays hidden whatever this is set to.");
         }
 
         private void OnDiagnosticsToggle(object sender, RoutedEventArgs e)
@@ -1212,10 +1262,23 @@ namespace Kil0bitSystemMonitor
             bool light = Kil0bitSystemMonitor.Helpers.TaskbarTheme.Read()
                          == Kil0bitSystemMonitor.Helpers.TaskbarAppearance.Light;
 
-            OverlayThemeHint.Text = "The overlay draws straight onto the taskbar, so it needs ink "
-                + "that shows against it. Windows is currently using a "
-                + (light ? "light" : "dark") + " taskbar. Colours you have customised yourself are "
-                + "never overridden.";
+            OverlayThemeHint.Text = UiText.Format(
+                "The overlay draws straight onto the taskbar, so it needs ink that shows against it. Windows is currently using a {0} taskbar. Colours you have customised yourself are never overridden.",
+                UiText.Tr(light ? "light" : "dark"));
+        }
+
+        /// <summary>Refreshes generated labels after a live language change without touching draft fields.</summary>
+        internal void RefreshLocalizedSettingsText()
+        {
+            RefreshPadVault();
+            if (_config?.Config is not { } config) return;
+
+            UpdateSlowdownWindowText(config.SlowdownWindowSeconds);
+            UpdateAlertRulesText(config);
+            UpdateBatteryModuleText();
+            UpdateOverlayThemeHint();
+            if (SaveMeetingServicesButton.IsEnabled)
+                MeetingServicesStatus.Text = DescribeMeetingReadinessForDisplay(config);
         }
 
         private void OnOverlayThemeChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)

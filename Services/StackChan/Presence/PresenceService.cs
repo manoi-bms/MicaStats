@@ -610,10 +610,15 @@ public sealed class PresenceService : IDisposable
         if (pose == null) return;
         try
         {
-            if (await _robot.AimHeadAsync(pose.Yaw, pose.Pitch, token).ConfigureAwait(false))
-                lock (_gate) _pose = pose;
+            bool sent = await _robot.AimHeadAsync(pose.Yaw, pose.Pitch, token).ConfigureAwait(false);
+            // A move dropped while the link was busy must not be learned as a servo limit.
+            lock (_gate) { if (sent) _pose = pose; else _aimer?.Dropped(); }
         }
-        catch (InvalidOperationException) { /* Quiet or motion switched off between checks. */ }
+        catch (InvalidOperationException)
+        {
+            // Quiet or motion switched off between checks.
+            lock (_gate) _aimer?.Dropped();
+        }
     }
 
     private async Task<bool> TrySendAsync(byte[] json, CancellationToken token)

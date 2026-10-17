@@ -1240,6 +1240,9 @@ class Companion:
             self.acknowledge("invalid-message")
             return
 
+        # BLE has no pairing secret, so only the USB link may drive the camera.
+        payload.pop("camera", None)
+        payload.pop("presence", None)
         kind = self.apply_message(payload)
         if kind == "applied":
             self.set_transport("BLE")

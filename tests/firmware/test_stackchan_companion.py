@@ -436,6 +436,16 @@ class PresenceCameraTests(FirmwareTestCase):
         self.assertIsNone(self.app.gaze_target)
         self.assertIsNone(self.app.scene)
 
+    def test_bluetooth_cannot_start_camera_or_presence(self):
+        # BLE has no pairing secret; only the USB link may drive the camera.
+        self.feed_in_portable_chunks(
+            b'{"camera":{"on":true,"fps":4,"quality":50},'
+            b'"presence":{"scene":"guard","lines":[],"seconds":30}}\n')
+        self.run_loops(2000)
+        self.assertEqual([], self.frames())
+        self.assertNotIn(("capture", 50), self.fake_camera.calls)
+        self.assertIsNone(self.app.scene)
+
     def test_camera_rejects_out_of_range_fps_and_quality(self):
         self.assertEqual("invalid-camera", self.send({"camera": {"on": True, "fps": 7, "quality": 50}})["type"])
         self.assertEqual("invalid-camera", self.send({"camera": {"on": True, "fps": 4, "quality": 90}})["type"])

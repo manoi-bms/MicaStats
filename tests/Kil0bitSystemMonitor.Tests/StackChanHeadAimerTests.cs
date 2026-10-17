@@ -96,6 +96,75 @@ public sealed class StackChanHeadAimerTests
         Assert.InRange(camera.Error(pose).X, -0.12, 0.12);
     }
 
+    /// <summary>
+    /// Like the robot on the desk: the servo turns slowly toward each command and every picture
+    /// shows the head as it was a moment earlier, with a little detector jitter.
+    /// </summary>
+    private static HeadPose TrackSlowServo(HeadAimer aimer, Camera camera, HeadPose start, double seconds,
+        double degreesPerSecond, int latencyMs, bool frozenWhileMoving = false)
+    {
+        var actual = start;
+        var target = start;
+        var history = new List<(DateTimeOffset At, HeadPose Pose)>();
+        var still = start;
+        var random = new Random(7);
+        static double Toward(double from, double to, double limit) => from + Math.Clamp(to - from, -limit, limit);
+        for (var at = T0; at < T0.AddSeconds(seconds); at = at.AddMilliseconds(250))
+        {
+            double limit = degreesPerSecond * 0.25;
+            actual = new HeadPose(Toward(actual.Yaw, target.Yaw, limit), Toward(actual.Pitch, target.Pitch, limit));
+            history.Add((at, actual));
+            var seen = history.LastOrDefault(entry => entry.At <= at.AddMilliseconds(-latencyMs)).Pose ?? start;
+            // The robot sends no new picture while its servo turns: the last still one repeats.
+            if (frozenWhileMoving) seen = still = actual == target ? seen : still;
+            var face = camera.See(seen);
+            if (face != null)
+                face = face with { CenterX = face.CenterX + (float)((random.NextDouble() - 0.5) * 0.02) };
+            if (aimer.Next(at, face, target) is { } next) target = next;
+        }
+        return actual;
+    }
+
+    [Theory]
+    [InlineData(8, 500, false)]
+    [InlineData(7, 300, true)] // Measured: about 7°/s at tracking speed; the picture stays still until the move ends.
+    public void centres_a_face_when_the_servo_is_slow_and_pictures_lag(double degreesPerSecond, int latencyMs, bool frozenWhileMoving)
+    {
+        // Measured on the robot: 20° of yaw moves the face a quarter of the picture.
+        var camera = new Camera(faceYaw: 20, facePitch: 10, frameDegrees: 80);
+        var aimer = new HeadAimer(false, false);
+        var pose = TrackSlowServo(aimer, camera, new HeadPose(0, 10), 40, degreesPerSecond, latencyMs, frozenWhileMoving);
+
+        Assert.InRange(camera.Error(pose).X, -0.12, 0.12);
+        Assert.False(aimer.InvertYaw);
+    }
+
+    [Fact]
+    public void a_move_that_was_never_sent_is_not_learned_as_a_limit()
+    {
+        // The robot link was busy, so these moves were dropped; the face cannot have moved.
+        var camera = new Camera(faceYaw: 15, facePitch: 30, frameDegrees: 80);
+        var aimer = new HeadAimer(false, false);
+        var pose = new HeadPose(0, 30);
+        var at = T0;
+        for (; at < T0.AddSeconds(10); at = at.AddMilliseconds(250))
+            if (aimer.Next(at, camera.See(pose), pose) != null) aimer.Dropped();
+
+        for (; at < T0.AddSeconds(25); at = at.AddMilliseconds(250))
+            if (aimer.Next(at, camera.See(pose), pose) is { } next) pose = next;
+
+        Assert.InRange(camera.Error(pose).X, -0.12, 0.12);
+    }
+
+    [Fact]
+    public void a_dropped_move_can_be_retried_at_once()
+    {
+        var aimer = new HeadAimer(false, false);
+        Assert.NotNull(aimer.Next(T0, FaceAt(0.2f, 0.5f), Centre));
+        aimer.Dropped();
+        Assert.NotNull(aimer.Next(T0.AddMilliseconds(250), FaceAt(0.2f, 0.5f), Centre));
+    }
+
     [Fact]
     public void takes_bigger_steps_when_the_face_barely_moves_per_degree()
     {
@@ -120,12 +189,15 @@ public sealed class StackChanHeadAimerTests
     }
 
     [Fact]
-    public void commands_wait_for_the_servo_to_settle()
+    public void commands_wait_for_the_servo_to_settle_and_the_picture_to_show_it()
     {
         var aimer = new HeadAimer(false, false);
         Assert.NotNull(aimer.Next(T0, FaceAt(0.9f, 0.5f), Centre));
         Assert.Null(aimer.Next(T0.AddMilliseconds(300), FaceAt(0.9f, 0.5f), Centre));
-        Assert.NotNull(aimer.Next(T0.AddMilliseconds(650), FaceAt(0.9f, 0.5f), Centre));
+        // An unchanged picture may be an old one: keep waiting rather than call it a limit.
+        Assert.Null(aimer.Next(T0.AddMilliseconds(650), FaceAt(0.9f, 0.5f), Centre));
+        Assert.Null(aimer.Next(T0.AddMilliseconds(900), FaceAt(0.7f, 0.5f), Centre));
+        Assert.NotNull(aimer.Next(T0.AddMilliseconds(1150), FaceAt(0.7f, 0.5f), Centre));
     }
 
     [Fact]

@@ -18,8 +18,9 @@ public sealed class HeadAimer
     private const double DeadZone = 0.06;
     private const double MaxStep = 12, MinimumChange = 1;
     private const double YawMin = -45, YawMax = 45, PitchMin = 5, PitchMax = 85;
-    private const double Noticeable = 0.02;
+    private const double Noticeable = 0.02, Steady = 0.08;
     private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(600);
+    private static readonly TimeSpan Confirm = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan SearchAfter = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan Dwell = TimeSpan.FromSeconds(1.2);
     private static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(2);
@@ -33,6 +34,7 @@ public sealed class HeadAimer
     private readonly Axis _yaw, _pitch;
     private DateTimeOffset? _lastCommand, _lastFace, _stepStarted, _retryAt;
     private Move? _pending;
+    private (double X, double Y)? _seen;
     private int _step = -1;
 
     public HeadAimer(bool invertYaw, bool invertPitch)
@@ -54,6 +56,14 @@ public sealed class HeadAimer
         return pose;
     }
 
+    /// <summary>The last pose from <see cref="Next"/> never reached the robot: forget it, so a still picture is not read as a limit.</summary>
+    public void Dropped()
+    {
+        _pending = null;
+        _seen = null;
+        _lastCommand = null;
+    }
+
     private HeadPose? Follow(DateTimeOffset at, DetectedFace face, HeadPose current)
     {
         _lastFace = at;
@@ -64,7 +74,15 @@ public sealed class HeadAimer
 
         if (_pending is { } move)
         {
+            // The servo turns slowly and the first pictures after a move can be old ones: judge the
+            // move once the picture shows it and has stopped changing; call it a limit only if no
+            // change comes at all.
+            bool steady = _seen is { } seen && Math.Abs(ex - seen.X) < Steady && Math.Abs(ey - seen.Y) < Steady;
+            _seen = (ex, ey);
+            bool unclear = Unchanged(move.Yaw, move.Ex, ex) || Unchanged(move.Pitch, move.Ey, ey);
+            if ((unclear || !steady) && _lastCommand is { } moved && at - moved < Confirm) return null;
             _pending = null;
+            _seen = null;
             _yaw.Learn(at, move.Ex, ex, move.Yaw, move.YawBefore);
             _pitch.Learn(at, move.Ey, ey, move.Pitch, move.PitchBefore);
         }
@@ -76,6 +94,9 @@ public sealed class HeadAimer
         _pending = new Move(ex, ey, dYaw, dPitch, current.Yaw, current.Pitch);
         return new HeadPose(yaw, pitch);
     }
+
+    private static bool Unchanged(double moved, double before, double after) =>
+        Math.Abs(moved) >= MinimumChange && Math.Abs(before) >= DeadZone && Math.Abs(after - before) < Noticeable;
 
     private HeadPose? Search(DateTimeOffset at)
     {

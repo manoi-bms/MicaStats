@@ -255,7 +255,7 @@
                            Opacity="0.65" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
                 <WrapPanel>
                     <StackPanel Width="230" Margin="0,0,20,10"><TextBlock Text="{loc:Text 'Yaw (-45° to 45°)'}" Style="{StaticResource FieldLabelStyle}"/><Slider x:Name="YawSlider" Minimum="-45" Maximum="45" Value="0" TickFrequency="5" AutomationProperties.Name="{loc:Text 'Head yaw'}"/><TextBlock x:Name="YawText" Text="0°" TextAlignment="Center"/></StackPanel>
-                    <StackPanel Width="230" Margin="0,0,20,10"><TextBlock Text="{loc:Text 'Pitch (15° to 65°)'}" Style="{StaticResource FieldLabelStyle}"/><Slider x:Name="PitchSlider" Minimum="15" Maximum="65" Value="45" TickFrequency="5" AutomationProperties.Name="{loc:Text 'Head pitch'}"/><TextBlock x:Name="PitchText" Text="45°" TextAlignment="Center"/></StackPanel>
+                    <StackPanel Width="230" Margin="0,0,20,10"><TextBlock Text="{loc:Text 'Pitch (5° to 85°)'}" Style="{StaticResource FieldLabelStyle}"/><Slider x:Name="PitchSlider" Minimum="5" Maximum="85" Value="45" TickFrequency="5" AutomationProperties.Name="{loc:Text 'Head pitch'}"/><TextBlock x:Name="PitchText" Text="45°" TextAlignment="Center"/></StackPanel>
                     <StackPanel Width="180" Margin="0,0,0,10"><TextBlock Text="{loc:Text 'Speed (100 to 300)'}" Style="{StaticResource FieldLabelStyle}"/><Slider x:Name="SpeedSlider" Minimum="100" Maximum="300" Value="150" TickFrequency="25" AutomationProperties.Name="{loc:Text 'Head speed'}"/><TextBlock x:Name="SpeedText" Text="150" TextAlignment="Center"/></StackPanel>
                 </WrapPanel>
                 <WrapPanel Margin="0,4,0,0">

@@ -112,7 +112,7 @@
   "Only activity states are sent. MicaStats never sends note text, prompts, transcripts, or alert details to the robot.": "ส่งเฉพาะสถานะกิจกรรมเท่านั้น MicaStats จะไม่ส่งข้อความในโน้ต พรอมป์ บทถอดเสียง หรือรายละเอียดการแจ้งเตือนไปยังหุ่นยนต์",
   "Open DANCE on StackChan and keep it visible while connecting.": "เปิด DANCE บน StackChan และเปิดหน้าจอนี้ค้างไว้ระหว่างเชื่อมต่อ",
   "PC busy": "พีซีกำลังทำงานหนัก",
-  "Pitch (15° to 65°)": "ก้มเงย (15° ถึง 65°)",
+  "Pitch (5° to 85°)": "ก้มเงย (5° ถึง 85°)",
   "Quiet": "เงียบ",
   "Quiet mode (dim LEDs and block new movement)": "โหมดเงียบ (หรี่ LED และปิดกั้นการขยับใหม่)",
   "Reaction interval": "ช่วงเวลาตอบสนอง",

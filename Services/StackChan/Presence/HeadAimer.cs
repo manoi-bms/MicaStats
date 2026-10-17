@@ -184,6 +184,10 @@ public sealed class HeadAimer
             _stuck = 0;
             if (Math.Sign(change) == Math.Sign(before))
             {
+                // A reversed axis pushes the face away by about as much as the move should have
+                // brought it back; a smaller drift is a person walking faster than one step.
+                double expected = Math.Abs(moved) * 0.8 / gain;
+                if (Math.Abs(change) < expected / 2) return;
                 // The face moved further from the centre: this axis is wired the other way round.
                 if (++_away < 2) return;
                 _away = 0;

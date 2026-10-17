@@ -20,10 +20,12 @@ public sealed class StackChanHeadAimerTests
     private sealed class Camera(double faceYaw, double facePitch, int yawSign = 1, int pitchSign = 1,
         double frameDegrees = 50, double? pitchStuckBelow = null)
     {
+        public double FaceYaw { get; set; } = faceYaw;
+
         public double ActualPitch(HeadPose pose) => pitchStuckBelow is { } stuck ? Math.Max(pose.Pitch, stuck) : pose.Pitch;
 
         public (double X, double Y) Error(HeadPose pose) =>
-            (yawSign * (pose.Yaw - faceYaw) / frameDegrees * 2,
+            (yawSign * (pose.Yaw - FaceYaw) / frameDegrees * 2,
              pitchSign * (ActualPitch(pose) - facePitch) / (frameDegrees * 0.75) * 2);
 
         public DetectedFace? See(HeadPose pose)
@@ -166,6 +168,33 @@ public sealed class StackChanHeadAimerTests
         var (pose, _) = Track(new HeadAimer(false, false), camera, new HeadPose(0, 30), 20);
 
         Assert.InRange(camera.Error(pose).X, -0.05, 0.05);
+    }
+
+    [Fact]
+    public void keeps_a_walking_person_in_the_picture_and_centres_when_they_stop()
+    {
+        // Measured robot timing: the servo turns about 40°/s and pictures show it about 0.5 s later.
+        var camera = new Camera(faceYaw: -20, facePitch: 30, frameDegrees: 77);
+        var aimer = new HeadAimer(false, false);
+        var actual = new HeadPose(-20, 30);
+        var target = actual;
+        var history = new List<(DateTimeOffset At, HeadPose Pose)>();
+        double worst = 0;
+        for (var at = T0; at < T0.AddSeconds(20); at = at.AddMilliseconds(250))
+        {
+            double elapsed = (at - T0).TotalSeconds;
+            camera.FaceYaw = Math.Clamp(-20 + 4 * elapsed, -20, 20); // Walks 40° in 10 s, then stops.
+            double step = 40 * 0.25;
+            actual = new HeadPose(actual.Yaw + Math.Clamp(target.Yaw - actual.Yaw, -step, step), target.Pitch);
+            history.Add((at, actual));
+            var seen = history.LastOrDefault(entry => entry.At <= at.AddMilliseconds(-500)).Pose ?? actual;
+            var face = camera.See(seen);
+            if (elapsed is > 2 and < 10) worst = Math.Max(worst, Math.Abs(camera.Error(actual).X));
+            if (aimer.Next(at, face, target) is { } next) target = next;
+        }
+
+        Assert.True(worst < 0.5, $"fell {worst:0.00} behind while the person walked");
+        Assert.InRange(camera.Error(actual).X, -0.12, 0.12);
     }
 
     [Fact]

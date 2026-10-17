@@ -247,6 +247,7 @@ class FaceCanvas:
 class Companion:
     def __init__(self):
         self.stackchan = None
+        self.servo_powered = False
         self.ble = None
         self.usb_poll = None
         self.input_buffer = bytearray()
@@ -695,7 +696,10 @@ class Companion:
         # UiFlow's driver takes a 0..100 user speed rather than the factory
         # firmware's 0..1000 speed.  Preserve the intended proportion.
         ui_speed = clamp(speed // 10, 0, 100)
-        self.stackchan.set_servo_power(True)
+        # set_servo_power blocks for about a second on every call, so switch it on only once.
+        if not self.servo_powered:
+            self.stackchan.set_servo_power(True)
+            self.servo_powered = True
         self.stackchan.set_servo_torque(servo_id, True)
         self.stackchan.set_servo_angle(servo_id, degrees, 0, ui_speed)
 

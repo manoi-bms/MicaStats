@@ -140,6 +140,35 @@ public sealed class StackChanHeadAimerTests
     }
 
     [Fact]
+    public void centres_a_face_in_a_few_moves_with_the_robots_camera()
+    {
+        // Measured: 20° of yaw moves the face 26% of the picture width.
+        var camera = new Camera(faceYaw: 25, facePitch: 30, frameDegrees: 77);
+        var (pose, commands) = Track(new HeadAimer(false, false), camera, new HeadPose(0, 30), 20);
+
+        Assert.InRange(camera.Error(pose).X, -0.12, 0.12);
+        Assert.True(commands.Count <= 3, $"took {commands.Count} moves");
+    }
+
+    [Fact]
+    public void small_jitter_around_the_centre_does_not_move_the_head()
+    {
+        var aimer = new HeadAimer(false, false);
+        Assert.Null(aimer.Next(T0, FaceAt(0.535f, 0.47f), Centre));
+        Assert.Null(aimer.Next(T0.AddSeconds(1), FaceAt(0.465f, 0.535f), Centre));
+    }
+
+    [Fact]
+    public void once_correcting_it_finishes_close_to_the_centre()
+    {
+        // Started far off, the head keeps going until the face is within a few percent of the centre.
+        var camera = new Camera(faceYaw: 12, facePitch: 30, frameDegrees: 77);
+        var (pose, _) = Track(new HeadAimer(false, false), camera, new HeadPose(0, 30), 20);
+
+        Assert.InRange(camera.Error(pose).X, -0.05, 0.05);
+    }
+
+    [Fact]
     public void a_move_that_was_never_sent_is_not_learned_as_a_limit()
     {
         // The robot link was busy, so these moves were dropped; the face cannot have moved.

@@ -16,6 +16,9 @@ public sealed class HeadAimer
     public static readonly HeadPose Rest = new(0, 25);
 
     private const double DeadZone = 0.06;
+    // Hysteresis: start correcting beyond 5% of the picture from the centre, stop within 2.5%,
+    // so detector jitter around the centre never makes the head hunt.
+    private const double StartBeyond = 0.10, StopWithin = 0.05;
     private const double MaxStep = 12, MinimumChange = 1;
     private const double YawMin = -45, YawMax = 45, PitchMin = 5, PitchMax = 85;
     private const double Noticeable = 0.02, Steady = 0.08;
@@ -87,8 +90,8 @@ public sealed class HeadAimer
             _pitch.Learn(at, move.Ey, ey, move.Pitch, move.PitchBefore);
         }
 
-        double yaw = _yaw.Target(at, current.Yaw, Math.Abs(ex) < DeadZone ? 0 : ex);
-        double pitch = _pitch.Target(at, current.Pitch, Math.Abs(ey) < DeadZone ? 0 : ey);
+        double yaw = _yaw.Target(at, current.Yaw, _yaw.Off(ex));
+        double pitch = _pitch.Target(at, current.Pitch, _pitch.Off(ey));
         double dYaw = yaw - current.Yaw, dPitch = pitch - current.Pitch;
         if (Math.Abs(dYaw) < MinimumChange && Math.Abs(dPitch) < MinimumChange) return null;
         _pending = new Move(ex, ey, dYaw, dPitch, current.Yaw, current.Pitch);
@@ -129,7 +132,16 @@ public sealed class HeadAimer
         private double? _limitLow, _limitHigh, _snapTo, _stuckFrom;
         private DateTimeOffset _limitAt;
 
+        private bool _correcting;
+
         public int Sign { get; private set; } = sign;
+
+        /// <summary>The offset to correct, or 0 when it is close enough to the centre.</summary>
+        public double Off(double error)
+        {
+            _correcting = Math.Abs(error) >= (_correcting ? StopWithin : StartBeyond);
+            return _correcting ? error : 0;
+        }
         public bool Confirmed => _good >= 2;
 
         /// <summary>Degrees to turn so the face moves to the centre: -gain × offset, the learned way round.</summary>

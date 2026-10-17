@@ -564,6 +564,15 @@ class MotionSafetyTests(FirmwareTestCase):
                 self.assertNotEqual(["applied"], result)
                 self.assertEqual([], self.app.stackchan.calls)
 
+    def test_servo_power_is_switched_on_only_once(self):
+        # Measured on the robot: each set_servo_power call blocks for one second.
+        self.app.stackchan.calls.clear()
+        motion = {"yawServo": {"angle": 100, "speed": 100}, "pitchServo": {"angle": 300, "speed": 100}}
+        self.assertEqual(["applied", "applied"], self.app.apply_motion(motion))
+        self.assertEqual(["applied", "applied"], self.app.apply_motion(motion))
+
+        self.assertEqual(1, self.app.stackchan.calls.count(("power", True)))
+
     def test_setup_leaves_servo_power_and_torque_untouched(self):
         app = self.firmware.Companion()
 

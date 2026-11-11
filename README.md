@@ -584,6 +584,29 @@ The published application will be created in the `publish` directory.
 
 ---
 
+## Raspberry Pi
+
+MicaStats also runs on a Raspberry Pi (tested on a Pi 5, Raspberry Pi OS
+trixie, labwc/Wayland with Xwayland) through **`MicaStats.Pi/`** — a trimmed,
+self-contained [Avalonia UI](https://avaloniaui.net/) port of the stats panel.
+It reproduces the same iStat Menus-style dashboard — rounded dark cards, the
+cyan/red two-hue data palette, discrete-bar history graphs, the mirrored
+up/down network graph and the memory ring gauge — with native Linux telemetry
+(`/proc/stat`, `/proc/meminfo`, thermal zones, `/sys/class/net`,
+`/proc/diskstats`, per-process `/proc` sampling) and the same truthful-sensor
+rule: an unreadable value shows a dash, never a fake zero.
+
+```bash
+# On the Pi (needs the .NET 8 SDK, e.g. via dot.net/v1/dotnet-install.sh):
+cd MicaStats.Pi
+dotnet run
+```
+
+The Windows application is unchanged by the port; taskbar overlay, MicaPad,
+AI, Meeting Assistant and the USB companions remain Windows-only.
+
+---
+
 ## Technology
 
 | Component           | Technology                                   |

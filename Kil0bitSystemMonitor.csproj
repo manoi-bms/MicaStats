@@ -93,13 +93,14 @@
 
     <!--
       This project lives at the repository root, so the SDK's default **/*.cs glob would compile
-      the test project's sources into the application assembly. Exclude them explicitly.
+      the test project's and the Raspberry Pi (Avalonia) project's sources into the application
+      assembly. Exclude them explicitly.
     -->
     <ItemGroup>
-        <Compile Remove="tests/**;artifacts/**" />
-        <None Remove="tests/**;artifacts/**" />
-        <Page Remove="tests/**;artifacts/**" />
-        <ApplicationDefinition Remove="tests/**;artifacts/**" />
+        <Compile Remove="tests/**;artifacts/**;MicaStats.Pi/**" />
+        <None Remove="tests/**;artifacts/**;MicaStats.Pi/**" />
+        <Page Remove="tests/**;artifacts/**;MicaStats.Pi/**" />
+        <ApplicationDefinition Remove="tests/**;artifacts/**;MicaStats.Pi/**" />
     </ItemGroup>
 
     <ItemGroup>

@@ -1,0 +1,16 @@
+#!/bin/sh
+# Show or hide the MicaStats dropdown. Bind this to a panel click (for example
+# waybar's "on-click"). Starts MicaStats (shown) if it is not already running.
+PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/micastats-pi.pid"
+
+if [ -r "$PIDFILE" ]; then
+  pid=$(cat "$PIDFILE")
+  # The app writes the pid file only after its SIGUSR1 handler is installed,
+  # so signalling a listed pid can never hit the default terminate action.
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null \
+     && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'MicaStats\.Pi'; then
+    exec kill -USR1 "$pid"
+  fi
+fi
+
+exec setsid -f "$(dirname "$0")/micastats-pi" >/dev/null 2>&1

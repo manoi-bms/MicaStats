@@ -584,6 +584,39 @@ The published application will be created in the `publish` directory.
 
 ---
 
+## Raspberry Pi
+
+MicaStats also runs on a Raspberry Pi (tested on a Pi 5, Raspberry Pi OS
+trixie, labwc/Wayland with Xwayland) through **`MicaStats.Pi/`** — a trimmed,
+self-contained [Avalonia UI](https://avaloniaui.net/) port of the stats panel.
+It reproduces the same iStat Menus-style dashboard — rounded dark cards, the
+cyan/red two-hue data palette, discrete-bar history graphs, the mirrored
+up/down network graph and the memory ring gauge — with native Linux telemetry
+(`/proc/stat`, `/proc/meminfo`, thermal zones, `/sys/class/net`,
+`/proc/diskstats`, per-process `/proc` sampling) and the same truthful-sensor
+rule: an unreadable value shows a dash, never a fake zero.
+
+```bash
+# On the Pi (needs the .NET 8 SDK, e.g. via dot.net/v1/dotnet-install.sh):
+cd MicaStats.Pi
+dotnet run            # try it as a normal window
+./install.sh          # or install it to ~/.local as a menu-bar dropdown
+```
+
+**Menu-bar dropdown.** Wayland panels are layer-shell surfaces that Avalonia
+cannot create, so MicaStats.Pi pairs with a panel instead of replacing it: it
+runs hidden in the background (`micastats-pi --hidden`, so history graphs are
+already full when opened) and `micastats-toggle` shows or hides it, borderless
+and right-aligned under the bar, like an iStat Menus dropdown. It closes again
+on a second click, on Esc, or when another window takes focus. `install.sh`
+prints the three lines needed for labwc + waybar: an autostart entry, a waybar
+`on-click` binding and a labwc window rule that keeps it out of the taskbar.
+
+The Windows application is unchanged by the port; taskbar overlay, MicaPad,
+AI, Meeting Assistant and the USB companions remain Windows-only.
+
+---
+
 ## Technology
 
 | Component           | Technology                                   |

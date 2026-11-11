@@ -1,0 +1,171 @@
+<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ctrl="using:MicaStats.Pi.Controls"
+    x:Class="MicaStats.Pi.MainWindow"
+    Title="MicaStats"
+    Width="372"
+    SizeToContent="Height"
+    CanResize="False"
+    SystemDecorations="None"
+    ShowInTaskbar="False"
+    Topmost="True"
+    Background="#0D0D13"
+    Foreground="#E9EDEDF2">
+
+    <!--
+      iStat Menus 7 dark layout, carried over from StatsPanelWindow.xaml: rounded
+      cards on a near-black plate, strict two-hue data palette (cyan primary,
+      red counterpart), uppercase grey card headers with the live value at the
+      right, discrete-bar history graphs, and ring gauges.
+    -->
+
+    <Window.Styles>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#F01A1A22" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="Margin" Value="0,0,0,7" />
+        </Style>
+        <Style Selector="TextBlock.cardHeader">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#8CE9EDF2" />
+        </Style>
+        <Style Selector="TextBlock.headerValue">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#3FD2E4" />
+        </Style>
+        <Style Selector="TextBlock.sub">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#6EE9EDF2" />
+        </Style>
+        <Style Selector="TextBlock.bright">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Foreground" Value="#E9EDEDF2" />
+        </Style>
+        <Style Selector="TextBlock.up">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Foreground" Value="#3FD2E4" />
+        </Style>
+        <Style Selector="TextBlock.down">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Foreground" Value="#FF5147" />
+        </Style>
+    </Window.Styles>
+
+    <!-- Hairline edge so the borderless dropdown separates from whatever is behind it. -->
+    <Border BorderBrush="#26FFFFFF" BorderThickness="1">
+    <StackPanel Margin="10">
+
+        <!-- CPU -->
+        <Border Classes="card">
+            <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="cardHeader" Text="CPU" />
+                    <TextBlock Grid.Column="1" Classes="headerValue" x:Name="CpuValue" Text="—" />
+                </Grid>
+                <ctrl:HistoryGraph x:Name="CpuGraph" Height="44" />
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="sub" x:Name="CpuSub" Text="Load —" />
+                    <TextBlock Grid.Column="1" Classes="sub" x:Name="CpuFreq" Text="—" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- MEMORY -->
+        <Border Classes="card">
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="cardHeader" Text="MEMORY" />
+                    <TextBlock Grid.Column="1" Classes="headerValue" x:Name="MemValue" Text="—" />
+                </Grid>
+                <Grid ColumnDefinitions="Auto,16,*">
+                    <Grid Width="64" Height="64">
+                        <ctrl:RingGauge x:Name="MemRing" />
+                        <TextBlock x:Name="MemRingText" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   FontSize="13" FontWeight="Bold" Text="—" />
+                    </Grid>
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4">
+                        <Grid ColumnDefinitions="Auto,7,*,Auto">
+                            <Ellipse Width="6" Height="6" Fill="#3FD2E4" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Classes="sub" Text="Used" />
+                            <TextBlock Grid.Column="3" Classes="bright" x:Name="MemUsed" Text="—" />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,7,*,Auto">
+                            <Ellipse Width="6" Height="6" Fill="#55FFFFFF" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Classes="sub" Text="Free" />
+                            <TextBlock Grid.Column="3" Classes="bright" x:Name="MemFree" Text="—" />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,7,*,Auto">
+                            <Ellipse Width="6" Height="6" Fill="#FF5147" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Classes="sub" Text="Swap" />
+                            <TextBlock Grid.Column="3" Classes="bright" x:Name="MemSwap" Text="—" />
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- TEMPERATURE -->
+        <Border Classes="card">
+            <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="cardHeader" Text="TEMPERATURE" />
+                    <TextBlock Grid.Column="1" Classes="headerValue" x:Name="TempValue" Text="—" />
+                </Grid>
+                <ctrl:HistoryGraph x:Name="TempGraph" Height="34" />
+            </StackPanel>
+        </Border>
+
+        <!-- NETWORK -->
+        <Border Classes="card">
+            <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="cardHeader" x:Name="NetHeader" Text="NETWORK" />
+                    <TextBlock Grid.Column="1" Classes="sub" x:Name="NetIp" Text="" />
+                </Grid>
+                <ctrl:DualHistoryGraph x:Name="NetGraph" Height="56" />
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="up" x:Name="NetUp" Text="▲ —" />
+                    <TextBlock Grid.Column="1" Classes="down" x:Name="NetDown" Text="▼ —" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- DISK -->
+        <Border Classes="card">
+            <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="cardHeader" Text="DISK" />
+                    <TextBlock Grid.Column="1" Classes="headerValue" x:Name="DiskValue" Text="—" />
+                </Grid>
+                <Border x:Name="DiskBarTrack" Background="#22FFFFFF" CornerRadius="2" Height="4">
+                    <Border x:Name="DiskBarFill" Background="#3FD2E4" CornerRadius="2"
+                            HorizontalAlignment="Left" Width="0" />
+                </Border>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="sub" x:Name="DiskSpace" Text="—" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <TextBlock Classes="up" x:Name="DiskRead" Text="R —" />
+                        <TextBlock Classes="down" x:Name="DiskWrite" Text="W —" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- PROCESSES -->
+        <Border Classes="card">
+            <StackPanel Spacing="5">
+                <TextBlock Classes="cardHeader" Text="PROCESSES" />
+                <StackPanel x:Name="ProcList" Spacing="3" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock Classes="sub" x:Name="Footer" HorizontalAlignment="Center" Margin="0,1,0,2" Text="" />
+
+    </StackPanel>
+    </Border>
+
+</Window>

@@ -7,6 +7,9 @@
     Width="372"
     SizeToContent="Height"
     CanResize="False"
+    SystemDecorations="None"
+    ShowInTaskbar="False"
+    Topmost="True"
     Background="#0D0D13"
     Foreground="#E9EDEDF2">
 
@@ -52,6 +55,8 @@
         </Style>
     </Window.Styles>
 
+    <!-- Hairline edge so the borderless dropdown separates from whatever is behind it. -->
+    <Border BorderBrush="#26FFFFFF" BorderThickness="1">
     <StackPanel Margin="10">
 
         <!-- CPU -->
@@ -161,5 +166,6 @@
         <TextBlock Classes="sub" x:Name="Footer" HorizontalAlignment="Center" Margin="0,1,0,2" Text="" />
 
     </StackPanel>
+    </Border>
 
 </Window>

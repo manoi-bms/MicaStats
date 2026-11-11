@@ -599,8 +599,18 @@ rule: an unreadable value shows a dash, never a fake zero.
 ```bash
 # On the Pi (needs the .NET 8 SDK, e.g. via dot.net/v1/dotnet-install.sh):
 cd MicaStats.Pi
-dotnet run
+dotnet run            # try it as a normal window
+./install.sh          # or install it to ~/.local as a menu-bar dropdown
 ```
+
+**Menu-bar dropdown.** Wayland panels are layer-shell surfaces that Avalonia
+cannot create, so MicaStats.Pi pairs with a panel instead of replacing it: it
+runs hidden in the background (`micastats-pi --hidden`, so history graphs are
+already full when opened) and `micastats-toggle` shows or hides it, borderless
+and right-aligned under the bar, like an iStat Menus dropdown. It closes again
+on a second click, on Esc, or when another window takes focus. `install.sh`
+prints the three lines needed for labwc + waybar: an autostart entry, a waybar
+`on-click` binding and a labwc window rule that keeps it out of the taskbar.
 
 The Windows application is unchanged by the port; taskbar overlay, MicaPad,
 AI, Meeting Assistant and the USB companions remain Windows-only.
